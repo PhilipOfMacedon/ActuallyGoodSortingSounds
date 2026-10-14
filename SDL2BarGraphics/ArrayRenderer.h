@@ -1,54 +1,41 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
+#include <map>
 #include <memory>
-#include <mutex>
+#include <string>
 #include <vector>
 
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-#include "Window.h"
-#include "Rectangle.h"
-#include "Shader.h"
+#include "Renderer2D.h"
+#include "ThemePalette.h"
 #include "TextLabel.h"
+#include "UserSettings.h"
+#include "Window.h"
+#include "../SortingLogic/SortingLogic.h"
 
 class ArrayRenderer
 {
 public:
-	ArrayRenderer(
-		Window& window,
-		std::vector<GLfloat>& array,
-		std::vector<int>& highlights,
-		std::mutex& stateMutex,
-		GLfloat projWidth,
-		GLfloat projHeight,
-		GLfloat heightMult);
-	~ArrayRenderer() = default;
-
-	ArrayRenderer(const ArrayRenderer&) = delete;
-	ArrayRenderer& operator=(const ArrayRenderer&) = delete;
-
-	bool isReady() const { return shader && shader->getShaderID() != 0; }
-	void render();
+	ArrayRenderer(Window& window, Renderer2D& renderer);
+	bool isReady() const;
+	void render(
+		const sortinglogic::RenderSnapshot& snapshot,
+		const UserSettings& settings,
+		float chartTop);
 
 private:
-	bool isHighlighted(int pos, const std::vector<int>& highlights) const;
-	void drawBars(
-		const std::vector<GLfloat>& array,
-		const std::vector<int>& highlights);
-	void drawTitleLabel();
-
-	Window& window;
-	std::vector<GLfloat>& array;
-	std::vector<int>& highlights;
-	std::mutex& stateMutex;
-	std::unique_ptr<Rectangle> bar;
-	std::unique_ptr<Rectangle> highlightedBar;
-	std::unique_ptr<TextLabel> titleLabel;
-	std::unique_ptr<Shader> shader;
-	glm::mat4 projection;
-	GLfloat projWidth;
-	GLfloat projHeight;
-	GLfloat heightMult;
+	Window& window_;
+	Renderer2D& renderer_;
+	std::array<std::vector<QuadInstance>, 6> materialBuckets_;
+	std::vector<QuadInstance> gapMarkers_;
+	std::map<std::string, std::unique_ptr<TextLabel> > laneLabels_;
+	std::map<std::string, glm::vec2> laneLabelPositions_;
+	RenderDescriptor descriptorForRole(sortinglogic::SemanticRole role, const ThemePalette& palette) const;
+	RenderDescriptor descriptorForItem(
+		std::uint64_t itemId,
+		const std::vector<sortinglogic::ActiveRole>& roles,
+		const ThemePalette& palette,
+		const std::string& lane = "main") const;
+	void submitLaneLabel(const std::string& lane, float x, float y, const glm::vec4& color);
 };

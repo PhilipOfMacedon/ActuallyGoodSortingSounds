@@ -18,12 +18,17 @@
     <ClCompile Include="Window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ArrayWorker.cpp">
+    <ClCompile Include="AppController.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="AudioPresentationBridge.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ControlPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ArraySorter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
+    <ClCompile Include="FrameCoordinator.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="LayoutMetrics.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="Renderer2D.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ThemePalette.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="UiLayer.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="UserSettings.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Shader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -39,6 +44,7 @@
     <ClCompile Include="SDL2BarGraphics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SdlAudioOutput.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="TextLabel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -47,24 +53,38 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AppController.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="AudioPresentationBridge.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="BarCountSteps.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Window.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ArrayWorker.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ArraySorter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Shader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SdlAudioOutput.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SettingsScroll.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Mesh.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ArrayRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ControlPanel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameCoordinator.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="LayoutMetrics.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Renderer2D.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ThemePalette.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="UiLayer.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="UserSettings.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="RenderingTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderPipeline.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Rectangle.h">
       <Filter>Header Files</Filter>
     </ClInclude>

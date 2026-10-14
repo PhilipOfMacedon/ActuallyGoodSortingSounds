@@ -1,6 +1,6 @@
 # Proposed engine design
 
-This records the current architecture discussion. It is not an implementation plan or a commitment to a particular framework.
+This records the accepted architecture and design constraints for the first simulation refactor. The implementation checklist is [the refactoring roadmap](../refactoring-roadmap.md). SDL audio integration remains a later phase; the separate `SoundEngine` library now has an offline synthesis and preview prototype documented in `SoundEngine/README.md`.
 
 ## 0. Agreed conceptual boundaries
 
@@ -12,13 +12,19 @@ Keep the application coordinator thin: it wires the subsystems together and rout
 - **Audio:** consumes semantic operations or summaries from the same simulation progress. It does not infer events from rendered frames or mutate sorting state.
 - **Application coordinator:** connects these parts and routes input; it contains no sorting or rendering policy.
 
-The direction favored for a simulation-based system is for algorithms to expose logical operations and for the simulation to apply them. The exact operation-production interface remains open until the algorithm/event vocabulary and playback requirements are decided.
+The first operation-production contract is an ordered `SortTrace`: a headless builder records comparisons (including their comparator result), held-key transitions, shifts, placements, and completion from a copied input. The simulation applies those events and owns the authoritative cursor/state. Insertion Sort is the only algorithm in the first wave; ascending and descending use one direction setting.
+
+Keep this boundary in one `SortingLogic` static library so it can be built and tested without SDL/OpenGL. The app keeps SDL/OpenGL, rendering, and controls. Trace generation runs on a worker over copied input, then publishes a completed immutable trace; playback and all graphics work stay on the application thread. The trace and cursor are the future audio handoff point, but this wave does not initialize or synthesize audio.
+
+Reset is defined against the latest prepared baseline. Startup and Shuffle use seeded permutations; each explicit Shuffle records a fresh seed. Insta-sort and Insta-invert prepare ascending and descending baselines over the same stable item set. Reset restores that exact baseline and cursor zero. Initial product defaults are 80 bars and 10 seconds, with limits of 2–800 bars and 1–120 seconds.
+
+For shift-based Insertion Sort, a held item is removed from its slot while a temporary gap moves left as larger items shift right. Every cursor therefore contains each stable identity exactly once across occupied slots plus the held key. Nearby reverse steps use inverse mutations; long seeks restore a snapshot every 4,096 events and replay forward. Trace time maps linearly to the selected total duration and playback applies every due event, even when several pass between frames.
 
 ### Flexible rendering and visual state
 
-Treat highlighting as presentation derived from semantic operation state, not as a fixed property of a bar or a two-index side channel. Operations may identify a variable number of participants and roles, such as compared items, a pivot, a destination, or a write target. The simulation can expose those roles in a read-only view; the renderer maps them to appearance.
+Treat highlighting as presentation derived from semantic operation state, not as a fixed property of a bar or a two-index side channel. Operations may identify a variable number of participants and roles, such as compared items, a pivot, a destination, or a write target. The simulation exposes roles through a copied render snapshot; the renderer maps them to appearance.
 
-Keep the quad/mesh primitive generic. A draw instance may select a render descriptor or material containing properties such as tint, texture, and shader/pass. This supports different looks without teaching a generic quad about sorting algorithms. Prefer data-driven material/style selection over an arbitrary per-quad drawing callback; custom drawing behavior belongs in renderer-level strategies or passes so resource ownership, ordering, and batching remain tractable.
+Keep the quad/mesh primitive generic. A draw instance may select a render descriptor or material containing properties such as tint, texture, and render pass. This supports different looks without teaching a generic quad about sorting algorithms. Prefer data-driven material/style selection over an arbitrary per-quad drawing callback; custom drawing behavior belongs in renderer-level strategies or passes so resource ownership, ordering, and batching remain tractable. Bar draws are grouped by material.
 
 During a renderer sweep, classify each assumption by where it belongs:
 
@@ -30,7 +36,7 @@ During a renderer sweep, classify each assumption by where it belongs:
 
 Do not blindly move every special case into the algorithm. Algorithm-specific semantics should originate with the algorithm, while their appearance remains a renderer policy. The sweep should remove assumptions that leak across these boundaries, including the current fixed two-highlight slots, single red highlight appearance, and sorting-specific behavior in generic drawing paths. The existing post-sort `uselessScan()` is a presentation flourish rather than a sorting operation; decide whether to retain it as an explicit presentation effect or remove it before it can be confused with algorithm/audio events.
 
-Current code points to audit: `SDL2BarGraphics/SDL2BarGraphics.cpp` allocates two highlight slots; `SDL2BarGraphics/ArraySorter.cpp` writes those positions; `SDL2BarGraphics/ArrayRenderer.cpp` maps every highlighted position to one red rectangle; `SDL2BarGraphics/Rectangle.cpp` bakes a vertex color into the mesh; and `SDL2BarGraphics/Mesh.cpp` binds one texture and shader for each draw. These are observations about the current implementation, not requirements for the replacement.
+The pre-refactor implementation allocated two highlight slots in `SDL2BarGraphics/SDL2BarGraphics.cpp`, wrote them from `ArraySorter.cpp`, mapped them to one red rectangle in `ArrayRenderer.cpp`, baked vertex colors in `Rectangle.cpp`, and bound textures per mesh draw in `Mesh.cpp`. Those sorting/renderer side channels have been removed from the active project. `ArraySorter` and `ArrayWorker` have been deleted in favor of the headless library and simulation. The orphan `SortingLiveWindow.cpp` was confirmed outside the project and removed.
 
 ## 1. Record a complete deterministic run once
 

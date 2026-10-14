@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ExternalLibsRoot>$(ProjectDir)..\..\..\External Libs\</ExternalLibsRoot>
+    <SDL2IncludeDir>$(ExternalLibsRoot)SDL2\include\</SDL2IncludeDir>
+    <GLEWIncludeDir>$(ExternalLibsRoot)GLEW\include\</GLEWIncludeDir>
+    <GLMIncludeDir>$(ExternalLibsRoot)GLM\</GLMIncludeDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)'=='Win32'">
+    <SDL2LibDir>$(ExternalLibsRoot)SDL2\lib\x86\</SDL2LibDir>
+    <GLEWLibDir>$(ExternalLibsRoot)GLEW\lib\Release\Win32\</GLEWLibDir>
+    <GLEWBinDir>$(ExternalLibsRoot)GLEW\bin\Release\Win32\</GLEWBinDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)'=='x64'">
+    <SDL2LibDir>$(ExternalLibsRoot)SDL2\lib\x64\</SDL2LibDir>
+    <GLEWLibDir>$(ExternalLibsRoot)GLEW\lib\Release\x64\</GLEWLibDir>
+    <GLEWBinDir>$(ExternalLibsRoot)GLEW\bin\Release\x64\</GLEWBinDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SDL2IncludeDir);$(GLEWIncludeDir);$(GLMIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>opengl32.lib;glew32.lib;SDL2.lib;SDL2main.lib;SDL2_ttf.lib;SDL2_image.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(ConfigurationType)'=='Application'">
+    <Link>
+      <AdditionalLibraryDirectories>$(GLEWLibDir);$(SDL2LibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <Target Name="CopyApplicationRuntimeFiles" AfterTargets="Build" Condition="'$(ConfigurationType)'=='Application'">
+    <ItemGroup>
+      <_RuntimeDependency Include="$(SDL2LibDir)SDL2.dll" />
+      <_RuntimeDependency Include="$(SDL2LibDir)SDL2_ttf.dll" />
+      <_RuntimeDependency Include="$(SDL2LibDir)SDL2_image.dll" />
+      <_RuntimeDependency Include="$(GLEWBinDir)glew32.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_RuntimeDependency)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)Resources;$(OutDir)Shaders" />
+    <Copy SourceFiles="$(ProjectDir)Resources\Courier New Bold.ttf" DestinationFolder="$(OutDir)Resources" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)Shaders\shader.vert;$(ProjectDir)Shaders\shader.frag" DestinationFolder="$(OutDir)Shaders" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

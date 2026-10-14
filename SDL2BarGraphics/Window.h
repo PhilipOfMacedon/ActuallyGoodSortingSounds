@@ -19,6 +19,10 @@ public:
 
 	GLfloat getBufferWidth() const { return static_cast<GLfloat>(bufferWidth); }
 	GLfloat getBufferHeight() const { return static_cast<GLfloat>(bufferHeight); }
+	int getLogicalWidth() const { return width; }
+	int getLogicalHeight() const { return height; }
+	int getDrawableWidth() const { return bufferWidth; }
+	int getDrawableHeight() const { return bufferHeight; }
 	void delay(Uint32 millis) const { SDL_Delay(millis); }
 	bool getShouldClose() const { return shouldClose; }
 	void setClearColor(glm::vec4 rgba) { clearColor = rgba; }
@@ -27,6 +31,7 @@ public:
 	void setShouldClose(bool shouldClose) { this->shouldClose = shouldClose; }
 
 	void clearWindow();
+	void refreshMetrics();
 	int initialize();
 	SDL_Window* getWindow() const { return mainWindow; }
 

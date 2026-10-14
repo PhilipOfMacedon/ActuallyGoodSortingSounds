@@ -5,6 +5,7 @@ This directory keeps project-local working context that should survive across im
 ## Areas
 
 - [Audibilization](audibilization/README.md): reverse-engineering notes and the proposed deterministic sorting-audio playback architecture.
+- [Sorting roster progress](sorting-roster-progress.md): pinned ArrayV inventory, the current independent implementation batch, and the uncompleted coverage/UI work.
 
 ## Maintenance rules
 
@@ -13,4 +14,4 @@ This directory keeps project-local working context that should survive across im
 - Update the relevant notes when new evidence changes confidence or supersedes a hypothesis.
 - Do not treat an unverified hypothesis as an implementation requirement.
 
-Current status: conceptual research and architecture discussion only. No audibilization code has been added. The user plans to return for an implementation plan after cleaning up other threads.
+Current status: the historical first refactoring wave is recorded in [the refactoring roadmap](refactoring-roadmap.md). The app now has a separate sound engine; the larger pinned-roster showcase is in progress. See [sorting roster progress](sorting-roster-progress.md) for verified scope and remaining work.

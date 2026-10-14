@@ -45,10 +45,24 @@ void Window::clearWindow()
 {
 	if (!mainWindow || !mainContext)
 		return;
+	refreshMetrics();
 
+	glClearColor(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void Window::refreshMetrics()
+{
+	if (!mainWindow)
+		return;
+	int logicalWidth = 0;
+	int logicalHeight = 0;
 	int drawableWidth = 0;
 	int drawableHeight = 0;
+	SDL_GetWindowSize(mainWindow, &logicalWidth, &logicalHeight);
 	SDL_GL_GetDrawableSize(mainWindow, &drawableWidth, &drawableHeight);
+	if (logicalWidth > 0) width = logicalWidth;
+	if (logicalHeight > 0) height = logicalHeight;
 	if (drawableWidth > 0 && drawableHeight > 0 &&
 		(drawableWidth != bufferWidth || drawableHeight != bufferHeight))
 	{
@@ -56,9 +70,6 @@ void Window::clearWindow()
 		bufferHeight = drawableHeight;
 		glViewport(0, 0, bufferWidth, bufferHeight);
 	}
-
-	glClearColor(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 int Window::initialize()
@@ -97,7 +108,7 @@ int Window::initialize()
 		SDL_WINDOWPOS_CENTERED,
 		width,
 		height,
-		SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+		SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
 	if (!mainWindow)
 	{
 		std::cerr << "Could not create the SDL window: " << SDL_GetError() << '\n';
@@ -127,6 +138,7 @@ int Window::initialize()
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	SDL_GL_GetDrawableSize(mainWindow, &bufferWidth, &bufferHeight);
+	SDL_GetWindowSize(mainWindow, &width, &height);
 	glViewport(0, 0, bufferWidth, bufferHeight);
 	shouldClose = false;
 	return 0;

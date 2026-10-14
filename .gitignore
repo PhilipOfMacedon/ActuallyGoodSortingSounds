@@ -28,6 +28,7 @@ ipch/
 *.opensdf
 *.VC.db
 *.VC.VC.opendb
+*.aps
 
 # Generated executables and static libraries (runtime dependency DLLs are kept
 # until the deployment setup is independently verified).
