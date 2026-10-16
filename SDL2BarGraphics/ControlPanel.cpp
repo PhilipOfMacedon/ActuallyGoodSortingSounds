@@ -119,7 +119,7 @@ namespace
 	{
 		std::vector<std::string> names;
 		for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
-			pattern <= static_cast<int>(sortinglogic::InputPattern::OrganPipe); ++pattern)
+			pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
 			names.push_back(sortinglogic::inputPatternName(static_cast<sortinglogic::InputPattern>(pattern)));
 		return names;
 	}
@@ -147,6 +147,11 @@ namespace
 	AppAction audioAction(AudioParameterId parameter, int index = 0)
 	{
 		return AppAction(AppActionKind::SetAudioParameter, 0.0f, 0, parameter, index);
+	}
+
+	AppAction reconstructedAction(ReconstructedAudioParameterId parameter, float value = 0.0f, int selection = 0)
+	{
+		return AppAction(AppActionKind::SetReconstructedAudioParameter, parameter, value, selection);
 	}
 
 	bool inRect(const UiRect& rect, int x, int y)
@@ -247,7 +252,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	settingsOpen_(false), algorithmMenuOpen_(false), algorithmMenuVariantPane_(false), algorithmSearchFocused_(false),
 	algorithmSearch_(), algorithmMenuFamily_(), algorithmFamilySelection_(0), algorithmVariantSelection_(0),
 	algorithmFamilyScroll_(0), algorithmVariantScroll_(0), algorithmMenuBounds_(), algorithmSearchBounds_(),
-	algorithmFamilyBounds_(), algorithmVariantBounds_(), settingsTab_(0), settingsScrollOffset_(0.0f), selectedBand_(3),
+	algorithmFamilyBounds_(), algorithmVariantBounds_(), settingsTab_(0), audioAdvanced_(false), settingsScrollOffset_(0.0f), selectedBand_(3),
 	chartTop_(184.0f), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false)
 {
 	createWidgets();
@@ -290,14 +295,19 @@ void ControlPanel::createWidgets()
 	settingsUi_.addButton("appearance_tab", "Appearance", AppAction(), UiAction::ViewCommand::ShowAppearanceSettings);
 	settingsUi_.addButton("algorithm_tab", "Algorithm", AppAction(), UiAction::ViewCommand::ShowAlgorithmSettings);
 	settingsUi_.addButton("audio_tab", "General Audio", AppAction(), UiAction::ViewCommand::ShowGeneralAudioSettings);
+	settingsUi_.addButton("audio_basic_tab", "Basic", AppAction(), UiAction::ViewCommand::ShowAudioBasic);
+	settingsUi_.addButton("audio_advanced_tab", "Advanced", AppAction(), UiAction::ViewCommand::ShowAudioAdvanced);
 	settingsUi_.addComboBox("palette", paletteNames(), paletteIndex(settings_.visual.palette), AppAction(AppActionKind::SetPalette));
 	settingsUi_.addComboBox("spacing", spacingNames(), spacingIndex(settings_.visual.spacing), AppAction(AppActionKind::SetSpacing));
 	settingsUi_.addComboBox("domain", domainNames(), static_cast<int>(settings_.simulation.domain), AppAction(AppActionKind::SetInputDomain));
 	settingsUi_.addComboBox("pattern", inputPatternNames(), static_cast<int>(settings_.simulation.pattern), AppAction(AppActionKind::SetInputPattern));
+	settingsUi_.addComboBox("playback_timing", std::vector<std::string>{ "Fixed duration", "Reference cadence" },
+		static_cast<int>(settings_.simulation.playbackTimingMode), AppAction(AppActionKind::SetPlaybackTimingMode));
 	settingsCaptions_["palette"] = "Palette";
 	settingsCaptions_["spacing"] = "Bar spacing";
 	settingsCaptions_["domain"] = "Input domain";
 	settingsCaptions_["pattern"] = "Input pattern";
+	settingsCaptions_["playback_timing"] = "Playback timing";
 	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
 	for (std::size_t algorithmIndex = 0; algorithmIndex < optionCatalog.size(); ++algorithmIndex)
 	{
@@ -324,51 +334,40 @@ void ControlPanel::createWidgets()
 			settingsCaptions_[id] = algorithmOptionGroupCaption(groupId);
 		}
 	}
-	const SoundEngine::Parameters& audio = settings_.audio;
-	auto slider = [this](const std::string& id, const std::string& caption, float lo, float hi, float step,
-		float value, AudioParameterId parameter, int actionIndex = 0)
-	{
-		settingsUi_.addSlider(id, caption, lo, hi, step, value, audioAction(parameter, actionIndex));
-		settingsCaptions_[id] = caption;
-	};
-	auto selector = [this](const std::string& id, const std::string& caption, const std::vector<std::string>& options,
-		int selected, AudioParameterId parameter, int actionIndex = 0)
-	{
-		const AppAction action = id == "band_selector"
-			? AppAction(AppActionKind::SelectAudioBand)
-			: audioAction(parameter, actionIndex);
-		settingsUi_.addComboBox(id, options, selected, action);
-		settingsCaptions_[id] = caption;
-	};
-	selector("audio_enabled", "Synthesis", booleanNames(), audio.enabled ? 1 : 0, AudioParameterId::Enabled);
-	slider("master", "Master level", 0.0f, 1.0f, 0.01f, audio.masterLevel, AudioParameterId::MasterLevel);
-	slider("bed", "Harmonic bed", 0.0f, 1.0f, 0.01f, audio.bedLevel, AudioParameterId::BedLevel);
-	slider("harmonic_exponent", "Harmonic rolloff", 0.5f, 3.0f, 0.05f, audio.bedHarmonicExponent, AudioParameterId::BedHarmonicExponent);
-	selector("sub300", "Sub-300 Hz bed", booleanNames(), audio.includeSub300HzBed ? 1 : 0, AudioParameterId::IncludeSub300HzBed);
-	selector("comb_enabled", "Comb bed filter", booleanNames(), audio.bedComb.enabled ? 1 : 0, AudioParameterId::CombEnabled);
-	selector("comb_phase", "Comb phase response", booleanNames(), audio.bedComb.applyPhase ? 1 : 0, AudioParameterId::CombApplyPhase);
-	slider("comb_delay", "Comb delay (us)", 0.0f, 5000.0f, 10.0f, audio.bedComb.delayMicroseconds, AudioParameterId::CombDelayMicroseconds);
-	slider("comb_phase_offset", "Comb phase offset (deg)", -180.0f, 180.0f, 1.0f, audio.bedComb.phaseOffsetDegrees, AudioParameterId::CombPhaseOffsetDegrees);
-	slider("comb_wet_low", "Comb wet at 300 Hz", 0.0f, 1.0f, 0.01f, audio.bedComb.wetAtLowFrequency, AudioParameterId::CombWetLow);
-	slider("comb_wet_high", "Comb wet at 17.1 kHz", 0.0f, 1.0f, 0.01f, audio.bedComb.wetAtHighFrequency, AudioParameterId::CombWetHigh);
-	slider("comb_fade_start", "Comb fade start (Hz)", 0.0f, 17100.0f, 100.0f, audio.bedComb.fadeStartHz, AudioParameterId::CombFadeStartHz);
-	slider("comb_fade_end", "Comb fade end (Hz)", 0.0f, 17100.0f, 100.0f, audio.bedComb.fadeEndHz, AudioParameterId::CombFadeEndHz);
-	slider("comb_exponent", "Comb fade curve", 0.25f, 8.0f, 0.05f, audio.bedComb.fadeExponent, AudioParameterId::CombFadeExponent);
-	slider("tau_below", "Tau below focus (bins)", 0.05f, static_cast<float>(SoundEngine::BandCount), 0.05f, audio.tauBelowBins, AudioParameterId::TauBelowBins);
-	slider("tau_above", "Tau above focus (bins)", 0.05f, static_cast<float>(SoundEngine::BandCount), 0.05f, audio.tauAboveBins, AudioParameterId::TauAboveBins);
-	slider("chorus_mix", "Chorus mix", 0.0f, 0.5f, 0.005f, audio.chorusMix, AudioParameterId::ChorusMix);
-	slider("chorus_rate", "Chorus rate (Hz)", 0.1f, 5.0f, 0.05f, audio.chorusRateHz, AudioParameterId::ChorusRateHz);
-	slider("chorus_depth", "Chorus depth (ms)", 0.0f, 8.0f, 0.1f, audio.chorusDepthMs, AudioParameterId::ChorusDepthMs);
-	selector("chorus_weighting", "Chorus weighting", std::vector<std::string>{ "Uniform", "Comparison envelope" },
-		static_cast<int>(audio.chorusWeighting), AudioParameterId::ChorusWeighting);
-	slider("attack", "Attack (ms)", 1.0f, 200.0f, 1.0f, audio.attackMs, AudioParameterId::AttackMs);
-	slider("release", "Release (ms)", 1.0f, 200.0f, 1.0f, audio.releaseMs, AudioParameterId::ReleaseMs);
-	selector("mapping", "Value-to-frequency mapping", std::vector<std::string>{ "Linear Hz", "Log frequency", "Equal band slots" },
-		static_cast<int>(audio.mappingMode), AudioParameterId::MappingMode);
-	selector("spread", "Comparison spread", std::vector<std::string>{ "Fixed bins", "Position scaled" },
-		static_cast<int>(audio.comparisonSpreadMode), AudioParameterId::SpreadMode);
-	selector("band_selector", "Trim frequency", bandNames(), selectedBand_, AudioParameterId::BandTrim);
-	slider("band_trim", "Selected band trim (dB)", -96.0f, 12.0f, 0.5f, audio.bandTrimDb[selectedBand_], AudioParameterId::BandTrim);
+	const SoundEngine::ReconstructedParameters& audio = settings_.reconstructedAudio;
+	settingsUi_.addComboBox("recon_enabled", booleanNames(), audio.audioEnabled ? 1 : 0,
+		reconstructedAction(ReconstructedAudioParameterId::Enabled));
+	settingsUi_.addSlider("recon_master", "Master volume", 0.0f, 1.0f, 0.01f, static_cast<float>(audio.masterLevel),
+		reconstructedAction(ReconstructedAudioParameterId::MasterLevel));
+	settingsUi_.addComboBox("recon_idle_policy", std::vector<std::string>{ "Hold selection", "Release selection" },
+		static_cast<int>(audio.idlePolicy), reconstructedAction(ReconstructedAudioParameterId::IdlePolicy));
+	settingsUi_.addSlider("recon_release", "Special release (ms)", 0.0f, 2000.0f, 10.0f,
+		static_cast<float>(audio.specialReleaseMilliseconds), reconstructedAction(ReconstructedAudioParameterId::SpecialReleaseMilliseconds));
+	settingsUi_.addButton("recon_restore", "Restore reconstructed defaults", AppAction(AppActionKind::RestoreReconstructedDefaults));
+	settingsUi_.addSlider("recon_min_pitch", "Minimum pitch (Hz)", 50.0f, 1000.0f, 1.0f,
+		static_cast<float>(audio.minimumFrequencyHz), reconstructedAction(ReconstructedAudioParameterId::MinimumFrequencyHz));
+	settingsUi_.addSlider("recon_max_pitch", "Maximum pitch (Hz)", 1000.0f, 8000.0f, 1.0f,
+		static_cast<float>(audio.maximumFrequencyHz), reconstructedAction(ReconstructedAudioParameterId::MaximumFrequencyHz));
+	settingsUi_.addComboBox("recon_mapping", std::vector<std::string>{ "Linear Hz", "Log frequency" },
+		static_cast<int>(audio.mapping), reconstructedAction(ReconstructedAudioParameterId::Mapping));
+	settingsUi_.addSlider("recon_clock", "Excitation clock (Hz)", 100.0f, 600.0f, 1.0f,
+		static_cast<float>(audio.excitationClockHz), reconstructedAction(ReconstructedAudioParameterId::ExcitationClockHz));
+	settingsUi_.addSlider("recon_cycles", "Carrier cycles", 1.0f, 16.0f, 0.1f,
+		static_cast<float>(audio.carrierCycles), reconstructedAction(ReconstructedAudioParameterId::CarrierCycles));
+	settingsUi_.addSlider("recon_tukey", "Tukey taper", 0.0f, 1.0f, 0.01f,
+		static_cast<float>(audio.tukeyFraction), reconstructedAction(ReconstructedAudioParameterId::TukeyFraction));
+	settingsUi_.addSlider("recon_delay", "Second operand delay (us)", 0.0f, 2000.0f, 1.0f,
+		static_cast<float>(audio.secondOperandDelayMicroseconds), reconstructedAction(ReconstructedAudioParameterId::SecondOperandDelayMicroseconds));
+	settingsUi_.addComboBox("recon_lowpass", booleanNames(), audio.lowPassEnabled ? 1 : 0,
+		reconstructedAction(ReconstructedAudioParameterId::LowPassEnabled));
+	settingsUi_.addSlider("recon_cutoff", "Low-pass cutoff (Hz)", 500.0f, 20000.0f, 10.0f,
+		static_cast<float>(audio.lowPassCutoffHz), reconstructedAction(ReconstructedAudioParameterId::LowPassCutoffHz));
+	const char* audioIds[] = { "recon_enabled", "recon_master", "recon_idle_policy", "recon_release", "recon_min_pitch",
+		"recon_max_pitch", "recon_mapping", "recon_clock", "recon_cycles", "recon_tukey", "recon_delay", "recon_lowpass", "recon_cutoff" };
+	const char* audioNames[] = { "Audio enabled", "Master volume", "Idle selection", "Special release (ms)", "Minimum pitch (Hz)",
+		"Maximum pitch (Hz)", "Value mapping", "Excitation clock (Hz)", "Carrier cycles", "Tukey taper", "Second operand delay (us)",
+		"Tone low-pass filter", "Low-pass cutoff (Hz)" };
+	for (std::size_t i = 0; i < sizeof(audioIds) / sizeof(audioIds[0]); ++i) settingsCaptions_[audioIds[i]] = audioNames[i];
 	for (int channel = 0; channel < static_cast<int>(AlgorithmAudioChannel::Count); ++channel)
 	{
 		const AlgorithmAudioChannel level = static_cast<AlgorithmAudioChannel>(channel);
@@ -514,8 +513,12 @@ void ControlPanel::layoutSettingsControls()
 	settingsUi_.find("appearance_tab")->setBounds(UiRect(x, settingsPanelBounds_.y + 42.0f, tabWidth, 28.0f));
 	settingsUi_.find("algorithm_tab")->setBounds(UiRect(x + tabWidth + 4.0f, settingsPanelBounds_.y + 42.0f, tabWidth, 28.0f));
 	settingsUi_.find("audio_tab")->setBounds(UiRect(x + 2.0f * (tabWidth + 4.0f), settingsPanelBounds_.y + 42.0f, tabWidth, 28.0f));
-	settingsContentBounds_ = UiRect(x, settingsPanelBounds_.y + 82.0f, width,
-		std::max(28.0f, settingsPanelBounds_.height - 142.0f));
+	settingsUi_.find("audio_basic_tab")->setBounds(UiRect(x, settingsPanelBounds_.y + 77.0f, (width - 4.0f) * 0.5f, 24.0f));
+	settingsUi_.find("audio_advanced_tab")->setBounds(UiRect(x + (width + 4.0f) * 0.5f, settingsPanelBounds_.y + 77.0f,
+		(width - 4.0f) * 0.5f, 24.0f));
+	const float contentOffset = settingsTab_ == 2 ? 112.0f : 82.0f;
+	settingsContentBounds_ = UiRect(x, settingsPanelBounds_.y + contentOffset, width,
+		std::max(28.0f, settingsPanelBounds_.height - contentOffset - 60.0f));
 	const float footerY = settingsPanelBounds_.y + settingsPanelBounds_.height - 38.0f;
 	settingsUi_.find("settings_close")->setBounds(UiRect(settingsPanelBounds_.x + settingsPanelBounds_.width - 92.0f,
 		footerY, 76.0f, 26.0f));
@@ -528,6 +531,7 @@ void ControlPanel::layoutSettingsControls()
 	else if (settingsTab_ == 1)
 	{
 		active.push_back("domain"); active.push_back("pattern");
+		active.push_back("playback_timing");
 		const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(
 			static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
 		if (selected)
@@ -545,7 +549,7 @@ void ControlPanel::layoutSettingsControls()
 			bool visible = false;
 			switch (level)
 			{
-			case AlgorithmAudioChannel::Comparison: case AlgorithmAudioChannel::MainChangeAccent: visible = true; break;
+			case AlgorithmAudioChannel::Comparison: visible = true; break;
 			case AlgorithmAudioChannel::ProbeAccent:
 				visible = selected && (selected->id == sortinglogic::SortAlgorithm::Counting || selected->id == sortinglogic::SortAlgorithm::Radix); break;
 			case AlgorithmAudioChannel::AuxiliaryAccent:
@@ -567,18 +571,29 @@ void ControlPanel::layoutSettingsControls()
 	}
 	else
 	{
-		const char* generalAudio[] = { "audio_enabled", "master", "bed", "harmonic_exponent", "sub300", "comb_enabled", "comb_phase",
-			"comb_delay", "comb_phase_offset", "comb_wet_low", "comb_wet_high", "comb_fade_start", "comb_fade_end",
-			"comb_exponent", "tau_below", "tau_above", "chorus_mix", "chorus_rate", "chorus_depth",
-			"chorus_weighting", "attack", "release", "mapping", "spread", "band_selector", "band_trim" };
-		active.assign(generalAudio, generalAudio + sizeof(generalAudio) / sizeof(generalAudio[0]));
+		if (!audioAdvanced_)
+		{
+			const char* basicAudio[] = { "recon_enabled", "recon_master", "recon_idle_policy", "recon_release", "recon_restore" };
+			active.assign(basicAudio, basicAudio + sizeof(basicAudio) / sizeof(basicAudio[0]));
+		}
+		else
+		{
+			const char* advancedAudio[] = { "recon_min_pitch", "recon_max_pitch", "recon_mapping", "recon_clock",
+				"recon_cycles", "recon_tukey", "recon_delay", "recon_lowpass", "recon_cutoff" };
+			active.assign(advancedAudio, advancedAudio + sizeof(advancedAudio) / sizeof(advancedAudio[0]));
+		}
 	}
 	std::set<std::string> visibleWidgetIds;
 	visibleWidgetIds.insert("appearance_tab");
 	visibleWidgetIds.insert("algorithm_tab");
 	visibleWidgetIds.insert("audio_tab");
 	visibleWidgetIds.insert("settings_close");
-	if (settingsTab_ == 2) visibleWidgetIds.insert("audio_retry");
+	if (settingsTab_ == 2)
+	{
+		visibleWidgetIds.insert("audio_retry");
+		visibleWidgetIds.insert("audio_basic_tab");
+		visibleWidgetIds.insert("audio_advanced_tab");
+	}
 	const float rowHeight = 48.0f;
 	const float contentBottom = settingsContentBounds_.y + settingsContentBounds_.height;
 	const float totalHeight = static_cast<float>(active.size()) * rowHeight;
@@ -612,23 +627,24 @@ void ControlPanel::layoutSettingsControls()
 
 void ControlPanel::updateAudioControls()
 {
-	const SoundEngine::Parameters& a = settings_.audio;
+	const SoundEngine::ReconstructedParameters& a = settings_.reconstructedAudio;
 	auto slider = [this](const char* id, float value) { settingsUi_.find(id)->setSliderValue(value); };
 	auto selection = [this](const char* id, int value) { settingsUi_.find(id)->setSelectedIndex(value); };
-	selection("audio_enabled", a.enabled ? 1 : 0);
-	slider("master", a.masterLevel); slider("bed", a.bedLevel); slider("harmonic_exponent", a.bedHarmonicExponent);
-	selection("sub300", a.includeSub300HzBed ? 1 : 0); selection("comb_enabled", a.bedComb.enabled ? 1 : 0);
-	selection("comb_phase", a.bedComb.applyPhase ? 1 : 0); slider("comb_delay", a.bedComb.delayMicroseconds);
-	slider("comb_phase_offset", a.bedComb.phaseOffsetDegrees); slider("comb_wet_low", a.bedComb.wetAtLowFrequency);
-	slider("comb_wet_high", a.bedComb.wetAtHighFrequency); slider("comb_fade_start", a.bedComb.fadeStartHz);
-	slider("comb_fade_end", a.bedComb.fadeEndHz); slider("comb_exponent", a.bedComb.fadeExponent);
-	slider("tau_below", a.tauBelowBins); slider("tau_above", a.tauAboveBins);
-	slider("chorus_mix", a.chorusMix); slider("chorus_rate", a.chorusRateHz); slider("chorus_depth", a.chorusDepthMs);
-	selection("chorus_weighting", static_cast<int>(a.chorusWeighting)); slider("attack", a.attackMs); slider("release", a.releaseMs);
-	selection("mapping", static_cast<int>(a.mappingMode)); selection("spread", static_cast<int>(a.comparisonSpreadMode));
-	selection("band_selector", selectedBand_);
-	settingsUi_.find("band_trim")->setActionIndex(selectedBand_);
-	slider("band_trim", a.bandTrimDb[static_cast<std::size_t>(selectedBand_)]);
+	selection("recon_enabled", a.audioEnabled ? 1 : 0);
+	slider("recon_master", static_cast<float>(a.masterLevel));
+	selection("recon_idle_policy", static_cast<int>(a.idlePolicy));
+	slider("recon_release", static_cast<float>(a.specialReleaseMilliseconds));
+	slider("recon_min_pitch", static_cast<float>(a.minimumFrequencyHz));
+	slider("recon_max_pitch", static_cast<float>(a.maximumFrequencyHz));
+	selection("recon_mapping", static_cast<int>(a.mapping));
+	slider("recon_clock", static_cast<float>(a.excitationClockHz));
+	slider("recon_cycles", static_cast<float>(a.carrierCycles));
+	slider("recon_tukey", static_cast<float>(a.tukeyFraction));
+	slider("recon_delay", static_cast<float>(a.secondOperandDelayMicroseconds));
+	selection("recon_lowpass", a.lowPassEnabled ? 1 : 0);
+	slider("recon_cutoff", static_cast<float>(a.lowPassCutoffHz));
+	settingsUi_.setWidgetEnabled("recon_release", a.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection);
+	settingsUi_.setWidgetEnabled("recon_cutoff", a.lowPassEnabled);
 }
 
 void ControlPanel::updateAlgorithmAudioControls(const sortinglogic::AlgorithmDescriptor& algorithm)
@@ -670,14 +686,25 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	if (algorithm) algorithm->setLabel(algorithmLabel(snapshot.algorithm));
 	mainUi_.find("play")->setLabel(snapshot.playing ? "Pause" : "Play");
 	mainUi_.find("bars_value")->setLabel(std::to_string(snapshot.itemCount) + " bars");
-	mainUi_.find("time_value")->setLabel(std::to_string(static_cast<int>(snapshot.durationSeconds)) + " sec");
+	const bool referenceCadence = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence;
+	if (referenceCadence)
+	{
+		std::ostringstream duration;
+		duration << std::fixed << std::setprecision(2) << snapshot.audioEligibleEventCount / 300.0 << " sec";
+		mainUi_.find("time_value")->setLabel(duration.str());
+	}
+	else mainUi_.find("time_value")->setLabel(std::to_string(static_cast<int>(snapshot.durationSeconds)) + " sec");
 	mainUi_.find("direction")->setSelectedIndex(snapshot.direction == sortinglogic::SortDirection::Descending ? 1 : 0);
 	settingsUi_.find("palette")->setSelectedIndex(paletteIndex(settings_.visual.palette));
 	settingsUi_.find("spacing")->setSelectedIndex(spacingIndex(settings_.visual.spacing));
 	settingsUi_.find("domain")->setSelectedIndex(static_cast<int>(settings_.simulation.domain));
 	settingsUi_.find("pattern")->setSelectedIndex(static_cast<int>(settings_.simulation.pattern));
+	settingsUi_.find("playback_timing")->setSelectedIndex(static_cast<int>(settings_.simulation.playbackTimingMode));
 	settingsUi_.setWidgetEnabled("domain", !busy);
 	settingsUi_.setWidgetEnabled("pattern", !busy);
+	settingsUi_.setWidgetEnabled("playback_timing", !busy);
+	mainUi_.setWidgetEnabled("time_down", !busy && !referenceCadence);
+	mainUi_.setWidgetEnabled("time_up", !busy && !referenceCadence);
 	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
 	for (std::size_t algorithmIndex = 0; algorithmIndex < optionCatalog.size(); ++algorithmIndex)
 	{
@@ -707,8 +734,9 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 		}
 	}
 	for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
-		pattern <= static_cast<int>(sortinglogic::InputPattern::OrganPipe); ++pattern)
+		pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
 		settingsUi_.find("pattern")->setOptionEnabled(static_cast<std::size_t>(pattern),
+			static_cast<sortinglogic::InputPattern>(pattern) == sortinglogic::InputPattern::AndrutReference ||
 			sortinglogic::inputPatternCompatible(snapshot.domain, static_cast<sortinglogic::InputPattern>(pattern)));
 	updateAudioControls();
 	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(snapshot.algorithm);
@@ -753,7 +781,11 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, cons
 	if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
 	else if (snapshot.buildingTrace) detailText << "Building trace";
 	else detailText << "No trace";
-	detailText << "  |  " << static_cast<int>(snapshot.elapsedSeconds) << "/" << static_cast<int>(snapshot.durationSeconds) << " sec";
+	detailText << "  |  " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
+	if (settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+		detailText << snapshot.audioEligibleEventCount / 300.0;
+	else detailText << snapshot.durationSeconds;
+	detailText << " sec";
 	if (snapshot.inputSeed) detailText << "  |  seed " << snapshot.inputSeed;
 	const std::string nextDetail = detailText.str();
 	const Uint32 now = SDL_GetTicks();
@@ -888,6 +920,16 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		closeSettings();
 		return;
 	}
+	if (action.viewCommand == UiAction::ViewCommand::ShowAudioBasic ||
+		action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced)
+	{
+		settingsTab_ = 2;
+		audioAdvanced_ = action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced;
+		settingsScrollOffset_ = 0.0f;
+		settingsUi_.closeCombo();
+		layoutSettingsControls();
+		return;
+	}
 	if (action.viewCommand == UiAction::ViewCommand::ShowAppearanceSettings ||
 		action.viewCommand == UiAction::ViewCommand::ShowAlgorithmSettings ||
 		action.viewCommand == UiAction::ViewCommand::ShowAudioSettings ||
@@ -1001,8 +1043,10 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	{
 		const glm::vec4 rail = palette.timelineRail;
 		submitBox(timelineBounds_, rail, TimelineMaterial, UiLayer);
-		const float fraction = snapshot.eventCount == 0 ? 0.0f :
-			static_cast<float>(snapshot.cursor) / static_cast<float>(snapshot.eventCount);
+		const double timelineDuration = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
+			? snapshot.audioEligibleEventCount / 300.0 : snapshot.durationSeconds;
+		const float fraction = timelineDuration <= 0.0 ? 0.0f :
+			static_cast<float>(std::max(0.0, std::min(1.0, snapshot.elapsedSeconds / timelineDuration)));
 		submitBox(UiRect(timelineBounds_.x, timelineBounds_.y, timelineBounds_.width * fraction, timelineBounds_.height), palette.accent, AccentMaterial, layerOffset(UiLayer, 1));
 		submitBox(UiRect(timelineBounds_.x + std::max(0.0f, timelineBounds_.width * fraction - 4.0f), timelineBounds_.y - 3.0f, 8.0f, timelineBounds_.height + 6.0f), palette.timelineThumb, MaterialId::TimelineThumb, layerOffset(UiLayer, 1));
 	}
@@ -1035,17 +1079,47 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 	submitBox(UiRect(activeTab.x, activeTab.y + activeTab.height - 2.0f, activeTab.width, 2.0f),
 		palette.accent, AccentMaterial, layerOffset(controlLayer, 1));
 	submitBox(settingsContentBounds_, palette.background, PanelMaterial, SettingsLayer);
+	if (settingsTab_ == 2)
+	{
+		const UiWidget* audioGroups[] = { settingsUi_.find("audio_basic_tab"), settingsUi_.find("audio_advanced_tab") };
+		for (int i = 0; i < 2; ++i)
+		{
+			submitBox(audioGroups[i]->bounds(), (audioAdvanced_ == (i == 1)) ? palette.accent : palette.button,
+				ButtonMaterial, controlLayer);
+			drawWidget(*audioGroups[i], palette, controlLayer);
+		}
+	}
 	for (std::size_t i = 0; i < settingsUi_.widgets().size(); ++i)
 	{
 		const UiWidget& widget = *settingsUi_.widgets()[i];
 		if (!widget.visible() || widget.id() == "appearance_tab" || widget.id() == "algorithm_tab" ||
-			widget.id() == "audio_tab" || widget.id() == "settings_close" || widget.id() == "audio_retry") continue;
+			widget.id() == "audio_tab" || widget.id() == "audio_basic_tab" || widget.id() == "audio_advanced_tab" ||
+			widget.id() == "settings_close" || widget.id() == "audio_retry") continue;
 		drawSettingsControl(widget, palette);
 	}
 	drawWidget(*settingsUi_.find("settings_close"), palette, RenderLayer::SettingsControls);
 	if (settingsTab_ == 2)
 	{
-		audioDeviceStatus_->setText(audioStatus, "Courier New Bold", 11, SDL_Color{ 238, 246, 249, 255 });
+		const SoundEngine::ReconstructedParameters& p = settings_.reconstructedAudio;
+		const SoundEngine::ReconstructedParameters defaults;
+		const bool referenceProfile = p.minimumFrequencyHz == defaults.minimumFrequencyHz &&
+			p.maximumFrequencyHz == defaults.maximumFrequencyHz && p.mapping == defaults.mapping &&
+			p.excitationClockHz == defaults.excitationClockHz && p.carrierCycles == defaults.carrierCycles &&
+			p.tukeyFraction == defaults.tukeyFraction &&
+			p.secondOperandDelayMicroseconds == defaults.secondOperandDelayMicroseconds &&
+			!p.lowPassEnabled;
+		bool neutralAlgorithmGains = true;
+		for (std::map<sortinglogic::FamilyId, AlgorithmAudioLevels>::const_iterator family = settings_.familyAudioDefaults.begin();
+			family != settings_.familyAudioDefaults.end(); ++family)
+			for (std::size_t i = 0; i < family->second.decibels.size(); ++i)
+				neutralAlgorithmGains = neutralAlgorithmGains && family->second.decibels[i] == 0.0f;
+		for (std::map<std::string, AlgorithmAudioLevels>::const_iterator variant = settings_.variantAudioOffsets.begin();
+			variant != settings_.variantAudioOffsets.end(); ++variant)
+			for (std::size_t i = 0; i < variant->second.decibels.size(); ++i)
+				neutralAlgorithmGains = neutralAlgorithmGains && variant->second.decibels[i] == 0.0f;
+		const std::string profileStatus = std::string(referenceProfile && neutralAlgorithmGains
+			? "Reconstructed reference | " : "Customized | ") + audioStatus;
+		audioDeviceStatus_->setText(profileStatus, "Courier New Bold", 11, SDL_Color{ 238, 246, 249, 255 });
 		drawText(*audioDeviceStatus_, UiRect(settingsPanelBounds_.x + 16.0f,
 			settingsPanelBounds_.y + settingsPanelBounds_.height - 62.0f,
 			settingsPanelBounds_.width - 130.0f, 16.0f), 11.0f, palette.mutedText, SettingsTextLayer);

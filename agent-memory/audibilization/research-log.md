@@ -2,6 +2,14 @@
 
 ## Goal and provenance
 
+Latest result (2026-10-16): [known-array reconstruction](known-array-reconstruction.md).
+The supplied image has 100 bars; the first two initial values remain temporally
+uncertain. A common delayed, overlapping sine-burst profile fitted on Selection
+explains 97.4% of its waveform energy and 98.3% / 98.1% on the independent
+Insertion / Gnome recordings. The frozen profile and reproducible offline
+listening pack are documented in that note. Earlier 80-bar estimates and
+standalone-bed interpretations below are historical hypotheses.
+
 The user has been trying to mathematically recreate the audio of the sorting-algorithm video **“What different sorting algorithms sound like”** by Andrut. The aim is to reverse-engineer the observable behavior and build a better, reproducible implementation. The reference creator's private implementation is unknown and does not constrain the design.
 
 Reference video: <https://www.youtube.com/watch?v=t8g-iYGHpEA>
@@ -62,6 +70,10 @@ This is strong evidence that these two examples use the same underlying permutat
 - **Shared quadratic-sort input:** Strongly supported for the inspected Insertion/Gnome suffix; unverified for all four quadratic demonstrations.
 - **Fixed pitch range across sample sizes:** Plausible based on the user's comparison of 80-bar and larger runs; requires direct measurement across known bar counts.
 
+## Later source-model reassessment (2026-10-14)
+
+The supplied `Andrut_Ordered_Sweep_2.wav` was measured directly and compared with the chosen engine preview. See [ordered-sweep-2-analysis.md](ordered-sweep-2-analysis.md) for reproducible output locations, measurements, and mathematical candidates. The 300 Hz spacing is verified as periodic structure, but identifying it as a sawtooth or a literal fixed-bin focus model is not justified. Repeating sine packets and changing source/filter parameters are priority hypotheses; constant energy and role-specific harmonic versus off-harmonic voices remain unproven.
+
 ## Terminology note: aliasing vs. clicks
 
 Digital aliasing occurs when signal energy above the sampling system's Nyquist limit folds into lower frequencies. Speaker physics does not itself create digital aliasing. Abrupt amplitude/phase changes can create clicks and broadband spectral energy; a short envelope can reduce those transients. Abrupt frequency changes can create sidebands, while a phase-continuous oscillator avoids a phase-reset discontinuity. These are related sound-quality issues but not interchangeable explanations.
@@ -74,3 +86,58 @@ The reference's 44.1 kHz audio has a 22.05 kHz Nyquist limit. A 4.5 kHz sine fun
 2. Reuse a fixed input (or a fixed seed) across algorithms when comparing them.
 3. Do not reduce the sound model to “one raw sine per bar value”; event overlap, envelope, phase, pitch mapping, and mixing need separate investigation.
 4. A precomputed event trace is a promising design for reproducibility and controllable playback, regardless of whether the reference used one.
+
+## Reconstructed playback completion wave (2026-10-16)
+
+The application has switched from the experimental harmonic bank to the frozen
+delayed-sine-burst profile described in `known-array-reconstruction.md`. The
+profile JSON remains unchanged. Its C++ renderer matches the independent
+Python reference after only the documented 96-frame relative alignment:
+
+| Schedule | Comparisons | Maximum absolute PCM error | RMS error |
+|---|---:|---:|---:|
+| Selection, 100-item Andrut permutation | 4,950 | 3.44784e-7 | 6.05716e-8 |
+| Insertion, 100-item Andrut permutation | 2,818 | 3.26363e-7 | 5.20083e-8 |
+| Gnome, 100-item Andrut permutation | 5,542 | 4.42972e-7 | 4.99454e-8 |
+
+The event fixtures are checked independently from PCM, including Gnome's
+declared operand reversal. No extra gain or filter fit is used. The maximum
+sample error is below the 2e-6 acceptance threshold.
+
+Playback uses a stable sample-time anchor, separate from the advancing
+playhead. Fixed-duration mode maps the full trace to the selected duration;
+reference cadence places eligible events at 300 comparisons/second. A
+128-frame scheduling lead is fixed and is not accumulated into elapsed time.
+The callback receives immutable prepared timelines and bounded seek snapshots
+through revisioned latest-state handoff, then renders preallocated notes. Seek
+history uses the current settings and installs with a short crossfade. Missing
+audio or failed preparation falls back to host-clock simulation.
+
+Validation completed for x64 and Win32, Debug and Release: SoundEngine, App
+Framework, and SortingLogic console suites passed. SoundEngine's resampler
+checks include 22.05, 32, 44.1, 48, and 96 kHz. The generated pack contains 55
+paired clips: three complete reference rerenders and 22 requested scenario
+groups, with raw float32, PCM16, manifest, and event fixtures under ignored
+`x64/Release/AudioPreviewReconstructedPackFinal`.
+
+During the portable-package smoke run, a delayed playhead report from an older
+transport command could cancel a newly started playback on the same trace.
+Playhead feedback now carries a transport revision as well as a timeline
+generation, and the app ignores reports unless both still match. An
+AppFramework regression covers stale pause feedback, current playback
+advancement, and normal completion. All four build configurations and suites
+were rerun after this fix.
+
+The x64 portable ZIP was extracted to a clean sibling folder and launched
+without Visual Studio or source files. The extracted app built a trace and
+advanced its event cursor during playback. The ZIP includes app-local SDL,
+GLEW, and MSVC runtime files, font, shaders, and third-party notices. A
+recipient-machine check remains useful for graphics-driver and audio-device
+differences; this local smoke test cannot establish behavior on other Windows
+hardware.
+
+The current implementation does not establish operation-specific audio
+semantics for every future algorithm. Before expanding the roster, decide
+whether reads, writes, swaps, partition pivots, merge auxiliary comparisons,
+and radix/counter operations should create sounds, then verify those mappings
+against immutable traces.

@@ -3,6 +3,8 @@
 #include <Windows.h>
 
 #include "WavWriter.h"
+#include "SourceModelPreviews.h"
+#include "ReconstructedPreviews.h"
 #include "SoundEngine.h"
 #include "SortingLogic.h"
 
@@ -496,6 +498,31 @@ namespace
 
 int main(int argc, char** argv)
 {
+	if (argc > 1 && std::string(argv[1]) == "--reconstructed-pack")
+	{
+		const std::string outputDirectory = argc > 2 ? argv[2] : "AudioPreviewReconstructedPack";
+		if (!generateReconstructedListeningPack(outputDirectory)) return 1;
+		return 0;
+	}
+	if (argc > 1 && std::string(argv[1]) == "--source-models")
+	{
+		const std::string outputDirectory = argc > 2 ? argv[2] : "AudioPreviewSourceModels";
+		std::string profileId, scenarioId;
+		for (int argument = 3; argument < argc; ++argument)
+		{
+			const std::string option(argv[argument]);
+			if (option == "--profile" && argument + 1 < argc) profileId = argv[++argument];
+			else if (option == "--scenario" && argument + 1 < argc) scenarioId = argv[++argument];
+			else { std::cerr << "Unknown --source-models option: " << option << "\n"; return 2; }
+		}
+		if (!generateSourceModelPreviews(outputDirectory, profileId, scenarioId))
+		{
+			std::cerr << "Source-model preview generation failed. Check the profile/scenario IDs and output folder.\n";
+			return 1;
+		}
+		std::cout << "Source-model previews are ready under " << outputDirectory << "\n";
+		return 0;
+	}
 	if (argc > 1 && std::string(argv[1]) == "--model-sweep")
 	{
 		const std::string outputDirectory = argc > 2 ? argv[2] : "AudioPreviewModelComparisons";

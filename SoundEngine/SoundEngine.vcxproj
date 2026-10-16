@@ -27,8 +27,8 @@
   <ItemDefinitionGroup>
     <ClCompile><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp14</LanguageStandard><AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="SoundEngine.cpp" /></ItemGroup>
-  <ItemGroup><ClInclude Include="SoundEngine.h" /></ItemGroup>
+	<ItemGroup><ClCompile Include="SoundEngine.cpp" /><ClCompile Include="ComposableEngine.cpp" /><ClCompile Include="AudioTimeline.cpp" /><ClCompile Include="ReconstructedDsp.cpp" /><ClCompile Include="ReconstructedSound.cpp" /></ItemGroup>
+	<ItemGroup><ClInclude Include="SoundEngine.h" /><ClInclude Include="ComposableEngine.h" /><ClInclude Include="AudioTimeline.h" /><ClInclude Include="ReconstructedDsp.h" /><ClInclude Include="ReconstructedSound.h" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

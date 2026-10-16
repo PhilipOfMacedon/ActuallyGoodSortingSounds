@@ -28,8 +28,8 @@
 		<ClCompile><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp14</LanguageStandard><AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\SoundEngine;$(ProjectDir)..\SortingLogic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
     <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="main.cpp" /><ClCompile Include="WavWriter.cpp" /></ItemGroup>
-	<ItemGroup><ClInclude Include="WavWriter.h" /><ProjectReference Include="..\SoundEngine\SoundEngine.vcxproj"><Project>{8DBFA0AF-176D-4E4B-9D8C-8A7EBA523F3F}</Project><LinkLibraryDependencies>true</LinkLibraryDependencies></ProjectReference><ProjectReference Include="..\SortingLogic\SortingLogic.vcxproj"><Project>{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}</Project><LinkLibraryDependencies>true</LinkLibraryDependencies></ProjectReference></ItemGroup>
+	<ItemGroup><ClCompile Include="main.cpp" /><ClCompile Include="WavWriter.cpp" /><ClCompile Include="SourceModelPreviews.cpp" /><ClCompile Include="ReconstructedPreviews.cpp" /><ClCompile Include="..\SDL2BarGraphics\AudioPresentationBridge.cpp" /></ItemGroup>
+	<ItemGroup><ClInclude Include="WavWriter.h" /><ClInclude Include="SourceModelPreviews.h" /><ClInclude Include="ReconstructedPreviews.h" /><ClInclude Include="..\SDL2BarGraphics\AudioPresentationBridge.h" /><ClInclude Include="..\SoundEngine\ComposableEngine.h" /><ProjectReference Include="..\SoundEngine\SoundEngine.vcxproj"><Project>{8DBFA0AF-176D-4E4B-9D8C-8A7EBA523F3F}</Project><LinkLibraryDependencies>true</LinkLibraryDependencies></ProjectReference><ProjectReference Include="..\SortingLogic\SortingLogic.vcxproj"><Project>{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}</Project><LinkLibraryDependencies>true</LinkLibraryDependencies></ProjectReference></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

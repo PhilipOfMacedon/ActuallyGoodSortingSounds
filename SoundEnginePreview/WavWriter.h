@@ -5,3 +5,4 @@
 #include <vector>
 
 bool writeWav16Stereo(const std::string& path, const std::vector<float>& interleavedSamples, std::uint32_t sampleRate);
+bool writeWavFloat32Stereo(const std::string& path, const std::vector<float>& interleavedSamples, std::uint32_t sampleRate);

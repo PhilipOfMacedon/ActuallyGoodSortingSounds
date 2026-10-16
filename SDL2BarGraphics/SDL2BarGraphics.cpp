@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <string>
 
 #include <SDL.h>
 
@@ -47,7 +48,8 @@ namespace
 		app.dispatch(action);
 	}
 
-	void handleEvents(Window& window, ControlPanel& controls, AppController& app, SdlAudioOutput& audioOutput)
+	void handleEvents(Window& window, ControlPanel& controls, AppController& app, SdlAudioOutput& audioOutput,
+		AudioPresentationBridge& audioBridge, LatestAudioStateMailbox& audioMailbox)
 	{
 		SDL_Event event;
 		while (SDL_PollEvent(&event))
@@ -74,7 +76,9 @@ namespace
 				{
 					app.dispatch(action);
 					if (action.kind == AppActionKind::RetryAudioDevice)
-						audioOutput.retry();
+					{
+						if (audioOutput.retry()) audioBridge.republish(audioMailbox);
+					}
 				}
 				continue;
 			}
@@ -113,15 +117,31 @@ int main(int argc, char** argv)
 			: 0.0f;
 		previousCounter = currentCounter;
 
-		app.update(deltaSeconds);
-		handleEvents(mainWindow, controlPanel, app, audioOutput);
+		const bool audioClockAvailable = audioOutput.available() && audioBridge.timelineReady();
+		app.update(deltaSeconds, audioClockAvailable);
+		handleEvents(mainWindow, controlPanel, app, audioOutput, audioBridge, audioMailbox);
 		audioOutput.serviceDiagnosticCapture();
 
-		const sortinglogic::RenderSnapshot snapshot = app.snapshot();
-		audioBridge.update(app.simulation(), snapshot, app.effectiveAudio(), audioMailbox);
+		sortinglogic::RenderSnapshot snapshot = app.snapshot();
+		audioBridge.update(app.simulation(), snapshot, app.effectiveAudio(), audioMailbox,
+			app.effectiveReconstructedAudio(), app.preferences().simulation.playbackTimingMode,
+			audioOutput.available() && audioBridge.timelineReady());
+		app.setAudioPreparationPending(audioBridge.timelinePreparing());
+		audioBridge.collectRetiredTimelines(audioOutput.acknowledgedTimelineGeneration(), audioOutput.available(),
+			audioOutput.acknowledgedSeekRevision());
+		SoundEngine::AudioPlayheadFeedback playhead;
+		if (audioOutput.available() && audioOutput.readPlayheadFeedback(playhead))
+			app.applyAudioPlayhead(playhead, audioBridge.timelineGeneration(), audioBridge.transportRevision());
+		snapshot = app.snapshot();
 		frameCoordinator.beginFrame(paletteFor(app.preferences().visual.palette).background);
 		arrayRenderer.render(snapshot, app.preferences(), controlPanel.chartTop());
-		controlPanel.render(snapshot, app.persistenceStatus(), audioOutput.status());
+		std::string audioStatus = audioOutput.status();
+		if (audioOutput.outputOverloadCount() > 0)
+			audioStatus += " | output safety clamp: " + std::to_string(audioOutput.outputOverloadCount()) + " samples";
+		if (audioBridge.timelinePreparing()) audioStatus = "Preparing audio timeline...";
+		else if (!audioBridge.timelineError().empty())
+			audioStatus = "Timeline error: " + audioBridge.timelineError() + " | sorting remains available";
+		controlPanel.render(snapshot, app.persistenceStatus(), audioStatus);
 		frameCoordinator.finishFrame();
 	}
 	TextLabel::clearFontCache();

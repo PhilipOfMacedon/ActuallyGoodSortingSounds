@@ -1,14 +1,490 @@
 #include "SoundEngine.h"
+#include "ComposableEngine.h"
+#include "AudioTimeline.h"
+#include "ReconstructedSound.h"
+#include "LegacySoundEngine.h"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <limits>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+namespace
+{
+	void require(bool condition, const std::string& message);
+	double maxAbs(const std::vector<float>& samples);
+	extern std::atomic<bool> countAllocations;
+	extern std::atomic<std::size_t> allocationCount;
+
+	void testPreparedAudioTimelineMappings()
+	{
+		using namespace SoundEngine;
+		std::vector<AudioTimelineInputEvent> events(5);
+		events[0].sourceCursor = 1;
+		events[0].kind = TimelineEventKind::Other;
+		events[1].sourceCursor = 2;
+		events[1].kind = TimelineEventKind::Comparison;
+		events[1].firstPosition = .2;
+		events[1].secondPosition = .8;
+		events[2].sourceCursor = 3;
+		events[2].kind = TimelineEventKind::Other;
+		events[3].sourceCursor = 4;
+		events[3].kind = TimelineEventKind::Probe;
+		events[3].firstPosition = events[3].secondPosition = .6;
+		events[4].sourceCursor = 5;
+		events[4].kind = TimelineEventKind::Other;
+
+		PreparedAudioTimeline fixed;
+		std::string error;
+		require(fixed.prepare(events, 5, PlaybackTimingMode::FixedDuration, 4.0, 44100, 300, &error),
+			"fixed-duration audio timeline preparation failed: " + error);
+		require(fixed.durationFrames() == 176400 && fixed.frameForCursor(1) == 35280 &&
+			fixed.frameForCursor(5) == fixed.durationFrames(),
+			"fixed-duration timeline does not map the full event history across the selected duration");
+		require(fixed.cursorAtFrame(35279) == 0 && fixed.cursorAtFrame(35280) == 1 &&
+			fixed.cursorAtFrame(176400) == 5,
+			"fixed-duration playhead lost its exact source event cursor");
+		AudioTimelineEvent selected;
+		require(!fixed.comparisonAtFrame(70560 - 1, selected) && fixed.comparisonAtFrame(70560, selected) &&
+			selected.sourceCursor == 2 && selected.firstPosition == .2 && selected.secondPosition == .8,
+			"fixed-duration comparison lookup did not select the latest due event");
+
+		PreparedAudioTimeline cadence;
+		require(cadence.prepare(events, 5, PlaybackTimingMode::ReferenceCadence, 10.0, 44100, 300, &error),
+			"reference-cadence audio timeline preparation failed: " + error);
+		require(cadence.durationFrames() == 294 && cadence.durationSeconds() == 294.0 / 44100.0 &&
+			cadence.eligibleEventCount() == 2,
+			"reference cadence duration is not based on its eligible comparison count");
+		require(cadence.cursorAtFrame(0) == 2 && cadence.cursorAtFrame(146) == 2 &&
+			cadence.cursorAtFrame(147) == 4 && cadence.cursorAtFrame(294) == 5,
+			"reference cadence did not apply intervening and trailing source events in order");
+		require(cadence.comparisonAtFrame(0, selected) && selected.sourceCursor == 2 &&
+			cadence.comparisonAtFrame(147, selected) && selected.sourceCursor == 4 &&
+			selected.kind == TimelineEventKind::Probe,
+			"reference cadence did not schedule eligible comparisons into consecutive slots");
+
+		std::vector<AudioTimelineInputEvent> empty;
+		PreparedAudioTimeline noComparisons;
+		require(noComparisons.prepare(empty, 0, PlaybackTimingMode::ReferenceCadence, 0.0, 44100, 300, &error) &&
+			noComparisons.durationFrames() == 0 && noComparisons.cursorAtFrame(0) == 0 &&
+			!noComparisons.comparisonAtFrame(0, selected),
+			"empty eligible schedule should complete without sound");
+		events[2].sourceCursor = 2;
+		require(!fixed.prepare(events, 5, PlaybackTimingMode::FixedDuration, 4.0, 44100, 300, &error),
+			"out-of-order source cursors should be rejected during preparation");
+	}
+
+	void testTimelineDrivenBurstPlayback()
+	{
+		using namespace SoundEngine;
+		std::vector<AudioTimelineInputEvent> events(3);
+		events[0].sourceCursor = 1;
+		events[0].kind = TimelineEventKind::Comparison;
+		events[0].firstPosition = .1;
+		events[0].secondPosition = .9;
+		events[0].firstRole = 1;
+		events[0].secondRole = 2;
+		events[1].sourceCursor = 2;
+		events[1].kind = TimelineEventKind::Comparison;
+		events[1].firstPosition = .3;
+		events[1].secondPosition = .7;
+		events[2].sourceCursor = 3;
+		events[2].kind = TimelineEventKind::Other;
+		PreparedAudioTimeline timeline;
+		std::string error;
+		require(timeline.prepare(events, 3, PlaybackTimingMode::FixedDuration, 1.0, 44100, 300, &error),
+			"timeline playback fixture failed preparation: " + error);
+		ReconstructedSynthesizer whole, partitioned;
+		ReconstructedParameters parameters;
+		whole.setParameters(parameters);
+		partitioned.setParameters(parameters);
+		whole.setPreparedTimeline(&timeline, 7);
+		partitioned.setPreparedTimeline(&timeline, 7);
+		AudioTransportState transport;
+		transport.generation = 7;
+		transport.revision = 1;
+		transport.playing = true;
+		whole.setTransportState(transport);
+		partitioned.setTransportState(transport);
+		// Timeline elapsed time starts at the first scheduled excitation tick,
+		// which is held 128 source frames after the renderer's initial clock.
+		const std::size_t playbackFrames = 44100 + 128;
+		std::vector<float> output(playbackFrames * 2), pieces(output.size());
+		whole.render(output.data(), playbackFrames);
+		const std::size_t blocks[] = { 1, 113, 509, 7, 2048, 4093, 31, 8191 };
+		std::size_t offset = 0, block = 0;
+		while (offset < playbackFrames)
+		{
+			const std::size_t count = (std::min)(blocks[block++ % (sizeof(blocks) / sizeof(blocks[0]))], playbackFrames - offset);
+			partitioned.render(pieces.data() + offset * 2, count);
+			offset += count;
+		}
+		require(output == pieces,
+			"audio-timed comparisons and captured bursts are invariant under irregular callback block partitions");
+		require(maxAbs(output) > 1e-6 && whole.sampleClock() == playbackFrames,
+			"the prepared timeline starts the burst source from its sample schedule");
+		AudioPlayheadFeedback feedback = whole.playheadFeedback();
+		require(feedback.generation == 7 && feedback.transportRevision == 1 && feedback.timelineFrame == 44100 &&
+			feedback.sourceCursor == 3 && !feedback.playing,
+			"audio playhead reports exact source history and completion at the scheduled duration");
+
+		transport.revision = 2;
+		transport.playing = false;
+		transport.timelineFrame = timeline.frameForCursor(1);
+		transport.sourceCursor = 1;
+		transport.holdSelection = true;
+		whole.setTransportState(transport);
+		require(whole.playheadFeedback().sourceCursor == 1 && whole.playheadFeedback().transportRevision == 2,
+			"paused audio feedback preserves the exact inspected cursor instead of collapsing same-time steps");
+		float pauseOutput[2048 * 2] = {};
+		allocationCount.store(0, std::memory_order_relaxed);
+		countAllocations.store(true, std::memory_order_relaxed);
+		whole.render(pauseOutput, 512);
+		countAllocations.store(false, std::memory_order_relaxed);
+		require(allocationCount.load(std::memory_order_relaxed) == 0,
+			"callback timeline lookup and burst rendering allocate no memory");
+		require(whole.activeNoteCount(0) > 0 && whole.activeNoteCount(1) > 0,
+			"paused Hold selection continues exciting the exact inspected comparison (" +
+			std::to_string(whole.activeNoteCount(0)) + ", " + std::to_string(whole.activeNoteCount(1)) + ")");
+		transport.revision = 3;
+		transport.holdSelection = false;
+		transport.releaseSelection = true;
+		parameters.idlePolicy = ReconstructedIdlePolicy::ReleaseSelection;
+		parameters.specialReleaseMilliseconds = 0;
+		whole.setParameters(parameters);
+		whole.setTransportState(transport);
+		whole.render(pauseOutput, 2048);
+		require(whole.activeNoteCount(0) == 0 && whole.activeNoteCount(1) == 0,
+			"Release selection stops future births and drains old notes to exact zero");
+	}
+
+	void testReconstructedBurstRenderer()
+	{
+		using namespace SoundEngine;
+		ReconstructedSynthesizer renderer;
+		ReconstructedParameters parameters;
+		renderer.setParameters(parameters);
+		BurstComparison comparison;
+		comparison.firstPosition = 0.0f;
+		comparison.secondPosition = 1.0f;
+		renderer.setComparison(comparison);
+		std::vector<float> contiguous(44100 * 2);
+		renderer.render(contiguous.data(), contiguous.size() / 2);
+		require(renderer.sampleClock() == 44100, "reconstructed renderer keeps a persistent sample clock with a 128-frame prepared lead");
+		require(renderer.activeNoteCount(0) > 0 && renderer.activeNoteCount(1) > 0,
+			"reconstructed comparison launches two overlapping finite note lanes");
+		require(renderer.activeNoteCount(0) <= ReconstructedNoteCapacityPerVoice &&
+			renderer.activeNoteCount(1) <= ReconstructedNoteCapacityPerVoice,
+			"reconstructed note occupancy stays within its preallocated capacity");
+		for (std::size_t i = 0; i < contiguous.size(); ++i)
+			require(std::isfinite(contiguous[i]) && std::fabs(contiguous[i]) <= 0.999f,
+				"reconstructed output remains finite and device-safe");
+		require(renderer.overloadCount() == 0,
+			"the calibrated reconstructed reference renders its baseline without invoking the output safety clamp");
+		BurstComparison loudComparison = comparison;
+		loudComparison.firstGain = loudComparison.secondGain = 1000.0;
+		ReconstructedSynthesizer rawLoud;
+		rawLoud.setComparison(loudComparison);
+		std::array<float, 2048> rawSamples;
+		rawLoud.render(rawSamples.data(), rawSamples.size() / 2);
+		float rawPeak = 0.0f;
+		for (std::size_t i = 0; i < rawSamples.size(); ++i) rawPeak = (std::max)(rawPeak, std::fabs(rawSamples[i]));
+		require(rawPeak > 0.999f && rawLoud.overloadCount() == 0,
+			"analysis rendering remains linear and does not apply the device safety clamp");
+		ReconstructedSynthesizer clampedDevice;
+		clampedDevice.setComparison(loudComparison);
+		std::array<float, 2048> deviceSamples;
+		clampedDevice.renderAtSampleRate(deviceSamples.data(), deviceSamples.size() / 2, 44100);
+		bool deviceSafe = true;
+		for (std::size_t i = 0; i < deviceSamples.size(); ++i)
+			if (std::fabs(deviceSamples[i]) > 0.999f) { deviceSafe = false; break; }
+		require(deviceSafe && clampedDevice.overloadCount() > 0,
+			"device rendering clamps after synthesis and reports output overloads");
+
+		ReconstructedSynthesizer partitioned;
+		partitioned.setParameters(parameters);
+		partitioned.setComparison(comparison);
+		std::vector<float> split(contiguous.size());
+		const std::size_t blocks[] = { 1, 113, 509, 7, 2048, 4093, 31, 8191 };
+		std::size_t renderedFrames = 0;
+		std::size_t block = 0;
+		while (renderedFrames < split.size() / 2)
+		{
+			const std::size_t frames = (std::min)(blocks[block++ % (sizeof(blocks) / sizeof(blocks[0]))],
+				split.size() / 2 - renderedFrames);
+			partitioned.render(split.data() + renderedFrames * 2, frames);
+			renderedFrames += frames;
+		}
+		double partitionError = 0.0;
+		for (std::size_t i = 0; i < split.size(); ++i)
+			partitionError = (std::max)(partitionError, std::fabs(static_cast<double>(split[i] - contiguous[i])));
+		require(partitionError == 0.0, "reconstructed output is identical across irregular render block partitions");
+
+		ReconstructedSynthesizer directDeviceRate;
+		directDeviceRate.setParameters(parameters);
+		directDeviceRate.setComparison(comparison);
+		std::vector<float> directRateSamples(4096 * 2);
+		ReconstructedSynthesizer referenceRate;
+		referenceRate.setParameters(parameters);
+		referenceRate.setComparison(comparison);
+		std::vector<float> referenceRateSamples(directRateSamples.size());
+		directDeviceRate.renderAtSampleRate(directRateSamples.data(), 4096, 44100);
+		referenceRate.render(referenceRateSamples.data(), 4096);
+		require(directRateSamples == referenceRateSamples,
+			"44.1 kHz device rendering remains bit-identical to the frozen native-rate path");
+
+		ReconstructedSynthesizer resampled;
+		resampled.setParameters(parameters);
+		resampled.setComparison(comparison);
+		std::vector<float> at48k(48000 * 2);
+		resampled.renderAtSampleRate(at48k.data(), 48000, 48000);
+		require(resampled.sampleClock() >= 44100 && resampled.sampleClock() <= 44102,
+			"48 kHz streaming output advances the synthesis clock at the fixed 44.1 kHz rate");
+		bool resamplerFinite = true;
+		for (std::size_t i = 0; i < at48k.size(); ++i)
+			if (!std::isfinite(at48k[i]) || std::fabs(at48k[i]) > 0.999f) { resamplerFinite = false; break; }
+		require(resamplerFinite, "streaming resampler output remains finite and device-safe");
+		const std::uint32_t deviceRates[] = { 22050, 32000, 44100, 48000, 96000 };
+		for (std::size_t rateIndex = 0; rateIndex < sizeof(deviceRates) / sizeof(deviceRates[0]); ++rateIndex)
+		{
+			const std::uint32_t rate = deviceRates[rateIndex];
+			const std::size_t frames = rate / 4;
+			ReconstructedSynthesizer rateRenderer;
+			rateRenderer.setParameters(parameters);
+			rateRenderer.setComparison(comparison);
+			std::vector<float> rateOutput(frames * 2);
+			rateRenderer.renderAtSampleRate(rateOutput.data(), frames, rate);
+			const std::uint64_t expectedSourceFrames = 44100 / 4;
+			const std::uint64_t actualSourceFrames = rateRenderer.sampleClock();
+			bool validRateOutput = actualSourceFrames + 2 >= expectedSourceFrames &&
+				actualSourceFrames <= expectedSourceFrames + 2;
+			for (std::size_t sample = 0; validRateOutput && sample < rateOutput.size(); ++sample)
+				validRateOutput = std::isfinite(rateOutput[sample]) && std::fabs(rateOutput[sample]) <= 0.999f;
+			require(validRateOutput,
+				"streaming output remains finite and advances the 44.1 kHz source clock correctly at " + std::to_string(rate));
+		}
+
+		ReconstructedSynthesizer resampledPartitioned;
+		resampledPartitioned.setParameters(parameters);
+		resampledPartitioned.setComparison(comparison);
+		std::vector<float> at48kSplit(at48k.size());
+		const std::size_t rateBlocks[] = { 1, 17, 509, 3, 1024, 7, 211 };
+		std::size_t rateRendered = 0, rateBlock = 0;
+		while (rateRendered < 48000)
+		{
+			const std::size_t count = (std::min)(rateBlocks[rateBlock++ % (sizeof(rateBlocks) / sizeof(rateBlocks[0]))], 48000 - rateRendered);
+			resampledPartitioned.renderAtSampleRate(at48kSplit.data() + rateRendered * 2, count, 48000);
+			rateRendered += count;
+		}
+		require(at48kSplit == at48k,
+			"streaming resampler output is identical across irregular device callback partitions");
+
+		ReconstructedSynthesizer drained;
+		drained.setParameters(parameters);
+		drained.setComparison(comparison);
+		std::vector<float> initial(128 * 2);
+		drained.render(initial.data(), initial.size() / 2);
+		parameters.idlePolicy = ReconstructedIdlePolicy::ReleaseSelection;
+		parameters.specialReleaseMilliseconds = 0.0;
+		drained.setParameters(parameters);
+		drained.clearComparison();
+		std::vector<float> tail(44100 * 2 / 5);
+		drained.render(tail.data(), tail.size() / 2);
+		require(drained.activeNoteCount(0) == 0 && drained.activeNoteCount(1) == 0,
+			"reconstructed note tails reach exact zero and release their slots");
+		drained.reset();
+		require(drained.sampleClock() == 0 && drained.activeNoteCount(0) == 0,
+			"reconstructed reset clears note and filter history without allocation");
+	}
+
+	void advanceRenderer(SoundEngine::ReconstructedSynthesizer& renderer, std::uint64_t frames)
+	{
+		std::array<float, 1024> scratch;
+		while (frames > 0)
+		{
+			const std::size_t count = static_cast<std::size_t>((std::min<std::uint64_t>)(frames, scratch.size() / 2));
+			renderer.render(scratch.data(), count);
+			frames -= count;
+		}
+	}
+
+	void testReconstructedTimelineClockAndSeekSnapshots()
+	{
+		using namespace SoundEngine;
+		std::string error;
+		std::vector<AudioTimelineInputEvent> events(8);
+		for (std::size_t i = 0; i < events.size(); ++i)
+		{
+			events[i].sourceCursor = i + 1;
+			events[i].kind = TimelineEventKind::Comparison;
+			events[i].firstPosition = .1 + .08 * static_cast<double>(i);
+			events[i].secondPosition = 1.0 - events[i].firstPosition;
+			events[i].firstRole = static_cast<std::uint8_t>(i == 2 ? 1 : 0);
+		}
+		PreparedAudioTimeline timeline;
+		require(timeline.prepare(events, events.size(), PlaybackTimingMode::FixedDuration, 3.0, 44100, 300, &error),
+			"seek snapshot timeline failed to prepare: " + error);
+
+		ReconstructedSynthesizer clocked;
+		ReconstructedParameters parameters;
+		parameters.lowPassEnabled = true;
+		parameters.lowPassCutoffHz = 500.0;
+		clocked.setParameters(parameters);
+		clocked.setPreparedTimeline(&timeline, 11);
+		AudioTransportState play;
+		play.generation = 11;
+		play.revision = 1;
+		play.playing = true;
+		clocked.setTransportState(play);
+		advanceRenderer(clocked, 44100 + 128);
+		AudioPlayheadFeedback feedback = clocked.playheadFeedback();
+		require(feedback.timelineFrame == 44100 && feedback.sourceCursor == 2 && feedback.playing,
+			"playback elapsed time must be measured from an immutable anchor at the one-second playhead");
+		advanceRenderer(clocked, 44100);
+		feedback = clocked.playheadFeedback();
+		require(feedback.timelineFrame == 88200 && feedback.sourceCursor == 5 && feedback.playing,
+			"successive excitation ticks must not compound elapsed timeline time");
+		advanceRenderer(clocked, 44099);
+		feedback = clocked.playheadFeedback();
+		require(feedback.timelineFrame == 132299 && feedback.playing,
+			"a three-second run must remain active on the final source frame before completion");
+		advanceRenderer(clocked, 1);
+		feedback = clocked.playheadFeedback();
+		require(feedback.timelineFrame == 132300 && feedback.sourceCursor == events.size() && !feedback.playing,
+			"a fixed-duration run must complete exactly at its duration after the separate 128-frame lead");
+
+		AudioTimelineGainSettings gains;
+		const std::uint64_t targetFrames[] = { 10000, 32000, 61000, 85000 };
+		for (std::size_t targetIndex = 0; targetIndex < sizeof(targetFrames) / sizeof(targetFrames[0]); ++targetIndex)
+		{
+			const std::uint64_t target = targetFrames[targetIndex];
+			ReconstructedSynthesizer uninterrupted;
+			uninterrupted.setParameters(parameters);
+			uninterrupted.setTimelineGainSettings(gains);
+			uninterrupted.setPreparedTimeline(&timeline, 23);
+			AudioTransportState transport;
+			transport.generation = 23;
+			transport.revision = 2;
+			transport.timelineFrame = target;
+			transport.sourceCursor = timeline.cursorAtFrame(target);
+			transport.playing = true;
+			AudioTransportState initial;
+			initial.generation = 23;
+			initial.revision = 1;
+			initial.playing = true;
+			uninterrupted.setTransportState(initial);
+			advanceRenderer(uninterrupted, 128 + target);
+
+			PreparedAudioSeekState prepared;
+			require(ReconstructedSynthesizer::prepareSeekState(timeline, parameters, gains, transport, 7, prepared, &error),
+				"bounded seek-state preparation failed: " + error);
+			require(prepared.valid && prepared.targetFrame == target && prepared.targetCursor == transport.sourceCursor &&
+				prepared.timelineGeneration == 23 && prepared.parameterRevision == 7,
+				"prepared seek state omitted its target identity or revision tags");
+			ReconstructedSynthesizer restored;
+			restored.setParameters(parameters);
+			restored.setTimelineGainSettings(gains);
+			restored.installPreparedSeekState(prepared);
+			std::array<float, 4096> expected, actual;
+			uninterrupted.render(expected.data(), expected.size() / 2);
+			allocationCount.store(0, std::memory_order_relaxed);
+			countAllocations.store(true, std::memory_order_relaxed);
+			restored.render(actual.data(), actual.size() / 2);
+			countAllocations.store(false, std::memory_order_relaxed);
+			double maximumError = 0.0;
+			for (std::size_t sample = 0; sample < expected.size(); ++sample)
+				maximumError = (std::max)(maximumError, std::fabs(static_cast<double>(expected[sample] - actual[sample])));
+			require(maximumError < 2.0e-6,
+				"prepared seek output diverged from uninterrupted output at frame " + std::to_string(target) +
+				" (max error " + std::to_string(maximumError) + ")");
+			require(allocationCount.load(std::memory_order_relaxed) == 0,
+				"installing and rendering a fixed-size seek snapshot must allocate nothing");
+		}
+	}
+
+	void testReleaseSelectionFadeDurations()
+	{
+		using namespace SoundEngine;
+		std::vector<AudioTimelineInputEvent> events(20);
+		for (std::size_t i = 0; i < events.size(); ++i)
+		{
+			events[i].sourceCursor = i + 1;
+			events[i].kind = TimelineEventKind::Comparison;
+			events[i].firstPosition = .2;
+			events[i].secondPosition = .8;
+		}
+		PreparedAudioTimeline timeline;
+		std::string error;
+		require(timeline.prepare(events, events.size(), PlaybackTimingMode::FixedDuration, 2.0, 44100, 300, &error),
+			"release fade fixture failed to prepare: " + error);
+		double measuredRms[3] = {};
+		const double releaseMilliseconds[] = { 0.0, 250.0, 2000.0 };
+		for (std::size_t test = 0; test < 3; ++test)
+		{
+			ReconstructedSynthesizer renderer;
+			ReconstructedParameters parameters;
+			renderer.setParameters(parameters);
+			renderer.setPreparedTimeline(&timeline, 31);
+			AudioTransportState playing;
+			playing.generation = 31;
+			playing.revision = 1;
+			playing.playing = true;
+			renderer.setTransportState(playing);
+			advanceRenderer(renderer, 128 + 20000);
+			const AudioPlayheadFeedback beforePause = renderer.playheadFeedback();
+			parameters.idlePolicy = ReconstructedIdlePolicy::ReleaseSelection;
+			parameters.specialReleaseMilliseconds = releaseMilliseconds[test];
+			renderer.setParameters(parameters);
+			AudioTransportState paused;
+			paused.generation = 31;
+			paused.revision = 2;
+			paused.timelineFrame = beforePause.timelineFrame;
+			paused.sourceCursor = beforePause.sourceCursor;
+			paused.releaseSelection = true;
+			renderer.setTransportState(paused);
+			std::vector<float> window(8820 * 2);
+			renderer.render(window.data(), 8820);
+			double squareSum = 0.0;
+			for (std::size_t i = 0; i < window.size(); ++i) squareSum += static_cast<double>(window[i]) * window[i];
+			measuredRms[test] = std::sqrt(squareSum / window.size());
+			const std::uint64_t remaining = static_cast<std::uint64_t>(releaseMilliseconds[test] * 44.1) + 20000;
+			advanceRenderer(renderer, remaining);
+			require(renderer.activeNoteCount(0) == 0 && renderer.activeNoteCount(1) == 0,
+				"Release selection stops new births and drains each configured fade to exact zero");
+		}
+		require(measuredRms[1] > measuredRms[0] && measuredRms[2] > measuredRms[1],
+			"0, 250, and 2,000 ms release settings produce progressively longer audible fades");
+	}
+
+	std::atomic<bool> countAllocations(false);
+	std::atomic<std::size_t> allocationCount(0);
+}
+
+void* operator new(std::size_t size)
+{
+	if (countAllocations.load(std::memory_order_relaxed))
+		allocationCount.fetch_add(1, std::memory_order_relaxed);
+	if (void* memory = std::malloc(size == 0 ? 1 : size)) return memory;
+	throw std::bad_alloc();
+}
+void* operator new[](std::size_t size)
+{
+	if (countAllocations.load(std::memory_order_relaxed))
+		allocationCount.fetch_add(1, std::memory_order_relaxed);
+	if (void* memory = std::malloc(size == 0 ? 1 : size)) return memory;
+	throw std::bad_alloc();
+}
+void operator delete(void* memory) noexcept { std::free(memory); }
+void operator delete[](void* memory) noexcept { std::free(memory); }
 
 namespace
 {
@@ -55,6 +531,356 @@ namespace
 		for (std::size_t i = 0; i < samples.size(); ++i)
 			peak = std::max(peak, std::fabs(static_cast<double>(samples[i])));
 		return peak;
+	}
+
+	LegacySoundEngine::Parameters makeLegacyParameters(const SoundEngine::Parameters& source)
+	{
+		LegacySoundEngine::Parameters target;
+		target.masterLevel = source.masterLevel;
+		target.bedLevel = source.bedLevel;
+		target.bedHarmonicExponent = source.bedHarmonicExponent;
+		target.includeSub300HzBed = source.includeSub300HzBed;
+		target.bedComb.enabled = source.bedComb.enabled;
+		target.bedComb.applyPhase = source.bedComb.applyPhase;
+		target.bedComb.delayMicroseconds = source.bedComb.delayMicroseconds;
+		target.bedComb.phaseOffsetDegrees = source.bedComb.phaseOffsetDegrees;
+		target.bedComb.wetAtLowFrequency = source.bedComb.wetAtLowFrequency;
+		target.bedComb.wetAtHighFrequency = source.bedComb.wetAtHighFrequency;
+		target.bedComb.fadeStartHz = source.bedComb.fadeStartHz;
+		target.bedComb.fadeEndHz = source.bedComb.fadeEndHz;
+		target.bedComb.fadeExponent = source.bedComb.fadeExponent;
+		target.comparisonBoostDb = source.comparisonBoostDb;
+		target.heldKeyBoostDb = source.heldKeyBoostDb;
+		target.roleBoostDb = source.roleBoostDb;
+		target.tauBelowBins = source.tauBelowBins;
+		target.tauAboveBins = source.tauAboveBins;
+		target.chorusMix = source.chorusMix;
+		target.chorusRateHz = source.chorusRateHz;
+		target.chorusDepthMs = source.chorusDepthMs;
+		target.chorusWeighting = static_cast<LegacySoundEngine::ChorusWeighting>(source.chorusWeighting);
+		target.attackMs = source.attackMs;
+		target.releaseMs = source.releaseMs;
+		target.mappingMode = static_cast<LegacySoundEngine::MappingMode>(source.mappingMode);
+		target.comparisonSpreadMode = static_cast<LegacySoundEngine::ComparisonSpreadMode>(source.comparisonSpreadMode);
+		target.bandTrimDb = source.bandTrimDb;
+		target.accentRouting = source.accentRouting;
+		target.accentGain = source.accentGain;
+		target.enabled = source.enabled;
+		return target;
+	}
+
+	void requirePcmEqual(const std::vector<float>& actual, const std::vector<float>& reference, const std::string& context)
+	{
+		require(actual.size() == reference.size(), context + ": output sizes differ");
+		for (std::size_t i = 0; i < actual.size(); ++i)
+		{
+			if (actual[i] != reference[i])
+				throw std::runtime_error(context + ": PCM mismatch at sample " + std::to_string(i));
+			++assertions;
+		}
+	}
+
+	void testLegacyRendererBitExactParity()
+	{
+		SoundEngine::Synthesizer current;
+		LegacySoundEngine::Synthesizer frozen;
+		auto renderAndCompare = [&](std::size_t frames, std::uint32_t rate, const std::string& label)
+		{
+			std::vector<float> actual(frames * 2), reference(frames * 2);
+			current.render(actual.data(), frames, rate);
+			frozen.render(reference.data(), frames, rate);
+			requirePcmEqual(actual, reference, label);
+		};
+		current.setTraceLoaded(true);
+		frozen.setTraceLoaded(true);
+		const SoundEngine::MappingMode mappings[] = {
+			SoundEngine::MappingMode::LinearHz,
+			SoundEngine::MappingMode::LogFrequency,
+			SoundEngine::MappingMode::EqualBandSlots };
+		const SoundEngine::ChorusWeighting chorusModes[] = {
+			SoundEngine::ChorusWeighting::Uniform,
+			SoundEngine::ChorusWeighting::ComparisonEnvelope };
+		for (std::size_t i = 0; i < 12; ++i)
+		{
+			SoundEngine::Parameters parameters = current.parameters();
+			parameters.mappingMode = mappings[i % 3];
+			parameters.comparisonSpreadMode = (i & 1u)
+				? SoundEngine::ComparisonSpreadMode::PositionScaled
+				: SoundEngine::ComparisonSpreadMode::FixedBins;
+			parameters.chorusWeighting = chorusModes[(i / 2) % 2];
+			parameters.chorusMix = (i % 3) * 0.07f;
+			parameters.chorusRateHz = 0.4f + 0.17f * static_cast<float>(i);
+			parameters.chorusDepthMs = 0.25f + 0.31f * static_cast<float>(i % 7);
+			parameters.bedComb.enabled = (i & 1u) != 0;
+			parameters.bedComb.applyPhase = (i % 3) != 0;
+			parameters.includeSub300HzBed = (i % 4) == 0;
+			parameters.bedHarmonicExponent = 0.75f + 0.17f * static_cast<float>(i % 10);
+			parameters.tauBelowBins = 0.1f + 0.07f * static_cast<float>(i % 6);
+			parameters.tauAboveBins = 0.5f + 0.11f * static_cast<float>(i % 8);
+			parameters.bandTrimDb[i % SoundEngine::BandCount] = -12.0f + static_cast<float>(i);
+			parameters.roleBoostDb[i % SoundEngine::RoleCount] = static_cast<float>(i) - 4.0f;
+			current.setParameters(parameters);
+			frozen.setParameters(makeLegacyParameters(parameters));
+			const SoundEngine::ComparisonRole firstRole = (i % 4 == 0)
+				? SoundEngine::ComparisonRole::HeldKey : static_cast<SoundEngine::ComparisonRole>((i % 7) + 1);
+			const SoundEngine::ComparisonRole secondRole = (i % 3 == 0)
+				? SoundEngine::ComparisonRole::ProbedItem : SoundEngine::ComparisonRole::None;
+			current.setComparison(SoundEngine::AudioComparison(
+				static_cast<float>(i) / 11.0f, 1.0f - static_cast<float>(i) / 13.0f, firstRole, secondRole));
+			frozen.setComparison(LegacySoundEngine::AudioComparison(
+				static_cast<float>(i) / 11.0f, 1.0f - static_cast<float>(i) / 13.0f,
+				static_cast<LegacySoundEngine::ComparisonRole>(firstRole),
+				static_cast<LegacySoundEngine::ComparisonRole>(secondRole)));
+			SoundEngine::EventAccentSummary accents;
+			for (std::size_t category = 0; category < SoundEngine::AccentCategoryCount; ++category)
+			{
+				accents.counts[category] = static_cast<std::uint16_t>((i + category) % 9);
+				accents.representativePositions[category] = static_cast<float>((i + category) % 12) / 11.0f;
+			}
+			current.setEventAccentSummary(accents);
+			LegacySoundEngine::EventAccentSummary legacyAccents;
+			legacyAccents.counts = accents.counts;
+			legacyAccents.representativePositions = accents.representativePositions;
+			frozen.setEventAccentSummary(legacyAccents);
+			renderAndCompare(1 + (i * 97) % 513, (i % 3 == 0) ? 44100 : ((i % 3 == 1) ? 48000 : 96000),
+				"frozen legacy configuration " + std::to_string(i));
+			if ((i % 4) == 0)
+			{
+				current.clearComparison();
+				frozen.clearComparison();
+				renderAndCompare(257, 44100, "legacy comparison release " + std::to_string(i));
+			}
+			if ((i % 5) == 0)
+			{
+				parameters.enabled = false;
+				current.setParameters(parameters);
+				frozen.setParameters(makeLegacyParameters(parameters));
+				renderAndCompare(31, 48000, "legacy disabled output " + std::to_string(i));
+				parameters.enabled = true;
+				current.setParameters(parameters);
+				frozen.setParameters(makeLegacyParameters(parameters));
+			}
+		}
+		current.reset();
+		frozen.reset();
+		renderAndCompare(1024, 44100, "legacy reset parity");
+	}
+
+	SoundEngine::RenderSpec experimentalSpec()
+	{
+		SoundEngine::RenderSpec spec;
+		spec.sampleRate = SampleRate;
+		spec.masterGain = 1.0f;
+		spec.sourcePeakGain = 1.0f;
+		spec.attackMs = 0.0f;
+		spec.releaseMs = 0.0f;
+		spec.pitchSlewMs = 0.0f;
+		spec.minimumFrequencyHz = 50.0f;
+		spec.maximumFrequencyHz = 4200.0f;
+		return spec;
+	}
+
+	void testComposableRegistryAndRealtimeAllocation()
+	{
+		const std::vector<SoundEngine::GeneratorDescriptor>& sources = SoundEngine::ComponentRegistry::generators();
+		const std::vector<SoundEngine::FilterDescriptor>& filters = SoundEngine::ComponentRegistry::filters();
+		const std::vector<SoundEngine::OutputProcessorDescriptor>& effects = SoundEngine::ComponentRegistry::outputProcessors();
+		require(sources.size() >= 4 && filters.size() >= 3 && effects.size() >= 3,
+			"the built-in component catalogs are incomplete");
+		require(SoundEngine::ComponentRegistry::findGenerator("continuous_sine") != nullptr &&
+			SoundEngine::ComponentRegistry::findGenerator("clocked_sine_packets") != nullptr &&
+			SoundEngine::ComponentRegistry::findGenerator("bandlimited_saw_300") != nullptr &&
+			SoundEngine::ComponentRegistry::findGenerator(SoundEngine::reconstructedBurstGeneratorId()) != nullptr &&
+			SoundEngine::ComponentRegistry::findOutputProcessor(SoundEngine::referenceFirProcessorId()) != nullptr,
+			"the experimental source catalog or reconstructed burst/FIR components are not registered");
+		SoundEngine::PipelineDescription description;
+		SoundEngine::ComposableRenderer renderer;
+		std::string error;
+		require(renderer.prepare(experimentalSpec(), description, &error), "basic composable pipeline failed preparation: " + error);
+		renderer.setVoiceControl(0, SoundEngine::VoiceControl(1150.0f, 0.8f, true));
+		allocationCount.store(0, std::memory_order_relaxed);
+		countAllocations.store(true, std::memory_order_relaxed);
+		float samples[4096 * 2];
+		renderer.render(samples, 4096);
+		countAllocations.store(false, std::memory_order_relaxed);
+		require(allocationCount.load(std::memory_order_relaxed) == 0,
+			"prepared composable render allocated memory on the render path");
+		require(renderer.sampleClock() == 4096, "the persistent sample clock did not advance by the rendered frame count");
+
+		SoundEngine::PipelineDescription reconstructed;
+		for (std::size_t voice = 0; voice < 2; ++voice)
+		{
+			reconstructed.voices[voice].source.id = SoundEngine::reconstructedBurstGeneratorId();
+			reconstructed.voices[voice].source.packetClockHz = 300.0f;
+			reconstructed.voices[voice].source.carrierCycles = 9.3026503f;
+			reconstructed.voices[voice].source.tukeyFraction = 0.02566677f;
+		}
+		reconstructed.outputProcessorCount = 1;
+		reconstructed.outputProcessors[0].id = SoundEngine::referenceFirProcessorId();
+		reconstructed.outputProcessors[0].mix = 1.0f;
+		SoundEngine::ComposableRenderer burstPipeline;
+		require(burstPipeline.prepare(experimentalSpec(), reconstructed, &error),
+			"registered reconstructed burst/FIR pipeline failed preparation: " + error);
+		burstPipeline.setVoiceControl(0, SoundEngine::VoiceControl(1150.0f, 1.0f, true));
+		burstPipeline.setVoiceControl(1, SoundEngine::VoiceControl(2700.0f, 1.0f, true));
+		float reconstructedSamples[2048 * 2] = {};
+		allocationCount.store(0, std::memory_order_relaxed);
+		countAllocations.store(true, std::memory_order_relaxed);
+		burstPipeline.render(reconstructedSamples, 2048);
+		countAllocations.store(false, std::memory_order_relaxed);
+		require(allocationCount.load(std::memory_order_relaxed) == 0 && burstPipeline.sampleClock() == 2048,
+			"registered delayed-burst and reference-FIR components process prepared audio without allocation");
+		double reconstructedPeak = 0.0;
+		for (std::size_t i = 0; i < 2048 * 2; ++i)
+			reconstructedPeak = (std::max)(reconstructedPeak, std::fabs(static_cast<double>(reconstructedSamples[i])));
+		require(reconstructedPeak > 1.0e-5,
+			"registered delayed-burst/FIR components produce the captured-pitch comparison sound");
+	}
+
+	void testContinuousSineAndBlockPartitionContinuity()
+	{
+		SoundEngine::PipelineDescription description;
+		SoundEngine::ComposableRenderer contiguous, partitioned;
+		const SoundEngine::RenderSpec spec = experimentalSpec();
+		std::string error;
+		require(contiguous.prepare(spec, description, &error), "continuous sine pipeline preparation failed: " + error);
+		require(partitioned.prepare(spec, description, &error), "partition continuity pipeline preparation failed: " + error);
+		const SoundEngine::VoiceControl control(1150.0f, 1.0f, true);
+		contiguous.setVoiceControl(0, control);
+		partitioned.setVoiceControl(0, control);
+		std::vector<float> whole(44100 * 2), pieces(whole.size());
+		contiguous.render(whole.data(), 44100);
+		partitioned.render(pieces.data(), 123);
+		partitioned.render(pieces.data() + 123 * 2, 877);
+		partitioned.render(pieces.data() + 1000 * 2, 431);
+		partitioned.render(pieces.data() + 1431 * 2, 42669);
+		requirePcmEqual(whole, pieces, "continuous sine irregular block partition");
+		const double measured = sineAmplitude(whole, 5000, 30000, 1150.0);
+		require(near(measured, 0.70710678, 0.002), "the continuous oscillator missed its off-grid 1,150 Hz pitch");
+		contiguous.reset();
+		partitioned.reset();
+		contiguous.setVoiceControl(0, SoundEngine::VoiceControl(850.0f, 0.9f, true));
+		partitioned.setVoiceControl(0, SoundEngine::VoiceControl(850.0f, 0.9f, true));
+		whole.assign(4000 * 2, 0.0f); pieces.assign(whole.size(), 0.0f);
+		contiguous.render(whole.data(), 1000);
+		partitioned.render(pieces.data(), 211);
+		partitioned.render(pieces.data() + 422, 789);
+		contiguous.setMasterGain(0.27f); partitioned.setMasterGain(0.27f);
+		contiguous.setSourcePeakGain(0.61f); partitioned.setSourcePeakGain(0.61f);
+		contiguous.render(whole.data() + 2000, 3000);
+		partitioned.render(pieces.data() + 2000, 37);
+		partitioned.render(pieces.data() + 2074, 1024);
+		partitioned.render(pieces.data() + 4122, 1939);
+		requirePcmEqual(whole, pieces, "smoothed parameter changes across irregular blocks");
+		const double lowFrequency = 73.0;
+		contiguous.reset();
+		contiguous.setMasterGain(1.0f);
+		contiguous.setSourcePeakGain(1.0f);
+		contiguous.setVoiceControl(0, SoundEngine::VoiceControl(static_cast<float>(lowFrequency), 1.0f, true));
+		std::vector<float> low(22050 * 2);
+		contiguous.render(low.data(), 22050);
+		require(sineAmplitude(low, 5000, 16000, lowFrequency) > 0.70,
+			"the continuous oscillator did not support an off-grid sub-300 Hz voice");
+	}
+
+	void testClockedPacketsAndSawSource()
+	{
+		SoundEngine::PipelineDescription packetDescription;
+		packetDescription.voices[0].source.id = SoundEngine::clockedSinePacketGeneratorId();
+		packetDescription.voices[0].source.durationMode = SoundEngine::PacketDuration::FixedSeconds;
+		packetDescription.voices[0].source.packetDurationSeconds = 2.0f / 300.0f;
+		packetDescription.voices[0].source.window = SoundEngine::PacketWindow::Gaussian;
+		packetDescription.voices[0].source.phase = SoundEngine::PacketPhase::ResetAtBirth;
+		SoundEngine::ComposableRenderer packetA, packetB;
+		std::string error;
+		require(packetA.prepare(experimentalSpec(), packetDescription, &error), "clocked packet pipeline preparation failed: " + error);
+		require(packetB.prepare(experimentalSpec(), packetDescription, &error), "clocked packet partition preparation failed: " + error);
+		packetA.setVoiceControl(0, SoundEngine::VoiceControl(1150.0f, 1.0f, true));
+		packetB.setVoiceControl(0, SoundEngine::VoiceControl(1150.0f, 1.0f, true));
+		std::vector<float> packets(22050 * 2), split(packets.size());
+		packetA.render(packets.data(), 22050);
+		packetB.render(split.data(), 17);
+		packetB.render(split.data() + 34, 997);
+		packetB.render(split.data() + 2028, 5000);
+		packetB.render(split.data() + 12028, 16036);
+		requirePcmEqual(packets, split, "clocked sine packet partition");
+		require(maxAbs(packets) > 0.01, "the packet generator produced no sound");
+		packetA.setVoiceControl(0, SoundEngine::VoiceControl(1150.0f, 1.0f, false));
+		std::vector<float> silence(1000 * 2);
+		packetA.render(silence.data(), 1000);
+		for (std::size_t i = 0; i < silence.size(); ++i)
+			require(silence[i] == 0.0f, "cleared packet focus continued producing gated output");
+
+		SoundEngine::PipelineDescription sawDescription;
+		sawDescription.voices[0].source.id = SoundEngine::bandlimitedSaw300GeneratorId();
+		SoundEngine::ComposableRenderer saw;
+		require(saw.prepare(experimentalSpec(), sawDescription, &error), "band-limited saw pipeline preparation failed: " + error);
+		saw.setVoiceControl(0, SoundEngine::VoiceControl(1200.0f, 1.0f, true));
+		std::vector<float> sawSamples(44100 * 2);
+		saw.render(sawSamples.data(), 44100);
+		const double fundamental = sineAmplitude(sawSamples, 5000, 30000, 300.0);
+		const double second = sineAmplitude(sawSamples, 5000, 30000, 600.0);
+		require(fundamental > 0.44 && near(second / fundamental, 0.5, 0.025),
+			"the 300 Hz saw Fourier partials did not follow the 1/k amplitude series: fundamental=" +
+			std::to_string(fundamental) + ", second=" + std::to_string(second));
+	}
+
+	void testMovingFilterAndBedLane()
+	{
+		SoundEngine::PipelineDescription description;
+		description.voices[0].source.id = SoundEngine::bandlimitedSaw300GeneratorId();
+		description.voices[0].filterCount = 2;
+		description.voices[0].filters[0].id = SoundEngine::tptBandPassFilterId();
+		description.voices[0].filters[0].q = 4.0f;
+		description.voices[0].filters[0].constantQ = true;
+		description.voices[0].filters[1].id = SoundEngine::butterworthLowPassFilterId();
+		description.voices[0].filters[1].cutoffHz = 10000.0f;
+		description.bedEnabled = true;
+		description.bed.source.id = SoundEngine::continuousSineGeneratorId();
+		description.bedGain = 0.1f;
+		SoundEngine::ComposableRenderer renderer;
+		std::string error;
+		require(renderer.prepare(experimentalSpec(), description, &error), "filtered lane pipeline preparation failed: " + error);
+		renderer.setVoiceControl(0, SoundEngine::VoiceControl(1800.0f, 1.0f, true));
+		renderer.setBedControl(SoundEngine::VoiceControl(300.0f, 1.0f, true));
+		std::vector<float> output(44100 * 2);
+		renderer.render(output.data(), 44100);
+		require(maxAbs(output) > 0.001, "filter chain and independent bed produced silence");
+		for (std::size_t i = 0; i < output.size(); ++i)
+			require(std::isfinite(output[i]), "moving filter became numerically unstable");
+
+		SoundEngine::PipelineDescription bandPass;
+		bandPass.voices[0].source.id = SoundEngine::bandlimitedSaw300GeneratorId();
+		bandPass.voices[0].filterCount = 1;
+		bandPass.voices[0].filters[0].id = SoundEngine::tptBandPassFilterId();
+		bandPass.voices[0].filters[0].cutoffHz = 1000.0f;
+		bandPass.voices[0].filters[0].q = 4.0f;
+		SoundEngine::ComposableRenderer selected;
+		require(selected.prepare(experimentalSpec(), bandPass, &error), "band-pass response pipeline preparation failed: " + error);
+		selected.setVoiceControl(0, SoundEngine::VoiceControl(1800.0f, 1.0f, true));
+		std::vector<float> filtered(44100 * 2), repeated(filtered.size());
+		selected.render(filtered.data(), 44100);
+		const double atCenter = sineAmplitude(filtered, 5000, 30000, 1800.0);
+		const double lowPartial = sineAmplitude(filtered, 5000, 30000, 300.0);
+		require(atCenter > lowPartial * 2.0, "TPT band-pass did not emphasize its moving center frequency");
+		selected.reset();
+		selected.setVoiceControl(0, SoundEngine::VoiceControl(1800.0f, 1.0f, true));
+		selected.render(repeated.data(), 44100);
+		requirePcmEqual(filtered, repeated, "composable reset did not restore source and filter state");
+
+		SoundEngine::PipelineDescription lowPass;
+		lowPass.voices[0].source.id = SoundEngine::bandlimitedSaw300GeneratorId();
+		lowPass.voices[0].filterCount = 1;
+		lowPass.voices[0].filters[0].id = SoundEngine::butterworthLowPassFilterId();
+		lowPass.voices[0].filters[0].cutoffHz = 2000.0f;
+		SoundEngine::ComposableRenderer lowPassed;
+		require(lowPassed.prepare(experimentalSpec(), lowPass, &error), "low-pass response pipeline preparation failed: " + error);
+		lowPassed.setVoiceControl(0, SoundEngine::VoiceControl(1000.0f, 1.0f, true));
+		std::vector<float> lowPassSamples(44100 * 2);
+		lowPassed.render(lowPassSamples.data(), 44100);
+		const double lowPassFundamental = sineAmplitude(lowPassSamples, 5000, 30000, 300.0);
+		const double highPartial = sineAmplitude(lowPassSamples, 5000, 30000, 6000.0);
+		require(highPartial < lowPassFundamental * 0.02, "two-pole Butterworth low-pass did not attenuate the upper saw partials");
 	}
 
 	void testCombFilterBedShaping()
@@ -850,6 +1676,16 @@ int main()
 {
 	try
 	{
+		testLegacyRendererBitExactParity();
+		testPreparedAudioTimelineMappings();
+		testTimelineDrivenBurstPlayback();
+		testReconstructedBurstRenderer();
+		testReconstructedTimelineClockAndSeekSnapshots();
+		testReleaseSelectionFadeDurations();
+		testComposableRegistryAndRealtimeAllocation();
+		testContinuousSineAndBlockPartitionContinuity();
+		testClockedPacketsAndSawSource();
+		testMovingFilterAndBedLane();
 		testFrequencyBankAndMapping();
 		testCombFilterBedShaping();
 		testPhaseAwareBedAndHarmonicRolloff();

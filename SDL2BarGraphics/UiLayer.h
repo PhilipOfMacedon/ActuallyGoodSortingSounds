@@ -71,7 +71,8 @@ struct UiInputEvent
 struct UiAction
 {
 	enum class ViewCommand { None, OpenSettings, CloseSettings, OpenAlgorithmMenu,
-		ShowAppearanceSettings, ShowAlgorithmSettings, ShowAudioSettings, ShowGeneralAudioSettings };
+		ShowAppearanceSettings, ShowAlgorithmSettings, ShowAudioSettings, ShowGeneralAudioSettings,
+		ShowAudioBasic, ShowAudioAdvanced };
 	AppAction appAction;
 	ViewCommand viewCommand;
 	UiAction(const AppAction& action = AppAction(), ViewCommand command = ViewCommand::None)

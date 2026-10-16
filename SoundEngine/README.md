@@ -1,80 +1,49 @@
-# SoundEngine prototype
+# SoundEngine
 
-`SoundEngine` is a C++14 static library with no SDL, OpenGL, or `SortingLogic` dependency. Callers normalize values from the prepared input range, then send `AudioCommand`s in the same order as the visible trace cursor. The synthesizer applies each command immediately and retargets its band envelopes to the newest comparison; it does not retain a delayed event queue.
+`SoundEngine` is a C++14 static library with no SDL, OpenGL, or `SortingLogic` dependency. It contains the reconstructed application synthesizer, transport-independent audio timeline contracts, and older synthesis components retained for offline experiments and regression coverage.
 
-## Frequency bank and focus mapping
+## Application sound profile
 
-The bank contains 50, 100, and 150 Hz plus the 300 Hz harmonic series from 300 through 17,100 Hz (`300 × 1…57`), for 60 bands. Harmonics use a `1/k` base amplitude; the three low components start 12 dB below the 300 Hz fundamental. Linear-Hz, logarithmic-frequency, and equal-band-slot mappings all limit focus centers to 50–4,200 Hz. Bands above 4,200 Hz remain available to the continuous bed and to comparison-envelope tails. The 50/100/150 Hz bands remain in the comparison bank but are excluded from the continuous bed by default, so a low-valued comparison can bring them forward without making them part of the constant hum. Set `Parameters::includeSub300HzBed` to `true` only for experiments that explicitly want those components in the bed.
+The application currently selects `andrut_delayed_sine_bursts_v1`, a deterministic model of overlapping, finite sine bursts. This is an evidence-based reconstruction of the supplied recordings; it is not a claim about the reference creator's private implementation. The unchanged profile fixture is [`research/andrut_delayed_sine_bursts_v1.json`](../SoundEnginePreview/research/andrut_delayed_sine_bursts_v1.json).
 
-Comparison emphasis is an exponential amplitude envelope measured in band steps around the mapped focus location. The lower and upper sides retain separate `tauBelowBins` and `tauAboveBins` controls, while current defaults are symmetric at 0.5 bins. At an exact band center, the adjacent band receives about 13.5% of peak amplitude (`exp(-1 / 0.5)`). The selected preview profile defaults to master `0.50`, bed `0.15`, harmonic exponent `1.5`, tau `0.5/0.5`, and 8 ms attack/release. Chorus remains disabled by default.
+The reference profile uses a continuous linear pitch map from 104.0322699094767 to 4,054.6605862015895 Hz, a 300 Hz excitation clock, 9.302650315454065 carrier cycles per note, phase reset at note birth, a Tukey window with taper fraction 0.025666772580559438, and two equal-gain operands. The second operand begins 225.668919 microseconds after the first. Notes keep their birth frequency and overlap by direct summation. A frozen calibrated 31-tap FIR shapes the mixed output. There is no independent bed, chorus, pitch slew, or extra comb filter in this application profile.
 
-## Simulator integration
+Normalized pitches are assigned from the prepared input's fixed minimum and maximum, so sorting, direction changes, and array permutations do not retune an item. Equal-value inputs map to the middle of the pitch range. Algorithm metadata declares operand ordering; Gnome's audio order is reversed to match the validated reference alignment. Other algorithms keep their recorded comparison order.
 
-The SDL application opens a stereo float audio device at 44.1 kHz when available. Audio initialization is non-fatal, and output remains silent until a trace is loaded. An app-side bridge maps stable item IDs from the trace's prepared input to normalized comparison positions, carrying the Insertion Sort held-key role. Reset keeps the continuous bed and clears comparison focus; completion also clears focus; clearing or replacing a trace fades the bed out.
+The application renders the reference model at 44.1 kHz internally. The app-side output adapter resamples to the device rate, then applies a final safety clamp and increments an overload counter if required. Raw synthesis and preview exports stay linear and unclamped. The fixed 128-frame scheduling lead is separate from simulation elapsed time. The FIR and streaming resampler delays are reported independently in diagnostics.
 
-The audio callback owns the `SoundEngine::Synthesizer`. The app publishes fixed-size snapshots through a triple-buffer latest-state mailbox, so a seek or dense frame replaces pending state rather than queuing stale comparisons. The callback does no allocation or waiting. Audio parameters live in version-2 `settings.ini` alongside appearance and simulation preferences; version-1 files keep their existing values and receive this profile's audio defaults. The Audio settings tab can change every synthesis parameter and all 60 band trims while playback continues.
+## Timeline, playback, and seek contract
 
-## Listening previews
+`AudioTimeline.h` defines generic audio events without importing sorting types. The application bridge translates trace records into normalized operands, semantic roles, source cursors, and timing. It prepares immutable timelines off the callback thread.
 
-The preview executable uses the real `SortingLogic` Insertion Sort trace builder to create deterministic comparison patterns. It writes four dry clips: fixed low/high alternating comparisons and trace-derived comparisons at eight and 16 changes per second. The trace clips sample 40 or 80 comparison events evenly across a fixed seeded 80-item run and retain held-key roles. Every clip uses the symmetric 0.5-bin focus, 15% bed, and 8 ms attack/release so the faster event rates can be compared directly.
+- **Fixed duration** maps source events linearly to the selected duration. The 300 Hz excitation clock chooses the latest eligible event at each tick; fast events may be skipped as separate audible presentations and slow events can persist across ticks.
+- **Reference cadence** schedules eligible comparisons or fallback probes consecutively at 300 per second. Simulation events are still preserved in source order, including multiple events at the same presentation time.
+- The audio sample clock drives the visible playhead only when a device and prepared timeline are ready. A monotonic host clock keeps simulation usable without audio or during preparation failures.
+- Playhead feedback is fenced by both timeline generation and transport revision, so a delayed pause/completion report cannot overwrite a newer Play or seek command on the same trace.
+- Pause, step, and seek either retain the inspected selection or release new excitation according to the selected idle policy. Completion, reset, trace replacement, and clearing stop births while existing notes drain naturally.
+- Seeking reconstructs bounded note and filter history off-thread with the current settings. Revisioned results are coalesced; stale work is discarded. The callback installs prepared state through preallocated buffers and never allocates, locks, looks up registry entries, or deletes timeline storage.
 
-Build the x64 Debug preview target, then run:
+Each operand has 256 preallocated note slots. A slot is retained until the complete note window and its output have reached exact zero; notes are not truncated to make room. The callback consumes latest state rather than a delayed command queue. If preparation or device startup fails, the simulation remains available and reports audio status.
 
-```powershell
-.\x64\Debug\SoundEnginePreview.exe .\x64\Debug\AudioPreviewFast
-```
+The app persists reconstructed audio settings in version 6 of `%LOCALAPPDATA%\\ActuallyGoodSortingSounds\\settings.ini`. Existing version-5 and older settings migrate through the established chain. The reconstructed profile is the default; Basic and Advanced audio controls expose supported edits, and Restore Reconstructed Defaults restores the profile and algorithm gain defaults without changing appearance or run setup.
 
-The output folder includes a `README.txt` index. The earlier refined pack remains available for comparison but is superseded by this focused timing and envelope pack. Spectrogram-based bin-weight extraction remains a fallback investigation if the exponential harmonic profile does not reproduce the desired target effect.
+## Reference validation
 
-## Experimental comb-shaped harmonic bed
+`SoundEnginePreview.exe --reconstructed-pack <directory>` exports three complete 100-item reference rerenders plus the 22-group listening matrix. Long runs include labelled two-second beginning, middle, and ending excerpts. The output includes raw float32 WAVs, PCM16 listening copies, event fixtures, a machine-readable manifest, and a listening index.
 
-The bed's 300 Hz partials already use phase-locked `1/k` amplitudes, which is the magnitude profile of a truncated sawtooth Fourier series. The experiment adds a frequency-dependent magnitude response to those bed partials only. Comparison energy, including the low 50/100/150 Hz bands, remains separate and unfiltered.
+The C++ renderer has been checked against the frozen Python reconstruction for Selection, Insertion, and Gnome. The comparison verifies ordered operands separately, then compares PCM after only the documented 96-frame alignment (128-frame C++ lead minus 32-frame Python preroll). No extra gain or filter is fitted. Maximum absolute sample errors were 3.45e-7, 3.27e-7, and 4.43e-7 respectively, each below the 2e-6 limit.
 
-`BedCombFilterParameters` models a normalized two-path comb response:
-
-```text
-H(f) = (1 - w/2) + (w/2) * exp(-j * (2*pi*f*tau + phase))
-```
-
-Its default experimental fit uses a 222.222 microsecond delay (4.5 kHz notch spacing), a 12 degree phase offset, 95% wet through 6.6 kHz, then a cubic fade to 90% at 15.6 kHz. This predicts deep nulls around 2.1, 6.6, and 11.1 kHz, and a softer null around 15.6 kHz. It does not independently explain the 15.3 kHz dip in the reference. The steady-state magnitude is evaluated once per bank partial and smoothed on changes, so the audio callback adds no delay-line processing or per-sample comb trigonometry. The selected preview profile enables phase-aware comb settings by default; the spectrogram resemblance does not prove Andrut used this circuit.
-
-Generate four paired ordered-sweep clips (flat/comb bed at 0% and 20% envelope-weighted chorus):
+Reproduce the checks from the repository root:
 
 ```powershell
-.\x64\Debug\SoundEnginePreview.exe --comb-bed-sweep .\x64\Debug\AudioPreviewCombBed
+& '.\\x64\\Release\\SoundEnginePreview.exe' --reconstructed-pack '.\\x64\\Release\\AudioPreviewReconstructedPackFinal'
+& 'C:\\Users\\kasin\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' 'SoundEnginePreview\\research\\compare_cpp_reference.py' 'x64\\Release\\AudioPreviewReconstructedPackFinal'
 ```
 
-Each file uses the same two-second, 79-comparison sweep through Insertion Sort on an ordered 80-item input. The generated folder's `README.txt` documents the exact settings. No app-side playback or settings integration is part of this listening experiment.
+The most recent build and all three console test suites passed for x64 and Win32, in Debug and Release. The resampler tests cover 22.05, 32, 44.1, 48, and 96 kHz. Run the test executables from their configuration output directory after building the solution.
 
-## Ordered sweep chorus A/B
+## Historical offline synthesis work
 
-Run the preview executable with `--ordered-sweep` to create six two-second clips under `AudioPreviewOrderedSweepBed300`. They use an already-ordered 80-item input and the real Insertion Sort trace, yielding 79 adjacent-key comparisons swept evenly from the low to high end. The matrix crosses 0%, 10%, and 20% chorus mix with two `ChorusWeighting` modes: `Uniform` sends the complete harmonic sum through the existing modulated delay, while `ComparisonEnvelope` weights the delayed signal by the normalized comparison envelope across the frequency bands. The 50/100/150 Hz bands stay available to comparisons but are excluded from the continuous bed; the bed starts at 300 Hz. The 0% pair is identical; at nonzero mixes, the modes reveal whether concentrating chorus around the active comparison helps produce Andrut’s smoother sweep.
+The frequency-bank harmonic bed, comb-shaped bed, chorus variants, and composable sine/packet/sawtooth source models are retained as research and regression material. They are not selected by the application's audio path. Earlier descriptions and WAVs under ignored build output document those experiments; the current app profile is the reconstructed delayed-burst model above. Selecting a different synthesis model for the app requires a separate listening and evidence review.
 
-Example:
-
-```powershell
-.\x64\Debug\SoundEnginePreview.exe --ordered-sweep .\x64\Debug\AudioPreviewOrderedSweepBed300
-```
-
-These are offline listening experiments. The synthesizer defaults to uniform chorus weighting.
-
-## Andrut similarity model sweep
-
-Run `--model-sweep` to write nine dry, two-second ordered-sweep variants to `AudioPreviewModelComparisons`:
-
-```powershell
-.\x64\Debug\SoundEnginePreview.exe --model-sweep .\x64\Debug\AudioPreviewModelComparisons
-```
-
-All variants reuse the same 79 adjacent comparisons from the ordered 80-item Insertion Sort trace. The comparison focus travels from the lowest to highest values, with held-key roles preserved. The matrix varies these modeling choices:
-
-- magnitude-only versus phase-aware comb shaping of the harmonic bed;
-- harmonic-bed exponent `p=1`, `1.5`, or `2`, changing the bed partials from `1/k` to `1/k^p`;
-- master level `0.50` versus `0.375` (a 25% output reduction), plus bed levels `0.15`, `0.1125`, and `0.0375`;
-- fixed comparison tau (`0.1`, `0.25`, or `0.5` bins) versus a position-scaled tau that grows from `0.1` to `0.5` bins across the value range.
-
-The comb magnitude stays identical between magnitude-only and phase-aware variants. Phase-aware rendering rotates each bed partial by the complex response phase; it does not comb-filter the comparison tones. Master gain is applied after headroom control, so reducing it remains an actual output-level change. These are listening hypotheses, not claims about Andrut’s implementation; engine defaults remain unchanged until a variant is selected for further work.
-
-## Validation
-
-`SoundEngineTests` covers the exact frequency bank, focus limits in all mapping modes, zero-width normalization, exponential tails, held-key gain, phase continuity, smooth setting changes, both chorus weighting modes, chorus sidebands, headroom, silence, and dense comparison retargeting.
+`ComposableRenderer` and its registered offline components are described in [`COMPOSITION.md`](COMPOSITION.md). They remain useful for future experiments, but their profiles are independent of the application's persisted reconstructed settings.

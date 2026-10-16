@@ -35,9 +35,12 @@ enum class AppActionKind
 	SetShellGapSequence,
 	SetMergeWritebackMode,
 	SetMergeExecutionMode,
+	SetPlaybackTimingMode,
 	SetAudioParameter,
 	SetVariantAudioLevel,
 	ResetVariantAudioLevels,
+	SetReconstructedAudioParameter,
+	RestoreReconstructedDefaults,
 	SelectAudioBand,
 	RetryAudioDevice
 };
@@ -52,6 +55,14 @@ enum class AudioParameterId
 	AttackMs, ReleaseMs, MappingMode, SpreadMode, BandTrim, AccentRouting, AccentGain
 };
 
+enum class ReconstructedAudioParameterId
+{
+	Enabled, MasterLevel, IdlePolicy, SpecialReleaseMilliseconds,
+	MinimumFrequencyHz, MaximumFrequencyHz, Mapping, ExcitationClockHz,
+	CarrierCycles, TukeyFraction, SecondOperandDelayMicroseconds,
+	LowPassEnabled, LowPassCutoffHz
+};
+
 struct AppAction
 {
 	AppActionKind kind;
@@ -62,26 +73,30 @@ struct AppAction
 	std::string optionGroupId;
 	std::string optionStableId;
 	AudioParameterId audioParameter;
+	ReconstructedAudioParameterId reconstructedAudioParameter;
 	int index;
 
 	AppAction(AppActionKind action = AppActionKind::None, float argument = 0.0f, int selected = 0,
 		AudioParameterId parameter = AudioParameterId::MasterLevel, int arrayIndex = 0)
-		: kind(action), value(argument), selection(selected), familyId(), variantId(), optionGroupId(), optionStableId(), audioParameter(parameter), index(arrayIndex) {}
+		: kind(action), value(argument), selection(selected), familyId(), variantId(), optionGroupId(), optionStableId(), audioParameter(parameter), reconstructedAudioParameter(ReconstructedAudioParameterId::MasterLevel), index(arrayIndex) {}
 	AppAction(AppActionKind action, const sortinglogic::FamilyId& family, const sortinglogic::VariantId& variant)
 		: kind(action), value(0.0f), selection(-1), familyId(family), variantId(variant),
-			optionGroupId(), optionStableId(), audioParameter(AudioParameterId::MasterLevel), index(0) {}
+			optionGroupId(), optionStableId(), audioParameter(AudioParameterId::MasterLevel), reconstructedAudioParameter(ReconstructedAudioParameterId::MasterLevel), index(0) {}
 	AppAction(AppActionKind action, const sortinglogic::FamilyId& family, const sortinglogic::VariantId& variant,
 		const std::string& groupId)
 		: kind(action), value(0.0f), selection(-1), familyId(family), variantId(variant),
-			optionGroupId(groupId), optionStableId(), audioParameter(AudioParameterId::MasterLevel), index(0) {}
+			optionGroupId(groupId), optionStableId(), audioParameter(AudioParameterId::MasterLevel), reconstructedAudioParameter(ReconstructedAudioParameterId::MasterLevel), index(0) {}
 	AppAction(AppActionKind action, const sortinglogic::FamilyId& family, const sortinglogic::VariantId& variant,
 		const std::string& groupId, const std::string& stableOptionId, int optionValue)
 		: kind(action), value(0.0f), selection(optionValue), familyId(family), variantId(variant),
-			optionGroupId(groupId), optionStableId(stableOptionId), audioParameter(AudioParameterId::MasterLevel), index(0) {}
+			optionGroupId(groupId), optionStableId(stableOptionId), audioParameter(AudioParameterId::MasterLevel), reconstructedAudioParameter(ReconstructedAudioParameterId::MasterLevel), index(0) {}
 	AppAction(AppActionKind action, const sortinglogic::FamilyId& family, const sortinglogic::VariantId& variant,
 		float audioOffsetDb, int channel)
 		: kind(action), value(audioOffsetDb), selection(-1), familyId(family), variantId(variant),
-			optionGroupId(), optionStableId(), audioParameter(AudioParameterId::MasterLevel), index(channel) {}
+			optionGroupId(), optionStableId(), audioParameter(AudioParameterId::MasterLevel), reconstructedAudioParameter(ReconstructedAudioParameterId::MasterLevel), index(channel) {}
+	AppAction(AppActionKind action, ReconstructedAudioParameterId parameter, float argument = 0.0f, int selected = 0)
+		: kind(action), value(argument), selection(selected), familyId(), variantId(), optionGroupId(), optionStableId(),
+			audioParameter(AudioParameterId::MasterLevel), reconstructedAudioParameter(parameter), index(0) {}
 };
 
 class AppController
@@ -94,10 +109,14 @@ public:
 	AppController& operator=(const AppController&) = delete;
 
 	sortinglogic::CommandResult dispatch(const AppAction& action);
-	void update(float deltaSeconds);
+	void update(float deltaSeconds, bool audioClockAvailable = false);
+	void setAudioPreparationPending(bool pending) { audioPreparationGateEnabled_ = true; audioPreparationPending_ = pending; }
+	void applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
+		std::uint64_t currentTimelineGeneration, std::uint64_t currentTransportRevision);
 	sortinglogic::RenderSnapshot snapshot() const;
 	const UserPreferences& preferences() const { return preferences_; }
 	SoundEngine::Parameters effectiveAudio() const;
+	SoundEngine::ReconstructedParameters effectiveReconstructedAudio() const { return preferences_.reconstructedAudio; }
 	const sortinglogic::Simulation& simulation() const { return simulation_; }
 	const std::string& persistenceStatus() const { return persistenceStatus_; }
 
@@ -107,8 +126,15 @@ private:
 	sortinglogic::Simulation simulation_;
 	sortinglogic::TraceBuildService traceBuildService_;
 	std::string persistenceStatus_;
+	double hostReferenceElapsedSeconds_;
+	bool previousAudioClockAvailable_;
+	bool audioPreparationGateEnabled_;
+	bool audioPreparationPending_;
 
 	static UserPreferences loadPreferences(ISettingsPersistence& persistence);
 	void synchronizeSimulationPreferences();
 	void persistIfChanged(const UserPreferences& previous);
+	double referenceDurationSeconds() const;
+	double referenceElapsedAtCursor(std::size_t cursor) const;
+	void synchronizeReferenceTransport(bool wasPlaying);
 };

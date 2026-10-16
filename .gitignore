@@ -34,3 +34,7 @@ ipch/
 # until the deployment setup is independently verified).
 *.exe
 *.lib
+
+# Offline analysis Python caches
+__pycache__/
+*.py[cod]

@@ -11,7 +11,7 @@
 
 namespace
 {
-	const int CurrentVersion = 5;
+	const int CurrentVersion = 6;
 	const wchar_t* SettingsDirectory = L"\\ActuallyGoodSortingSounds";
 	const wchar_t* SettingsFile = L"\\settings.ini";
 	const char* audioChannelId(AlgorithmAudioChannel channel);
@@ -120,6 +120,7 @@ namespace
 		case sortinglogic::InputPattern::NearlySorted: return "nearly_sorted";
 		case sortinglogic::InputPattern::FewUnique: return "few_unique";
 		case sortinglogic::InputPattern::OrganPipe: return "organ_pipe";
+		case sortinglogic::InputPattern::AndrutReference: return "andrut_reference_100";
 		}
 		return "random";
 	}
@@ -132,6 +133,7 @@ namespace
 		else if (value == "nearly_sorted") result = sortinglogic::InputPattern::NearlySorted;
 		else if (value == "few_unique") result = sortinglogic::InputPattern::FewUnique;
 		else if (value == "organ_pipe") result = sortinglogic::InputPattern::OrganPipe;
+		else if (value == "andrut_reference_100") result = sortinglogic::InputPattern::AndrutReference;
 		else return false;
 		return true;
 	}
@@ -177,6 +179,17 @@ namespace
 		return true;
 	}
 
+	const char* playbackTimingModeName(SoundEngine::PlaybackTimingMode mode)
+	{
+		return mode == SoundEngine::PlaybackTimingMode::ReferenceCadence ? "reference_cadence" : "fixed_duration";
+	}
+
+	SoundEngine::PlaybackTimingMode parsePlaybackTimingMode(const std::string& value)
+	{
+		return value == "reference_cadence" ? SoundEngine::PlaybackTimingMode::ReferenceCadence :
+			SoundEngine::PlaybackTimingMode::FixedDuration;
+	}
+
 	bool parseInt(const std::map<std::string, std::string>& values, const std::string& key, int& output)
 	{
 		std::map<std::string, std::string>::const_iterator found = values.find(key);
@@ -194,6 +207,17 @@ namespace
 		if (found == values.end() || found->second.empty()) return false;
 		char* end = nullptr;
 		const float parsed = std::strtof(found->second.c_str(), &end);
+		if (!end || *end != '\0' || !std::isfinite(parsed)) return false;
+		output = parsed;
+		return true;
+	}
+
+	bool parseDouble(const std::map<std::string, std::string>& values, const std::string& key, double& output)
+	{
+		std::map<std::string, std::string>::const_iterator found = values.find(key);
+		if (found == values.end() || found->second.empty()) return false;
+		char* end = nullptr;
+		const double parsed = std::strtod(found->second.c_str(), &end);
 		if (!end || *end != '\0' || !std::isfinite(parsed)) return false;
 		output = parsed;
 		return true;
@@ -217,6 +241,11 @@ namespace
 	bool optionalFloat(const std::map<std::string, std::string>& values, const std::string& key, float& field)
 	{
 		return values.find(key) == values.end() || parseFloat(values, key, field);
+	}
+
+	bool optionalDouble(const std::map<std::string, std::string>& values, const std::string& key, double& field)
+	{
+		return values.find(key) == values.end() || parseDouble(values, key, field);
 	}
 
 	bool optionalInt(const std::map<std::string, std::string>& values, const std::string& key, int& field)
@@ -281,6 +310,69 @@ namespace
 #undef READ_AB
 #undef READ_AI
 		return ok;
+	}
+
+	bool validReconstructedAudio(const SoundEngine::ReconstructedParameters& a)
+	{
+		return std::isfinite(a.minimumFrequencyHz) && a.minimumFrequencyHz >= 50.0 && a.minimumFrequencyHz <= 1000.0 &&
+			std::isfinite(a.maximumFrequencyHz) && a.maximumFrequencyHz >= 1000.0 && a.maximumFrequencyHz <= 8000.0 &&
+			a.minimumFrequencyHz < a.maximumFrequencyHz && std::isfinite(a.excitationClockHz) &&
+			a.excitationClockHz >= 100.0 && a.excitationClockHz <= 600.0 && std::isfinite(a.carrierCycles) &&
+			a.carrierCycles >= 1.0 && a.carrierCycles <= 16.0 && std::isfinite(a.tukeyFraction) &&
+			a.tukeyFraction >= 0.0 && a.tukeyFraction <= 1.0 &&
+			std::isfinite(a.secondOperandDelayMicroseconds) && a.secondOperandDelayMicroseconds >= 0.0 &&
+			a.secondOperandDelayMicroseconds <= 2000.0 && std::isfinite(a.masterLevel) &&
+			a.masterLevel >= 0.0 && a.masterLevel <= 1.0 && std::isfinite(a.specialReleaseMilliseconds) &&
+			a.specialReleaseMilliseconds >= 0.0 && a.specialReleaseMilliseconds <= 2000.0 &&
+			std::isfinite(a.lowPassCutoffHz) && a.lowPassCutoffHz >= 500.0 && a.lowPassCutoffHz <= 20000.0 &&
+			static_cast<int>(a.mapping) >= static_cast<int>(SoundEngine::ReconstructedMapping::LinearHz) &&
+			static_cast<int>(a.mapping) <= static_cast<int>(SoundEngine::ReconstructedMapping::LogFrequency) &&
+			static_cast<int>(a.idlePolicy) >= static_cast<int>(SoundEngine::ReconstructedIdlePolicy::HoldSelection) &&
+			static_cast<int>(a.idlePolicy) <= static_cast<int>(SoundEngine::ReconstructedIdlePolicy::ReleaseSelection);
+	}
+
+	bool readReconstructedAudio(const std::map<std::string, std::string>& values, SoundEngine::ReconstructedParameters& a)
+	{
+		bool ok = true;
+		int integer = 0;
+#define READ_RF(key, field) ok = optionalDouble(values, "reconstructed_" key, a.field) && ok
+#define READ_RB(key, field) ok = optionalBool(values, "reconstructed_" key, a.field) && ok
+#define READ_RI(key, field) integer = static_cast<int>(a.field); if (optionalInt(values, "reconstructed_" key, integer)) a.field = static_cast<decltype(a.field)>(integer); else if (values.find("reconstructed_" key) != values.end()) ok = false
+		READ_RF("minimum_hz", minimumFrequencyHz);
+		READ_RF("maximum_hz", maximumFrequencyHz);
+		READ_RF("clock_hz", excitationClockHz);
+		READ_RF("carrier_cycles", carrierCycles);
+		READ_RF("tukey_fraction", tukeyFraction);
+		READ_RF("operand_delay_us", secondOperandDelayMicroseconds);
+		READ_RF("master", masterLevel);
+		READ_RF("special_release_ms", specialReleaseMilliseconds);
+		READ_RF("lowpass_cutoff_hz", lowPassCutoffHz);
+		READ_RB("enabled", audioEnabled);
+		READ_RB("lowpass_enabled", lowPassEnabled);
+		READ_RI("mapping", mapping);
+		READ_RI("idle_policy", idlePolicy);
+#undef READ_RF
+#undef READ_RB
+#undef READ_RI
+		return ok;
+	}
+
+	void writeReconstructedAudio(std::ostringstream& out, const SoundEngine::ReconstructedParameters& a)
+	{
+		out << std::setprecision(17)
+			<< "reconstructed_minimum_hz=" << a.minimumFrequencyHz << "\n"
+			<< "reconstructed_maximum_hz=" << a.maximumFrequencyHz << "\n"
+			<< "reconstructed_clock_hz=" << a.excitationClockHz << "\n"
+			<< "reconstructed_carrier_cycles=" << a.carrierCycles << "\n"
+			<< "reconstructed_tukey_fraction=" << a.tukeyFraction << "\n"
+			<< "reconstructed_operand_delay_us=" << a.secondOperandDelayMicroseconds << "\n"
+			<< "reconstructed_master=" << a.masterLevel << "\n"
+			<< "reconstructed_special_release_ms=" << a.specialReleaseMilliseconds << "\n"
+			<< "reconstructed_lowpass_cutoff_hz=" << a.lowPassCutoffHz << "\n"
+			<< "reconstructed_enabled=" << (a.audioEnabled ? 1 : 0) << "\n"
+			<< "reconstructed_lowpass_enabled=" << (a.lowPassEnabled ? 1 : 0) << "\n"
+			<< "reconstructed_mapping=" << static_cast<int>(a.mapping) << "\n"
+			<< "reconstructed_idle_policy=" << static_cast<int>(a.idlePolicy) << "\n";
 	}
 
 	void writeAudio(std::ostringstream& out, const SoundEngine::Parameters& a)
@@ -541,22 +633,11 @@ int algorithmOptionValue(const UserPreferences& preferences,
 
 AlgorithmAudioLevels defaultFamilyAudioLevels(const SoundEngine::Parameters& audio)
 {
-	AlgorithmAudioLevels levels;
-	levels.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] = audio.comparisonBoostDb;
-	levels.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::ProbeAccent)] =
-		audio.accentRouting[static_cast<std::size_t>(SoundEngine::AccentCategory::Probe)]
-			? gainToDb(audio.accentGain[static_cast<std::size_t>(SoundEngine::AccentCategory::Probe)]) : -60.0f;
-	levels.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::MainChangeAccent)] =
-		audio.accentRouting[static_cast<std::size_t>(SoundEngine::AccentCategory::Movement)]
-			? gainToDb(audio.accentGain[static_cast<std::size_t>(SoundEngine::AccentCategory::Movement)]) : -60.0f;
-	levels.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::AuxiliaryAccent)] =
-		audio.accentRouting[static_cast<std::size_t>(SoundEngine::AccentCategory::Distribution)]
-			? gainToDb(audio.accentGain[static_cast<std::size_t>(SoundEngine::AccentCategory::Distribution)]) : -60.0f;
-	levels.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::DiscardAccent)] =
-		audio.accentRouting[static_cast<std::size_t>(SoundEngine::AccentCategory::Discard)]
-			? gainToDb(audio.accentGain[static_cast<std::size_t>(SoundEngine::AccentCategory::Discard)]) : -60.0f;
-	levels.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::HeldKeyRole)] = audio.heldKeyBoostDb;
-	return levels;
+	(void)audio;
+	// The reconstructed model's calibrated comparison and role defaults are all
+	// unity gain. Legacy global audio values remain stored only for migration and
+	// preview compatibility; they do not silently shape this model.
+	return AlgorithmAudioLevels();
 }
 
 AlgorithmAudioLevels familyAudioLevels(const UserPreferences& preferences, const sortinglogic::FamilyId& family)
@@ -650,14 +731,15 @@ const char* algorithmAudioChannelName(AlgorithmAudioChannel channel)
 }
 
 VisualPreferences::VisualPreferences() : palette(PaletteId::Cyan), spacing(BarSpacingMode::Compact), panelExpanded(true) {}
-SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(10), descending(false),
+SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(10),
+	playbackTimingMode(SoundEngine::PlaybackTimingMode::FixedDuration), descending(false),
 	algorithm(static_cast<int>(sortinglogic::SortAlgorithm::Insertion)), familyId("insertion-methods"), variantId("insertion"),
 	profile(sortinglogic::InputProfile::NormalizedFloat), domain(sortinglogic::InputDomain::NormalizedFloats),
 	pattern(sortinglogic::InputPattern::Random),
 	shellGapSequence(sortinglogic::ShellGapSequence::Halving),
 	mergeWritebackMode(sortinglogic::MergeWritebackMode::AtomicRangeWrite),
 	mergeExecutionMode(sortinglogic::MergeExecutionMode::BottomUp) {}
-UserPreferences::UserPreferences() : version(CurrentVersion), visual(), simulation(), audio(), familyAudioDefaults(),
+UserPreferences::UserPreferences() : version(CurrentVersion), visual(), simulation(), audio(), reconstructedAudio(), familyAudioDefaults(),
 	variantAudioOffsets(), algorithmOptions() {}
 
 bool UserPreferences::isValid() const
@@ -679,9 +761,11 @@ bool UserPreferences::isValid() const
 		 static_cast<int>(simulation.mergeWritebackMode) == static_cast<int>(sortinglogic::MergeWritebackMode::AtomicRangeWrite)) &&
 		(static_cast<int>(simulation.mergeExecutionMode) == static_cast<int>(sortinglogic::MergeExecutionMode::BottomUp) ||
 		 static_cast<int>(simulation.mergeExecutionMode) == static_cast<int>(sortinglogic::MergeExecutionMode::TopDown)) &&
+		(static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::FixedDuration) ||
+		 static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence)) &&
 		static_cast<int>(visual.palette) >= 0 && static_cast<int>(visual.palette) <= static_cast<int>(PaletteId::Light) &&
 		static_cast<int>(visual.spacing) >= 0 && static_cast<int>(visual.spacing) <= static_cast<int>(BarSpacingMode::Comfortable) &&
-		validAudio(audio) && [&]()
+		validAudio(audio) && validReconstructedAudio(reconstructedAudio) && [&]()
 		{
 			std::map<std::string, bool> knownFamilies;
 			const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
@@ -764,6 +848,8 @@ UserPreferences SettingsStore::load() const
 		!optionalBool(values, "descending", defaults.simulation.descending) ||
 		!optionalInt(values, "item_count", defaults.simulation.itemCount) ||
 		!optionalInt(values, "duration_seconds", defaults.simulation.durationSeconds)) return UserPreferences();
+	found = values.find("playback_timing");
+	if (found != values.end()) defaults.simulation.playbackTimingMode = parsePlaybackTimingMode(found->second);
 	if (version <= 3 && !optionalInt(values, "algorithm", defaults.simulation.algorithm)) return UserPreferences();
 	if (version < 3)
 	{
@@ -861,14 +947,20 @@ UserPreferences SettingsStore::load() const
 		if (readAudio(values, loaded) && validAudio(loaded)) defaults.audio = loaded;
 		// A malformed new audio section should not discard an otherwise valid v1-era setup.
 	}
+	if (version >= 6)
+	{
+		SoundEngine::ReconstructedParameters loaded = defaults.reconstructedAudio;
+		if (readReconstructedAudio(values, loaded) && validReconstructedAudio(loaded)) defaults.reconstructedAudio = loaded;
+		// Malformed reconstructed values fall back independently to the calibrated profile.
+	}
 	if (version < CurrentVersion)
 	{
-		// v4 had one global comparison, held-key, and accent mix. Copy those
-		// effective levels into each known family so the first contextual settings
-		// release sounds exactly like the old global controls did.
+		// The reconstructed model starts with neutral algorithm gains. Preserve
+		// the old audio block for compatibility, but do not carry its timbre or
+		// inherited boosts into the new synthesis model.
 		const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
 		for (std::size_t i = 0; i < catalog.size(); ++i)
-			defaults.familyAudioDefaults[catalog[i].familyId] = defaultFamilyAudioLevels(defaults.audio);
+			defaults.familyAudioDefaults[catalog[i].familyId] = AlgorithmAudioLevels();
 	}
 	else
 		readAlgorithmAudio(values, defaults);
@@ -897,6 +989,7 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 		<< "panel_expanded=" << (settings.visual.panelExpanded ? 1 : 0) << "\n"
 		<< "item_count=" << settings.simulation.itemCount << "\n"
 		<< "duration_seconds=" << settings.simulation.durationSeconds << "\n"
+		<< "playback_timing=" << playbackTimingModeName(settings.simulation.playbackTimingMode) << "\n"
 		<< "descending=" << (settings.simulation.descending ? 1 : 0) << "\n"
 		<< "family_id=" << settings.simulation.familyId << "\n"
 		<< "variant_id=" << settings.simulation.variantId << "\n"
@@ -925,6 +1018,7 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 		}
 	}
 	writeAudio(contents, settings.audio);
+	writeReconstructedAudio(contents, settings.reconstructedAudio);
 	writeAlgorithmAudio(contents, settings);
 	const std::string data = contents.str();
 	HANDLE file = CreateFileW(temporaryPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -937,7 +1031,39 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 	const BOOL wrote = WriteFile(file, data.data(), static_cast<DWORD>(data.size()), &written, nullptr);
 	const BOOL flushed = wrote && written == data.size() ? FlushFileBuffers(file) : FALSE;
 	CloseHandle(file);
-	if (!flushed || !MoveFileExW(temporaryPath.c_str(), path_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+	if (!flushed)
+	{
+		DeleteFileW(temporaryPath.c_str());
+		if (error) *error = "Could not flush the temporary settings file.";
+		return false;
+	}
+	const DWORD existingAttributes = GetFileAttributesW(path_.c_str());
+	if (existingAttributes != INVALID_FILE_ATTRIBUTES)
+	{
+		const std::wstring backupPath = path_ + L".pre-v6.bak";
+		if (GetFileAttributesW(backupPath.c_str()) == INVALID_FILE_ATTRIBUTES)
+		{
+			HANDLE oldFile = CreateFileW(path_.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+				nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			char header[128] = {};
+			DWORD headerBytes = 0;
+			if (oldFile != INVALID_HANDLE_VALUE)
+			{
+				ReadFile(oldFile, header, sizeof(header) - 1, &headerBytes, nullptr);
+				CloseHandle(oldFile);
+			}
+			const std::string headerText(header, headerBytes);
+			const std::string::size_type versionAt = headerText.find("version=");
+			const int oldVersion = versionAt == std::string::npos ? CurrentVersion : std::atoi(headerText.c_str() + versionAt + 8);
+			if (oldVersion > 0 && oldVersion < CurrentVersion && !CopyFileW(path_.c_str(), backupPath.c_str(), TRUE))
+			{
+				DeleteFileW(temporaryPath.c_str());
+				if (error) *error = "Could not preserve the previous settings file before its version-6 migration.";
+				return false;
+			}
+		}
+	}
+	if (!MoveFileExW(temporaryPath.c_str(), path_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
 	{
 		DeleteFileW(temporaryPath.c_str());
 		if (error) *error = "Could not atomically replace the settings file.";

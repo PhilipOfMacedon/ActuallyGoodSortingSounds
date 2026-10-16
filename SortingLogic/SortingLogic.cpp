@@ -105,6 +105,7 @@ namespace sortinglogic
 					throw OperationLimitReached();
 				 event.sequence = trace.events.size();
 				if (event.type == SemanticEventType::Compare) trace.comparisonEventIndices.push_back(event.sequence);
+				else if (event.type == SemanticEventType::Probe) trace.probeEventIndices.push_back(event.sequence);
 				trace.events.push_back(event);
 				applyEventForward(state, trace.events.back());
 				if (event.type != SemanticEventType::Complete) ++trace.operationCount;
@@ -795,8 +796,14 @@ namespace sortinglogic
 			if (n == 0) return;
 			r.resizeCounters("digits", 10);
 			r.resizeAuxiliary("radix_output", n);
+			r.probe(0, SemanticRole::ProcessedItem);
 			int minimum = r.at(0).integerKey, maximum = minimum;
-			for (std::size_t i = 0; i < n; ++i) { minimum = std::min(minimum, r.at(i).integerKey); maximum = std::max(maximum, r.at(i).integerKey); }
+			for (std::size_t i = 1; i < n; ++i)
+			{
+				r.probe(i, SemanticRole::ProcessedItem);
+				minimum = std::min(minimum, r.at(i).integerKey);
+				maximum = std::max(maximum, r.at(i).integerKey);
+			}
 			const int transformedMaximum = maximum - minimum;
 			int place = 1;
 			do
@@ -808,6 +815,7 @@ namespace sortinglogic
 					{ return r.trace.direction == SortDirection::Ascending ? item.integerKey - minimum : maximum - item.integerKey; };
 				for (std::size_t i = 0; i < n; ++i)
 				{
+					r.probe(i, SemanticRole::ProcessedItem);
 					const std::size_t digit = static_cast<std::size_t>((transformed(r.at(i)) / place) % 10);
 					if (bucketBegin[digit] == NoGapIndex) bucketBegin[digit] = r.trace.events.size();
 					r.writeCounter("digits", digit, r.counter("digits", digit) + 1);
@@ -816,6 +824,7 @@ namespace sortinglogic
 					r.writeCounter("digits", d, r.counter("digits", d) + r.counter("digits", d - 1));
 				for (std::size_t i = n; i > 0; --i)
 				{
+					r.probe(i - 1, SemanticRole::ProcessedItem);
 					const SortItem item = r.at(i - 1);
 					const std::size_t digit = static_cast<std::size_t>((transformed(item) / place) % 10);
 					const int target = r.counter("digits", digit) - 1;
@@ -942,7 +951,7 @@ namespace sortinglogic
 				}, MaxItemCount, "general permutation sort", "distribution-sorts", "radix", "Distribution Sorts"),
 			AlgorithmDescriptor(SortAlgorithm::Gnome, "gnome", "Gnome Sort", "O(n²)", "O(1)", true, true, true, true, &buildGnomeRequest,
 				std::vector<AlgorithmOptionDescriptor>(), std::vector<AlgorithmMetricDescriptor>(), MaxItemCount, "general permutation sort",
-				"exchange-sorts", "gnome", "Exchange Sorts"),
+				"exchange-sorts", "gnome", "Exchange Sorts", std::vector<SemanticRole>(), true),
 			AlgorithmDescriptor(SortAlgorithm::Cocktail, "cocktail", "Cocktail Shaker Sort", "O(n²), best O(n)", "O(1)", true, true, true, true, &buildCocktailRequest,
 				std::vector<AlgorithmOptionDescriptor>(), std::vector<AlgorithmMetricDescriptor>(), MaxItemCount, "general permutation sort",
 				"exchange-sorts", "cocktail", "Exchange Sorts"),
@@ -1032,18 +1041,21 @@ namespace sortinglogic
 		case InputPattern::NearlySorted: return "Nearly sorted";
 		case InputPattern::FewUnique: return "Few unique";
 		case InputPattern::OrganPipe: return "Organ pipe";
+		case InputPattern::AndrutReference: return "Andrut reference (100 bars)";
 		}
 		return "Random";
 	}
 
 	bool inputPatternCompatible(InputDomain domain, InputPattern pattern)
 	{
+		if (pattern == InputPattern::AndrutReference)
+			return domain == InputDomain::NormalizedFloats;
 		if (domain == InputDomain::IntegerPermutation &&
 			(pattern == InputPattern::FewUnique || pattern == InputPattern::OrganPipe)) return false;
 		return static_cast<int>(domain) >= static_cast<int>(InputDomain::NormalizedFloats) &&
 			static_cast<int>(domain) <= static_cast<int>(InputDomain::IntegerPermutation) &&
 			static_cast<int>(pattern) >= static_cast<int>(InputPattern::Random) &&
-			static_cast<int>(pattern) <= static_cast<int>(InputPattern::OrganPipe);
+			static_cast<int>(pattern) <= static_cast<int>(InputPattern::AndrutReference);
 	}
 
 	InputProfile inputProfileForDomain(InputDomain domain)
@@ -1078,7 +1090,7 @@ namespace sortinglogic
 		domain(InputDomain::NormalizedFloats), pattern(InputPattern::Random), shellGapSequence(ShellGapSequence::Halving),
 		mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite), mergeExecutionMode(MergeExecutionMode::BottomUp),
 		inputSeed(0), input(), initialState(), events(),
-		comparisonEventIndices(), annotations(), snapshots(), operationCount(0), complete(true), completionReason()
+		comparisonEventIndices(), probeEventIndices(), annotations(), snapshots(), operationCount(0), complete(true), completionReason()
 	{
 	}
 
@@ -1088,7 +1100,7 @@ namespace sortinglogic
 		profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats),
 		pattern(InputPattern::Random), shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
 		mergeExecutionMode(MergeExecutionMode::BottomUp),
-		cursor(0), eventCount(0), itemCount(0), inputSeed(0), durationSeconds(10.0f), elapsedSeconds(0.0f),
+		cursor(0), eventCount(0), itemCount(0), audioEligibleEventCount(0), inputSeed(0), durationSeconds(10.0f), elapsedSeconds(0.0f),
 		hasTrace(false), buildingTrace(false), playing(false), complete(false), partial(false), runCompatible(true),
 		compatibilityMessage(), completionReason(), status()
 	{
@@ -1440,6 +1452,7 @@ namespace sortinglogic
 		domain_ = domain;
 		profile_ = inputProfileForDomain(domain);
 		pattern_ = pattern;
+		if (pattern_ == InputPattern::AndrutReference) itemCount_ = 100;
 		prepareItems(BaselineKind::Shuffle, startupSeed);
 	}
 
@@ -1459,6 +1472,14 @@ namespace sortinglogic
 		std::vector<SortItem> items;
 		items.reserve(itemCount_);
 		std::mt19937 engine(seed);
+		static const int andrutRanks[100] = {
+			78,89,75,81,31,39,93,6,86,27,56,20,42,98,96,95,60,62,77,15,
+			2,49,37,46,63,64,82,45,32,12,28,76,94,3,57,59,30,50,90,72,
+			38,70,36,53,34,44,40,43,4,84,29,7,25,33,8,41,66,14,67,48,
+			35,61,79,88,85,0,92,87,97,19,18,26,58,1,91,10,23,54,55,69,
+			73,22,24,5,13,74,71,99,9,16,65,83,51,80,11,52,68,47,21,17
+		};
+		const bool andrutFixture = kind == BaselineKind::Shuffle && pattern_ == InputPattern::AndrutReference;
 		const auto assignKey = [this](SortItem& item, int key)
 		{
 			item.integerKey = key;
@@ -1471,7 +1492,9 @@ namespace sortinglogic
 		for (std::size_t i = 0; i < itemCount_; ++i)
 		{
 			const float normalized = static_cast<float>(i + 1) / static_cast<float>(itemCount_);
-			if (domain_ == InputDomain::NormalizedFloats)
+			if (andrutFixture)
+				items.push_back(SortItem(static_cast<std::uint64_t>(i), static_cast<float>(andrutRanks[i]) / 99.0f));
+			else if (domain_ == InputDomain::NormalizedFloats)
 				items.push_back(SortItem(static_cast<std::uint64_t>(i), normalized));
 			else
 			{
@@ -1546,6 +1569,9 @@ namespace sortinglogic
 					else assignKey(items[i], static_cast<int>(rank));
 				}
 				break;
+			case InputPattern::AndrutReference:
+				// Installed from the fixture above; retain its exact left-to-right order.
+				break;
 			}
 		}
 		else sortByDirection(kind == BaselineKind::Descending ? SortDirection::Descending : SortDirection::Ascending);
@@ -1580,8 +1606,13 @@ namespace sortinglogic
 		if (count < MinItemCount || count > MaxItemCount) { status_ = "Bar count must be between 2 and 800."; return CommandResult(false, status_); }
 		if (count == itemCount_) { status_ = "Bar count is already " + std::to_string(itemCount_) + "."; return CommandResult(true, status_); }
 		itemCount_ = count;
+		const bool leftAndrutPreset = pattern_ == InputPattern::AndrutReference && itemCount_ != 100;
+		if (leftAndrutPreset) pattern_ = InputPattern::Random;
 		prepareItems(baselineKind_, baselineKind_ == BaselineKind::Shuffle ? createFreshSeed() : 0);
-		status_ = "Bar count set to " + std::to_string(itemCount_) + "; prepared baseline refreshed."; return CommandResult(true, status_);
+		status_ = leftAndrutPreset
+			? "Bar count set to " + std::to_string(itemCount_) + "; input arrangement returned to Random because the Andrut reference contains exactly 100 bars."
+			: "Bar count set to " + std::to_string(itemCount_) + "; prepared baseline refreshed.";
+		return CommandResult(true, status_);
 	}
 
 	CommandResult Simulation::setDirection(SortDirection direction)
@@ -1635,12 +1666,21 @@ namespace sortinglogic
 	CommandResult Simulation::setInputPattern(InputPattern pattern)
 	{
 		const CommandResult allowed = checkPreparationAllowed(); if (!allowed.accepted) { status_ = allowed.message; return allowed; }
+		if (pattern == InputPattern::AndrutReference)
+		{
+			domain_ = InputDomain::NormalizedFloats;
+			profile_ = InputProfile::NormalizedFloat;
+			itemCount_ = 100;
+		}
 		if (!inputPatternCompatible(domain_, pattern))
 			return CommandResult(false, std::string(inputPatternName(pattern)) + " is unavailable for " + inputDomainName(domain_) + ".");
-		if (pattern_ == pattern) return CommandResult(true, "Input pattern is unchanged.");
+		if (pattern_ == pattern && (pattern != InputPattern::AndrutReference || itemCount_ == 100))
+			return CommandResult(true, "Input pattern is unchanged.");
 		pattern_ = pattern;
 		prepareItems(baselineKind_, baselineKind_ == BaselineKind::Shuffle ? inputSeed_ : 0);
-		status_ = std::string("Input pattern set to ") + inputPatternName(pattern) + "; regenerated from the current seed.";
+		status_ = pattern == InputPattern::AndrutReference
+			? "Andrut's 100-bar reference arrangement loaded; item count set to 100."
+			: std::string("Input pattern set to ") + inputPatternName(pattern) + "; regenerated from the current seed.";
 		return CommandResult(true, status_);
 	}
 
@@ -1769,6 +1809,26 @@ namespace sortinglogic
 		}
 	}
 
+	void Simulation::synchronizePlaybackPosition(std::size_t eventCursor, double elapsedSeconds,
+		double playbackDurationSeconds, bool playing)
+	{
+		if (!trace_ || buildingTrace_ || !std::isfinite(elapsedSeconds) ||
+			!std::isfinite(playbackDurationSeconds) || playbackDurationSeconds < 0.0)
+			return;
+		seekInternal((std::min)(eventCursor, trace_->events.size()));
+		const double duration = playbackDurationSeconds;
+		elapsedSeconds_ = static_cast<float>((std::max)(0.0, (std::min)(duration, elapsedSeconds)));
+		if (duration == 0.0 || elapsedSeconds >= duration)
+		{
+			seekInternal(trace_->events.size());
+			elapsedSeconds_ = static_cast<float>(duration);
+			playing_ = false;
+			status_ = trace_->complete ? "Playback complete." : "Partial playback complete. " + trace_->completionReason;
+		}
+		else
+			playing_ = playing;
+	}
+
 	void Simulation::seekInternal(std::size_t targetCursor)
 	{
 		if (!trace_) return;
@@ -1852,6 +1912,8 @@ namespace sortinglogic
 		result.shellGapSequence = shellGapSequence_; result.mergeWritebackMode = mergeWritebackMode_;
 		result.mergeExecutionMode = mergeExecutionMode_;
 		result.cursor = cursor_; result.eventCount = trace_ ? trace_->events.size() : 0; result.itemCount = itemCount_; result.inputSeed = inputSeed_;
+		result.audioEligibleEventCount = trace_ ? (trace_->comparisonEventIndices.empty()
+			? trace_->probeEventIndices.size() : trace_->comparisonEventIndices.size()) : 0;
 		result.durationSeconds = durationSeconds_; result.elapsedSeconds = elapsedSeconds_; result.hasTrace = static_cast<bool>(trace_);
 		result.buildingTrace = buildingTrace_; result.playing = playing_; result.complete = trace_ && cursor_ >= trace_->events.size();
 		result.partial = trace_ && !trace_->complete;

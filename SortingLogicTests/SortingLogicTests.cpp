@@ -265,6 +265,10 @@ namespace
 		floatInputs.push_back(randomFloat); integerInputs.push_back(randomInteger);
 		const std::vector<AlgorithmDescriptor>& catalog = algorithmCatalog();
 		check(catalog.size() == 16, "static catalog exposes the original showcase and the first novelty-family expansion");
+		const AlgorithmDescriptor* gnomeAudio = algorithmDescriptor(SortAlgorithm::Gnome);
+		const AlgorithmDescriptor* insertionAudio = algorithmDescriptor(SortAlgorithm::Insertion);
+		check(gnomeAudio && gnomeAudio->reverseAudioOperandOrder && insertionAudio && !insertionAudio->reverseAudioOperandOrder,
+			"audio operand ordering is explicit in the catalog, including the reconstructed Gnome reversal");
 		const AlgorithmDescriptor* bubble = algorithmDescriptor(SortAlgorithm::Bubble);
 		const AlgorithmDescriptor* cocktail = algorithmDescriptor(SortAlgorithm::Cocktail);
 		const AlgorithmDescriptor* insertion = algorithmDescriptor(SortAlgorithm::Insertion);
@@ -592,6 +596,25 @@ namespace
 			check(ascending && descending, std::string(inputDomainName(domain)) + " supports sorted and reversed patterns");
 			check(nearlyDeterministic, std::string(inputDomainName(domain)) + " nearly-sorted pattern is seed reproducible");
 		}
+		TraceBuildRequest radixAudioRequest;
+		std::vector<int> radixValues;
+		for (int key = 405; key >= 0; --key) radixValues.push_back(key);
+		radixAudioRequest.input = integers(radixValues);
+		radixAudioRequest.algorithm = SortAlgorithm::Radix;
+		radixAudioRequest.familyId = algorithmDescriptor(SortAlgorithm::Radix)->familyId;
+		radixAudioRequest.variantId = algorithmDescriptor(SortAlgorithm::Radix)->variantId;
+		radixAudioRequest.profile = InputProfile::IntegerKeys;
+		radixAudioRequest.domain = InputDomain::NonnegativeIntegerKeys;
+		const SortTrace radixAudioTrace = SortTraceBuilder::build(radixAudioRequest);
+		bool validRadixProbes = radixAudioTrace.probeEventIndices.size() >= radixAudioRequest.input.size();
+		for (std::size_t i = 0; i < radixAudioTrace.probeEventIndices.size(); ++i)
+		{
+			const std::size_t eventIndex = radixAudioTrace.probeEventIndices[i];
+			validRadixProbes = validRadixProbes && eventIndex < radixAudioTrace.events.size() &&
+				radixAudioTrace.events[eventIndex].type == SemanticEventType::Probe &&
+				radixAudioTrace.events[eventIndex].firstRole == SemanticRole::ProcessedItem;
+		}
+		check(validRadixProbes, "Radix Sort records its primary-array item reads as reversible semantic probes");
 		Simulation fewA(80, 0xF3A1u, InputDomain::NonnegativeIntegerKeys, InputPattern::FewUnique);
 		Simulation fewB(80, 0xF3A1u, InputDomain::NonnegativeIntegerKeys, InputPattern::FewUnique);
 		std::set<int> fewKeys;
@@ -607,6 +630,30 @@ namespace
 		for (std::size_t i = 1; i <= 6; ++i) organShape = organShape && organPipe.preparedInput()[i - 1].value <= organPipe.preparedInput()[i].value;
 		for (std::size_t i = 7; i < 12; ++i) organShape = organShape && organPipe.preparedInput()[i - 1].value >= organPipe.preparedInput()[i].value;
 		check(organShape, "organ-pipe pattern rises to a peak then falls");
+
+		static const int expectedAndrutRanks[100] = {
+			78,89,75,81,31,39,93,6,86,27,56,20,42,98,96,95,60,62,77,15,
+			2,49,37,46,63,64,82,45,32,12,28,76,94,3,57,59,30,50,90,72,
+			38,70,36,53,34,44,40,43,4,84,29,7,25,33,8,41,66,14,67,48,
+			35,61,79,88,85,0,92,87,97,19,18,26,58,1,91,10,23,54,55,69,
+			73,22,24,5,13,74,71,99,9,16,65,83,51,80,11,52,68,47,21,17
+		};
+		Simulation andrut(80, 0xA11CEu, InputDomain::NonnegativeIntegerKeys);
+		const CommandResult loadedAndrut = andrut.setInputPattern(InputPattern::AndrutReference);
+		bool exactAndrutOrder = loadedAndrut.accepted && andrut.itemCount() == 100 &&
+			andrut.domain() == InputDomain::NormalizedFloats && andrut.preparedInput().size() == 100;
+		std::set<int> referenceRanks;
+		for (std::size_t i = 0; i < andrut.preparedInput().size(); ++i)
+		{
+			const int rank = static_cast<int>(std::lround(andrut.preparedInput()[i].value * 99.0f));
+			referenceRanks.insert(rank);
+			exactAndrutOrder = exactAndrutOrder && rank == expectedAndrutRanks[i] &&
+				andrut.preparedInput()[i].stableId == i;
+		}
+		check(exactAndrutOrder && referenceRanks.size() == 100 && *referenceRanks.begin() == 0 && *referenceRanks.rbegin() == 99,
+			"Andrut reference arrangement restores the extracted 100-rank permutation and selects 100 normalized bars");
+		check(andrut.setItemCount(80).accepted && andrut.itemCount() == 80 && andrut.snapshot().pattern == InputPattern::Random,
+			"leaving the fixed Andrut arrangement returns to a scalable random pattern");
 
 		TraceBuildRequest invalidPermutation;
 		invalidPermutation.input = integers(std::vector<int>{ 0, 0, 2 });
@@ -654,15 +701,38 @@ namespace
 
 int main()
 {
-	verifyProfilesAndAlgorithms();
-	testMergeWritebackModes();
-	testSimulationAndProfiles();
-	testSnapshotAnnotations();
-	testTraceServiceAndPlayback();
-	testStressAndValidation();
-	testPartialTraceBudget();
-	testDomainsAndPatterns();
-	testSemanticProbeDiscardAndPhases();
+	const char* stage = "verifyProfilesAndAlgorithms";
+	try
+	{
+		verifyProfilesAndAlgorithms();
+		stage = "testMergeWritebackModes";
+		testMergeWritebackModes();
+		stage = "testSimulationAndProfiles";
+		testSimulationAndProfiles();
+		stage = "testSnapshotAnnotations";
+		testSnapshotAnnotations();
+		stage = "testTraceServiceAndPlayback";
+		testTraceServiceAndPlayback();
+		stage = "testStressAndValidation";
+		testStressAndValidation();
+		stage = "testPartialTraceBudget";
+		testPartialTraceBudget();
+		stage = "testDomainsAndPatterns";
+		testDomainsAndPatterns();
+		stage = "testSemanticProbeDiscardAndPhases";
+		testSemanticProbeDiscardAndPhases();
+	}
+	catch (const std::exception& error)
+	{
+		std::cerr << "SortingLogicTests aborted during " << stage << " after " << checks
+			<< " checks: " << error.what() << '\n';
+		return EXIT_FAILURE;
+	}
+	catch (...)
+	{
+		std::cerr << "SortingLogicTests aborted during " << stage << " by an unknown exception after " << checks << " checks.\n";
+		return EXIT_FAILURE;
+	}
 	std::cout << "SortingLogicTests: " << checks << " checks, " << failures << " failures.\n";
 	return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

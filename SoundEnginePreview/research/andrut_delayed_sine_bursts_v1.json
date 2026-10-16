@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "id": "andrut_delayed_sine_bursts_v1",
+  "description": "Effective reconstruction fitted on Selection Sort; Insertion and Gnome are validation recordings. Not a claim of the creator's original implementation.",
+  "sample_rate": 44100,
+  "comparison_clock_hz": 300,
+  "configuration": {
+    "step": 39.90533652820316,
+    "base": 104.0322699094767,
+    "duration": 9.302650315454065,
+    "window": "tukey",
+    "tukey": 0.025666772580559438,
+    "delays": [
+      -9.95199933051814,
+      0
+    ]
+  },
+  "source_semantics": {
+    "duration_unit": "carrier cycles",
+    "phase": "reset at each note's birth; captured frequency persists for the whole note",
+    "window": "Tukey with short cosine edges",
+    "overlap": "sum all active notes, including notes from earlier comparisons",
+    "independent_bed": false,
+    "chorus_mix": 0,
+    "duration_clamped_to_clock_periods": false,
+    "frequency_formula": "base + step * rank; equivalently a continuous linear mapping of normalized values"
+  },
+  "output_filter": {
+    "purpose": "One common short FIR effective response learned from Selection, including output gain",
+    "coefficients_causal": [
+      0.0016486559836917096,
+      -0.004185890318945093,
+      0.001360402251996021,
+      -0.00031163516317250843,
+      0.00261757621982264,
+      0.0011364214532758117,
+      0.00134444133827627,
+      -0.0026856849060442178,
+      -0.0028206594808248956,
+      -0.0011810646438476446,
+      -0.0011321145593396677,
+      0.0020016985251066813,
+      0.0035150245000002633,
+      0.005950763107064225,
+      0.013762066498436164,
+      0.015937095666321996,
+      0.009045040844705442,
+      0.0063039341331267915,
+      0.004098791990895944,
+      0.0015066864099895633,
+      -0.0008206938996880114,
+      -0.0019455424692308963,
+      -0.002342288209422767,
+      -0.0009956532022891026,
+      0.0010625867335191785,
+      0.000685565041919052,
+      0.0012126648546338754,
+      -0.0011150491083811178,
+      -0.00014805797477064722,
+      0.0021006851401400195,
+      -0.002261290933230586
+    ],
+    "group_alignment_frames": 15
+  },
+  "alignments": {
+    "Selection": {
+      "residual_fraction": 0.026031843357549947,
+      "offset_samples": 6463,
+      "gain": 1.000016232101252,
+      "swapped_operands": false
+    },
+    "Insertion": {
+      "residual_fraction": 0.01746294649309904,
+      "offset_samples": 959,
+      "gain": 1.0114530700471045,
+      "swapped_operands": false
+    },
+    "Gnome": {
+      "residual_fraction": 0.01884914857974987,
+      "offset_samples": 5532,
+      "gain": 1.0121205810820693,
+      "swapped_operands": true
+    }
+  },
+  "fitting_recording": "Andrut_Selection_Sort.wav",
+  "validation_recordings": [
+    "Andrut_Insertion_Sort.wav",
+    "Andrut_Gnome_Sort.wav"
+  ],
+  "notes": [
+    "Alignment and comparator operand order were identified separately for each recording.",
+    "The first two initial values may be reversed; the remaining 98 values are confirmed.",
+    "Fine decimal values describe this effective fit and are not uniquely identified physical parameters."
+  ]
+}

@@ -22,7 +22,8 @@ namespace sortinglogic
 
 	enum class InputProfile { NormalizedFloat, IntegerKeys };
 	enum class InputDomain { NormalizedFloats, NonnegativeIntegerKeys, SignedIntegerKeys, IntegerPermutation };
-	enum class InputPattern { Random, Sorted, Reversed, NearlySorted, FewUnique, OrganPipe };
+	// Persisted numeric values are stable; append new patterns without renumbering.
+	enum class InputPattern { Random, Sorted, Reversed, NearlySorted, FewUnique, OrganPipe, AndrutReference = 6 };
 	enum class SortDirection { Ascending, Descending };
 	enum class ShellGapSequence { Halving, Knuth, Ciura, Tokuda };
 	enum class MergeWritebackMode { AnimatedWrites, AtomicRangeWrite };
@@ -166,6 +167,7 @@ namespace sortinglogic
 		std::vector<AlgorithmOptionDescriptor> supportedOptions;
 		std::vector<AlgorithmMetricDescriptor> metrics;
 		std::vector<SemanticRole> comparisonAudioRoles;
+		bool reverseAudioOperandOrder;
 		AlgorithmDescriptor(SortAlgorithm valueId, const char* key, const char* name, const char* time,
 			const char* space, bool isStable, bool isInPlace, bool floats, bool integers,
 			AlgorithmTraceRequestBuilder requestBuilder,
@@ -173,12 +175,12 @@ namespace sortinglogic
 			const std::vector<AlgorithmMetricDescriptor>& applicableMetrics = std::vector<AlgorithmMetricDescriptor>(),
 			std::size_t maximumItems = MaxItemCount, const char* behaviorLabel = "general permutation sort",
 			const char* familyKey = nullptr, const char* methodKey = nullptr, const char* familyName = nullptr,
-			const std::vector<SemanticRole>& audioRoles = std::vector<SemanticRole>())
+			const std::vector<SemanticRole>& audioRoles = std::vector<SemanticRole>(), bool reverseAudioOperands = false)
 			: id(valueId), stableId(key), familyId(familyKey ? familyKey : key), variantId(methodKey ? methodKey : key),
 			familyDisplayName(familyName ? familyName : name), displayName(name), timeComplexity(time), spaceComplexity(space), stable(isStable),
 			inPlace(isInPlace), supportsNormalizedFloat(floats), supportsIntegerKeys(integers), safeMaxItemCount(maximumItems),
 			behavior(behaviorLabel), buildRequest(requestBuilder),
-			supportedOptions(options), metrics(applicableMetrics), comparisonAudioRoles(audioRoles) {}
+			supportedOptions(options), metrics(applicableMetrics), comparisonAudioRoles(audioRoles), reverseAudioOperandOrder(reverseAudioOperands) {}
 	};
 
 	const std::vector<AlgorithmDescriptor>& algorithmCatalog();
@@ -211,6 +213,7 @@ namespace sortinglogic
 		SortState initialState;
 		std::vector<SemanticEvent> events;
 		std::vector<std::size_t> comparisonEventIndices;
+		std::vector<std::size_t> probeEventIndices;
 		std::vector<RegionAnnotation> annotations;
 		std::map<std::size_t, SortState> snapshots;
 		std::size_t operationCount;
@@ -278,7 +281,7 @@ namespace sortinglogic
 		ShellGapSequence shellGapSequence;
 		MergeWritebackMode mergeWritebackMode;
 		MergeExecutionMode mergeExecutionMode;
-		std::size_t cursor, eventCount, itemCount;
+		std::size_t cursor, eventCount, itemCount, audioEligibleEventCount;
 		std::uint32_t inputSeed;
 		float durationSeconds, elapsedSeconds;
 		bool hasTrace, buildingTrace, playing, complete, partial, runCompatible;
@@ -339,6 +342,8 @@ namespace sortinglogic
 		CommandResult seekTo(std::size_t eventCursor);
 		CommandResult seekToFraction(float fraction);
 		void advance(float deltaSeconds);
+		void synchronizePlaybackPosition(std::size_t eventCursor, double elapsedSeconds,
+			double playbackDurationSeconds, bool playing);
 		RenderSnapshot snapshot() const;
 		std::shared_ptr<const SortTrace> currentTrace() const;
 		const std::vector<SortItem>& preparedInput() const { return preparedInput_; }

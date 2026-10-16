@@ -73,6 +73,7 @@ private:
 	UiRect algorithmFamilyBounds_;
 	UiRect algorithmVariantBounds_;
 	int settingsTab_;
+	bool audioAdvanced_;
 	float settingsScrollOffset_;
 	int selectedBand_;
 	float chartTop_;

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 
 namespace
 {
@@ -31,10 +32,16 @@ namespace
 
 SdlAudioOutput::SdlAudioOutput(LatestAudioStateMailbox& mailbox)
 	: mailbox_(mailbox), device_(0), obtained_(), subsystemInitialized_(false),
-	  status_("Audio device is not initialized."), synthesizer_(), appliedRevision_(0),
+	  status_("Audio device is not initialized."), synthesizer_(), reconstructedSynthesizers_(), activeReconstructedSynthesizer_(0),
+	  seekCrossfading_(false), seekCrossfadeProgress_(0), seekCrossfadeFrames_(0), crossfadeOldScratch_(), crossfadeNewScratch_(),
+	  appliedRevision_(0),
+	  appliedTimelineGeneration_(0), appliedTimeline_(nullptr), appliedTransportRevision_(0), acknowledgedTimelineGeneration_(0),
+	  acknowledgedSeekRevision_(0), appliedSeekRevision_(0), appliedSeekState_(nullptr), outputOverloadCount_(0),
+	  feedbackSequence_(0), feedbackFrame_(0), feedbackCursor_(0), feedbackGeneration_(0), feedbackTransportRevision_(0), feedbackDurationFrames_(0), feedbackPlaying_(false),
 	  diagnosticSamples_(), callbackRecords_(), captureState_(static_cast<unsigned int>(CaptureState::Idle)),
 	  targetCaptureFrames_(0), captureFramesWritten_(0), callbackRecordCount_(0),
-	  lastCallbackStartCounter_(0), callbackTraceLoaded_(false), callbackHasComparison_(false)
+	  lastCallbackStartCounter_(0), performanceFrequency_(0), callbackTraceLoaded_(false), callbackHasComparison_(false),
+	  callbackTimelinePrepared_(false), callbackTimelineGeneration_(0), callbackSeekRevision_(0)
 {
 	retry();
 }
@@ -67,6 +74,22 @@ bool SdlAudioOutput::retry()
 		SDL_QuitSubSystem(SDL_INIT_AUDIO);
 		subsystemInitialized_ = false;
 	}
+	for (unsigned int i = 0; i < 2; ++i)
+	{
+		reconstructedSynthesizers_[i].setPreparedTimeline(nullptr, 0);
+		reconstructedSynthesizers_[i].reset();
+	}
+	activeReconstructedSynthesizer_ = 0;
+	seekCrossfading_ = false;
+	seekCrossfadeProgress_ = seekCrossfadeFrames_ = 0;
+	appliedRevision_ = 0;
+	appliedTimelineGeneration_ = 0;
+	appliedTimeline_ = nullptr;
+	appliedTransportRevision_ = 0;
+	appliedSeekRevision_ = 0;
+	appliedSeekState_ = nullptr;
+	acknowledgedTimelineGeneration_.store(0, std::memory_order_release);
+	acknowledgedSeekRevision_.store(0, std::memory_order_release);
 	captureState_.store(static_cast<unsigned int>(CaptureState::Idle), std::memory_order_release);
 	diagnosticSamples_.clear();
 	callbackRecords_.clear();
@@ -74,12 +97,19 @@ bool SdlAudioOutput::retry()
 	captureFramesWritten_ = 0;
 	callbackRecordCount_ = 0;
 	lastCallbackStartCounter_ = 0;
+	performanceFrequency_ = 0;
+	callbackTraceLoaded_ = false;
+	callbackHasComparison_ = false;
+	callbackTimelinePrepared_ = false;
+	callbackTimelineGeneration_ = 0;
+	callbackSeekRevision_ = 0;
 	if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
 	{
 		status_ = std::string("Audio unavailable: ") + SDL_GetError();
 		return false;
 	}
 	subsystemInitialized_ = true;
+	performanceFrequency_ = SDL_GetPerformanceFrequency();
 	SDL_AudioSpec desired;
 	SDL_zero(desired);
 	desired.freq = 44100;
@@ -188,19 +218,129 @@ void SdlAudioOutput::render(Uint8* stream, int length)
 	AudioPresentationState state;
 	if (mailbox_.consumeLatest(state) && state.revision != appliedRevision_)
 	{
-		synthesizer_.setParameters(state.parameters);
-		synthesizer_.setTraceLoaded(state.traceLoaded);
-		synthesizer_.setEventAccentSummary(state.eventAccents);
 		callbackTraceLoaded_ = state.traceLoaded;
 		callbackHasComparison_ = state.hasComparison;
-		if (state.hasComparison)
-			synthesizer_.setComparison(state.comparison);
+		callbackTimelinePrepared_ = state.timeline != nullptr;
+		callbackTimelineGeneration_ = state.timelineGeneration;
+		callbackSeekRevision_ = state.seekRevision;
+		for (unsigned int i = 0; i < 2; ++i)
+		{
+			reconstructedSynthesizers_[i].setParameters(state.reconstructedParameters);
+			reconstructedSynthesizers_[i].setTimelineGainSettings(state.timelineGains);
+		}
+		const bool newSeekState = state.seekState && state.seekRevision != appliedSeekRevision_;
+		const bool timelineChanged = state.timelineGeneration != appliedTimelineGeneration_ || state.timeline != appliedTimeline_;
+		if (newSeekState)
+		{
+			const unsigned int incomingIndex = 1u - activeReconstructedSynthesizer_;
+			reconstructedSynthesizers_[incomingIndex].installPreparedSeekState(*state.seekState);
+			appliedSeekState_ = state.seekState;
+			appliedSeekRevision_ = state.seekRevision;
+			seekCrossfading_ = true;
+			seekCrossfadeProgress_ = 0;
+			seekCrossfadeFrames_ = (std::max<std::size_t>)(1, static_cast<std::size_t>(std::ceil(
+				128.0 * static_cast<double>(obtained_.freq) / 44100.0)));
+			appliedTimelineGeneration_ = state.timelineGeneration;
+			appliedTimeline_ = state.timeline;
+			appliedTransportRevision_ = state.transport.revision;
+		}
 		else
-			synthesizer_.clearComparison();
+		{
+			if (timelineChanged)
+			{
+				for (unsigned int i = 0; i < 2; ++i)
+					reconstructedSynthesizers_[i].setPreparedTimeline(state.timeline, state.timelineGeneration);
+				seekCrossfading_ = false;
+				activeReconstructedSynthesizer_ = 0;
+				appliedTimelineGeneration_ = state.timelineGeneration;
+				appliedTimeline_ = state.timeline;
+				appliedTransportRevision_ = 0;
+			}
+			if (state.timeline && state.transport.generation == state.timelineGeneration)
+			{
+				if (state.transport.revision != appliedTransportRevision_)
+				{
+					for (unsigned int i = 0; i < 2; ++i)
+						reconstructedSynthesizers_[i].setTransportState(state.transport);
+					appliedTransportRevision_ = state.transport.revision;
+				}
+			}
+			else if (state.hasComparison)
+			{
+				for (unsigned int i = 0; i < 2; ++i)
+				{
+					reconstructedSynthesizers_[i].setComparison(state.burstComparison);
+					if (state.releaseSelection) reconstructedSynthesizers_[i].clearComparison();
+				}
+			}
+			else
+				for (unsigned int i = 0; i < 2; ++i) reconstructedSynthesizers_[i].stopBirths();
+			if (timelineChanged)
+				acknowledgedTimelineGeneration_.store(state.timelineGeneration, std::memory_order_release);
+		}
 		appliedRevision_ = state.revision;
 	}
-	synthesizer_.render(reinterpret_cast<float*>(stream), frameCount,
-		obtained_.freq > 0 ? static_cast<std::uint32_t>(obtained_.freq) : 44100u);
+	const std::uint32_t deviceRate = obtained_.freq > 0 ? static_cast<std::uint32_t>(obtained_.freq) : 0u;
+	float* outputSamples = reinterpret_cast<float*>(stream);
+	if (seekCrossfading_)
+	{
+		std::size_t offset = 0;
+		while (offset < frameCount)
+		{
+			const std::size_t count = (std::min<std::size_t>)(512, frameCount - offset);
+			const unsigned int incomingIndex = 1u - activeReconstructedSynthesizer_;
+			float* oldSamples = crossfadeOldScratch_.data();
+			float* newSamples = crossfadeNewScratch_.data();
+			reconstructedSynthesizers_[activeReconstructedSynthesizer_].renderAtSampleRateLinear(oldSamples, count, deviceRate);
+			reconstructedSynthesizers_[incomingIndex].renderAtSampleRateLinear(newSamples, count, deviceRate);
+			for (std::size_t frame = 0; frame < count; ++frame)
+			{
+				const std::size_t progress = seekCrossfadeProgress_;
+				const double blend = progress >= seekCrossfadeFrames_ ? 1.0 :
+					static_cast<double>(progress + 1) / static_cast<double>(seekCrossfadeFrames_);
+				for (std::size_t channel = 0; channel < 2; ++channel)
+				{
+					const std::size_t sample = frame * 2 + channel;
+					outputSamples[(offset + frame) * 2 + channel] = static_cast<float>(
+						oldSamples[sample] * (1.0 - blend) + newSamples[sample] * blend);
+				}
+				if (seekCrossfadeProgress_ < seekCrossfadeFrames_) ++seekCrossfadeProgress_;
+			}
+			offset += count;
+			if (seekCrossfadeProgress_ >= seekCrossfadeFrames_)
+			{
+				activeReconstructedSynthesizer_ = incomingIndex;
+				seekCrossfading_ = false;
+				acknowledgedTimelineGeneration_.store(appliedTimelineGeneration_, std::memory_order_release);
+				acknowledgedSeekRevision_.store(appliedSeekRevision_, std::memory_order_release);
+				if (offset < frameCount)
+					reconstructedSynthesizers_[activeReconstructedSynthesizer_].renderAtSampleRateLinear(
+						outputSamples + offset * 2, frameCount - offset, deviceRate);
+				break;
+			}
+		}
+	}
+	else
+		reconstructedSynthesizers_[activeReconstructedSynthesizer_].renderAtSampleRateLinear(outputSamples, frameCount, deviceRate);
+	for (std::size_t sample = 0; sample < frameCount * 2; ++sample)
+	{
+		const float value = outputSamples[sample];
+		if (!std::isfinite(value) || std::abs(value) > 0.999f)
+		{
+			outputSamples[sample] = std::isfinite(value) ? (value < 0.0f ? -0.999f : 0.999f) : 0.0f;
+			outputOverloadCount_.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+	const unsigned int feedbackSynthIndex = seekCrossfading_ ? 1u - activeReconstructedSynthesizer_ : activeReconstructedSynthesizer_;
+	const SoundEngine::AudioPlayheadFeedback feedback = reconstructedSynthesizers_[feedbackSynthIndex].playheadFeedback();
+	feedbackSequence_.fetch_add(1, std::memory_order_acq_rel);
+	feedbackFrame_.store(feedback.timelineFrame, std::memory_order_relaxed);
+	feedbackCursor_.store(feedback.sourceCursor, std::memory_order_relaxed);
+	feedbackGeneration_.store(feedback.generation, std::memory_order_relaxed);
+	feedbackTransportRevision_.store(feedback.transportRevision, std::memory_order_relaxed);
+	feedbackDurationFrames_.store(feedback.durationFrames, std::memory_order_relaxed);
+	feedbackPlaying_.store(feedback.playing, std::memory_order_relaxed);
+	feedbackSequence_.fetch_add(1, std::memory_order_release);
 	const Uint64 renderEnd = capturing ? SDL_GetPerformanceCounter() : 0;
 	const std::size_t renderedBytes = frameCount * 2 * sizeof(float);
 	if (renderedBytes < static_cast<std::size_t>(length))
@@ -226,15 +366,48 @@ void SdlAudioOutput::render(Uint8* stream, int length)
 				record.frameCount = static_cast<std::uint32_t>(capturedFrames);
 				record.intervalTicks = callbackInterval;
 				record.renderTicks = renderEnd - callbackStart;
+				record.deadlineTicks = obtained_.freq > 0 && performanceFrequency_ > 0
+					? static_cast<std::uint64_t>(static_cast<double>(frameCount) * performanceFrequency_ / obtained_.freq) : 0;
+				record.timelineFrame = feedback.timelineFrame;
+				record.timelineGeneration = feedback.generation;
+				record.seekRevision = callbackSeekRevision_;
+				record.overloadSamples = outputOverloadCount_.load(std::memory_order_relaxed);
+				record.sourceCursor = static_cast<std::uint32_t>((std::min<std::size_t>)(feedback.sourceCursor,
+					(std::numeric_limits<std::uint32_t>::max)()));
 				record.rms = static_cast<float>(std::sqrt(squareSum / capturedSamples));
 				record.traceLoaded = callbackTraceLoaded_;
 				record.hasComparison = callbackHasComparison_;
+				record.timelinePrepared = callbackTimelinePrepared_;
+				record.deadlineMissed = record.deadlineTicks > 0 && record.renderTicks > record.deadlineTicks;
 			}
 			captureFramesWritten_ += capturedFrames;
 			if (captureFramesWritten_ >= targetCaptureFrames_)
 				captureState_.store(static_cast<unsigned int>(CaptureState::Complete), std::memory_order_release);
 		}
 	}
+}
+
+bool SdlAudioOutput::readPlayheadFeedback(SoundEngine::AudioPlayheadFeedback& feedback) const
+{
+	for (int attempt = 0; attempt < 8; ++attempt)
+	{
+		const std::uint64_t before = feedbackSequence_.load(std::memory_order_acquire);
+		if (before == 0 || (before & 1u)) continue;
+		SoundEngine::AudioPlayheadFeedback copy;
+		copy.timelineFrame = feedbackFrame_.load(std::memory_order_relaxed);
+		copy.sourceCursor = static_cast<std::size_t>(feedbackCursor_.load(std::memory_order_relaxed));
+		copy.generation = feedbackGeneration_.load(std::memory_order_relaxed);
+		copy.transportRevision = feedbackTransportRevision_.load(std::memory_order_relaxed);
+		copy.durationFrames = feedbackDurationFrames_.load(std::memory_order_relaxed);
+		copy.playing = feedbackPlaying_.load(std::memory_order_relaxed);
+		const std::uint64_t after = feedbackSequence_.load(std::memory_order_acquire);
+		if (before == after)
+		{
+			feedback = copy;
+			return true;
+		}
+	}
+	return false;
 }
 
 bool SdlAudioOutput::saveDiagnosticCapture()
@@ -268,7 +441,7 @@ bool SdlAudioOutput::saveDiagnosticCapture()
 	if (!csv)
 		return false;
 	const double counterFrequency = static_cast<double>(SDL_GetPerformanceFrequency());
-	csv << "callback,frame_offset,frame_count,time_seconds,interval_ms,render_ms,rms,trace_loaded,comparison_active\n";
+	csv << "callback,frame_offset,frame_count,time_seconds,interval_ms,render_ms,deadline_ms,deadline_missed,rms,trace_loaded,comparison_active,timeline_prepared,timeline_generation,timeline_frame,source_cursor,seek_revision,overload_samples\n";
 	csv << std::fixed << std::setprecision(6);
 	for (std::size_t i = 0; i < callbackRecordCount_; ++i)
 	{
@@ -278,9 +451,13 @@ bool SdlAudioOutput::saveDiagnosticCapture()
 			? static_cast<double>(record.intervalTicks) * 1000.0 / counterFrequency : 0.0;
 		const double renderMs = counterFrequency > 0.0
 			? static_cast<double>(record.renderTicks) * 1000.0 / counterFrequency : 0.0;
+		const double deadlineMs = counterFrequency > 0.0
+			? static_cast<double>(record.deadlineTicks) * 1000.0 / counterFrequency : 0.0;
 		csv << i << ',' << record.frameOffset << ',' << record.frameCount << ',' << timeSeconds << ','
-			<< intervalMs << ',' << renderMs << ',' << record.rms << ','
-			<< (record.traceLoaded ? 1 : 0) << ',' << (record.hasComparison ? 1 : 0) << '\n';
+			<< intervalMs << ',' << renderMs << ',' << deadlineMs << ',' << (record.deadlineMissed ? 1 : 0) << ','
+			<< record.rms << ',' << (record.traceLoaded ? 1 : 0) << ',' << (record.hasComparison ? 1 : 0) << ','
+			<< (record.timelinePrepared ? 1 : 0) << ',' << record.timelineGeneration << ',' << record.timelineFrame << ','
+			<< record.sourceCursor << ',' << record.seekRevision << ',' << record.overloadSamples << '\n';
 	}
 	return static_cast<bool>(csv);
 }

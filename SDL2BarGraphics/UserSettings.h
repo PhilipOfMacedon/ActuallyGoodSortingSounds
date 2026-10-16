@@ -5,6 +5,8 @@
 #include <map>
 #include "../SortingLogic/SortingLogic.h"
 #include "../SoundEngine/SoundEngine.h"
+#include "../SoundEngine/ReconstructedSound.h"
+#include "../SoundEngine/AudioTimeline.h"
 
 enum class PaletteId
 {
@@ -33,6 +35,7 @@ struct SimulationPreferences
 {
 	int itemCount;
 	int durationSeconds;
+	SoundEngine::PlaybackTimingMode playbackTimingMode;
 	bool descending;
 	int algorithm;
 	sortinglogic::FamilyId familyId;
@@ -75,6 +78,7 @@ struct UserPreferences
 	VisualPreferences visual;
 	SimulationPreferences simulation;
 	SoundEngine::Parameters audio;
+	SoundEngine::ReconstructedParameters reconstructedAudio;
 	// Family values are inherited absolute dB levels. Variant values are dB
 	// offsets from their family, so zero preserves the family's sound design.
 	std::map<sortinglogic::FamilyId, AlgorithmAudioLevels> familyAudioDefaults;

@@ -30,6 +30,19 @@ namespace
 		}
 	}
 
+	void waitForAudioTimeline(AudioPresentationBridge& bridge, const sortinglogic::Simulation& simulation,
+		const SoundEngine::Parameters& parameters, LatestAudioStateMailbox& mailbox,
+		const SoundEngine::ReconstructedParameters& reconstructed = SoundEngine::ReconstructedParameters(),
+		SoundEngine::PlaybackTimingMode mode = SoundEngine::PlaybackTimingMode::FixedDuration)
+	{
+		for (unsigned int attempt = 0; attempt < 5000; ++attempt)
+		{
+			bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode);
+			if (!bridge.timelinePreparing()) return;
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+	}
+
 	class MemorySettings : public ISettingsPersistence
 	{
 	public:
@@ -272,7 +285,9 @@ namespace
 		check(defaults.visual.panelExpanded && defaults.simulation.itemCount == 80 && defaults.simulation.durationSeconds == 10, "missing settings use the documented layout and run defaults");
 		check(!defaults.simulation.descending && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion),
 			"missing settings use ascending Insertion Sort");
-		check(defaults.version == 5 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
+		check(defaults.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
+			"fixed-duration playback remains the default timing mode");
+		check(defaults.version == 6 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			defaults.simulation.familyId == "insertion-methods" && defaults.simulation.variantId == "insertion" &&
 			defaults.simulation.profile == sortinglogic::InputProfile::NormalizedFloat &&
 			defaults.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Halving,
@@ -283,6 +298,11 @@ namespace
 		check(defaults.audio.attackMs == 8.0f && defaults.audio.releaseMs == 8.0f &&
 			defaults.audio.tauBelowBins == 0.5f && defaults.audio.tauAboveBins == 0.5f &&
 			defaults.audio.chorusMix == 0.0f, "audio default envelope and chorus profile matches the selected preview");
+		check(defaults.reconstructedAudio.masterLevel == 1.0 &&
+			std::fabs(defaults.reconstructedAudio.minimumFrequencyHz - 104.0322699094767) < 1e-12 &&
+			std::fabs(defaults.reconstructedAudio.maximumFrequencyHz - 4054.6605862015895) < 1e-12 &&
+			std::fabs(defaults.reconstructedAudio.secondOperandDelayMicroseconds - 225.66891905936825) < 1e-9,
+			"version-6 defaults use the calibrated reconstructed burst profile");
 		for (std::size_t i = 0; i < SoundEngine::BandCount; ++i)
 			check(defaults.audio.bandTrimDb[i] == 0.0f, "every per-band trim defaults to zero");
 
@@ -292,6 +312,7 @@ namespace
 		saved.visual.panelExpanded = false;
 		saved.simulation.itemCount = 800;
 		saved.simulation.durationSeconds = 120;
+		saved.simulation.playbackTimingMode = SoundEngine::PlaybackTimingMode::ReferenceCadence;
 		saved.simulation.descending = true;
 		saved.simulation.algorithm = static_cast<int>(sortinglogic::SortAlgorithm::Merge);
 		saved.simulation.familyId = "merge-sort";
@@ -331,6 +352,19 @@ namespace
 		saved.audio.mappingMode = SoundEngine::MappingMode::EqualBandSlots;
 		saved.audio.comparisonSpreadMode = SoundEngine::ComparisonSpreadMode::PositionScaled;
 		saved.audio.enabled = false;
+		saved.reconstructedAudio.minimumFrequencyHz = 120.0;
+		saved.reconstructedAudio.maximumFrequencyHz = 3900.0;
+		saved.reconstructedAudio.excitationClockHz = 350.0;
+		saved.reconstructedAudio.carrierCycles = 7.25;
+		saved.reconstructedAudio.tukeyFraction = 0.12;
+		saved.reconstructedAudio.secondOperandDelayMicroseconds = 900.0;
+		saved.reconstructedAudio.masterLevel = 0.73;
+		saved.reconstructedAudio.specialReleaseMilliseconds = 800.0;
+		saved.reconstructedAudio.lowPassCutoffHz = 8200.0;
+		saved.reconstructedAudio.audioEnabled = false;
+		saved.reconstructedAudio.lowPassEnabled = true;
+		saved.reconstructedAudio.mapping = SoundEngine::ReconstructedMapping::LogFrequency;
+		saved.reconstructedAudio.idlePolicy = SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
 		saved.audio.accentRouting[static_cast<std::size_t>(SoundEngine::AccentCategory::Probe)] = false;
 		saved.audio.accentGain[static_cast<std::size_t>(SoundEngine::AccentCategory::Movement)] = 0.23f;
 		saved.audio.accentGain[static_cast<std::size_t>(SoundEngine::AccentCategory::Distribution)] = 0.31f;
@@ -352,6 +386,8 @@ namespace
 		check(loaded.visual.palette == saved.visual.palette && loaded.visual.spacing == saved.visual.spacing, "settings round-trip palette and spacing");
 		check(loaded.visual.panelExpanded == saved.visual.panelExpanded && loaded.simulation.itemCount == saved.simulation.itemCount, "settings round-trip panel state and item count");
 		check(loaded.simulation.durationSeconds == saved.simulation.durationSeconds && loaded.simulation.descending == saved.simulation.descending, "settings round-trip duration and direction");
+		check(loaded.simulation.playbackTimingMode == saved.simulation.playbackTimingMode,
+			"version-6 settings round-trip playback timing mode");
 		check(loaded.simulation.algorithm == saved.simulation.algorithm, "settings round-trip selected algorithm");
 		check(loaded.simulation.familyId == saved.simulation.familyId && loaded.simulation.variantId == saved.simulation.variantId,
 			"settings round-trip stable family and variant IDs");
@@ -403,12 +439,28 @@ namespace
 			"settings round-trip semantic-event routing and gains");
 		for (std::size_t i = 0; i < SoundEngine::BandCount; ++i)
 			check(loaded.audio.bandTrimDb[i] == saved.audio.bandTrimDb[i], "settings round-trip every band trim");
+		check(loaded.reconstructedAudio.minimumFrequencyHz == saved.reconstructedAudio.minimumFrequencyHz &&
+			loaded.reconstructedAudio.maximumFrequencyHz == saved.reconstructedAudio.maximumFrequencyHz &&
+			loaded.reconstructedAudio.excitationClockHz == saved.reconstructedAudio.excitationClockHz &&
+			loaded.reconstructedAudio.carrierCycles == saved.reconstructedAudio.carrierCycles &&
+			loaded.reconstructedAudio.tukeyFraction == saved.reconstructedAudio.tukeyFraction &&
+			loaded.reconstructedAudio.secondOperandDelayMicroseconds == saved.reconstructedAudio.secondOperandDelayMicroseconds &&
+			loaded.reconstructedAudio.masterLevel == saved.reconstructedAudio.masterLevel &&
+			loaded.reconstructedAudio.specialReleaseMilliseconds == saved.reconstructedAudio.specialReleaseMilliseconds &&
+			loaded.reconstructedAudio.lowPassCutoffHz == saved.reconstructedAudio.lowPassCutoffHz &&
+			loaded.reconstructedAudio.audioEnabled == saved.reconstructedAudio.audioEnabled &&
+			loaded.reconstructedAudio.lowPassEnabled == saved.reconstructedAudio.lowPassEnabled &&
+			loaded.reconstructedAudio.mapping == saved.reconstructedAudio.mapping &&
+			loaded.reconstructedAudio.idlePolicy == saved.reconstructedAudio.idlePolicy,
+			"version-6 settings round-trip every reconstructed synthesis parameter");
 
 		writeFile(path, "version=1\npalette=light\nspacing=none\npanel_expanded=0\nitem_count=123\nduration_seconds=42\ndescending=1\nalgorithm=0\n");
 		const UserPreferences migrated = store.load();
-		check(migrated.version == 5 && migrated.visual.palette == PaletteId::Light && migrated.visual.spacing == BarSpacingMode::None &&
+		check(migrated.version == 6 && migrated.visual.palette == PaletteId::Light && migrated.visual.spacing == BarSpacingMode::None &&
 			migrated.simulation.itemCount == 123 && migrated.simulation.durationSeconds == 42 && migrated.simulation.descending,
 			"version-1 settings migrate without losing appearance or simulation values");
+		check(migrated.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
+			"older settings default to fixed-duration playback");
 		check(migrated.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			migrated.simulation.profile == sortinglogic::InputProfile::NormalizedFloat &&
 			migrated.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Halving,
@@ -417,7 +469,7 @@ namespace
 			"version-1 settings receive the selected profile audio defaults");
 		writeFile(path, "version=2\npalette=amber\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nalgorithm=0\naudio_master=0.61\n");
 		const UserPreferences migratedV2 = store.load();
-		check(migratedV2.version == 5 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
+		check(migratedV2.version == 6 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
 			migratedV2.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			migratedV2.simulation.profile == sortinglogic::InputProfile::NormalizedFloat,
 			"version-2 settings retain existing values and migrate new fields");
@@ -441,17 +493,29 @@ namespace
 		const UserPreferences migratedV4Audio = store.load();
 		const AlgorithmAudioLevels inheritedV4 = familyAudioLevels(migratedV4Audio, "insertion-methods");
 		check(migratedV4Audio.simulation.familyId == "insertion-methods" && migratedV4Audio.simulation.variantId == "insertion" &&
-			inheritedV4.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 10.5f &&
-			inheritedV4.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::HeldKeyRole)] == 4.5f,
-			"version-4 global comparison and held-key levels migrate to inherited family defaults");
-		check(std::fabs(inheritedV4.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::ProbeAccent)] - 20.0f * std::log10(0.12f)) < 1e-4f &&
-			inheritedV4.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::MainChangeAccent)] == -60.0f,
-			"version-4 accent levels and disabled routes retain their effective family values");
+			inheritedV4.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 0.0f &&
+			inheritedV4.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::HeldKeyRole)] == 0.0f,
+			"version-4 legacy gains migrate to neutral defaults for the reconstructed sound model");
+		check(inheritedV4.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::ProbeAccent)] == 0.0f &&
+			inheritedV4.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::MainChangeAccent)] == 0.0f,
+			"version-4 accent settings do not leak into reconstructed comparison output");
 		writeFile(path, "version=5\npalette=cyan\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\nvariant_audio.insertion-methods.insertion.comparison=nan\n");
 		const UserPreferences malformedVariantAudio = store.load();
 		check(malformedVariantAudio.isValid() && variantAudioLevels(malformedVariantAudio, "insertion-methods", "insertion")
 			.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 0.0f,
 			"malformed v5 variant audio values safely fall back to the inherited level");
+		const std::wstring migrationBackup = path + L".pre-v6.bak";
+		DeleteFileW(migrationBackup.c_str());
+		UserPreferences migratingV5 = store.load();
+		migratingV5.visual.palette = PaletteId::Light;
+		check(store.save(migratingV5, &error) && GetFileAttributesW(migrationBackup.c_str()) != INVALID_FILE_ATTRIBUTES,
+			"first successful version-6 save preserves the previous version-5 settings file");
+		SettingsStore backupStore(migrationBackup);
+		check(backupStore.load().visual.palette == PaletteId::Cyan && store.load().visual.palette == PaletteId::Light,
+			"migration backup retains the old values while the active settings file upgrades");
+		const UserPreferences roundTripVersion6 = store.load();
+		check(store.save(roundTripVersion6, &error) && backupStore.load().visual.palette == PaletteId::Cyan,
+			"later version-6 saves do not replace the one-time migration backup");
 		writeFile(path, "version=5\npalette=amber\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=merge-sort\nvariant_id=merge\nprofile=normalized_float\nmerge_execution_mode=bottom_up\noption.merge-sort.merge.execution_mode=unknown_mode\n");
 		const UserPreferences malformedOption = store.load();
 		check(malformedOption.isValid() && malformedOption.simulation.mergeExecutionMode == sortinglogic::MergeExecutionMode::BottomUp &&
@@ -465,6 +529,12 @@ namespace
 		const UserPreferences malformedAudio = store.load();
 		check(malformedAudio.visual.palette == PaletteId::Light && malformedAudio.audio.masterLevel == defaults.audio.masterLevel,
 			"malformed audio values fall back to audio defaults without discarding valid app preferences");
+		writeFile(path, "version=6\npalette=light\nspacing=comfortable\npanel_expanded=0\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\nreconstructed_master=nan\nreconstructed_minimum_hz=9000\n");
+		const UserPreferences malformedReconstructed = store.load();
+		check(malformedReconstructed.visual.palette == PaletteId::Light &&
+			malformedReconstructed.reconstructedAudio.masterLevel == defaults.reconstructedAudio.masterLevel &&
+			malformedReconstructed.reconstructedAudio.minimumFrequencyHz == defaults.reconstructedAudio.minimumFrequencyHz,
+			"malformed reconstructed audio settings fall back without discarding valid appearance settings");
 		writeFile(path, "version=3\npalette=light\nspacing=comfortable\npanel_expanded=0\nitem_count=900\nduration_seconds=10\ndescending=1\nalgorithm=1001\nprofile=normalized_float\nshell_gap_sequence=halving\n");
 		const UserSettings invalidRange = store.load();
 		check(invalidRange.visual.palette == PaletteId::Cyan && invalidRange.visual.spacing == BarSpacingMode::Compact, "out-of-range settings safely fall back to defaults");
@@ -494,24 +564,36 @@ namespace
 		app.dispatch(AppAction(AppActionKind::TogglePanelExpanded));
 		check(persistence.writes == 3 && !persistence.value.visual.panelExpanded,
 			"spacing and panel state changes persist through the controller");
+		const sortinglogic::CommandResult andrutArrangement = app.dispatch(AppAction(AppActionKind::SetInputPattern,
+			0.0f, static_cast<int>(sortinglogic::InputPattern::AndrutReference)));
+		check(andrutArrangement.accepted && app.snapshot().itemCount == 100 &&
+			app.preferences().simulation.domain == sortinglogic::InputDomain::NormalizedFloats &&
+			app.preferences().simulation.pattern == sortinglogic::InputPattern::AndrutReference,
+			"selecting the Andrut arrangement immediately selects its 100-bar normalized input");
+		check(persistence.writes == 4, "Andrut arrangement persists its item count and input profile as one preference change");
+		app.dispatch(AppAction(AppActionKind::SetInputPattern, 0.0f, static_cast<int>(sortinglogic::InputPattern::Random)));
 
 		app.dispatch(AppAction(AppActionKind::SetDirection, 0.0f, 1));
 		app.dispatch(AppAction(AppActionKind::IncreaseCountFine));
 		app.dispatch(AppAction(AppActionKind::IncreaseDuration));
-		check(persistence.writes == 6 && persistence.value.simulation.itemCount == 81 &&
+		check(persistence.writes == 8 && persistence.value.simulation.itemCount == 101 &&
 			persistence.value.simulation.durationSeconds == 11 && persistence.value.simulation.descending,
 			"simulation configuration changes update the saved preference snapshot");
 		app.dispatch(AppAction(AppActionKind::SetAudioParameter, 0.63f, 0, AudioParameterId::MasterLevel));
-		check(persistence.writes == 7 && persistence.value.audio.masterLevel == 0.63f,
+		check(persistence.writes == 9 && persistence.value.audio.masterLevel == 0.63f,
 			"audio preference changes persist immediately through the app controller");
+		app.dispatch(AppAction(AppActionKind::SetReconstructedAudioParameter,
+			ReconstructedAudioParameterId::MasterLevel, 0.67f));
+		check(persistence.writes == 10 && std::fabs(persistence.value.reconstructedAudio.masterLevel - 0.67) < 1e-6,
+			"reconstructed audio preferences persist immediately through the app controller");
 		app.dispatch(AppAction(AppActionKind::SelectAudioBand, 0.0f, 20));
 		app.dispatch(AppAction(AppActionKind::RetryAudioDevice));
-		check(persistence.writes == 7, "band selection and device retry do not write user settings");
+		check(persistence.writes == 10, "band selection and device retry do not write user settings");
 
 		const sortinglogic::CommandResult run = app.dispatch(AppAction(AppActionKind::Run));
-		check(run.accepted && persistence.writes == 7, "Run begins trace construction without an unnecessary settings write");
+		check(run.accepted && persistence.writes == 10, "Run begins trace construction without an unnecessary settings write");
 		const sortinglogic::CommandResult busy = app.dispatch(AppAction(AppActionKind::InstaInvert));
-		check(!busy.accepted && persistence.writes == 7, "busy setup command is rejected without persistence");
+		check(!busy.accepted && persistence.writes == 10, "busy setup command is rejected without persistence");
 		const std::chrono::steady_clock::time_point deadline =
 			std::chrono::steady_clock::now() + std::chrono::seconds(5);
 		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < deadline)
@@ -524,9 +606,9 @@ namespace
 		app.dispatch(AppAction(AppActionKind::NextEvent));
 		app.dispatch(AppAction(AppActionKind::Reset));
 		app.dispatch(AppAction(AppActionKind::TogglePlayback));
-		check(persistence.writes == 7, "scrubbing, stepping, reset, and playback never write settings");
+		check(persistence.writes == 10, "scrubbing, stepping, reset, and playback never write settings");
 		app.dispatch(AppAction(AppActionKind::SetAudioParameter, 0.71f, 0, AudioParameterId::BedLevel));
-		check(app.snapshot().playing && persistence.writes == 8 && persistence.value.audio.bedLevel == 0.71f,
+		check(app.snapshot().playing && persistence.writes == 11 && persistence.value.audio.bedLevel == 0.71f,
 			"audio parameters remain adjustable and persist while trace playback is active");
 		app.update(0.25f);
 		const std::size_t progressedCursor = app.snapshot().cursor;
@@ -543,12 +625,12 @@ namespace
 		check(app.snapshot().cursor == seekCursor && !app.snapshot().playing,
 			"timeline seeking reconstructs its destination while remaining paused");
 		app.dispatch(AppAction(AppActionKind::Reset));
-		check(app.snapshot().cursor == 0 && !app.snapshot().playing && persistence.writes == 8,
+		check(app.snapshot().cursor == 0 && !app.snapshot().playing && persistence.writes == 11,
 			"Reset restores the event cursor and array baseline without persisting transport state");
 		app.dispatch(AppAction(AppActionKind::TogglePlayback));
 		check(app.snapshot().playing, "playback can restart after Reset");
 		app.dispatch(AppAction(AppActionKind::TogglePlayback));
-		check(!app.snapshot().playing && persistence.writes == 8,
+		check(!app.snapshot().playing && persistence.writes == 11,
 			"pausing after restart does not persist transport state");
 
 		wchar_t temporary[MAX_PATH] = {};
@@ -571,6 +653,30 @@ namespace
 				"controller preferences survive settings-file reload in a fresh app instance");
 		}
 		DeleteFileW(restartPath.c_str());
+	}
+
+	void testRestoreReconstructedDefaultsScope()
+	{
+		MemorySettings persistence;
+		AppController app(persistence);
+		app.dispatch(AppAction(AppActionKind::SetPalette, 0.0f, static_cast<int>(PaletteId::Amber)));
+		app.dispatch(AppAction(AppActionKind::IncreaseCountFine));
+		app.dispatch(AppAction(AppActionKind::SetDirection, 0.0f, 1));
+		app.dispatch(AppAction(AppActionKind::SetReconstructedAudioParameter,
+			ReconstructedAudioParameterId::MinimumFrequencyHz, 140.0f));
+		app.dispatch(AppAction(AppActionKind::SetVariantAudioLevel, "insertion-methods", "insertion", -12.0f,
+			static_cast<int>(AlgorithmAudioChannel::Comparison)));
+		const int writesBeforeRestore = persistence.writes;
+		const sortinglogic::CommandResult restored = app.dispatch(AppAction(AppActionKind::RestoreReconstructedDefaults));
+		const SoundEngine::ReconstructedParameters defaults;
+		check(restored.accepted && persistence.writes == writesBeforeRestore + 1,
+			"restoring reconstructed defaults persists the changed audio profile once");
+		check(app.preferences().reconstructedAudio.minimumFrequencyHz == defaults.minimumFrequencyHz &&
+			app.preferences().variantAudioOffsets.empty() && app.preferences().familyAudioDefaults.empty(),
+			"restoring reconstructed defaults clears timbre edits and algorithm gain overrides");
+		check(app.preferences().visual.palette == PaletteId::Amber && app.snapshot().itemCount == 81 &&
+			app.snapshot().direction == sortinglogic::SortDirection::Descending,
+			"restoring reconstructed defaults preserves appearance and simulation configuration");
 	}
 
 	void testAudioPresentationBridgeAndMailbox()
@@ -601,8 +707,16 @@ namespace
 		SoundEngine::Parameters parameters;
 		sortinglogic::RenderSnapshot snapshot = simulation.snapshot();
 		bridge.update(simulation, snapshot, parameters, traceMailbox);
+		waitForAudioTimeline(bridge, simulation, parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.traceLoaded && !latest.hasComparison,
 			"loaded trace publishes the continuous bed with no initial comparison focus");
+		check(latest.timeline && latest.timeline->ready() && latest.timeline->sourceEventCount() == snapshot.eventCount &&
+			latest.timeline->eligibleEventCount() == simulation.currentTrace()->comparisonEventIndices.size() &&
+			latest.timeline->mode() == SoundEngine::PlaybackTimingMode::FixedDuration,
+			"trace publication includes an immutable sound timeline with all source events and eligible comparisons");
+		check(latest.transport.generation == latest.timelineGeneration && !latest.transport.playing &&
+			!latest.transport.holdSelection,
+			"initial audio transport installs paused at cursor zero without starting comparison births");
 		const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation.currentTrace();
 		std::size_t firstCompareCursor = 0;
 		for (std::size_t i = 0; i < trace->events.size(); ++i)
@@ -611,10 +725,24 @@ namespace
 		simulation.seekTo(firstCompareCursor);
 		snapshot = simulation.snapshot();
 		bridge.update(simulation, snapshot, parameters, traceMailbox);
+		waitForAudioTimeline(bridge, simulation, parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.hasComparison &&
 			latest.comparison.heldKey == SoundEngine::HeldKeyParticipant::Second &&
 			latest.comparison.secondRole == SoundEngine::ComparisonRole::HeldKey,
 			"comparison event maps both items and preserves the held-key participant");
+		check(latest.seekState && latest.seekState->valid &&
+			latest.seekState->targetCursor == firstCompareCursor &&
+			latest.seekState->timelineGeneration == latest.timelineGeneration,
+			"paused cursor selection publishes a generation-tagged prepared seek snapshot for callback installation");
+		SoundEngine::AudioTimelineEvent timelineComparison;
+		check(latest.timeline->comparisonAtCursor(firstCompareCursor, timelineComparison) &&
+			timelineComparison.sourceCursor == firstCompareCursor && latest.transport.holdSelection &&
+			latest.transport.sourceCursor == firstCompareCursor,
+			"paused event stepping keeps an exact cursor-selected comparison in the prepared audio timeline");
+		check(latest.burstComparison.firstPosition == latest.comparison.firstPosition &&
+			latest.burstComparison.secondPosition == latest.comparison.secondPosition &&
+			latest.burstComparison.secondRole == static_cast<std::uint8_t>(SoundEngine::ComparisonRole::HeldKey),
+			"the reconstructed audio bridge preserves normalized values and semantic roles");
 		const sortinglogic::SemanticEvent& firstCompare = trace->events[firstCompareCursor - 1];
 		float firstValue = 0.0f, secondValue = 0.0f, minimum = trace->input[0].value, maximum = minimum;
 		for (std::size_t i = 0; i < trace->input.size(); ++i)
@@ -627,14 +755,57 @@ namespace
 		check(std::fabs(latest.comparison.firstPosition - SoundEngine::normalizeValue(firstValue, minimum, maximum)) < 1e-6f &&
 			std::fabs(latest.comparison.secondPosition - SoundEngine::normalizeValue(secondValue, minimum, maximum)) < 1e-6f,
 			"comparison values normalize against the prepared input range");
+		sortinglogic::Simulation gnome(8, 0x6A04u);
+		check(gnome.selectAlgorithm(sortinglogic::SortAlgorithm::Gnome).accepted, "Gnome Sort selects for its reconstructed operand-order check");
+		gnome.prepareInstaSort();
+		sortinglogic::TraceBuildRequest gnomeRequest;
+		check(gnome.beginTraceBuild(gnomeRequest).accepted, "Gnome trace starts for audio operand-order mapping");
+		sortinglogic::TraceBuildResult gnomeBuilt;
+		gnomeBuilt.succeeded = true;
+		gnomeBuilt.trace = sortinglogic::SortTraceBuilder::build(gnomeRequest);
+		gnome.completeTraceBuild(std::move(gnomeBuilt));
+		const std::shared_ptr<const sortinglogic::SortTrace> gnomeTrace = gnome.currentTrace();
+		std::size_t gnomeCompareCursor = 0;
+		while (gnomeCompareCursor < gnomeTrace->events.size() &&
+			gnomeTrace->events[gnomeCompareCursor].type != sortinglogic::SemanticEventType::Compare) ++gnomeCompareCursor;
+		if (gnomeCompareCursor < gnomeTrace->events.size())
+		{
+			gnome.seekTo(gnomeCompareCursor + 1);
+			AudioPresentationBridge gnomeBridge;
+			LatestAudioStateMailbox gnomeMailbox;
+			gnomeBridge.update(gnome, gnome.snapshot(), parameters, gnomeMailbox);
+			waitForAudioTimeline(gnomeBridge, gnome, parameters, gnomeMailbox);
+			AudioPresentationState gnomeState;
+			const bool gnomePublished = gnomeMailbox.consumeLatest(gnomeState);
+			check(gnomePublished &&
+				gnomeState.burstComparison.firstPosition == gnomeState.comparison.secondPosition &&
+				gnomeState.burstComparison.secondPosition == gnomeState.comparison.firstPosition,
+				"Gnome current audio operands reverse according to catalog metadata");
+			const bool gnomeTimelineLookup = gnomeState.timeline &&
+				gnomeState.timeline->comparisonAtCursor(gnomeCompareCursor + 1, timelineComparison);
+			check(gnomeTimelineLookup && timelineComparison.sourceCursor == gnomeCompareCursor + 1,
+				"Gnome prepared timeline retains the eligible comparison at its source cursor");
+			check(gnomeTimelineLookup &&
+				std::fabs(timelineComparison.firstPosition - gnomeState.burstComparison.firstPosition) < 1.0e-6 &&
+				std::fabs(timelineComparison.secondPosition - gnomeState.burstComparison.secondPosition) < 1.0e-6,
+				"Gnome timeline operands use the catalog's audio order");
+		}
+		SoundEngine::ReconstructedParameters releasePreferences;
+		releasePreferences.idlePolicy = SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
+		bridge.update(simulation, snapshot, parameters, traceMailbox, releasePreferences);
+		check(traceMailbox.consumeLatest(latest) && latest.hasComparison && latest.releaseSelection && !latest.transportPlaying,
+			"paused inspection publishes the configured special-release policy to the audio callback");
+		const SoundEngine::PreparedAudioTimeline* stableTimeline = latest.timeline;
 		parameters.heldKeyBoostDb = 0.0f;
 		bridge.update(simulation, snapshot, parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.parameters.heldKeyBoostDb == 0.0f &&
+			latest.timeline == stableTimeline && std::fabs(latest.timelineGains.heldKeyGain - 1.0) < 1.0e-9 &&
 			latest.comparison.heldKey == SoundEngine::HeldKeyParticipant::Second,
-			"audio bridge publishes held-key gain changes without dropping the held-key role");
+			"audio bridge applies live held-key gain changes without rebuilding the immutable timeline");
 		parameters.heldKeyBoostDb = 18.0f;
 		bridge.update(simulation, snapshot, parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.parameters.heldKeyBoostDb == 18.0f &&
+			std::fabs(latest.timelineGains.heldKeyGain - std::pow(10.0, 18.0 / 20.0)) < 1.0e-6 &&
 			latest.comparison.heldKey == SoundEngine::HeldKeyParticipant::Second,
 			"audio callback mailbox receives the full held-key offset range for a held comparison");
 
@@ -669,6 +840,20 @@ namespace
 		countingBuilt.trace = sortinglogic::SortTraceBuilder::build(countingRequest);
 		counting.completeTraceBuild(std::move(countingBuilt));
 		const std::shared_ptr<const sortinglogic::SortTrace> countingTrace = counting.currentTrace();
+		std::size_t firstCountingProbe = countingTrace->events.size();
+		for (std::size_t i = 0; i < countingTrace->events.size(); ++i)
+			if (countingTrace->events[i].type == sortinglogic::SemanticEventType::Probe) { firstCountingProbe = i; break; }
+		if (firstCountingProbe < countingTrace->events.size() && countingTrace->comparisonEventIndices.empty())
+		{
+			counting.seekTo(firstCountingProbe + 1);
+			AudioPresentationBridge probeBridge;
+			LatestAudioStateMailbox probeMailbox;
+			probeBridge.update(counting, counting.snapshot(), parameters, probeMailbox);
+			AudioPresentationState probeState;
+			check(probeMailbox.consumeLatest(probeState) && probeState.hasComparison && probeState.burstComparison.probeOnly &&
+				probeState.burstComparison.firstRole == static_cast<std::uint8_t>(SoundEngine::ComparisonRole::ProbedItem),
+				"comparison-free distribution traces sonify real item probes as single-participant notes");
+		}
 		std::size_t counterWorkspaceSize = 0;
 		for (std::size_t i = 0; i < countingTrace->events.size(); ++i)
 			if (countingTrace->events[i].type == sortinglogic::SemanticEventType::ResizeCounterWorkspace)
@@ -760,8 +945,8 @@ namespace
 		MemorySettings persistence;
 		AppController app(persistence);
 		const SoundEngine::Parameters inherited = app.effectiveAudio();
-		check(std::fabs(inherited.comparisonBoostDb - app.preferences().audio.comparisonBoostDb) < 1e-6f,
-			"a new variant inherits the existing family comparison level at zero offset");
+		check(std::fabs(inherited.comparisonBoostDb) < 1e-6f,
+			"a new variant inherits the reconstructed model's neutral family comparison level");
 		const AppAction offset(AppActionKind::SetVariantAudioLevel, "insertion-methods", "insertion", -12.0f,
 			static_cast<int>(AlgorithmAudioChannel::Comparison));
 		check(app.dispatch(offset).accepted && persistence.writes == 1 &&
@@ -883,6 +1068,91 @@ namespace
 		check(!app.dispatch(invalid).accepted && persistence.writes == writesBeforeInvalid,
 			"unknown stable option IDs are rejected without persisting a change");
 	}
+
+	void testPlaybackTimingActions()
+	{
+		MemorySettings persistence;
+		AppController app(persistence);
+		const float originalDuration = app.snapshot().durationSeconds;
+		const AppAction reference(AppActionKind::SetPlaybackTimingMode, 0.0f,
+			static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence));
+		check(app.dispatch(reference).accepted &&
+			app.preferences().simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence &&
+			persistence.writes == 1,
+			"reference cadence is a persisted simulation preference");
+		check(!app.dispatch(AppAction(AppActionKind::IncreaseDuration)).accepted &&
+			app.snapshot().durationSeconds == originalDuration && persistence.writes == 1,
+			"manual duration changes are rejected without a settings write in reference cadence");
+		check(!app.dispatch(AppAction(AppActionKind::SetPlaybackTimingMode, 0.0f, 99)).accepted &&
+			persistence.writes == 1,
+			"invalid timing modes are rejected without persistence");
+	}
+
+	void testAudioPreparationPlaybackGate()
+	{
+		MemorySettings persistence;
+		AppController app(persistence);
+		check(app.dispatch(AppAction(AppActionKind::Run)).accepted, "run creates a trace for the audio-preparation gate");
+		const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < deadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		check(app.snapshot().hasTrace, "audio-preparation gate fixture receives its trace");
+		app.setAudioPreparationPending(true);
+		check(!app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted && !app.snapshot().playing,
+			"Play is rejected with an actionable status while its immutable audio timeline is preparing");
+		app.setAudioPreparationPending(false);
+		check(app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted && app.snapshot().playing,
+			"Play becomes available as soon as timeline preparation completes");
+		app.dispatch(AppAction(AppActionKind::TogglePlayback));
+	}
+
+	void testStaleAudioPlayheadCannotCancelPlayback()
+	{
+		MemorySettings persistence;
+		AppController app(persistence);
+		check(app.dispatch(AppAction(AppActionKind::Run)).accepted,
+			"playhead revision regression creates a trace");
+		const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < deadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		check(app.snapshot().hasTrace, "playhead revision regression receives its trace");
+		app.setAudioPreparationPending(false);
+		check(app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted && app.snapshot().playing,
+			"playhead revision regression starts playback");
+
+		SoundEngine::AudioPlayheadFeedback stalePause;
+		stalePause.generation = 7;
+		stalePause.transportRevision = 10;
+		stalePause.durationFrames = 44100 * 10;
+		stalePause.playing = false;
+		app.applyAudioPlayhead(stalePause, 7, 11);
+		check(app.snapshot().playing,
+			"an older paused feedback snapshot cannot cancel a newer Play transport revision");
+
+		SoundEngine::AudioPlayheadFeedback currentPlayhead;
+		currentPlayhead.generation = 7;
+		currentPlayhead.transportRevision = 11;
+		currentPlayhead.durationFrames = 44100 * 10;
+		currentPlayhead.timelineFrame = 4410;
+		currentPlayhead.sourceCursor = 12;
+		currentPlayhead.playing = true;
+		app.applyAudioPlayhead(currentPlayhead, 7, 11);
+		check(app.snapshot().playing && app.snapshot().cursor == 12,
+			"feedback for the current transport revision advances the visible playhead");
+
+		currentPlayhead.timelineFrame = currentPlayhead.durationFrames;
+		currentPlayhead.sourceCursor = app.snapshot().eventCount;
+		currentPlayhead.playing = false;
+		app.applyAudioPlayhead(currentPlayhead, 7, 11);
+		check(!app.snapshot().playing,
+			"completion feedback for the current revision still pauses the simulation");
+	}
 }
 
 int main()
@@ -893,8 +1163,12 @@ int main()
 	testLayoutAndWidgets();
 	testSettingsStore();
 	testAppControllerDispatchAndPersistence();
+	testRestoreReconstructedDefaultsScope();
 	testShowcaseActions();
 	testMetadataAlgorithmOptions();
+	testPlaybackTimingActions();
+	testAudioPreparationPlaybackGate();
+	testStaleAudioPlayheadCannotCancelPlayback();
 	testAudioPresentationBridgeAndMailbox();
 	testAccentAudioActions();
 	testVariantAudioLevels();

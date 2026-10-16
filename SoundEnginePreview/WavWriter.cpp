@@ -57,3 +57,37 @@ bool writeWav16Stereo(const std::string& path, const std::vector<float>& interle
 	output.flush();
 	return output.good();
 }
+
+bool writeWavFloat32Stereo(const std::string& path, const std::vector<float>& interleavedSamples, std::uint32_t sampleRate)
+{
+	if (sampleRate == 0 || interleavedSamples.size() % 2 != 0)
+		return false;
+	const std::uint64_t dataBytes64 = static_cast<std::uint64_t>(interleavedSamples.size()) * sizeof(float);
+	if (dataBytes64 > std::numeric_limits<std::uint32_t>::max() - 36)
+		return false;
+	const std::uint32_t dataBytes = static_cast<std::uint32_t>(dataBytes64);
+	std::ofstream output(path.c_str(), std::ios::binary | std::ios::trunc);
+	if (!output)
+		return false;
+	output.write("RIFF", 4);
+	writeU32(output, 36 + dataBytes);
+	output.write("WAVE", 4);
+	output.write("fmt ", 4);
+	writeU32(output, 16);
+	writeU16(output, 3); // IEEE float.
+	writeU16(output, 2);
+	writeU32(output, sampleRate);
+	writeU32(output, sampleRate * 2 * sizeof(float));
+	writeU16(output, 2 * sizeof(float));
+	writeU16(output, 32);
+	output.write("data", 4);
+	writeU32(output, dataBytes);
+	for (std::size_t i = 0; i < interleavedSamples.size(); ++i)
+	{
+		if (!std::isfinite(interleavedSamples[i]))
+			return false;
+		output.write(reinterpret_cast<const char*>(&interleavedSamples[i]), sizeof(float));
+	}
+	output.flush();
+	return output.good();
+}

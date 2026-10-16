@@ -28,7 +28,8 @@
     <ClCompile><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp14</LanguageStandard><AdditionalIncludeDirectories>$(ProjectDir)..\SoundEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
     <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="SoundEngineTests.cpp" /></ItemGroup>
+  <ItemGroup><ClCompile Include="SoundEngineTests.cpp" /><ClCompile Include="LegacySoundEngine.cpp" /></ItemGroup>
+  <ItemGroup><ClInclude Include="LegacySoundEngine.h" /></ItemGroup>
   <ItemGroup><ProjectReference Include="..\SoundEngine\SoundEngine.vcxproj"><Project>{8DBFA0AF-176D-4E4B-9D8C-8A7EBA523F3F}</Project><LinkLibraryDependencies>true</LinkLibraryDependencies></ProjectReference></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

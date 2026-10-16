@@ -31,6 +31,16 @@ namespace
 		return true;
 	}
 
+	bool sameReconstructedAudio(const SoundEngine::ReconstructedParameters& a, const SoundEngine::ReconstructedParameters& b)
+	{
+		return a.minimumFrequencyHz == b.minimumFrequencyHz && a.maximumFrequencyHz == b.maximumFrequencyHz &&
+			a.excitationClockHz == b.excitationClockHz && a.carrierCycles == b.carrierCycles &&
+			a.tukeyFraction == b.tukeyFraction && a.secondOperandDelayMicroseconds == b.secondOperandDelayMicroseconds &&
+			a.masterLevel == b.masterLevel && a.specialReleaseMilliseconds == b.specialReleaseMilliseconds &&
+			a.lowPassCutoffHz == b.lowPassCutoffHz && a.audioEnabled == b.audioEnabled &&
+			a.lowPassEnabled == b.lowPassEnabled && a.mapping == b.mapping && a.idlePolicy == b.idlePolicy;
+	}
+
 	bool sameLevels(const AlgorithmAudioLevels& a, const AlgorithmAudioLevels& b)
 	{
 		return a.decibels == b.decibels;
@@ -54,6 +64,7 @@ namespace
 			left.visual.panelExpanded == right.visual.panelExpanded &&
 			left.simulation.itemCount == right.simulation.itemCount &&
 			left.simulation.durationSeconds == right.simulation.durationSeconds &&
+			left.simulation.playbackTimingMode == right.simulation.playbackTimingMode &&
 			left.simulation.descending == right.simulation.descending &&
 			left.simulation.algorithm == right.simulation.algorithm &&
 			left.simulation.familyId == right.simulation.familyId &&
@@ -64,6 +75,7 @@ namespace
 			left.simulation.shellGapSequence == right.simulation.shellGapSequence &&
 			left.simulation.mergeWritebackMode == right.simulation.mergeWritebackMode &&
 		left.simulation.mergeExecutionMode == right.simulation.mergeExecutionMode && sameAudio(left.audio, right.audio) &&
+		sameReconstructedAudio(left.reconstructedAudio, right.reconstructedAudio) &&
 			sameLevelMap(left.familyAudioDefaults, right.familyAudioDefaults) &&
 			sameLevelMap(left.variantAudioOffsets, right.variantAudioOffsets) &&
 			left.algorithmOptions == right.algorithmOptions;
@@ -132,6 +144,29 @@ namespace
 		validator.setParameters(audio);
 		audio = validator.parameters();
 	}
+
+	void setReconstructedParameter(SoundEngine::ReconstructedParameters& audio, const AppAction& action)
+	{
+		switch (action.reconstructedAudioParameter)
+		{
+		case ReconstructedAudioParameterId::Enabled: audio.audioEnabled = action.selection != 0; break;
+		case ReconstructedAudioParameterId::MasterLevel: audio.masterLevel = action.value; break;
+		case ReconstructedAudioParameterId::IdlePolicy: audio.idlePolicy = static_cast<SoundEngine::ReconstructedIdlePolicy>(action.selection); break;
+		case ReconstructedAudioParameterId::SpecialReleaseMilliseconds: audio.specialReleaseMilliseconds = action.value; break;
+		case ReconstructedAudioParameterId::MinimumFrequencyHz: audio.minimumFrequencyHz = action.value; break;
+		case ReconstructedAudioParameterId::MaximumFrequencyHz: audio.maximumFrequencyHz = action.value; break;
+		case ReconstructedAudioParameterId::Mapping: audio.mapping = static_cast<SoundEngine::ReconstructedMapping>(action.selection); break;
+		case ReconstructedAudioParameterId::ExcitationClockHz: audio.excitationClockHz = action.value; break;
+		case ReconstructedAudioParameterId::CarrierCycles: audio.carrierCycles = action.value; break;
+		case ReconstructedAudioParameterId::TukeyFraction: audio.tukeyFraction = action.value; break;
+		case ReconstructedAudioParameterId::SecondOperandDelayMicroseconds: audio.secondOperandDelayMicroseconds = action.value; break;
+		case ReconstructedAudioParameterId::LowPassEnabled: audio.lowPassEnabled = action.selection != 0; break;
+		case ReconstructedAudioParameterId::LowPassCutoffHz: audio.lowPassCutoffHz = action.value; break;
+		}
+		SoundEngine::ReconstructedSynthesizer validator;
+		validator.setParameters(audio);
+		audio = validator.parameters();
+	}
 }
 
 UserPreferences AppController::loadPreferences(ISettingsPersistence& persistence)
@@ -146,7 +181,9 @@ AppController::AppController(ISettingsPersistence& settingsPersistence)
 		simulation_(static_cast<std::size_t>(preferences_.simulation.itemCount), sortinglogic::Simulation::createFreshSeed(),
 			preferences_.simulation.domain, preferences_.simulation.pattern),
 	traceBuildService_(),
-	persistenceStatus_("Preferences loaded.")
+	persistenceStatus_("Preferences loaded."), hostReferenceElapsedSeconds_(0.0), previousAudioClockAvailable_(false),
+	audioPreparationGateEnabled_(false),
+	audioPreparationPending_(false)
 {
 	simulation_.setDuration(static_cast<float>(preferences_.simulation.durationSeconds));
 	simulation_.setDirection(preferences_.simulation.descending
@@ -167,6 +204,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 {
 	sortinglogic::CommandResult result(true, "");
 	const UserPreferences previous = preferences_;
+	const bool wasPlaying = simulation_.isPlaying();
 	switch (action.kind)
 	{
 	case AppActionKind::Shuffle:
@@ -192,6 +230,15 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			? sortinglogic::SortDirection::Descending
 			: sortinglogic::SortDirection::Ascending);
 		break;
+	case AppActionKind::SetPlaybackTimingMode:
+		if (simulation_.isPlaying() || simulation_.isBuildingTrace())
+			result = sortinglogic::CommandResult(false, "Pause playback and wait for trace preparation before changing timing mode.");
+		else if (action.selection < static_cast<int>(SoundEngine::PlaybackTimingMode::FixedDuration) ||
+			action.selection > static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence))
+			result = sortinglogic::CommandResult(false, "The selected playback timing mode is invalid.");
+		else
+			preferences_.simulation.playbackTimingMode = static_cast<SoundEngine::PlaybackTimingMode>(action.selection);
+		break;
 	case AppActionKind::Run:
 	{
 		sortinglogic::TraceBuildRequest request;
@@ -210,7 +257,9 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		break;
 	}
 	case AppActionKind::TogglePlayback:
-		result = simulation_.togglePlayback();
+		if (audioPreparationGateEnabled_ && audioPreparationPending_ && !simulation_.isPlaying())
+			result = sortinglogic::CommandResult(false, "Preparing audio timeline. Playback will be available as soon as preparation finishes.");
+		else result = simulation_.togglePlayback();
 		break;
 	case AppActionKind::Reset:
 		result = simulation_.reset();
@@ -234,10 +283,14 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		break;
 	}
 	case AppActionKind::DecreaseDuration:
-		result = simulation_.setDuration(std::max(sortinglogic::MinRunDurationSeconds, simulation_.durationSeconds() - 1.0f));
+		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
+		else result = simulation_.setDuration(std::max(sortinglogic::MinRunDurationSeconds, simulation_.durationSeconds() - 1.0f));
 		break;
 	case AppActionKind::IncreaseDuration:
-		result = simulation_.setDuration(std::min(sortinglogic::MaxRunDurationSeconds, simulation_.durationSeconds() + 1.0f));
+		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
+		else result = simulation_.setDuration(std::min(sortinglogic::MaxRunDurationSeconds, simulation_.durationSeconds() + 1.0f));
 		break;
 	case AppActionKind::SeekFraction:
 		result = simulation_.seekToFraction(action.value);
@@ -290,7 +343,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		break;
 	case AppActionKind::SetInputPattern:
 		if (action.selection < static_cast<int>(sortinglogic::InputPattern::Random) ||
-			action.selection > static_cast<int>(sortinglogic::InputPattern::OrganPipe))
+			action.selection > static_cast<int>(sortinglogic::InputPattern::AndrutReference))
 			result = sortinglogic::CommandResult(false, "The selected input pattern is invalid.");
 		else
 		{
@@ -384,6 +437,15 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::SetAudioParameter:
 		setAudioParameter(preferences_.audio, action);
 		break;
+	case AppActionKind::SetReconstructedAudioParameter:
+		setReconstructedParameter(preferences_.reconstructedAudio, action);
+		break;
+	case AppActionKind::RestoreReconstructedDefaults:
+		preferences_.reconstructedAudio = SoundEngine::ReconstructedParameters();
+		preferences_.familyAudioDefaults.clear();
+		preferences_.variantAudioOffsets.clear();
+		result = sortinglogic::CommandResult(true, "Reconstructed audio defaults restored.");
+		break;
 	case AppActionKind::SetVariantAudioLevel:
 	{
 		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(action.familyId, action.variantId);
@@ -418,6 +480,16 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		break;
 	}
 
+	if (result.accepted && preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence &&
+		(action.kind == AppActionKind::Run || action.kind == AppActionKind::Shuffle || action.kind == AppActionKind::InstaSort ||
+		 action.kind == AppActionKind::InstaInvert || action.kind == AppActionKind::TogglePlayback || action.kind == AppActionKind::Reset ||
+		 action.kind == AppActionKind::PreviousEvent || action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction ||
+		 action.kind == AppActionKind::SetPlaybackTimingMode))
+		synchronizeReferenceTransport(wasPlaying);
+	if (result.accepted && simulation_.snapshot().hasTrace &&
+		(action.kind == AppActionKind::SetPlaybackTimingMode || action.kind == AppActionKind::DecreaseDuration ||
+		 action.kind == AppActionKind::IncreaseDuration))
+		audioPreparationPending_ = true;
 	if (result.accepted)
 		synchronizeSimulationPreferences();
 	if (!samePreferences(previous, preferences_))
@@ -429,17 +501,97 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	return result;
 }
 
-void AppController::update(float deltaSeconds)
+void AppController::update(float deltaSeconds, bool audioClockAvailable)
 {
 	sortinglogic::TraceBuildResult completed;
 	if (traceBuildService_.poll(completed))
+	{
 		simulation_.completeTraceBuild(std::move(completed));
-	simulation_.advance(deltaSeconds);
+		hostReferenceElapsedSeconds_ = 0.0;
+		audioPreparationPending_ = static_cast<bool>(simulation_.currentTrace());
+		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			synchronizeReferenceTransport(false);
+	}
+	if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence && simulation_.isPlaying())
+	{
+		if (!audioClockAvailable && !(audioPreparationGateEnabled_ && audioPreparationPending_))
+		{
+			if (previousAudioClockAvailable_)
+				hostReferenceElapsedSeconds_ = referenceElapsedAtCursor(simulation_.snapshot().cursor);
+			hostReferenceElapsedSeconds_ += (std::max)(0.0f, deltaSeconds);
+			const double duration = referenceDurationSeconds();
+			const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
+			std::size_t cursor = 0;
+			if (trace && !trace->events.empty())
+			{
+				const std::vector<std::size_t>& eligible = !trace->comparisonEventIndices.empty()
+					? trace->comparisonEventIndices : trace->probeEventIndices;
+				const std::size_t due = (std::min)(eligible.size(), static_cast<std::size_t>(std::floor(hostReferenceElapsedSeconds_ * 300.0)) + 1);
+				if (hostReferenceElapsedSeconds_ >= duration) cursor = trace->events.size();
+				else if (due > 0) cursor = eligible[due - 1] + 1;
+			}
+			simulation_.synchronizePlaybackPosition(cursor, hostReferenceElapsedSeconds_, duration,
+				hostReferenceElapsedSeconds_ < duration);
+		}
+	}
+	else if (!audioClockAvailable && !(audioPreparationGateEnabled_ && audioPreparationPending_))
+		simulation_.advance(deltaSeconds);
+	previousAudioClockAvailable_ = audioClockAvailable;
 }
 
 sortinglogic::RenderSnapshot AppController::snapshot() const
 {
-	return simulation_.snapshot();
+	sortinglogic::RenderSnapshot result = simulation_.snapshot();
+	if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence && result.hasTrace)
+	{
+		result.durationSeconds = static_cast<float>(referenceDurationSeconds());
+		result.elapsedSeconds = static_cast<float>((std::max)(0.0, (std::min)(referenceDurationSeconds(),
+			static_cast<double>(result.elapsedSeconds))));
+	}
+	return result;
+}
+
+void AppController::applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
+	std::uint64_t currentTimelineGeneration, std::uint64_t currentTransportRevision)
+{
+	if (!simulation_.isPlaying() || feedback.generation == 0 || feedback.generation != currentTimelineGeneration ||
+		feedback.transportRevision != currentTransportRevision || feedback.durationFrames == 0)
+		return;
+	const double duration = preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
+		? static_cast<double>(feedback.durationFrames) / 44100.0
+		: simulation_.durationSeconds();
+	const double elapsed = static_cast<double>(feedback.timelineFrame) / 44100.0;
+	simulation_.synchronizePlaybackPosition(feedback.sourceCursor, elapsed, duration, feedback.playing);
+	hostReferenceElapsedSeconds_ = elapsed;
+}
+
+double AppController::referenceDurationSeconds() const
+{
+	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
+	if (!trace) return 0.0;
+	const std::size_t count = trace->comparisonEventIndices.empty()
+		? trace->probeEventIndices.size() : trace->comparisonEventIndices.size();
+	return static_cast<double>(count) / 300.0;
+}
+
+double AppController::referenceElapsedAtCursor(std::size_t cursor) const
+{
+	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
+	if (!trace) return 0.0;
+	const std::vector<std::size_t>& eligible = trace->comparisonEventIndices.empty()
+		? trace->probeEventIndices : trace->comparisonEventIndices;
+	const auto end = std::lower_bound(eligible.begin(), eligible.end(), cursor);
+	return static_cast<double>(end - eligible.begin()) / 300.0;
+}
+
+void AppController::synchronizeReferenceTransport(bool wasPlaying)
+{
+	if (preferences_.simulation.playbackTimingMode != SoundEngine::PlaybackTimingMode::ReferenceCadence) return;
+	const sortinglogic::RenderSnapshot current = simulation_.snapshot();
+	const double duration = referenceDurationSeconds();
+	if (!wasPlaying || !simulation_.isPlaying())
+		hostReferenceElapsedSeconds_ = referenceElapsedAtCursor(current.cursor);
+	simulation_.synchronizePlaybackPosition(current.cursor, hostReferenceElapsedSeconds_, duration, simulation_.isPlaying());
 }
 
 SoundEngine::Parameters AppController::effectiveAudio() const
