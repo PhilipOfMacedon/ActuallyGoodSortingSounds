@@ -185,7 +185,7 @@ AppController::AppController(ISettingsPersistence& settingsPersistence)
 	traceBuildService_(),
 	persistenceStatus_("Preferences loaded."), hostReferenceElapsedSeconds_(0.0), previousAudioClockAvailable_(false),
 	audioPreparationGateEnabled_(false),
-	audioPreparationPending_(false)
+	audioPreparationPending_(false), playbackPending_(false)
 {
 	simulation_.setDuration(static_cast<float>(preferences_.simulation.durationSeconds));
 	simulation_.setDirection(preferences_.simulation.descending
@@ -204,11 +204,59 @@ AppController::AppController(ISettingsPersistence& settingsPersistence)
 
 AppController::~AppController() = default;
 
+sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
+{
+	playbackPending_ = false;
+	sortinglogic::TraceBuildRequest request;
+	sortinglogic::CommandResult result = simulation_.beginTraceBuild(request);
+	if (!result.accepted) return result;
+
+	playbackPending_ = playWhenReady;
+	std::string error;
+	if (!traceBuildService_.submit(request, &error))
+	{
+		sortinglogic::TraceBuildResult failed;
+		failed.error = error.empty() ? "Trace worker is unavailable." : error;
+		simulation_.completeTraceBuild(failed);
+		playbackPending_ = false;
+		return sortinglogic::CommandResult(false, failed.error);
+	}
+	if (playWhenReady)
+		result.message = "Generating the trace; playback will start automatically when preparation finishes.";
+	return result;
+}
+
+void AppController::setAudioPreparationPending(bool pending)
+{
+	audioPreparationGateEnabled_ = true;
+	audioPreparationPending_ = pending;
+	startPendingPlaybackIfReady();
+}
+
+void AppController::startPendingPlaybackIfReady()
+{
+	if (!playbackPending_) return;
+	if (simulation_.isBuildingTrace()) return;
+	if (!simulation_.currentTrace())
+	{
+		playbackPending_ = false;
+		return;
+	}
+	if (audioPreparationGateEnabled_ && audioPreparationPending_) return;
+
+	playbackPending_ = false;
+	const bool wasPlaying = simulation_.isPlaying();
+	const sortinglogic::CommandResult started = simulation_.togglePlayback();
+	if (started.accepted && preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+		synchronizeReferenceTransport(wasPlaying);
+}
+
 sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 {
 	sortinglogic::CommandResult result(true, "");
 	const UserPreferences previous = preferences_;
 	const bool wasPlaying = simulation_.isPlaying();
+	const std::shared_ptr<const sortinglogic::SortTrace> previousTrace = simulation_.currentTrace();
 	switch (action.kind)
 	{
 	case AppActionKind::Shuffle:
@@ -263,23 +311,35 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 				preferences_.simulation.mergeBufferVisualizationEnabled = simulation_.mergeBufferVisualizationEnabled();
 		}
 		break;
-	case AppActionKind::Run:
-	{
-		sortinglogic::TraceBuildRequest request;
-		result = simulation_.beginTraceBuild(request);
-		if (result.accepted)
-		{
-			std::string error;
-			if (!traceBuildService_.submit(request, &error))
-			{
-				sortinglogic::TraceBuildResult failed;
-				failed.error = error.empty() ? "Trace worker is unavailable." : error;
-				simulation_.completeTraceBuild(failed);
-				result = sortinglogic::CommandResult(false, failed.error);
-			}
-		}
+	case AppActionKind::BuildTrace:
+		result = requestTraceBuild(false);
 		break;
-	}
+	case AppActionKind::GenerateAndPlay:
+		if (simulation_.isPlaying())
+		{
+			playbackPending_ = false;
+			result = simulation_.togglePlayback();
+		}
+		else if (playbackPending_)
+		{
+			playbackPending_ = false;
+			result = sortinglogic::CommandResult(true, "Queued playback cancelled.");
+		}
+		else if (simulation_.isBuildingTrace())
+		{
+			playbackPending_ = true;
+			result = sortinglogic::CommandResult(true, "Playback queued; it will start when the trace and audio timeline are ready.");
+		}
+		else if (!simulation_.currentTrace())
+			result = requestTraceBuild(true);
+		else if (audioPreparationGateEnabled_ && audioPreparationPending_)
+		{
+			playbackPending_ = true;
+			result = sortinglogic::CommandResult(true, "Playback queued until audio preparation finishes.");
+		}
+		else
+			result = simulation_.togglePlayback();
+		break;
 	case AppActionKind::TogglePlayback:
 		if (audioPreparationGateEnabled_ && audioPreparationPending_ && !simulation_.isPlaying())
 			result = sortinglogic::CommandResult(false, "Preparing audio timeline. Playback will be available as soon as preparation finishes.");
@@ -513,7 +573,8 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	}
 
 	if (result.accepted && preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence &&
-		(action.kind == AppActionKind::Run || action.kind == AppActionKind::Shuffle || action.kind == AppActionKind::InstaSort ||
+		(action.kind == AppActionKind::BuildTrace || action.kind == AppActionKind::GenerateAndPlay ||
+		 action.kind == AppActionKind::Shuffle || action.kind == AppActionKind::InstaSort ||
 		 action.kind == AppActionKind::InstaInvert || action.kind == AppActionKind::TogglePlayback || action.kind == AppActionKind::Reset ||
 		 action.kind == AppActionKind::PreviousEvent || action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction ||
 		 action.kind == AppActionKind::SetPlaybackTimingMode))
@@ -524,6 +585,12 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		audioPreparationPending_ = true;
 	if (result.accepted)
 		synchronizeSimulationPreferences();
+	if (result.accepted && previousTrace && simulation_.currentTrace() != previousTrace &&
+		action.kind != AppActionKind::BuildTrace && action.kind != AppActionKind::GenerateAndPlay)
+		playbackPending_ = false;
+	if (result.accepted && (action.kind == AppActionKind::Reset || action.kind == AppActionKind::PreviousEvent ||
+		action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction))
+		playbackPending_ = false;
 	if (!samePreferences(previous, preferences_))
 	{
 		persistIfChanged(previous);
@@ -541,9 +608,11 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 		simulation_.completeTraceBuild(std::move(completed));
 		hostReferenceElapsedSeconds_ = 0.0;
 		audioPreparationPending_ = static_cast<bool>(simulation_.currentTrace());
+		if (!simulation_.currentTrace()) playbackPending_ = false;
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			synchronizeReferenceTransport(false);
 	}
+	startPendingPlaybackIfReady();
 	if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence && simulation_.isPlaying())
 	{
 		if (!audioClockAvailable && !(audioPreparationGateEnabled_ && audioPreparationPending_))
@@ -573,6 +642,10 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 sortinglogic::RenderSnapshot AppController::snapshot() const
 {
 	sortinglogic::RenderSnapshot result = simulation_.snapshot();
+	if (playbackPending_)
+		result.status = result.buildingTrace
+			? "Playback is queued and will start after trace generation."
+			: "Playback is queued and will start after preparation finishes.";
 	if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence && result.hasTrace)
 	{
 		result.durationSeconds = static_cast<float>(referenceDurationSeconds());

@@ -28,7 +28,7 @@ public:
 	bool isReady() const;
 	bool handleEvent(const SDL_Event& event, AppAction& action);
 	void render(const sortinglogic::RenderSnapshot& snapshot, const std::string& persistenceStatus,
-		const std::string& audioStatus = "Audio device is not initialized.");
+		const std::string& audioStatus = "Audio device is not initialized.", bool playbackPending = false);
 	float chartTop() const { return chartTop_; }
 	bool settingsOpen() const { return settingsOpen_; }
 
@@ -87,9 +87,9 @@ private:
 
 	void createWidgets();
 	void updateLayout();
-	void updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot);
+	void updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending);
 	void syncLabels(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette);
-	void drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette);
+	void drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette, bool playbackPending);
 	void drawSettingsPanel(const ThemePalette& palette, const std::string& audioStatus);
 	void layoutSettingsControls();
 	void updateAudioControls();

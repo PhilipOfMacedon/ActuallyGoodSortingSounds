@@ -30,8 +30,8 @@ namespace
 		case SDLK_r: action.kind = AppActionKind::Shuffle; break;
 		case SDLK_a: action.kind = AppActionKind::InstaSort; break;
 		case SDLK_i: action.kind = AppActionKind::InstaInvert; break;
-		case SDLK_1: action.kind = AppActionKind::Run; break;
-		case SDLK_SPACE: action.kind = AppActionKind::TogglePlayback; break;
+		case SDLK_1: action.kind = AppActionKind::BuildTrace; break;
+		case SDLK_SPACE: action.kind = AppActionKind::GenerateAndPlay; break;
 		case SDLK_HOME: action.kind = AppActionKind::Reset; break;
 		case SDLK_LEFT: action.kind = AppActionKind::PreviousEvent; break;
 		case SDLK_RIGHT: action.kind = AppActionKind::NextEvent; break;
@@ -145,7 +145,7 @@ int main(int argc, char** argv)
 		if (audioBridge.timelinePreparing()) audioStatus = "Preparing audio timeline...";
 		else if (!audioBridge.timelineError().empty())
 			audioStatus = "Timeline error: " + audioBridge.timelineError() + " | sorting remains available";
-		controlPanel.render(snapshot, app.persistenceStatus(), audioStatus);
+		controlPanel.render(snapshot, app.persistenceStatus(), audioStatus, app.playbackPending());
 		frameCoordinator.finishFrame();
 	}
 	TextLabel::clearFontCache();

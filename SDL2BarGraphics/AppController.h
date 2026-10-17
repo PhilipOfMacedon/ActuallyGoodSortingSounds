@@ -12,7 +12,9 @@ enum class AppActionKind
 	InstaInvert,
 	SelectAlgorithm,
 	SetDirection,
-	Run,
+	BuildTrace,
+	Run = BuildTrace, // Compatibility name for existing shortcuts and callers.
+	GenerateAndPlay,
 	TogglePlayback,
 	Reset,
 	PreviousEvent,
@@ -114,7 +116,8 @@ public:
 
 	sortinglogic::CommandResult dispatch(const AppAction& action);
 	void update(float deltaSeconds, bool audioClockAvailable = false);
-	void setAudioPreparationPending(bool pending) { audioPreparationGateEnabled_ = true; audioPreparationPending_ = pending; }
+	void setAudioPreparationPending(bool pending);
+	bool playbackPending() const { return playbackPending_; }
 	void applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
 		std::uint64_t currentTimelineGeneration, std::uint64_t currentTransportRevision);
 	sortinglogic::RenderSnapshot snapshot() const;
@@ -134,8 +137,11 @@ private:
 	bool previousAudioClockAvailable_;
 	bool audioPreparationGateEnabled_;
 	bool audioPreparationPending_;
+	bool playbackPending_;
 
 	static UserPreferences loadPreferences(ISettingsPersistence& persistence);
+	sortinglogic::CommandResult requestTraceBuild(bool playWhenReady);
+	void startPendingPlaybackIfReady();
 	void synchronizeSimulationPreferences();
 	void persistIfChanged(const UserPreferences& previous);
 	double referenceDurationSeconds() const;

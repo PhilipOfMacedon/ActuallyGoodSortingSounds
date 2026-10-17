@@ -298,8 +298,8 @@ void ControlPanel::createWidgets()
 		AppAction(), UiAction::ViewCommand::OpenAlgorithmMenu);
 	mainUi_.addComboBox("direction", std::vector<std::string>{ "Ascending", "Descending" }, settings_.simulation.descending ? 1 : 0,
 		AppAction(AppActionKind::SetDirection));
-	mainUi_.addButton("run", "Run", AppAction(AppActionKind::Run));
-	mainUi_.addButton("play", "Play", AppAction(AppActionKind::TogglePlayback));
+	mainUi_.addButton("run", "Build Trace", AppAction(AppActionKind::BuildTrace));
+	mainUi_.addButton("play", "Generate & Play", AppAction(AppActionKind::GenerateAndPlay));
 	mainUi_.addButton("reset", "Reset", AppAction(AppActionKind::Reset));
 	mainUi_.addButton("previous", "< Event", AppAction(AppActionKind::PreviousEvent));
 	mainUi_.addButton("next", "Event >", AppAction(AppActionKind::NextEvent));
@@ -700,7 +700,7 @@ void ControlPanel::updateAlgorithmAudioControls(const sortinglogic::AlgorithmDes
 		algorithm.familyId, algorithm.variantId));
 }
 
-void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot)
+void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending)
 {
 	const bool busy = snapshot.buildingTrace || snapshot.playing;
 	const char* setupIds[] = { "shuffle", "insta_sort", "insta_invert", "algorithm", "direction", "run",
@@ -710,9 +710,14 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 		mainUi_.setWidgetEnabled(setupIds[i], !busy);
 	}
 	mainUi_.setWidgetEnabled("run", !busy && snapshot.runCompatible);
+	mainUi_.setWidgetEnabled("play", snapshot.playing || snapshot.buildingTrace || snapshot.hasTrace || snapshot.runCompatible);
 	UiWidget* algorithm = mainUi_.find("algorithm");
 	if (algorithm) algorithm->setLabel(algorithmLabel(snapshot.algorithm));
-	mainUi_.find("play")->setLabel(snapshot.playing ? "Pause" : "Play");
+	const char* playLabel = snapshot.playing ? "Pause" :
+		(playbackPending ? "Cancel queued" :
+		(snapshot.buildingTrace ? "Play when ready" :
+		(!snapshot.hasTrace ? "Generate & Play" : (snapshot.complete ? "Replay" : "Play"))));
+	mainUi_.find("play")->setLabel(playLabel);
 	mainUi_.find("bars_value")->setLabel(std::to_string(snapshot.itemCount) + " bars");
 	const bool referenceCadence = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence;
 	mainUi_.setWidgetEnabled("bars_value", !busy);
@@ -1087,21 +1092,21 @@ float ControlPanel::timelineFraction(float x) const
 }
 
 void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const std::string& persistenceStatus,
-	const std::string& audioStatus)
+	const std::string& audioStatus, bool playbackPending)
 {
 	if (!isReady()) return;
 	displayedSaveStatus_ = persistenceStatus;
 	updateLayout();
-	updateWidgetStates(snapshot);
+	updateWidgetStates(snapshot, playbackPending);
 	layoutAlgorithmMenu();
 	const ThemePalette& palette = paletteFor(settings_.visual.palette);
 	syncLabels(snapshot, palette);
-	drawMainPanel(snapshot, palette);
+	drawMainPanel(snapshot, palette, playbackPending);
 	if (settingsOpen_) drawSettingsPanel(palette, audioStatus);
 	if (algorithmMenuOpen_) drawAlgorithmMenu(palette);
 }
 
-void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette)
+void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette, bool playbackPending)
 {
 	submitBox(headerBounds_, palette.panel, PanelMaterial, UiLayer);
 	drawWidget(*mainUi_.find("panel_toggle"), palette, UiLayer);
@@ -1113,7 +1118,8 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 		std::ostringstream compact;
 		compact << sortinglogic::algorithmDisplayName(snapshot.algorithm) << " | "
 			<< (snapshot.direction == sortinglogic::SortDirection::Ascending ? "Ascending" : "Descending") << " | ";
-		if (snapshot.buildingTrace) compact << "Building trace";
+		if (snapshot.buildingTrace) compact << (playbackPending ? "Building trace | play queued" : "Building trace");
+		else if (playbackPending) compact << "Preparing playback";
 		else if (snapshot.playing) compact << "Playing";
 		else if (snapshot.hasTrace) compact << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
 		else compact << snapshot.itemCount << " bars | Ready";
