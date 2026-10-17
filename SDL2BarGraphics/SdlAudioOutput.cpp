@@ -228,12 +228,17 @@ void SdlAudioOutput::render(Uint8* stream, int length)
 			reconstructedSynthesizers_[i].setParameters(state.reconstructedParameters);
 			reconstructedSynthesizers_[i].setTimelineGainSettings(state.timelineGains);
 		}
-		const bool newSeekState = state.seekState && state.seekRevision != appliedSeekRevision_;
+		const bool newSeekState = state.seekState && state.seekRevision != appliedSeekRevision_ &&
+			state.seekState->timelineGeneration == state.timelineGeneration &&
+			state.seekState->transportRevision <= state.transport.revision;
 		const bool timelineChanged = state.timelineGeneration != appliedTimelineGeneration_ || state.timeline != appliedTimeline_;
 		if (newSeekState)
 		{
 			const unsigned int incomingIndex = 1u - activeReconstructedSynthesizer_;
 			reconstructedSynthesizers_[incomingIndex].installPreparedSeekState(*state.seekState);
+			// A newer Play can be coalesced with the paused snapshot publication.
+			// Installing history must not discard that newer transport command.
+			reconstructedSynthesizers_[incomingIndex].setTransportState(state.transport);
 			appliedSeekState_ = state.seekState;
 			appliedSeekRevision_ = state.seekRevision;
 			seekCrossfading_ = true;
@@ -372,6 +377,8 @@ void SdlAudioOutput::render(Uint8* stream, int length)
 				record.timelineGeneration = feedback.generation;
 				record.seekRevision = callbackSeekRevision_;
 				record.overloadSamples = outputOverloadCount_.load(std::memory_order_relaxed);
+				record.transportRevision = feedback.transportRevision;
+				record.playing = feedback.playing;
 				record.sourceCursor = static_cast<std::uint32_t>((std::min<std::size_t>)(feedback.sourceCursor,
 					(std::numeric_limits<std::uint32_t>::max)()));
 				record.rms = static_cast<float>(std::sqrt(squareSum / capturedSamples));
@@ -441,7 +448,7 @@ bool SdlAudioOutput::saveDiagnosticCapture()
 	if (!csv)
 		return false;
 	const double counterFrequency = static_cast<double>(SDL_GetPerformanceFrequency());
-	csv << "callback,frame_offset,frame_count,time_seconds,interval_ms,render_ms,deadline_ms,deadline_missed,rms,trace_loaded,comparison_active,timeline_prepared,timeline_generation,timeline_frame,source_cursor,seek_revision,overload_samples\n";
+	csv << "callback,frame_offset,frame_count,time_seconds,interval_ms,render_ms,deadline_ms,deadline_missed,rms,trace_loaded,comparison_active,timeline_prepared,timeline_generation,timeline_frame,source_cursor,seek_revision,overload_samples,transport_revision,playing\n";
 	csv << std::fixed << std::setprecision(6);
 	for (std::size_t i = 0; i < callbackRecordCount_; ++i)
 	{
@@ -457,7 +464,8 @@ bool SdlAudioOutput::saveDiagnosticCapture()
 			<< intervalMs << ',' << renderMs << ',' << deadlineMs << ',' << (record.deadlineMissed ? 1 : 0) << ','
 			<< record.rms << ',' << (record.traceLoaded ? 1 : 0) << ',' << (record.hasComparison ? 1 : 0) << ','
 			<< (record.timelinePrepared ? 1 : 0) << ',' << record.timelineGeneration << ',' << record.timelineFrame << ','
-			<< record.sourceCursor << ',' << record.seekRevision << ',' << record.overloadSamples << '\n';
+			<< record.sourceCursor << ',' << record.seekRevision << ',' << record.overloadSamples << ','
+			<< record.transportRevision << ',' << (record.playing ? 1 : 0) << '\n';
 	}
 	return static_cast<bool>(csv);
 }

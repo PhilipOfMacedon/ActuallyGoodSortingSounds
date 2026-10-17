@@ -30,7 +30,7 @@ AudioTimelineInputEvent::AudioTimelineInputEvent()
 }
 
 AudioTimelineGainSettings::AudioTimelineGainSettings()
-    : comparisonGain(1.0), heldKeyGain(1.0), probeGain(1.0), roleGain()
+    : comparisonGain(1.0), heldKeyGain(1.0), probeGain(1.0), auxiliaryGain(1.0), roleGain()
 {
     for (std::size_t i = 0; i < AudioTimelineRoleCount; ++i) roleGain[i] = 1.0;
 }
@@ -43,7 +43,7 @@ PreparedAudioTimeline::PreparedAudioTimeline()
 
 bool PreparedAudioTimeline::prepare(const std::vector<AudioTimelineInputEvent>& input,
     std::size_t sourceEventCount, PlaybackTimingMode mode, double fixedDurationSeconds,
-    std::uint32_t sampleRate, std::uint32_t referenceComparisonsPerSecond, std::string* error)
+    std::uint32_t sampleRate, std::uint32_t referenceEventsPerSecond, std::string* error)
 {
     ready_ = false;
     events_.clear();
@@ -53,7 +53,7 @@ bool PreparedAudioTimeline::prepare(const std::vector<AudioTimelineInputEvent>& 
     durationFrames_ = 0;
     if (sampleRate == 0 || (mode == PlaybackTimingMode::FixedDuration &&
         (!std::isfinite(fixedDurationSeconds) || fixedDurationSeconds < 0.0)) ||
-        (mode == PlaybackTimingMode::ReferenceCadence && referenceComparisonsPerSecond == 0))
+        (mode == PlaybackTimingMode::ReferenceCadence && referenceEventsPerSecond == 0))
     {
         if (error) *error = "The audio timeline timing parameters are invalid.";
         return false;
@@ -96,7 +96,7 @@ bool PreparedAudioTimeline::prepare(const std::vector<AudioTimelineInputEvent>& 
     else
     {
         durationFrames_ = ceilFrames(static_cast<long double>(eligibleEventCount_) * sampleRate /
-            referenceComparisonsPerSecond);
+            referenceEventsPerSecond);
         events_.resize(input.size());
         std::vector<std::uint64_t> eligibleFrames(eligibleEventCount_);
         std::vector<std::uint64_t> frameByInputIndex(input.size(), durationFrames_);
@@ -106,7 +106,7 @@ bool PreparedAudioTimeline::prepare(const std::vector<AudioTimelineInputEvent>& 
             if (input[i].kind != TimelineEventKind::Other)
             {
                 eligibleFrames[eligibleOrdinal] = static_cast<std::uint64_t>(
-                    (static_cast<long double>(eligibleOrdinal) * sampleRate) / referenceComparisonsPerSecond);
+                    (static_cast<long double>(eligibleOrdinal) * sampleRate) / referenceEventsPerSecond);
                 frameByInputIndex[i] = eligibleFrames[eligibleOrdinal++];
             }
 

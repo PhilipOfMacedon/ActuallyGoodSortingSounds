@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <atomic>
 #include <vector>
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
@@ -33,11 +34,12 @@ namespace
 	void waitForAudioTimeline(AudioPresentationBridge& bridge, const sortinglogic::Simulation& simulation,
 		const SoundEngine::Parameters& parameters, LatestAudioStateMailbox& mailbox,
 		const SoundEngine::ReconstructedParameters& reconstructed = SoundEngine::ReconstructedParameters(),
-		SoundEngine::PlaybackTimingMode mode = SoundEngine::PlaybackTimingMode::FixedDuration)
+		SoundEngine::PlaybackTimingMode mode = SoundEngine::PlaybackTimingMode::FixedDuration,
+		bool audioDeviceAvailable = false)
 	{
 		for (unsigned int attempt = 0; attempt < 5000; ++attempt)
 		{
-			bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode);
+			bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, audioDeviceAvailable);
 			if (!bridge.timelinePreparing()) return;
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
@@ -535,7 +537,9 @@ namespace
 			malformedReconstructed.reconstructedAudio.masterLevel == defaults.reconstructedAudio.masterLevel &&
 			malformedReconstructed.reconstructedAudio.minimumFrequencyHz == defaults.reconstructedAudio.minimumFrequencyHz,
 			"malformed reconstructed audio settings fall back without discarding valid appearance settings");
-		writeFile(path, "version=3\npalette=light\nspacing=comfortable\npanel_expanded=0\nitem_count=900\nduration_seconds=10\ndescending=1\nalgorithm=1001\nprofile=normalized_float\nshell_gap_sequence=halving\n");
+		writeFile(path, "version=3\npalette=light\nspacing=comfortable\npanel_expanded=0\nitem_count=" +
+			std::to_string(sortinglogic::MaxItemCount + 1) +
+			"\nduration_seconds=10\ndescending=1\nalgorithm=1001\nprofile=normalized_float\nshell_gap_sequence=halving\n");
 		const UserSettings invalidRange = store.load();
 		check(invalidRange.visual.palette == PaletteId::Cyan && invalidRange.visual.spacing == BarSpacingMode::Compact, "out-of-range settings safely fall back to defaults");
 		DeleteFileW(path.c_str());
@@ -677,6 +681,94 @@ namespace
 		check(app.preferences().visual.palette == PaletteId::Amber && app.snapshot().itemCount == 81 &&
 			app.snapshot().direction == sortinglogic::SortDirection::Descending,
 			"restoring reconstructed defaults preserves appearance and simulation configuration");
+	}
+
+	void testMailboxIdlePollingAndConcurrentPublication()
+	{
+		LatestAudioStateMailbox mailbox;
+		AudioPresentationState received;
+		for (unsigned i = 0; i < 1000; ++i)
+			check(!mailbox.consumeLatest(received), "empty polling does not acquire a buffer slot");
+		const std::uint64_t count = 100000;
+		std::atomic<bool> done(false);
+		std::thread producer([&] {
+			for (std::uint64_t revision = 1; revision <= count; ++revision)
+			{
+				AudioPresentationState state;
+				state.revision = revision;
+				state.transport.revision = revision;
+				state.transport.timelineFrame = revision * 147;
+				state.parameters.bandTrimDb.fill(static_cast<float>(revision));
+				mailbox.publish(state);
+				if (revision % 17 == 0) std::this_thread::yield();
+			}
+			done.store(true, std::memory_order_release);
+		});
+		std::uint64_t last = 0;
+		bool coherent = true;
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		for (;;)
+		{
+			if (std::chrono::steady_clock::now() >= deadline) break;
+			if (mailbox.consumeLatest(received))
+			{
+				coherent = coherent && received.revision > last && received.transport.revision == received.revision &&
+					received.transport.timelineFrame == received.revision * 147;
+				for (float trim : received.parameters.bandTrimDb)
+					coherent = coherent && trim == static_cast<float>(received.revision);
+				last = received.revision;
+			}
+			else if (done.load(std::memory_order_acquire))
+			{
+				// Acquire the final publication after observing producer completion.
+				if (last == count) break;
+			}
+		}
+		producer.join();
+		check(coherent && last == count, "idle callback polls preserve exclusive slots and coherent newest snapshots under concurrent publication");
+	}
+
+	void testDeviceRecoveryAndSeekAcknowledgement()
+	{
+		sortinglogic::Simulation simulation(20, 0x713u);
+		sortinglogic::TraceBuildRequest request;
+		simulation.beginTraceBuild(request);
+		sortinglogic::TraceBuildResult result;
+		result.succeeded = true;
+		result.trace = sortinglogic::SortTraceBuilder::build(request);
+		simulation.completeTraceBuild(std::move(result));
+		AudioPresentationBridge bridge;
+		LatestAudioStateMailbox mailbox;
+		SoundEngine::Parameters parameters;
+		SoundEngine::ReconstructedParameters reconstructed;
+		const auto mode = SoundEngine::PlaybackTimingMode::FixedDuration;
+		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+		waitForAudioTimeline(bridge, simulation, parameters, mailbox, reconstructed, mode, true);
+		simulation.seekTo(simulation.snapshot().eventCount / 2);
+		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+		check(!bridge.playheadReady(bridge.timelineGeneration(), ~std::uint64_t(0)),
+			"a preparing seek rejects playhead feedback even with an older callback acknowledgement");
+		waitForAudioTimeline(bridge, simulation, parameters, mailbox, reconstructed, mode, true);
+		AudioPresentationState prepared;
+		check(mailbox.consumeLatest(prepared) && prepared.seekState && prepared.seekRevision > 0,
+			"mid-trace inspection produces one prepared seek snapshot");
+		check(!bridge.playheadReady(prepared.timelineGeneration, prepared.seekRevision - 1) &&
+			bridge.playheadReady(prepared.timelineGeneration, prepared.seekRevision),
+			"temporary stopped feedback stays fenced until the callback acknowledges the installed seek");
+		const auto revision = bridge.transportRevision();
+		for (unsigned frame = 0; frame < 100; ++frame)
+			bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+		check(!bridge.timelinePreparing() && bridge.transportRevision() == revision,
+			"finishing preparation is not mistaken for device recovery and does not start another seek");
+		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, false);
+		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+		check(bridge.timelinePreparing() && bridge.transportRevision() == revision + 1,
+			"a real device recovery reconstructs the inspected position once");
+		waitForAudioTimeline(bridge, simulation, parameters, mailbox, reconstructed, mode, true);
+		for (unsigned frame = 0; frame < 100; ++frame)
+			bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+		check(!bridge.timelinePreparing() && bridge.transportRevision() == revision + 1,
+			"device recovery settles instead of recursively preparing audio");
 	}
 
 	void testAudioPresentationBridgeAndMailbox()
@@ -1169,6 +1261,8 @@ int main()
 	testPlaybackTimingActions();
 	testAudioPreparationPlaybackGate();
 	testStaleAudioPlayheadCannotCancelPlayback();
+	testMailboxIdlePollingAndConcurrentPublication();
+	testDeviceRecoveryAndSeekAcknowledgement();
 	testAudioPresentationBridgeAndMailbox();
 	testAccentAudioActions();
 	testVariantAudioLevels();

@@ -74,7 +74,9 @@ namespace
 			left.simulation.pattern == right.simulation.pattern &&
 			left.simulation.shellGapSequence == right.simulation.shellGapSequence &&
 			left.simulation.mergeWritebackMode == right.simulation.mergeWritebackMode &&
-		left.simulation.mergeExecutionMode == right.simulation.mergeExecutionMode && sameAudio(left.audio, right.audio) &&
+		left.simulation.mergeExecutionMode == right.simulation.mergeExecutionMode &&
+		left.simulation.mergeBufferVisualizationEnabled == right.simulation.mergeBufferVisualizationEnabled &&
+		left.simulation.completionScanEnabled == right.simulation.completionScanEnabled && sameAudio(left.audio, right.audio) &&
 		sameReconstructedAudio(left.reconstructedAudio, right.reconstructedAudio) &&
 			sameLevelMap(left.familyAudioDefaults, right.familyAudioDefaults) &&
 			sameLevelMap(left.variantAudioOffsets, right.variantAudioOffsets) &&
@@ -196,6 +198,8 @@ AppController::AppController(ISettingsPersistence& settingsPersistence)
 	simulation_.setShellGapSequence(preferences_.simulation.shellGapSequence);
 	simulation_.setMergeWritebackMode(preferences_.simulation.mergeWritebackMode);
 	simulation_.setMergeExecutionMode(preferences_.simulation.mergeExecutionMode);
+	simulation_.setMergeBufferVisualizationEnabled(preferences_.simulation.mergeBufferVisualizationEnabled);
+	simulation_.setCompletionScanEnabled(preferences_.simulation.completionScanEnabled);
 }
 
 AppController::~AppController() = default;
@@ -238,6 +242,26 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected playback timing mode is invalid.");
 		else
 			preferences_.simulation.playbackTimingMode = static_cast<SoundEngine::PlaybackTimingMode>(action.selection);
+		break;
+	case AppActionKind::SetCompletionScan:
+		if (action.selection < 0 || action.selection > 1)
+			result = sortinglogic::CommandResult(false, "The selected completion scan setting is invalid.");
+		else
+		{
+			result = simulation_.setCompletionScanEnabled(action.selection == 1);
+			if (result.accepted)
+				preferences_.simulation.completionScanEnabled = simulation_.completionScanEnabled();
+		}
+		break;
+	case AppActionKind::SetMergeBufferVisualization:
+		if (action.selection < 0 || action.selection > 1)
+			result = sortinglogic::CommandResult(false, "The selected Merge Sort buffer visualization setting is invalid.");
+		else
+		{
+			result = simulation_.setMergeBufferVisualizationEnabled(action.selection == 1);
+			if (result.accepted)
+				preferences_.simulation.mergeBufferVisualizationEnabled = simulation_.mergeBufferVisualizationEnabled();
+		}
 		break;
 	case AppActionKind::Run:
 	{
@@ -282,6 +306,9 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		result = simulation_.setItemCount(static_cast<std::size_t>(next));
 		break;
 	}
+	case AppActionKind::SetItemCount:
+		result = simulation_.setItemCount(action.selection < 0 ? 0U : static_cast<std::size_t>(action.selection));
+		break;
 	case AppActionKind::DecreaseDuration:
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
@@ -291,6 +318,11 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
 		else result = simulation_.setDuration(std::min(sortinglogic::MaxRunDurationSeconds, simulation_.durationSeconds() + 1.0f));
+		break;
+	case AppActionKind::SetDuration:
+		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
+		else result = simulation_.setDuration(action.value);
 		break;
 	case AppActionKind::SeekFraction:
 		result = simulation_.seekToFraction(action.value);
@@ -488,7 +520,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		synchronizeReferenceTransport(wasPlaying);
 	if (result.accepted && simulation_.snapshot().hasTrace &&
 		(action.kind == AppActionKind::SetPlaybackTimingMode || action.kind == AppActionKind::DecreaseDuration ||
-		 action.kind == AppActionKind::IncreaseDuration))
+		 action.kind == AppActionKind::IncreaseDuration || action.kind == AppActionKind::SetDuration))
 		audioPreparationPending_ = true;
 	if (result.accepted)
 		synchronizeSimulationPreferences();
@@ -524,8 +556,7 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 			std::size_t cursor = 0;
 			if (trace && !trace->events.empty())
 			{
-				const std::vector<std::size_t>& eligible = !trace->comparisonEventIndices.empty()
-					? trace->comparisonEventIndices : trace->probeEventIndices;
+				const std::vector<std::size_t>& eligible = trace->audioEventIndices;
 				const std::size_t due = (std::min)(eligible.size(), static_cast<std::size_t>(std::floor(hostReferenceElapsedSeconds_ * 300.0)) + 1);
 				if (hostReferenceElapsedSeconds_ >= duration) cursor = trace->events.size();
 				else if (due > 0) cursor = eligible[due - 1] + 1;
@@ -569,17 +600,14 @@ double AppController::referenceDurationSeconds() const
 {
 	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
 	if (!trace) return 0.0;
-	const std::size_t count = trace->comparisonEventIndices.empty()
-		? trace->probeEventIndices.size() : trace->comparisonEventIndices.size();
-	return static_cast<double>(count) / 300.0;
+	return static_cast<double>(trace->audioEventIndices.size()) / 300.0;
 }
 
 double AppController::referenceElapsedAtCursor(std::size_t cursor) const
 {
 	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
 	if (!trace) return 0.0;
-	const std::vector<std::size_t>& eligible = trace->comparisonEventIndices.empty()
-		? trace->probeEventIndices : trace->comparisonEventIndices;
+	const std::vector<std::size_t>& eligible = trace->audioEventIndices;
 	const auto end = std::lower_bound(eligible.begin(), eligible.end(), cursor);
 	return static_cast<double>(end - eligible.begin()) / 300.0;
 }
@@ -618,6 +646,8 @@ void AppController::synchronizeSimulationPreferences()
 	preferences_.simulation.shellGapSequence = simulation_.shellGapSequence();
 	preferences_.simulation.mergeWritebackMode = simulation_.mergeWritebackMode();
 	preferences_.simulation.mergeExecutionMode = simulation_.mergeExecutionMode();
+	preferences_.simulation.mergeBufferVisualizationEnabled = simulation_.mergeBufferVisualizationEnabled();
+	preferences_.simulation.completionScanEnabled = simulation_.completionScanEnabled();
 }
 
 void AppController::persistIfChanged(const UserPreferences& previous)

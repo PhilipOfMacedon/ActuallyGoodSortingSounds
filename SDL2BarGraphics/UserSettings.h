@@ -46,6 +46,8 @@ struct SimulationPreferences
 	sortinglogic::ShellGapSequence shellGapSequence;
 	sortinglogic::MergeWritebackMode mergeWritebackMode;
 	sortinglogic::MergeExecutionMode mergeExecutionMode;
+	bool mergeBufferVisualizationEnabled;
+	bool completionScanEnabled;
 	SimulationPreferences();
 };
 

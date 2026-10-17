@@ -181,6 +181,7 @@ namespace SoundEngine
 		timelineGains_.comparisonGain = clamp(gains.comparisonGain, 0.0, 1000.0);
 		timelineGains_.heldKeyGain = clamp(gains.heldKeyGain, 0.0, 1000.0);
 		timelineGains_.probeGain = clamp(gains.probeGain, 0.0, 1000.0);
+		timelineGains_.auxiliaryGain = clamp(gains.auxiliaryGain, 0.0, 1000.0);
 		for (std::size_t i = 0; i < AudioTimelineRoleCount; ++i)
 			timelineGains_.roleGain[i] = clamp(gains.roleGain[i], 0.0, 1000.0);
 	}
@@ -435,9 +436,14 @@ namespace SoundEngine
 		comparison.firstGain = selected.firstGain;
 		comparison.secondGain = selected.secondGain;
 		comparison.probeOnly = selected.kind == TimelineEventKind::Probe;
-		if (comparison.probeOnly)
+		if (selected.kind == TimelineEventKind::Probe)
 		{
 			comparison.firstGain *= timelineGains_.probeGain;
+			comparison.secondGain = 0.0;
+		}
+		else if (selected.kind == TimelineEventKind::Auxiliary)
+		{
+			comparison.firstGain *= timelineGains_.auxiliaryGain;
 			comparison.secondGain = 0.0;
 		}
 		else

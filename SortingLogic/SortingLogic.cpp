@@ -61,7 +61,8 @@ namespace sortinglogic
 		{
 		public:
 			explicit Recorder(const TraceBuildRequest& request)
-				: trace(), state(makeInitialState(request.input)), maxOperations(request.maxOperations), nextGroupId(0)
+				: trace(), state(makeInitialState(request.input)), maxOperations(request.maxOperations),
+				completionScanEnabled(request.completionScanEnabled), nextGroupId(0)
 			{
 				trace.algorithm = request.algorithm;
 				const AlgorithmDescriptor* algorithm = algorithmDescriptor(request.algorithm);
@@ -74,6 +75,7 @@ namespace sortinglogic
 				trace.shellGapSequence = request.shellGapSequence;
 				trace.mergeWritebackMode = request.mergeWritebackMode;
 				trace.mergeExecutionMode = request.mergeExecutionMode;
+				trace.mergeBufferVisualizationEnabled = request.mergeBufferVisualizationEnabled;
 				trace.inputSeed = request.inputSeed;
 				trace.input = request.input;
 				trace.initialState = state;
@@ -83,6 +85,7 @@ namespace sortinglogic
 			SortTrace trace;
 			SortState state;
 			std::size_t maxOperations;
+			bool completionScanEnabled;
 			int nextGroupId;
 
 			SortItem at(std::size_t index) const
@@ -115,10 +118,12 @@ namespace sortinglogic
 
 			void compare(const SortItem& first, const SortItem& second, std::size_t firstIndex, std::size_t secondIndex,
 				const std::string& firstLane = "main", const std::string& secondLane = "main",
-				SemanticRole firstRole = SemanticRole::ComparedItem, SemanticRole secondRole = SemanticRole::ComparedItem)
+				SemanticRole firstRole = SemanticRole::ComparedItem, SemanticRole secondRole = SemanticRole::ComparedItem,
+				bool isCompletionScan = false)
 			{
 				SemanticEvent event;
 				event.type = SemanticEventType::Compare;
+				event.completionScan = isCompletionScan;
 				event.firstIndex = firstIndex;
 				event.secondIndex = secondIndex;
 				event.firstLane = firstLane;
@@ -370,6 +375,10 @@ namespace sortinglogic
 
 			void finish()
 			{
+				if (completionScanEnabled)
+					for (std::size_t i = 0; i + 1 < state.slots.size(); ++i)
+						compare(at(i), at(i + 1), i, i + 1, "main", "main",
+							SemanticRole::ComparedItem, SemanticRole::ComparedItem, true);
 				SemanticEvent event;
 				event.type = SemanticEventType::Complete;
 				append(event);
@@ -842,6 +851,24 @@ namespace sortinglogic
 			} while (place > 0);
 		}
 
+		void populateAudioEventIndices(SortTrace& trace)
+		{
+			const bool hasAlgorithmComparisons = !trace.comparisonEventIndices.empty() &&
+				!trace.events[trace.comparisonEventIndices.front()].completionScan;
+			for (std::size_t i = 0; i < trace.events.size(); ++i)
+			{
+				const SemanticEvent& event = trace.events[i];
+				const SemanticEventType type = event.type;
+				const bool hiddenMergeBufferWrite = trace.algorithm == SortAlgorithm::Merge &&
+					!trace.mergeBufferVisualizationEnabled && type == SemanticEventType::AuxiliaryItemWrite &&
+					event.workspaceName == "merge";
+				if ((!hiddenMergeBufferWrite && type == SemanticEventType::AuxiliaryItemWrite) ||
+					(type == SemanticEventType::Compare && (hasAlgorithmComparisons || event.completionScan)) ||
+					(!hasAlgorithmComparisons && type == SemanticEventType::Probe))
+					trace.audioEventIndices.push_back(i);
+			}
+		}
+
 		SortTrace buildSelectedAlgorithm(const TraceBuildRequest& request, SortAlgorithm algorithm)
 		{
 			Recorder recorder(request);
@@ -873,6 +900,7 @@ namespace sortinglogic
 			{
 				recorder.finishPartial("Global trace operation budget reached (" + std::to_string(request.maxOperations) + " operations).");
 			}
+			populateAudioEventIndices(recorder.trace);
 			std::string reason;
 			if (!validateState(recorder.state, request.input.size(), &reason)) throw std::logic_error(reason.c_str());
 			return recorder.trace;
@@ -1079,8 +1107,8 @@ namespace sortinglogic
 		: sequence(0), type(SemanticEventType::Complete), firstIndex(NoGapIndex), secondIndex(NoGapIndex),
 		firstItemId(NoItemId), secondItemId(NoItemId), item(), beforeItem(), beforeSecondItem(), beforeSlots(), afterSlots(), comparison(ComparisonResult::Equal),
 		firstLane("main"), secondLane("main"), workspaceName(), firstRole(SemanticRole::ComparedItem),
-		secondRole(SemanticRole::ComparedItem), beforeOccupied(false), beforeSecondOccupied(false), beforeCounter(0), afterCounter(0),
-		beforeSize(0), afterSize(0), metricName(), metricDelta(0), groupId(-1)
+		secondRole(SemanticRole::ComparedItem), completionScan(false), beforeOccupied(false), beforeSecondOccupied(false),
+		beforeCounter(0), afterCounter(0), beforeSize(0), afterSize(0), metricName(), metricDelta(0), groupId(-1)
 	{
 	}
 
@@ -1089,8 +1117,9 @@ namespace sortinglogic
 		direction(SortDirection::Ascending), profile(InputProfile::NormalizedFloat),
 		domain(InputDomain::NormalizedFloats), pattern(InputPattern::Random), shellGapSequence(ShellGapSequence::Halving),
 		mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite), mergeExecutionMode(MergeExecutionMode::BottomUp),
+		mergeBufferVisualizationEnabled(true),
 		inputSeed(0), input(), initialState(), events(),
-		comparisonEventIndices(), probeEventIndices(), annotations(), snapshots(), operationCount(0), complete(true), completionReason()
+		comparisonEventIndices(), probeEventIndices(), audioEventIndices(), annotations(), snapshots(), operationCount(0), complete(true), completionReason()
 	{
 	}
 
@@ -1099,7 +1128,7 @@ namespace sortinglogic
 		algorithm(SortAlgorithm::Insertion), familyId("insertion"), variantId("standard"),
 		profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats),
 		pattern(InputPattern::Random), shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
-		mergeExecutionMode(MergeExecutionMode::BottomUp),
+		mergeExecutionMode(MergeExecutionMode::BottomUp), mergeBufferVisualizationEnabled(true),
 		cursor(0), eventCount(0), itemCount(0), audioEligibleEventCount(0), inputSeed(0), durationSeconds(10.0f), elapsedSeconds(0.0f),
 		hasTrace(false), buildingTrace(false), playing(false), complete(false), partial(false), runCompatible(true),
 		compatibilityMessage(), completionReason(), status()
@@ -1130,7 +1159,7 @@ namespace sortinglogic
 		switch (event.type)
 		{
 		case SemanticEventType::Compare:
-			++state.metrics.comparisons;
+			if (!event.completionScan) ++state.metrics.comparisons;
 			if (event.firstLane == "main" && event.secondRole == SemanticRole::HeldKey)
 			{
 				require(state.hasHeldItem, "Insertion comparison requires a held key.");
@@ -1231,7 +1260,9 @@ namespace sortinglogic
 	{
 		switch (event.type)
 		{
-		case SemanticEventType::Compare: if (state.metrics.comparisons) --state.metrics.comparisons; break;
+		case SemanticEventType::Compare:
+			if (!event.completionScan && state.metrics.comparisons) --state.metrics.comparisons;
+			break;
 		case SemanticEventType::Probe:
 		case SemanticEventType::PhaseBegin:
 		case SemanticEventType::PhaseEnd:
@@ -1437,10 +1468,14 @@ namespace sortinglogic
 		profile_(profile), domain_(profile == InputProfile::NormalizedFloat ? InputDomain::NormalizedFloats : InputDomain::NonnegativeIntegerKeys),
 		pattern_(InputPattern::Random), shellGapSequence_(ShellGapSequence::Halving),
 		mergeWritebackMode_(MergeWritebackMode::AtomicRangeWrite), mergeExecutionMode_(MergeExecutionMode::BottomUp),
+		mergeBufferVisualizationEnabled_(true),
+		completionScanEnabled_(false),
 		baselineKind_(BaselineKind::Shuffle),
 		buildingTrace_(false), playing_(false), status_()
 	{
-		if (itemCount_ < MinItemCount || itemCount_ > MaxItemCount) throw std::invalid_argument("Initial item count must be between 2 and 800.");
+		if (itemCount_ < MinItemCount || itemCount_ > MaxItemCount)
+			throw std::invalid_argument("Initial item count must be between " + std::to_string(MinItemCount) +
+				" and " + std::to_string(MaxItemCount) + ".");
 		prepareItems(BaselineKind::Shuffle, startupSeed);
 		status_ = "Ready. Input shuffle seed " + std::to_string(inputSeed_) + ".";
 	}
@@ -1603,7 +1638,11 @@ namespace sortinglogic
 	CommandResult Simulation::setItemCount(std::size_t count)
 	{
 		const CommandResult allowed = checkPreparationAllowed(); if (!allowed.accepted) { status_ = allowed.message; return allowed; }
-		if (count < MinItemCount || count > MaxItemCount) { status_ = "Bar count must be between 2 and 800."; return CommandResult(false, status_); }
+		if (count < MinItemCount || count > MaxItemCount)
+		{
+			status_ = "Bar count must be between " + std::to_string(MinItemCount) + " and " + std::to_string(MaxItemCount) + ".";
+			return CommandResult(false, status_);
+		}
 		if (count == itemCount_) { status_ = "Bar count is already " + std::to_string(itemCount_) + "."; return CommandResult(true, status_); }
 		itemCount_ = count;
 		const bool leftAndrutPreset = pattern_ == InputPattern::AndrutReference && itemCount_ != 100;
@@ -1720,6 +1759,29 @@ namespace sortinglogic
 		return CommandResult(true, status_);
 	}
 
+	CommandResult Simulation::setCompletionScanEnabled(bool enabled)
+	{
+		const CommandResult allowed = checkPreparationAllowed();
+		if (!allowed.accepted) { status_ = allowed.message; return allowed; }
+		if (completionScanEnabled_ == enabled) return CommandResult(true, "Completion scan setting is unchanged.");
+		completionScanEnabled_ = enabled;
+		replaceTraceWithBaseline();
+		status_ = std::string("Completion scan ") + (enabled ? "enabled." : "disabled.");
+		return CommandResult(true, status_);
+	}
+
+	CommandResult Simulation::setMergeBufferVisualizationEnabled(bool enabled)
+	{
+		const CommandResult allowed = checkPreparationAllowed();
+		if (!allowed.accepted) { status_ = allowed.message; return allowed; }
+		if (mergeBufferVisualizationEnabled_ == enabled)
+			return CommandResult(true, "Merge buffer visualization setting is unchanged.");
+		mergeBufferVisualizationEnabled_ = enabled;
+		replaceTraceWithBaseline();
+		status_ = std::string("Merge buffer visualization ") + (enabled ? "enabled." : "disabled.");
+		return CommandResult(true, status_);
+	}
+
 	CommandResult Simulation::beginTraceBuild(TraceBuildRequest& request)
 	{
 		const CommandResult allowed = checkPreparationAllowed(); if (!allowed.accepted) { status_ = allowed.message; return allowed; }
@@ -1739,6 +1801,8 @@ namespace sortinglogic
 		request.profile = profile_; request.domain = domain_; request.pattern = pattern_; request.shellGapSequence = shellGapSequence_;
 		request.mergeWritebackMode = mergeWritebackMode_;
 		request.mergeExecutionMode = mergeExecutionMode_;
+		request.completionScanEnabled = completionScanEnabled_;
+		request.mergeBufferVisualizationEnabled = mergeBufferVisualizationEnabled_;
 		trace_.reset(); currentState_ = makeInitialState(request.input); cursor_ = 0; elapsedSeconds_ = 0.0f; playing_ = false;
 		buildingTrace_ = true; status_ = "Building deterministic trace from a copy of the prepared input..."; return CommandResult(true, status_);
 	}
@@ -1911,9 +1975,9 @@ namespace sortinglogic
 		result.variantId = selected ? selected->variantId : VariantId();
 		result.shellGapSequence = shellGapSequence_; result.mergeWritebackMode = mergeWritebackMode_;
 		result.mergeExecutionMode = mergeExecutionMode_;
+		result.mergeBufferVisualizationEnabled = mergeBufferVisualizationEnabled_;
 		result.cursor = cursor_; result.eventCount = trace_ ? trace_->events.size() : 0; result.itemCount = itemCount_; result.inputSeed = inputSeed_;
-		result.audioEligibleEventCount = trace_ ? (trace_->comparisonEventIndices.empty()
-			? trace_->probeEventIndices.size() : trace_->comparisonEventIndices.size()) : 0;
+		result.audioEligibleEventCount = trace_ ? trace_->audioEventIndices.size() : 0;
 		result.durationSeconds = durationSeconds_; result.elapsedSeconds = elapsedSeconds_; result.hasTrace = static_cast<bool>(trace_);
 		result.buildingTrace = buildingTrace_; result.playing = playing_; result.complete = trace_ && cursor_ >= trace_->events.size();
 		result.partial = trace_ && !trace_->complete;

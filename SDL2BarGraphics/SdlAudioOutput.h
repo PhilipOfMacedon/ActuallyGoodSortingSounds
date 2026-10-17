@@ -51,12 +51,14 @@ private:
 		std::uint64_t timelineGeneration;
 		std::uint64_t seekRevision;
 		std::uint64_t overloadSamples;
+		std::uint64_t transportRevision;
 		std::uint32_t sourceCursor;
 		float rms;
 		bool traceLoaded;
 		bool hasComparison;
 		bool timelinePrepared;
 		bool deadlineMissed;
+		bool playing;
 	};
 
 	static const unsigned int DiagnosticDurationSeconds = 30;

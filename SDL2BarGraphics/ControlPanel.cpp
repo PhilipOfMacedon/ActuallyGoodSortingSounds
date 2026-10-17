@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <set>
 #include <sstream>
 
@@ -159,6 +160,22 @@ namespace
 		return rect.contains(static_cast<float>(x), static_cast<float>(y));
 	}
 
+	bool parseInlineInteger(const std::string& text, int& value)
+	{
+		if (text.empty()) return false;
+		int parsed = 0;
+		for (std::size_t i = 0; i < text.size(); ++i)
+		{
+			const unsigned char character = static_cast<unsigned char>(text[i]);
+			if (character < '0' || character > '9') return false;
+			const int digit = character - '0';
+			if (parsed > (std::numeric_limits<int>::max() - digit) / 10) return false;
+			parsed = parsed * 10 + digit;
+		}
+		value = parsed;
+		return true;
+	}
+
 	int paletteIndex(PaletteId id) { return static_cast<int>(id); }
 	int spacingIndex(BarSpacingMode mode) { return static_cast<int>(mode); }
 	std::string algorithmLabel(sortinglogic::SortAlgorithm algorithm)
@@ -253,7 +270,8 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	algorithmSearch_(), algorithmMenuFamily_(), algorithmFamilySelection_(0), algorithmVariantSelection_(0),
 	algorithmFamilyScroll_(0), algorithmVariantScroll_(0), algorithmMenuBounds_(), algorithmSearchBounds_(),
 	algorithmFamilyBounds_(), algorithmVariantBounds_(), settingsTab_(0), audioAdvanced_(false), settingsScrollOffset_(0.0f), selectedBand_(3),
-	chartTop_(184.0f), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false)
+	chartTop_(184.0f), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false),
+	inlineEditWidgetId_(), inlineEditBuffer_(), inlineEditReplaceOnNextDigit_(false)
 {
 	createWidgets();
 	updateLayout();
@@ -261,6 +279,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 
 ControlPanel::~ControlPanel()
 {
+	if (!inlineEditWidgetId_.empty() || algorithmMenuOpen_) SDL_StopTextInput();
 }
 
 bool ControlPanel::isReady() const
@@ -303,11 +322,17 @@ void ControlPanel::createWidgets()
 	settingsUi_.addComboBox("pattern", inputPatternNames(), static_cast<int>(settings_.simulation.pattern), AppAction(AppActionKind::SetInputPattern));
 	settingsUi_.addComboBox("playback_timing", std::vector<std::string>{ "Fixed duration", "Reference cadence" },
 		static_cast<int>(settings_.simulation.playbackTimingMode), AppAction(AppActionKind::SetPlaybackTimingMode));
+	settingsUi_.addComboBox("merge_buffer_visualization", booleanNames(),
+		settings_.simulation.mergeBufferVisualizationEnabled ? 1 : 0, AppAction(AppActionKind::SetMergeBufferVisualization));
+	settingsUi_.addComboBox("completion_scan", booleanNames(), settings_.simulation.completionScanEnabled ? 1 : 0,
+		AppAction(AppActionKind::SetCompletionScan));
 	settingsCaptions_["palette"] = "Palette";
 	settingsCaptions_["spacing"] = "Bar spacing";
 	settingsCaptions_["domain"] = "Input domain";
 	settingsCaptions_["pattern"] = "Input pattern";
 	settingsCaptions_["playback_timing"] = "Playback timing";
+	settingsCaptions_["merge_buffer_visualization"] = "Merge buffer visualization";
+	settingsCaptions_["completion_scan"] = "Completion scan";
 	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
 	for (std::size_t algorithmIndex = 0; algorithmIndex < optionCatalog.size(); ++algorithmIndex)
 	{
@@ -532,8 +557,11 @@ void ControlPanel::layoutSettingsControls()
 	{
 		active.push_back("domain"); active.push_back("pattern");
 		active.push_back("playback_timing");
+		active.push_back("completion_scan");
 		const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(
 			static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
+		if (selected && selected->id == sortinglogic::SortAlgorithm::Merge)
+			active.push_back("merge_buffer_visualization");
 		if (selected)
 		{
 			std::set<std::string> groups;
@@ -687,6 +715,8 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	mainUi_.find("play")->setLabel(snapshot.playing ? "Pause" : "Play");
 	mainUi_.find("bars_value")->setLabel(std::to_string(snapshot.itemCount) + " bars");
 	const bool referenceCadence = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence;
+	mainUi_.setWidgetEnabled("bars_value", !busy);
+	mainUi_.setWidgetEnabled("time_value", !busy && !referenceCadence);
 	if (referenceCadence)
 	{
 		std::ostringstream duration;
@@ -700,9 +730,13 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	settingsUi_.find("domain")->setSelectedIndex(static_cast<int>(settings_.simulation.domain));
 	settingsUi_.find("pattern")->setSelectedIndex(static_cast<int>(settings_.simulation.pattern));
 	settingsUi_.find("playback_timing")->setSelectedIndex(static_cast<int>(settings_.simulation.playbackTimingMode));
+	settingsUi_.find("merge_buffer_visualization")->setSelectedIndex(settings_.simulation.mergeBufferVisualizationEnabled ? 1 : 0);
+	settingsUi_.find("completion_scan")->setSelectedIndex(settings_.simulation.completionScanEnabled ? 1 : 0);
 	settingsUi_.setWidgetEnabled("domain", !busy);
 	settingsUi_.setWidgetEnabled("pattern", !busy);
 	settingsUi_.setWidgetEnabled("playback_timing", !busy);
+	settingsUi_.setWidgetEnabled("merge_buffer_visualization", !busy && snapshot.algorithm == sortinglogic::SortAlgorithm::Merge);
+	settingsUi_.setWidgetEnabled("completion_scan", !busy);
 	mainUi_.setWidgetEnabled("time_down", !busy && !referenceCadence);
 	mainUi_.setWidgetEnabled("time_up", !busy && !referenceCadence);
 	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
@@ -742,6 +776,7 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(snapshot.algorithm);
 	if (descriptor) updateAlgorithmAudioControls(*descriptor);
 	layoutSettingsControls();
+	updateInlineEditLabel();
 }
 
 void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette)
@@ -831,6 +866,59 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	updateLayout();
 	if (algorithmMenuOpen_)
 		return handleAlgorithmMenuEvent(event, action);
+	if (!settingsOpen_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+	{
+		const UiWidget* bars = mainUi_.find("bars_value");
+		const UiWidget* duration = mainUi_.find("time_value");
+		std::string targetWidgetId;
+		if (bars && bars->visible() && bars->enabled() && inRect(bars->bounds(), event.button.x, event.button.y))
+			targetWidgetId = "bars_value";
+		else if (duration && duration->visible() && duration->enabled() && inRect(duration->bounds(), event.button.x, event.button.y))
+			targetWidgetId = "time_value";
+		if (!targetWidgetId.empty())
+		{
+			if (!inlineEditWidgetId_.empty() && targetWidgetId == inlineEditWidgetId_) return true;
+			if (!inlineEditWidgetId_.empty() && !commitInlineEdit(action)) return true;
+			beginInlineEdit(targetWidgetId);
+			return true;
+		}
+		if (!inlineEditWidgetId_.empty())
+		{
+			if (!commitInlineEdit(action)) return true;
+			return true;
+		}
+	}
+	if (!inlineEditWidgetId_.empty())
+	{
+		if (event.type == SDL_TEXTINPUT)
+			return appendInlineEditText(event.text.text);
+		if (event.type == SDL_KEYDOWN)
+		{
+			const SDL_Keycode key = event.key.keysym.sym;
+			if (key == SDLK_ESCAPE)
+			{
+				cancelInlineEdit();
+				return true;
+			}
+			if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
+				return commitInlineEdit(action) || !inlineEditWidgetId_.empty();
+			if (key == SDLK_BACKSPACE)
+			{
+				inlineEditReplaceOnNextDigit_ = false;
+				if (!inlineEditBuffer_.empty()) inlineEditBuffer_.erase(inlineEditBuffer_.size() - 1);
+				updateInlineEditLabel();
+				return true;
+			}
+			if (key == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
+			{
+				inlineEditBuffer_.clear();
+				inlineEditReplaceOnNextDigit_ = false;
+				updateInlineEditLabel();
+				return true;
+			}
+			return true;
+		}
+	}
 	if (settingsOpen_ && event.type == SDL_MOUSEWHEEL)
 	{
 		int mouseX = 0, mouseY = 0;
@@ -890,14 +978,17 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	else
 		translated = false;
 	if (!translated)
-		return settingsOpen_;
+		return settingsOpen_ || action.kind != AppActionKind::None;
 	UiAction uiAction;
 	const bool consumed = (settingsOpen_ ? settingsUi_ : mainUi_).handleEvent(input, uiAction);
 	if (consumed && (uiAction.viewCommand != UiAction::ViewCommand::None || uiAction.appAction.kind != AppActionKind::None))
 	{
-		processAction(uiAction, action);
+		AppAction processedAction;
+		processAction(uiAction, processedAction);
+		if (processedAction.kind != AppActionKind::None || action.kind == AppActionKind::None)
+			action = processedAction;
 	}
-	return consumed || settingsOpen_;
+	return consumed || settingsOpen_ || action.kind != AppActionKind::None;
 }
 
 void ControlPanel::processAction(const UiAction& action, AppAction& output)
@@ -1326,6 +1417,74 @@ void ControlPanel::closeAlgorithmMenu()
 	algorithmMenuVariantPane_ = false;
 	algorithmSearchFocused_ = false;
 	SDL_StopTextInput();
+}
+
+void ControlPanel::beginInlineEdit(const std::string& widgetId)
+{
+	if (widgetId != "bars_value" && widgetId != "time_value") return;
+	inlineEditWidgetId_ = widgetId;
+	inlineEditBuffer_ = widgetId == "bars_value"
+		? std::to_string(settings_.simulation.itemCount)
+		: std::to_string(settings_.simulation.durationSeconds);
+	inlineEditReplaceOnNextDigit_ = true;
+	SDL_StartTextInput();
+	updateInlineEditLabel();
+}
+
+void ControlPanel::updateInlineEditLabel()
+{
+	if (inlineEditWidgetId_.empty()) return;
+	UiWidget* widget = mainUi_.find(inlineEditWidgetId_);
+	if (!widget) return;
+	widget->setLabel(inlineEditBuffer_ + "|" + (inlineEditWidgetId_ == "bars_value" ? " bars" : " sec"));
+}
+
+bool ControlPanel::appendInlineEditText(const char* text)
+{
+	if (!text) return true;
+	for (const char* character = text; *character; ++character)
+	{
+		if (*character < '0' || *character > '9') continue;
+		if (inlineEditReplaceOnNextDigit_)
+		{
+			inlineEditBuffer_.clear();
+			inlineEditReplaceOnNextDigit_ = false;
+		}
+		if (inlineEditBuffer_.size() < 10) inlineEditBuffer_ += *character;
+	}
+	updateInlineEditLabel();
+	return true;
+}
+
+bool ControlPanel::commitInlineEdit(AppAction& action)
+{
+	int value = 0;
+	if (!parseInlineInteger(inlineEditBuffer_, value)) return false;
+	if (inlineEditWidgetId_ == "bars_value")
+		action = AppAction(AppActionKind::SetItemCount, 0.0f, value);
+	else if (inlineEditWidgetId_ == "time_value")
+		action = AppAction(AppActionKind::SetDuration, static_cast<float>(value));
+	else return false;
+	inlineEditWidgetId_.clear();
+	inlineEditBuffer_.clear();
+	inlineEditReplaceOnNextDigit_ = false;
+	SDL_StopTextInput();
+	return true;
+}
+
+void ControlPanel::cancelInlineEdit()
+{
+	if (inlineEditWidgetId_.empty()) return;
+	const bool editingBarCount = inlineEditWidgetId_ == "bars_value";
+	inlineEditWidgetId_.clear();
+	inlineEditBuffer_.clear();
+	inlineEditReplaceOnNextDigit_ = false;
+	SDL_StopTextInput();
+	UiWidget* widget = mainUi_.find(editingBarCount ? "bars_value" : "time_value");
+	if (widget)
+		widget->setLabel(editingBarCount
+			? std::to_string(settings_.simulation.itemCount) + " bars"
+			: std::to_string(settings_.simulation.durationSeconds) + " sec");
 }
 
 void ControlPanel::layoutAlgorithmMenu()

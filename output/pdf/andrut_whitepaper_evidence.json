@@ -1,0 +1,559 @@
+{
+  "date": "2026-10-17",
+  "implementation_commit": "494dacc7c8dc16351abc4a26d297d36faac36bc3",
+  "new_tests_or_fits_run": false,
+  "profile": {
+    "version": 1,
+    "id": "andrut_delayed_sine_bursts_v1",
+    "description": "Effective reconstruction fitted on Selection Sort; Insertion and Gnome are validation recordings. Not a claim of the creator's original implementation.",
+    "sample_rate": 44100,
+    "comparison_clock_hz": 300,
+    "configuration": {
+      "step": 39.90533652820316,
+      "base": 104.0322699094767,
+      "duration": 9.302650315454065,
+      "window": "tukey",
+      "tukey": 0.025666772580559438,
+      "delays": [
+        -9.95199933051814,
+        0
+      ]
+    },
+    "source_semantics": {
+      "duration_unit": "carrier cycles",
+      "phase": "reset at each note's birth; captured frequency persists for the whole note",
+      "window": "Tukey with short cosine edges",
+      "overlap": "sum all active notes, including notes from earlier comparisons",
+      "independent_bed": false,
+      "chorus_mix": 0,
+      "duration_clamped_to_clock_periods": false,
+      "frequency_formula": "base + step * rank; equivalently a continuous linear mapping of normalized values"
+    },
+    "output_filter": {
+      "purpose": "One common short FIR effective response learned from Selection, including output gain",
+      "coefficients_causal": [
+        0.0016486559836917096,
+        -0.004185890318945093,
+        0.001360402251996021,
+        -0.00031163516317250843,
+        0.00261757621982264,
+        0.0011364214532758117,
+        0.00134444133827627,
+        -0.0026856849060442178,
+        -0.0028206594808248956,
+        -0.0011810646438476446,
+        -0.0011321145593396677,
+        0.0020016985251066813,
+        0.0035150245000002633,
+        0.005950763107064225,
+        0.013762066498436164,
+        0.015937095666321996,
+        0.009045040844705442,
+        0.0063039341331267915,
+        0.004098791990895944,
+        0.0015066864099895633,
+        -0.0008206938996880114,
+        -0.0019455424692308963,
+        -0.002342288209422767,
+        -0.0009956532022891026,
+        0.0010625867335191785,
+        0.000685565041919052,
+        0.0012126648546338754,
+        -0.0011150491083811178,
+        -0.00014805797477064722,
+        0.0021006851401400195,
+        -0.002261290933230586
+      ],
+      "group_alignment_frames": 15
+    },
+    "alignments": {
+      "Selection": {
+        "residual_fraction": 0.026031843357549947,
+        "offset_samples": 6463,
+        "gain": 1.000016232101252,
+        "swapped_operands": false
+      },
+      "Insertion": {
+        "residual_fraction": 0.01746294649309904,
+        "offset_samples": 959,
+        "gain": 1.0114530700471045,
+        "swapped_operands": false
+      },
+      "Gnome": {
+        "residual_fraction": 0.01884914857974987,
+        "offset_samples": 5532,
+        "gain": 1.0121205810820693,
+        "swapped_operands": true
+      }
+    },
+    "fitting_recording": "Andrut_Selection_Sort.wav",
+    "validation_recordings": [
+      "Andrut_Insertion_Sort.wav",
+      "Andrut_Gnome_Sort.wav"
+    ],
+    "notes": [
+      "Alignment and comparator operand order were identified separately for each recording.",
+      "The first two initial values may be reversed; the remaining 98 values are confirmed.",
+      "Fine decimal values describe this effective fit and are not uniquely identified physical parameters."
+    ]
+  },
+  "array": {
+    "description": "Left-to-right height ranks extracted from video_small_array.png; 0 is shortest, 99 tallest. Original source magnitudes are unknown.",
+    "source_image_sha256": "64aebc67efdaf63a1771b26acf0e903dd3a220cdae5380827a99b15e13930252",
+    "initial_first_pair_uncertain": true,
+    "initial_first_pair_note": "The image may already show the first two elements after a comparison/swap. Test both [78,89] and [89,78]; positions 3 through 100 are confirmed by the user.",
+    "ranks": [
+      78,
+      89,
+      75,
+      81,
+      31,
+      39,
+      93,
+      6,
+      86,
+      27,
+      56,
+      20,
+      42,
+      98,
+      96,
+      95,
+      60,
+      62,
+      77,
+      15,
+      2,
+      49,
+      37,
+      46,
+      63,
+      64,
+      82,
+      45,
+      32,
+      12,
+      28,
+      76,
+      94,
+      3,
+      57,
+      59,
+      30,
+      50,
+      90,
+      72,
+      38,
+      70,
+      36,
+      53,
+      34,
+      44,
+      40,
+      43,
+      4,
+      84,
+      29,
+      7,
+      25,
+      33,
+      8,
+      41,
+      66,
+      14,
+      67,
+      48,
+      35,
+      61,
+      79,
+      88,
+      85,
+      0,
+      92,
+      87,
+      97,
+      19,
+      18,
+      26,
+      58,
+      1,
+      91,
+      10,
+      23,
+      54,
+      55,
+      69,
+      73,
+      22,
+      24,
+      5,
+      13,
+      74,
+      71,
+      99,
+      9,
+      16,
+      65,
+      83,
+      51,
+      80,
+      11,
+      52,
+      68,
+      47,
+      21,
+      17
+    ]
+  },
+  "recording_metrics": [
+    {
+      "algorithm": "Selection",
+      "comparisons": 4950,
+      "active_seconds": 16.5,
+      "operand_order": "research comparison pair",
+      "exports": [
+        {
+          "file": "selection_delayed_sine_bursts_raw_f32.wav",
+          "sha256": "0f1ed309eecd46fede32f444fa02c8b65450615d6210fd5009d12b4c0d6332a9",
+          "frames": 731656,
+          "channels": 2,
+          "format": "float32",
+          "peak": 0.5977227122860962,
+          "seconds": 16.590839002267575
+        },
+        {
+          "file": "selection_delayed_sine_bursts_listen_pcm16.wav",
+          "sha256": "a5fb175635ea87e3563375ed4896c25a578746b0b43aa8e0d235915685c3d055",
+          "frames": 731656,
+          "channels": 2,
+          "format": "pcm16",
+          "peak": 0.5977227122860962,
+          "seconds": 16.590839002267575
+        },
+        {
+          "file": "selection_AB_reference_then_reconstruction.wav",
+          "sha256": "99f8acdd540f4344afa76e12fce2d7202e1bab839009be2369aa1dd026012277",
+          "frames": 330750,
+          "channels": 2,
+          "format": "pcm16",
+          "peak": 0.39353049959469755,
+          "seconds": 7.5
+        }
+      ],
+      "maximum_active_note_count": 33,
+      "reference_sha256": "e8688cea59b6168ccffffa793d8e1cecc38072a597c0daf8ac13d624aeec79fb",
+      "reference_alignment_samples": 6416,
+      "metrics": {
+        "compared_frames": 717650,
+        "correlation": 0.9870255329485306,
+        "fixed_gain_energy_explained": 0.9739510471149742,
+        "gain_fitted_energy_explained": 0.9739510558281912,
+        "optional_gain_correction": 0.9999054242869101,
+        "reference_rms": 0.07754824886364298,
+        "model_rms": 0.07653879796175862,
+        "residual_rms": 0.0125160454187682
+      },
+      "ablations": {
+        "same_onset": {
+          "compared_frames": 717650,
+          "correlation": 0.48141178412395275,
+          "fixed_gain_energy_explained": -0.028558042390503635,
+          "gain_fitted_energy_explained": 0.23287378808550074,
+          "optional_gain_correction": 0.48554441233824724,
+          "reference_rms": 0.07754824886364298,
+          "model_rms": 0.07707319073631243,
+          "residual_rms": 0.07864776718913696
+        },
+        "four_period_duration_cap": {
+          "compared_frames": 717650,
+          "correlation": 0.929092188321465,
+          "fixed_gain_energy_explained": 0.8630988304093241,
+          "gain_fitted_energy_explained": 0.8636587274400143,
+          "optional_gain_correction": 0.9751707464274981,
+          "reference_rms": 0.07754824886364298,
+          "model_rms": 0.07390305875853147,
+          "residual_rms": 0.028692974646460166
+        },
+        "gaussian_four_period_cap": {
+          "compared_frames": 717650,
+          "correlation": 0.6490324941888257,
+          "fixed_gain_energy_explained": 0.37660451639612813,
+          "gain_fitted_energy_explained": 0.41990810687373203,
+          "optional_gain_correction": 1.4730424034493341,
+          "reference_rms": 0.07754824886364298,
+          "model_rms": 0.03411409670677358,
+          "residual_rms": 0.06122852834914515
+        }
+      },
+      "reversed_initial_pair_metrics": {
+        "compared_frames": 717650,
+        "correlation": 0.9786554014899504,
+        "fixed_gain_energy_explained": 0.9574692228776851,
+        "gain_fitted_energy_explained": 0.9575423565317543,
+        "optional_gain_correction": 0.9913363545165174,
+        "reference_rms": 0.07754824886364298,
+        "model_rms": 0.07654731455092154,
+        "residual_rms": 0.01599276863644248
+      }
+    },
+    {
+      "algorithm": "Insertion",
+      "comparisons": 2818,
+      "active_seconds": 9.393333333333333,
+      "operand_order": "research comparison pair",
+      "exports": [
+        {
+          "file": "insertion_delayed_sine_bursts_raw_f32.wav",
+          "sha256": "9a9041b79021072b1c9fd0ec71df4be87c1add8acc104d3399c6b6654b9be8b0",
+          "frames": 418252,
+          "channels": 2,
+          "format": "float32",
+          "peak": 0.6315527096707826,
+          "seconds": 9.484172335600906
+        },
+        {
+          "file": "insertion_delayed_sine_bursts_listen_pcm16.wav",
+          "sha256": "db6e25ed861e2bd0dbce32096046d15a47ab3bfd1e8a03ef890c7f9aafdd365f",
+          "frames": 418252,
+          "channels": 2,
+          "format": "pcm16",
+          "peak": 0.6315527096707826,
+          "seconds": 9.484172335600906
+        },
+        {
+          "file": "insertion_AB_reference_then_reconstruction.wav",
+          "sha256": "b7d05269fbaccabcd1e28a5f3932d336360638bee9ac3f9dddceffd0af13f52c",
+          "frames": 330750,
+          "channels": 2,
+          "format": "pcm16",
+          "peak": 0.2869816575106257,
+          "seconds": 7.5
+        }
+      ],
+      "maximum_active_note_count": 34,
+      "reference_sha256": "96c93b13b99740aef6fb4afef9756f8923720152f27f99e60e3263752066e604",
+      "reference_alignment_samples": 912,
+      "metrics": {
+        "compared_frames": 404246,
+        "correlation": 0.9914014145223551,
+        "fixed_gain_energy_explained": 0.9825023706636341,
+        "gain_fitted_energy_explained": 0.9826349198308976,
+        "optional_gain_correction": 1.0117507596740087,
+        "reference_rms": 0.08945462780344117,
+        "model_rms": 0.08764464185513053,
+        "residual_rms": 0.011832933375152354
+      },
+      "ablations": {
+        "same_onset": {
+          "compared_frames": 404246,
+          "correlation": 0.7293872855222526,
+          "fixed_gain_energy_explained": 0.46745735344342765,
+          "gain_fitted_energy_explained": 0.5328117543973676,
+          "optional_gain_correction": 0.7406158109726548,
+          "reference_rms": 0.08945462780344117,
+          "model_rms": 0.08816510567465803,
+          "residual_rms": 0.06527997947446526
+        },
+        "four_period_duration_cap": {
+          "compared_frames": 404246,
+          "correlation": 0.9003643625820605,
+          "fixed_gain_energy_explained": 0.799391825187485,
+          "gain_fitted_energy_explained": 0.8112262448657586,
+          "optional_gain_correction": 1.1373744457819424,
+          "reference_rms": 0.08945462780344117,
+          "model_rms": 0.07083866090459985,
+          "residual_rms": 0.04006610514222389
+        },
+        "gaussian_four_period_cap": {
+          "compared_frames": 404246,
+          "correlation": 0.6013650013640758,
+          "fixed_gain_energy_explained": 0.3109167593720956,
+          "gain_fitted_energy_explained": 0.3582423728777001,
+          "optional_gain_correction": 1.5709994354659702,
+          "reference_rms": 0.08945462780344117,
+          "model_rms": 0.034081230027698424,
+          "residual_rms": 0.0742572149517377
+        }
+      },
+      "reversed_initial_pair_metrics": {
+        "compared_frames": 404246,
+        "correlation": 0.991401414522355,
+        "fixed_gain_energy_explained": 0.9825023706636341,
+        "gain_fitted_energy_explained": 0.9826349198308976,
+        "optional_gain_correction": 1.0117507596740083,
+        "reference_rms": 0.08945462780344117,
+        "model_rms": 0.08764464185513053,
+        "residual_rms": 0.011832933375152352
+      }
+    },
+    {
+      "algorithm": "Gnome",
+      "comparisons": 5542,
+      "active_seconds": 18.473333333333333,
+      "operand_order": "reversed from research comparison pair",
+      "exports": [
+        {
+          "file": "gnome_delayed_sine_bursts_raw_f32.wav",
+          "sha256": "f888424be50a6b35736d400bac93df60d5f98aa773f60e96396b9966b487c1ec",
+          "frames": 818680,
+          "channels": 2,
+          "format": "float32",
+          "peak": 0.6148041913719408,
+          "seconds": 18.564172335600908
+        },
+        {
+          "file": "gnome_delayed_sine_bursts_listen_pcm16.wav",
+          "sha256": "6fa1142cb2fd5eb61fcffcaf8062db719b11ec07c1c977ae0aaa7b20c7300243",
+          "frames": 818680,
+          "channels": 2,
+          "format": "pcm16",
+          "peak": 0.6148041913719408,
+          "seconds": 18.564172335600908
+        },
+        {
+          "file": "gnome_AB_reference_then_reconstruction.wav",
+          "sha256": "1d3701eb174a33dec4c451b101999cd0b6b94a483bacd2fd79bf93a6be4f7452",
+          "frames": 330750,
+          "channels": 2,
+          "format": "pcm16",
+          "peak": 0.524151086807251,
+          "seconds": 7.5
+        }
+      ],
+      "maximum_active_note_count": 40,
+      "reference_sha256": "b57b272655bfd0ddfe803e519d9e24806fb3d6b2f78c87ce13e9d8351744e5f3",
+      "reference_alignment_samples": 5485,
+      "metrics": {
+        "compared_frames": 804674,
+        "correlation": 0.9906578983531045,
+        "fixed_gain_energy_explained": 0.9809949247108182,
+        "gain_fitted_energy_explained": 0.9811353098321723,
+        "optional_gain_correction": 1.0121066042691271,
+        "reference_rms": 0.07455716055978863,
+        "model_rms": 0.07296717863602405,
+        "residual_rms": 0.010278367866068885
+      },
+      "ablations": {
+        "same_onset": {
+          "compared_frames": 804674,
+          "correlation": 0.6127029509368521,
+          "fixed_gain_energy_explained": 0.14195147232810723,
+          "gain_fitted_energy_explained": 0.37600164700945715,
+          "optional_gain_correction": 0.5589813648332814,
+          "reference_rms": 0.07455716055978863,
+          "model_rms": 0.081787494455012,
+          "residual_rms": 0.06906297544871083
+        },
+        "four_period_duration_cap": {
+          "compared_frames": 804674,
+          "correlation": 0.9169882265234631,
+          "fixed_gain_energy_explained": 0.8347835217825598,
+          "gain_fitted_energy_explained": 0.8411434011285551,
+          "optional_gain_correction": 1.09523503483538,
+          "reference_rms": 0.07455716055978863,
+          "model_rms": 0.06243340961910183,
+          "residual_rms": 0.030305122242515994
+        },
+        "gaussian_four_period_cap": {
+          "compared_frames": 804674,
+          "correlation": 0.6152323803552437,
+          "fixed_gain_energy_explained": 0.32904532789782825,
+          "gain_fitted_energy_explained": 0.37639131109871116,
+          "optional_gain_correction": 1.5495895260343648,
+          "reference_rms": 0.07455716055978863,
+          "model_rms": 0.02951837749174973,
+          "residual_rms": 0.06107112927249675
+        }
+      },
+      "reversed_initial_pair_metrics": {
+        "compared_frames": 804674,
+        "correlation": 0.9906580215654578,
+        "fixed_gain_energy_explained": 0.9809953336022682,
+        "gain_fitted_energy_explained": 0.9811354867345548,
+        "optional_gain_correction": 1.012096474779685,
+        "reference_rms": 0.07456107611519572,
+        "model_rms": 0.0729717475928282,
+        "residual_rms": 0.010278797085014068
+      }
+    }
+  ],
+  "cpp_python_parity": {
+    "reference_profile": "andrut_delayed_sine_bursts_v1",
+    "array_fixture_sha256": "64aebc67efdaf63a1771b26acf0e903dd3a220cdae5380827a99b15e13930252",
+    "alignment": "C++ scheduling lead 128 minus frozen Python preroll 32 = 96 samples",
+    "gain_or_filter_fitted": false,
+    "maximum_sample_error_tolerance": 2e-06,
+    "algorithms": {
+      "Selection": {
+        "comparison_count": 4950,
+        "maximum_operand_position_error": 2.9501288856259578e-08,
+        "aligned_frames": 731656,
+        "alignment_frames": 96,
+        "maximum_absolute_sample_error": 3.4478378094227047e-07,
+        "rms_sample_error": 6.057162457768159e-08,
+        "cxx_peak": 0.5977227687835693,
+        "python_peak": 0.5977227122860962
+      },
+      "Insertion": {
+        "comparison_count": 2818,
+        "maximum_operand_position_error": 2.9501288856259578e-08,
+        "aligned_frames": 418252,
+        "alignment_frames": 96,
+        "maximum_absolute_sample_error": 3.2636255493587174e-07,
+        "rms_sample_error": 5.2008295733114576e-08,
+        "cxx_peak": 0.6315526366233826,
+        "python_peak": 0.6315527096707826
+      },
+      "Gnome": {
+        "comparison_count": 5542,
+        "maximum_operand_position_error": 2.9501288856259578e-08,
+        "aligned_frames": 818680,
+        "alignment_frames": 96,
+        "maximum_absolute_sample_error": 4.4297213593058604e-07,
+        "rms_sample_error": 4.99454442063118e-08,
+        "cxx_peak": 0.614804208278656,
+        "python_peak": 0.6148041913719408
+      }
+    }
+  },
+  "final_pack_summary": {
+    "profile": "andrut_delayed_sine_bursts_v1",
+    "sample_rate": 44100,
+    "listening_gain": 1,
+    "maximum_raw_peak": 0.640877962112,
+    "parameters": {
+      "minimum_pitch_hz": 104.0322699094767,
+      "maximum_pitch_hz": 4054.6605862015895,
+      "mapping": "linear_hz",
+      "excitation_clock_hz": 300.0,
+      "carrier_cycles": 9.302650315454065,
+      "tukey_fraction": 0.025666772580559438,
+      "second_operand_delay_microseconds": 225.66891905936825,
+      "master_level": 1.0,
+      "algorithm_role_gains_db": 0.0,
+      "tone_filter_enabled": false,
+      "output_filter": "frozen 31-tap reference FIR",
+      "chorus": false
+    },
+    "reference_rerenders": 3,
+    "listening_matrix_groups": 22,
+    "total_scenario_groups": 25
+  },
+  "engineering_validation": {
+    "provenance": "Existing project completion report and research log; not rerun for this paper",
+    "configurations": [
+      "x64 Debug",
+      "x64 Release",
+      "Win32 Debug",
+      "Win32 Release"
+    ],
+    "sound_engine_assertions": 417371,
+    "sorting_logic_checks": 106832,
+    "all_three_suites_passed": true,
+    "cross_machine_hardware_matrix_verified": false
+  },
+  "source_artifacts": [
+    "x64\\Release\\AudioPreviewAndrutReconstruction\\manifest.json",
+    "x64\\Release\\AudioPreviewReconstructedPackFinal\\reference_parity.json"
+  ]
+}

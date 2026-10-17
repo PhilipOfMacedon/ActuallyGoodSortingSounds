@@ -738,13 +738,14 @@ SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(
 	pattern(sortinglogic::InputPattern::Random),
 	shellGapSequence(sortinglogic::ShellGapSequence::Halving),
 	mergeWritebackMode(sortinglogic::MergeWritebackMode::AtomicRangeWrite),
-	mergeExecutionMode(sortinglogic::MergeExecutionMode::BottomUp) {}
+	mergeExecutionMode(sortinglogic::MergeExecutionMode::BottomUp), mergeBufferVisualizationEnabled(true), completionScanEnabled(false) {}
 UserPreferences::UserPreferences() : version(CurrentVersion), visual(), simulation(), audio(), reconstructedAudio(), familyAudioDefaults(),
 	variantAudioOffsets(), algorithmOptions() {}
 
 bool UserPreferences::isValid() const
 {
-	return version == CurrentVersion && simulation.itemCount >= 2 && simulation.itemCount <= 800 &&
+	return version == CurrentVersion && simulation.itemCount >= static_cast<int>(sortinglogic::MinItemCount) &&
+		simulation.itemCount <= static_cast<int>(sortinglogic::MaxItemCount) &&
 		simulation.durationSeconds >= 1 && simulation.durationSeconds <= 120 &&
 		sortinglogic::algorithmDescriptorById(simulation.familyId, simulation.variantId) != nullptr &&
 		sortinglogic::algorithmDescriptorById(simulation.familyId, simulation.variantId)->id ==
@@ -846,6 +847,8 @@ UserPreferences SettingsStore::load() const
 	if (found != values.end() && !parseSpacing(found->second, defaults.visual.spacing)) return UserPreferences();
 	if (!optionalBool(values, "panel_expanded", defaults.visual.panelExpanded) ||
 		!optionalBool(values, "descending", defaults.simulation.descending) ||
+		!optionalBool(values, "merge_buffer_visualization", defaults.simulation.mergeBufferVisualizationEnabled) ||
+		!optionalBool(values, "completion_scan", defaults.simulation.completionScanEnabled) ||
 		!optionalInt(values, "item_count", defaults.simulation.itemCount) ||
 		!optionalInt(values, "duration_seconds", defaults.simulation.durationSeconds)) return UserPreferences();
 	found = values.find("playback_timing");
@@ -991,6 +994,8 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 		<< "duration_seconds=" << settings.simulation.durationSeconds << "\n"
 		<< "playback_timing=" << playbackTimingModeName(settings.simulation.playbackTimingMode) << "\n"
 		<< "descending=" << (settings.simulation.descending ? 1 : 0) << "\n"
+		<< "merge_buffer_visualization=" << (settings.simulation.mergeBufferVisualizationEnabled ? 1 : 0) << "\n"
+		<< "completion_scan=" << (settings.simulation.completionScanEnabled ? 1 : 0) << "\n"
 		<< "family_id=" << settings.simulation.familyId << "\n"
 		<< "variant_id=" << settings.simulation.variantId << "\n"
 		<< "profile=" << profileName(settings.simulation.profile) << "\n"

@@ -8,7 +8,7 @@
 namespace SoundEngine
 {
 enum class PlaybackTimingMode : std::uint8_t { FixedDuration, ReferenceCadence };
-enum class TimelineEventKind : std::uint8_t { Other, Comparison, Probe };
+enum class TimelineEventKind : std::uint8_t { Other, Comparison, Probe, Auxiliary };
 
 static const std::size_t AudioTimelineRoleCount = 8;
 
@@ -19,6 +19,7 @@ struct AudioTimelineGainSettings
     double comparisonGain;
     double heldKeyGain;
     double probeGain;
+    double auxiliaryGain;
     double roleGain[AudioTimelineRoleCount];
     AudioTimelineGainSettings();
 };
@@ -60,7 +61,7 @@ public:
     bool prepare(const std::vector<AudioTimelineInputEvent>& events,
         std::size_t sourceEventCount, PlaybackTimingMode mode,
         double fixedDurationSeconds, std::uint32_t sampleRate = 44100,
-        std::uint32_t referenceComparisonsPerSecond = 300,
+        std::uint32_t referenceEventsPerSecond = 300,
         std::string* error = nullptr);
 
     std::uint64_t durationFrames() const { return durationFrames_; }

@@ -53,7 +53,8 @@ namespace
 
 	bool sameTimelineGains(const SoundEngine::AudioTimelineGainSettings& a, const SoundEngine::AudioTimelineGainSettings& b)
 	{
-		if (a.comparisonGain != b.comparisonGain || a.heldKeyGain != b.heldKeyGain || a.probeGain != b.probeGain) return false;
+		if (a.comparisonGain != b.comparisonGain || a.heldKeyGain != b.heldKeyGain || a.probeGain != b.probeGain ||
+			a.auxiliaryGain != b.auxiliaryGain) return false;
 		for (std::size_t i = 0; i < SoundEngine::AudioTimelineRoleCount; ++i)
 			if (a.roleGain[i] != b.roleGain[i]) return false;
 		return true;
@@ -93,7 +94,8 @@ namespace
 		std::string& error)
 	{
 		(void)parameters;
-		const bool hasComparisons = !trace.comparisonEventIndices.empty();
+		const bool hasComparisons = !trace.comparisonEventIndices.empty() &&
+			!trace.events[trace.comparisonEventIndices.front()].completionScan;
 		std::map<std::uint64_t, double> normalizedById;
 		double minimum = trace.input.empty() ? 0.0 : trace.input.front().value;
 		double maximum = minimum;
@@ -115,7 +117,7 @@ namespace
 			const sortinglogic::SemanticEvent& source = trace.events[i];
 			SoundEngine::AudioTimelineInputEvent& event = events[i];
 			event.sourceCursor = i + 1;
-			if (source.type == sortinglogic::SemanticEventType::Compare && hasComparisons)
+			if (source.type == sortinglogic::SemanticEventType::Compare && (hasComparisons || source.completionScan))
 			{
 				const auto first = normalizedById.find(source.firstItemId);
 				const auto second = normalizedById.find(source.secondItemId);
@@ -131,6 +133,18 @@ namespace
 					std::swap(event.firstRole, event.secondRole);
 				}
 				event.firstGain = event.secondGain = 1.0;
+			}
+			else if (source.type == sortinglogic::SemanticEventType::AuxiliaryItemWrite &&
+				!(trace.algorithm == sortinglogic::SortAlgorithm::Merge && !trace.mergeBufferVisualizationEnabled &&
+				 source.workspaceName == "merge"))
+			{
+				const auto item = normalizedById.find(source.firstItemId);
+				if (item == normalizedById.end()) continue;
+				event.kind = SoundEngine::TimelineEventKind::Auxiliary;
+				event.firstPosition = item->second;
+				event.secondPosition = item->second;
+				event.firstGain = 1.0;
+				event.secondGain = 0.0;
 			}
 			else if (!hasComparisons && source.type == sortinglogic::SemanticEventType::Probe)
 			{
@@ -164,9 +178,11 @@ void LatestAudioStateMailbox::publish(const AudioPresentationState& state)
 
 bool LatestAudioStateMailbox::consumeLatest(AudioPresentationState& state)
 {
-	const unsigned int received = middle_.exchange(consumerIndex_, std::memory_order_acq_rel);
-	if ((received & DirtyBit) == 0)
+	// An empty poll must not return the reader-owned slot to the producer.
+	// Only this consumer clears DirtyBit; the producer can only set it.
+	if ((middle_.load(std::memory_order_acquire) & DirtyBit) == 0)
 		return false;
+	const unsigned int received = middle_.exchange(consumerIndex_, std::memory_order_acq_rel);
 	consumerIndex_ = received & IndexMask;
 	state = slots_[consumerIndex_];
 	return true;
@@ -181,7 +197,7 @@ AudioPresentationBridge::AudioPresentationBridge()
 	  currentSeekState_(nullptr), seekStates_(),
 	  timelineBuildMutex_(), timelineBuildCondition_(), pendingTimelineBuild_(), completedTimelineBuild_(),
 	  requestedTimelineGeneration_(0), hasPendingTimelineBuild_(false), hasCompletedTimelineBuild_(false),
-	  stopTimelineWorker_(false), lastAudioClockAvailable_(false), seekPreparing_(false), requestedSeekRevision_(0),
+	  stopTimelineWorker_(false), lastAudioDeviceAvailable_(false), seekPreparing_(false), requestedSeekRevision_(0),
 	  timelinePreparing_(false), timelineError_(), timelineWorker_()
 {
 	timelineWorker_ = std::thread(&AudioPresentationBridge::timelineWorkerLoop, this);
@@ -201,7 +217,7 @@ AudioPresentationBridge::~AudioPresentationBridge()
 void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	const sortinglogic::RenderSnapshot& snapshot, const SoundEngine::Parameters& parameters,
 	LatestAudioStateMailbox& mailbox, const SoundEngine::ReconstructedParameters& reconstructedParameters,
-	SoundEngine::PlaybackTimingMode timingMode, bool audioClockAvailable)
+	SoundEngine::PlaybackTimingMode timingMode, bool audioDeviceAvailable)
 {
 	pollTimelineBuild();
 	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation.currentTrace();
@@ -279,7 +295,9 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 					lastComparisonIsProbe_ = false;
 				}
 			}
-			else if (event.type == sortinglogic::SemanticEventType::Probe && rawTrace->comparisonEventIndices.empty())
+			else if (event.type == sortinglogic::SemanticEventType::Probe &&
+				(rawTrace->comparisonEventIndices.empty() ||
+				 rawTrace->events[rawTrace->comparisonEventIndices.front()].completionScan))
 			{
 				SoundEngine::AudioComparison comparison;
 				if (makeComparison(*rawTrace, event, comparison))
@@ -291,6 +309,9 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 			}
 			else
 			{
+				if (rawTrace->algorithm == sortinglogic::SortAlgorithm::Merge &&
+					!rawTrace->mergeBufferVisualizationEnabled)
+					continue;
 				SoundEngine::AccentCategory category;
 				bool routed = true;
 				switch (event.type)
@@ -348,6 +369,8 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	current.timelineGains.heldKeyGain = gainFromDecibels(parameters.heldKeyBoostDb);
 	const std::size_t probeCategory = static_cast<std::size_t>(SoundEngine::AccentCategory::Probe);
 	current.timelineGains.probeGain = parameters.accentRouting[probeCategory] ? parameters.accentGain[probeCategory] : 0.0;
+	const std::size_t auxiliaryCategory = static_cast<std::size_t>(SoundEngine::AccentCategory::Distribution);
+	current.timelineGains.auxiliaryGain = parameters.accentRouting[auxiliaryCategory] ? parameters.accentGain[auxiliaryCategory] : 0.0;
 	for (std::size_t i = 0; i < SoundEngine::RoleCount; ++i)
 		current.timelineGains.roleGain[i] = gainFromDecibels(parameters.roleBoostDb[i]);
 	current.eventAccents = lastEventAccents_;
@@ -398,7 +421,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	const bool playbackChanged = !hasPublished_ || snapshot.playing != lastPublished_.transportPlaying;
 	const bool cursorChangedWhilePaused = !snapshot.playing && snapshot.cursor != lastTransportCursor_;
 	const bool timelineInstallationChanged = currentTimeline_ != lastPublished_.timeline;
-	const bool clockRecovery = audioClockAvailable && !lastAudioClockAvailable_;
+	const bool clockRecovery = audioDeviceAvailable && !lastAudioDeviceAvailable_;
 	const bool audioSettingsChanged = hasPublished_ &&
 		(!sameReconstructedParameters(current.reconstructedParameters, lastPublished_.reconstructedParameters) ||
 		 !sameTimelineGains(current.timelineGains, lastPublished_.timelineGains));
@@ -418,7 +441,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		current.transport.revision = lastPublished_.transport.revision;
 	}
 	lastTransportCursor_ = snapshot.cursor;
-	lastAudioClockAvailable_ = audioClockAvailable;
+	lastAudioDeviceAvailable_ = audioDeviceAvailable;
 	if (seekPreparing_ && (!currentTimeline_ || snapshot.cursor == 0 || snapshot.complete))
 	{
 		std::lock_guard<std::mutex> lock(timelineBuildMutex_);
@@ -466,6 +489,13 @@ void AudioPresentationBridge::republish(LatestAudioStateMailbox& mailbox)
 	if (!hasPublished_) return;
 	lastPublished_.revision = ++revision_;
 	mailbox.publish(lastPublished_);
+}
+
+bool AudioPresentationBridge::playheadReady(std::uint64_t acknowledgedGeneration,
+	std::uint64_t acknowledgedSeekRevision) const
+{
+	return timelineReady() && acknowledgedGeneration == timelineGeneration_ &&
+		(!currentSeekState_ || acknowledgedSeekRevision >= seekRevision_);
 }
 
 void AudioPresentationBridge::collectRetiredTimelines(std::uint64_t acknowledgedGeneration, bool callbackAvailable,
@@ -647,8 +677,7 @@ void AudioPresentationBridge::recomputeComparison(const sortinglogic::SortTrace*
 	comparison = SoundEngine::AudioComparison();
 	if (!trace) return;
 	const std::size_t end = std::min(cursor, trace->events.size());
-	const std::vector<std::size_t>& audioIndices = trace->comparisonEventIndices.empty()
-		? trace->probeEventIndices : trace->comparisonEventIndices;
+	const std::vector<std::size_t>& audioIndices = trace->audioEventIndices;
 	std::vector<std::size_t>::const_iterator candidate = std::lower_bound(audioIndices.begin(), audioIndices.end(), end);
 	while (candidate != audioIndices.begin())
 	{

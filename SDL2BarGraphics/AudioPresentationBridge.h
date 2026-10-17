@@ -62,13 +62,14 @@ public:
 	~AudioPresentationBridge();
 	AudioPresentationBridge(const AudioPresentationBridge&) = delete;
 	AudioPresentationBridge& operator=(const AudioPresentationBridge&) = delete;
+	// Pass open-device availability here, even while a timeline/seek is preparing.
 	void update(const sortinglogic::Simulation& simulation,
 		const sortinglogic::RenderSnapshot& snapshot,
 		const SoundEngine::Parameters& parameters,
 		LatestAudioStateMailbox& mailbox,
 		const SoundEngine::ReconstructedParameters& reconstructedParameters = SoundEngine::ReconstructedParameters(),
 		SoundEngine::PlaybackTimingMode timingMode = SoundEngine::PlaybackTimingMode::FixedDuration,
-		bool audioClockAvailable = false);
+		bool audioDeviceAvailable = false);
 	void collectRetiredTimelines(std::uint64_t acknowledgedGeneration, bool callbackAvailable,
 		std::uint64_t acknowledgedSeekRevision = 0);
 	void republish(LatestAudioStateMailbox& mailbox);
@@ -76,6 +77,9 @@ public:
 	std::uint64_t transportRevision() const { return transportRevision_; }
 	bool timelinePreparing() const { return timelinePreparing_; }
 	bool timelineReady() const { return currentTimeline_ != nullptr && !timelinePreparing_ && timelineError_.empty(); }
+	// Preparation readiness is not device health. Feedback from the temporary
+	// drain state must stay fenced until the callback has installed the snapshot.
+	bool playheadReady(std::uint64_t acknowledgedGeneration, std::uint64_t acknowledgedSeekRevision) const;
 	const std::string& timelineError() const { return timelineError_; }
 
 private:
@@ -141,7 +145,7 @@ private:
 	bool hasPendingTimelineBuild_;
 	bool hasCompletedTimelineBuild_;
 	bool stopTimelineWorker_;
-	bool lastAudioClockAvailable_;
+	bool lastAudioDeviceAvailable_;
 	bool seekPreparing_;
 	std::uint64_t requestedSeekRevision_;
 	bool timelinePreparing_;

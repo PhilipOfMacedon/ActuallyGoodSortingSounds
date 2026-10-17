@@ -81,6 +81,9 @@ private:
 	int height_;
 	LayoutCacheKey layoutKey_;
 	bool layoutCacheValid_;
+	std::string inlineEditWidgetId_;
+	std::string inlineEditBuffer_;
+	bool inlineEditReplaceOnNextDigit_;
 
 	void createWidgets();
 	void updateLayout();
@@ -102,6 +105,11 @@ private:
 	bool handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action);
 	void openAlgorithmMenu();
 	void closeAlgorithmMenu();
+	void beginInlineEdit(const std::string& widgetId);
+	void updateInlineEditLabel();
+	bool appendInlineEditText(const char* text);
+	bool commitInlineEdit(AppAction& action);
+	void cancelInlineEdit();
 	void selectAlgorithmMenuVariant(const sortinglogic::AlgorithmDescriptor& algorithm, AppAction& action);
 	float timelineFraction(float x) const;
 };

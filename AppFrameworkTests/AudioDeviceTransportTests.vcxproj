@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><VCProjectVersion>16.0</VCProjectVersion><ProjectGuid>{1D57AF25-5A5F-462B-A05D-DA719925E8B5}</ProjectGuid><Keyword>Win32Proj</Keyword><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet><UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries><UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <SolutionDir Condition="'$(SolutionDir)'=='' or '$(SolutionDir)'=='*Undefined*'">$(ProjectDir)..\</SolutionDir>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir><IntDir>$(OutDir)$(ProjectName)\</IntDir>
+    <TestSDLRoot>$(ProjectDir)..\..\..\External Libs\SDL2\</TestSDLRoot>
+    <TestSDLArchitecture Condition="'$(Platform)'=='x64'">x64</TestSDLArchitecture><TestSDLArchitecture Condition="'$(Platform)'=='Win32'">x86</TestSDLArchitecture>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><WarningLevel>Level4</WarningLevel><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp14</LanguageStandard><AdditionalIncludeDirectories>$(TestSDLRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>SDL2.lib;%(AdditionalDependencies)</AdditionalDependencies><AdditionalLibraryDirectories>$(TestSDLRoot)lib\$(TestSDLArchitecture);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="AudioDeviceTransportTests.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\AudioPresentationBridge.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\AppController.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\UserSettings.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\SdlAudioOutput.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SortingLogic\SortingLogic.vcxproj"><Project>{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}</Project></ProjectReference>
+    <ProjectReference Include="..\SoundEngine\SoundEngine.vcxproj"><Project>{8DBFA0AF-176D-4E4B-9D8C-8A7EBA523F3F}</Project></ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyTestSDL" AfterTargets="Build"><Copy SourceFiles="$(TestSDLRoot)lib\$(TestSDLArchitecture)\SDL2.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" /></Target>
+</Project>

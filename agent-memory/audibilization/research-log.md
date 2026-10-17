@@ -2,6 +2,12 @@
 
 ## Goal and provenance
 
+Playback follow-up (2026-10-17): [pause/resume and single-step diagnosis](pause-resume-debug-2026-10-17.md).
+The mid-run failure was a preparation/device-recovery feedback loop, with
+callback acknowledgement and mailbox ownership fixes. The frozen acoustic
+profile was not retuned. Portable packaging is deferred to the next major
+milestone at the user's request.
+
 Latest result (2026-10-16): [known-array reconstruction](known-array-reconstruction.md).
 The supplied image has 100 bars; the first two initial values remain temporally
 uncertain. A common delayed, overlapping sine-burst profile fitted on Selection

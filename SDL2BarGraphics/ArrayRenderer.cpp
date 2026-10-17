@@ -12,6 +12,12 @@ namespace
 	{
 		return static_cast<std::size_t>(material) - FirstChartMaterial;
 	}
+
+	bool hiddenMergeBuffer(const sortinglogic::RenderSnapshot& snapshot, const std::string& lane)
+	{
+		return lane == "merge" && snapshot.algorithm == sortinglogic::SortAlgorithm::Merge &&
+			!snapshot.mergeBufferVisualizationEnabled;
+	}
 }
 
 ArrayRenderer::ArrayRenderer(Window& window, Renderer2D& renderer)
@@ -42,8 +48,10 @@ void ArrayRenderer::render(
 	const float top = std::min(static_cast<float>(height - 12), std::max(40.0f, chartTop));
 	const float bottom = static_cast<float>(height) - 18.0f;
 	const float areaHeight = std::max(10.0f, bottom - top);
-	const std::size_t laneCount = snapshot.state.auxiliaryItems.size() + snapshot.state.integerWorkspaces.size() +
-		(snapshot.state.discardedItems.empty() ? 0 : 1);
+	std::size_t laneCount = snapshot.state.integerWorkspaces.size() + (snapshot.state.discardedItems.empty() ? 0 : 1);
+	for (std::map<std::string, std::vector<sortinglogic::SortSlot> >::const_iterator lane = snapshot.state.auxiliaryItems.begin();
+		lane != snapshot.state.auxiliaryItems.end(); ++lane)
+		if (!hiddenMergeBuffer(snapshot, lane->first)) ++laneCount;
 	const float auxiliaryHeight = laneCount == 0 ? 0.0f : std::min(areaHeight * 0.30f, static_cast<float>(laneCount) * 38.0f);
 	const float mainBottom = bottom - auxiliaryHeight - (laneCount ? 6.0f : 0.0f);
 	const float mainHeight = std::max(8.0f, mainBottom - top);
@@ -80,8 +88,9 @@ void ArrayRenderer::render(
 		const float laneGap = 4.0f;
 		const float laneHeight = std::max(8.0f, (auxiliaryHeight - laneGap * static_cast<float>(laneCount - 1)) / static_cast<float>(laneCount));
 		std::size_t laneNumber = 0;
-		for (std::map<std::string, std::vector<sortinglogic::SortSlot> >::const_iterator lane = snapshot.state.auxiliaryItems.begin(); lane != snapshot.state.auxiliaryItems.end(); ++lane, ++laneNumber)
+		for (std::map<std::string, std::vector<sortinglogic::SortSlot> >::const_iterator lane = snapshot.state.auxiliaryItems.begin(); lane != snapshot.state.auxiliaryItems.end(); ++lane)
 		{
+			if (hiddenMergeBuffer(snapshot, lane->first)) continue;
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
 			laneGeometry[lane->first] = std::make_pair(lane->second.size(), laneNumber);
@@ -98,6 +107,7 @@ void ArrayRenderer::render(
 					glm::vec2(left + static_cast<float>(i) * cellWidth + laneSpacing.sidePadding, laneBottom - barHeight),
 					glm::vec2(laneSpacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars));
 			}
+			++laneNumber;
 		}
 		for (std::map<std::string, std::vector<int> >::const_iterator lane = snapshot.state.integerWorkspaces.begin(); lane != snapshot.state.integerWorkspaces.end(); ++lane, ++laneNumber)
 		{

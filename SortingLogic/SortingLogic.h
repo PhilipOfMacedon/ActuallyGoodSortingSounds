@@ -10,7 +10,7 @@
 namespace sortinglogic
 {
 	static const std::size_t MinItemCount = 2;
-	static const std::size_t MaxItemCount = 800;
+	static const std::size_t MaxItemCount = 1024;
 	static const std::size_t DefaultTraceOperationLimit = 1000000;
 	static const float MinRunDurationSeconds = 1.0f;
 	static const float MaxRunDurationSeconds = 120.0f;
@@ -107,7 +107,7 @@ namespace sortinglogic
 		ComparisonResult comparison;
 		std::string firstLane, secondLane, workspaceName;
 		SemanticRole firstRole, secondRole;
-		bool beforeOccupied, beforeSecondOccupied;
+		bool completionScan, beforeOccupied, beforeSecondOccupied;
 		int beforeCounter, afterCounter;
 		std::size_t beforeSize, afterSize;
 		std::string metricName;
@@ -208,12 +208,14 @@ namespace sortinglogic
 		ShellGapSequence shellGapSequence;
 		MergeWritebackMode mergeWritebackMode;
 		MergeExecutionMode mergeExecutionMode;
+		bool mergeBufferVisualizationEnabled;
 		std::uint32_t inputSeed;
 		std::vector<SortItem> input;
 		SortState initialState;
 		std::vector<SemanticEvent> events;
 		std::vector<std::size_t> comparisonEventIndices;
 		std::vector<std::size_t> probeEventIndices;
+		std::vector<std::size_t> audioEventIndices;
 		std::vector<RegionAnnotation> annotations;
 		std::map<std::size_t, SortState> snapshots;
 		std::size_t operationCount;
@@ -235,12 +237,15 @@ namespace sortinglogic
 		ShellGapSequence shellGapSequence;
 		MergeWritebackMode mergeWritebackMode;
 		MergeExecutionMode mergeExecutionMode;
+		bool completionScanEnabled;
+		bool mergeBufferVisualizationEnabled;
 		std::uint32_t inputSeed;
 		std::size_t maxOperations;
 		TraceBuildRequest() : input(), familyId(), variantId(), algorithm(SortAlgorithm::Insertion), direction(SortDirection::Ascending),
 			profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats), pattern(InputPattern::Random),
 			shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
-			mergeExecutionMode(MergeExecutionMode::BottomUp), inputSeed(0),
+			mergeExecutionMode(MergeExecutionMode::BottomUp), completionScanEnabled(false),
+			mergeBufferVisualizationEnabled(true), inputSeed(0),
 			maxOperations(DefaultTraceOperationLimit) {}
 	};
 
@@ -281,6 +286,7 @@ namespace sortinglogic
 		ShellGapSequence shellGapSequence;
 		MergeWritebackMode mergeWritebackMode;
 		MergeExecutionMode mergeExecutionMode;
+		bool mergeBufferVisualizationEnabled;
 		std::size_t cursor, eventCount, itemCount, audioEligibleEventCount;
 		std::uint32_t inputSeed;
 		float durationSeconds, elapsedSeconds;
@@ -332,6 +338,8 @@ namespace sortinglogic
 		CommandResult setShellGapSequence(ShellGapSequence sequence);
 		CommandResult setMergeWritebackMode(MergeWritebackMode mode);
 		CommandResult setMergeExecutionMode(MergeExecutionMode mode);
+		CommandResult setMergeBufferVisualizationEnabled(bool enabled);
+		CommandResult setCompletionScanEnabled(bool enabled);
 		CommandResult beginTraceBuild(TraceBuildRequest& request);
 		void completeTraceBuild(TraceBuildResult result);
 		CommandResult togglePlayback();
@@ -357,6 +365,8 @@ namespace sortinglogic
 		ShellGapSequence shellGapSequence() const { return shellGapSequence_; }
 		MergeWritebackMode mergeWritebackMode() const { return mergeWritebackMode_; }
 		MergeExecutionMode mergeExecutionMode() const { return mergeExecutionMode_; }
+		bool mergeBufferVisualizationEnabled() const { return mergeBufferVisualizationEnabled_; }
+		bool completionScanEnabled() const { return completionScanEnabled_; }
 		bool isBuildingTrace() const { return buildingTrace_; }
 		bool isPlaying() const { return playing_; }
 		bool canRun() const { return algorithmSupports(algorithm_, domain_) && algorithmAcceptsItemCount(algorithm_, itemCount_) &&
@@ -378,6 +388,8 @@ namespace sortinglogic
 		ShellGapSequence shellGapSequence_;
 		MergeWritebackMode mergeWritebackMode_;
 		MergeExecutionMode mergeExecutionMode_;
+		bool mergeBufferVisualizationEnabled_;
+		bool completionScanEnabled_;
 		BaselineKind baselineKind_;
 		bool buildingTrace_, playing_;
 		std::string status_;
