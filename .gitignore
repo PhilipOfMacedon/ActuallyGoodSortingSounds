@@ -38,3 +38,6 @@ ipch/
 # Offline analysis Python caches
 __pycache__/
 *.py[cod]
+
+# Local coding and repository workflow references supplied by the owner
+/.local-guidance/
