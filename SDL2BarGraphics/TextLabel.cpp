@@ -140,6 +140,11 @@ void TextLabel::setText(std::string text, const UiFontReference& font, int fontS
 	setResolvedText(text, identity, path, index, fontSize, dpi, dpi, color, fallback);
 }
 
+void TextLabel::setText(std::string text, const ResolvedTextStyle& style, SDL_Color color)
+{
+	setText(std::move(text), style.font, style.rasterSize, color, style.dpi);
+}
+
 void TextLabel::setResolvedText(std::string text, const std::string& identity, const std::string& path,
 	int index, int fontSize, int dpiX, int dpiY, SDL_Color color, bool fallback)
 {
@@ -254,4 +259,9 @@ glm::vec2 TextLabel::measureText(const std::string& text, const UiFontReference&
 		if (!font || TTF_SizeUTF8(font, content, &width, &height) != 0) return glm::vec2(0.0f);
 	}
 	return glm::vec2(static_cast<float>(width), static_cast<float>(height));
+}
+
+glm::vec2 TextLabel::measureText(const std::string& text, const ResolvedTextStyle& style)
+{
+	return measureText(text, style.font, style.rasterSize, style.dpi);
 }

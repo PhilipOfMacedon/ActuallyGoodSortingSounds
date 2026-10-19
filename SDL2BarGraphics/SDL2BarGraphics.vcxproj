@@ -32,6 +32,7 @@
     <ClCompile Include="Rectangle.cpp" />
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="TextLabel.cpp" />
+    <ClCompile Include="TextBlockLayout.cpp" />
     <ClCompile Include="Texture.cpp" />
     <ClCompile Include="ThemePalette.cpp" />
     <ClCompile Include="UiLayer.cpp" />
@@ -59,6 +60,7 @@
     <ClInclude Include="SdlAudioOutput.h" />
     <ClInclude Include="SettingsScroll.h" />
     <ClInclude Include="TextLabel.h" />
+    <ClInclude Include="TextBlockLayout.h" />
     <ClInclude Include="Texture.h" />
     <ClInclude Include="ThemePalette.h" />
     <ClInclude Include="UiLayer.h" />

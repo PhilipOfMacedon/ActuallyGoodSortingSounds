@@ -16,6 +16,7 @@
 #include "../SDL2BarGraphics/RenderPipeline.h"
 #include "../SDL2BarGraphics/RenderingTypes.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
+#include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
 #include "../SDL2BarGraphics/UiArchitecture.h"
 #include "../SDL2BarGraphics/UserSettings.h"
@@ -418,6 +419,45 @@ namespace
 		WindowsFontFace missing;
 		check(!catalog.resolve("AGSS Font That Does Not Exist", "Regular", missing, &error) && !error.empty(),
 			"DirectWrite reports missing installed family and face references for visible fallback handling");
+	}
+
+	void testTextBlockLayoutCache()
+	{
+		int measurementCount = 0;
+		const TextBlockLayout::MeasureTextWidth measureWidth = [&measurementCount](const std::string& text,
+			const ResolvedTextStyle& style)
+		{
+			++measurementCount;
+			return static_cast<float>(text.size()) * style.rasterSize * 0.5f;
+		};
+		ResolvedTextStyle style(UiFontReference("Monospace", "Regular"), 10, 96, 10.0f);
+		TextBlockLayout layout(measureWidth);
+		check(layout.update("red blue green", 35.0f, style),
+			"text block computes its first measured line layout");
+		check(layout.lines().size() == 3 && layout.lines()[0] == "red" && layout.lines()[1] == "blue" &&
+			layout.lines()[2] == "green", "text block wraps at measured logical width");
+		const int initialMeasurements = measurementCount;
+		check(!layout.update("red blue green", 35.0f, style) && measurementCount == initialMeasurements,
+			"unchanged text and style reuse cached line breaks without measuring words again");
+		check(layout.update("red blue green", 45.0f, style) && layout.lines().size() == 2 &&
+			layout.lines()[0] == "red blue", "available width invalidates cached wrapping");
+		style.rasterSize = 20;
+		check(layout.update("red blue green", 45.0f, style) && layout.lines().size() == 3,
+			"font raster size invalidates cached wrapping");
+		style.dpi = 144;
+		const int measurementsBeforeDpiChange = measurementCount;
+		check(layout.update("red blue green", 45.0f, style),
+			"DPI changes invalidate cached text layout");
+		check(measurementCount > measurementsBeforeDpiChange,
+			"DPI changes remeasure text using the resolved style");
+		style.font.family = "Serif";
+		check(layout.update("red blue green", 45.0f, style),
+			"font family changes invalidate cached text layout");
+		style.logicalHeight = 13.0f;
+		check(layout.update("red blue green", 45.0f, style),
+			"logical line height changes invalidate cached text layout");
+		check(layout.update(std::string(), 45.0f, style) && layout.lines().size() == 1 &&
+			layout.lines()[0].empty(), "empty text retains one empty line for stable layout");
 	}
 
 	void testRenderPipelineContracts()
@@ -1846,6 +1886,7 @@ int main()
 	testModifierStepSizes();
 	testAppearanceAndPresetArchitecture();
 	testWindowsFontCatalog();
+	testTextBlockLayoutCache();
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
 	testSettingsStore();

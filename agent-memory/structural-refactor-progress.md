@@ -22,4 +22,24 @@ Verification:
 - Sorting tests were not run because no sorting implementation or trace contract changed. No runtime texture-allocation counter or benchmark has been added, so the improvement is based on the corrected call path rather than a measured performance claim.
 - No screenshot-based GUI review was performed for this slice.
 
-Next: complete the text-layout part of audit item 1 with an explicit style/layout contract and reusable wrapped-text measurement, then begin the mechanical `SortingLogic` extraction while keeping its facade stable.
+Next: freeze the behavioral baselines described in the audit before starting the mechanical `SortingLogic` extraction behind the stable facade.
+
+## 2026-10-19 — resolved styles and cached wrapped text
+
+Status: second UI text slice implemented; pending commit.
+
+- Added `ResolvedTextStyle` so width measurement, rasterization, line height, and drawing use the same font, raster size, DPI, and logical height.
+- Added renderer-independent `TextBlockLayout`, which caches wrapped lines and invalidates when content, available width, or any resolved style field changes. Its text-width callback keeps font measurement outside the layout value.
+- Replaced the per-frame algorithm profile wrapping work with cached complexity and description layouts. Reused the resolved text style for algorithm popup width measurement and painting.
+- The profile description remains a clipped scrollable paragraph. A visual check confirmed the restored Current preset, readable profile card, palette, and controls after switching presets; the short built-in profile text did not exercise long-content scrolling.
+- No sorting trace, audio, or persistence code changed.
+
+Verification:
+
+- x64 Debug solution build: passed. x64 Debug `AppFrameworkTests`: passed.
+- x64 Release solution build: passed. Release `AppFrameworkTests` and `SoundEngineTests`: passed; the sound suite reported 417,371 assertions.
+- The Release `AppFrameworkTests` link continues to emit existing LNK4020 PDB type-record warnings for `SoundEngine.pdb` and `SortingLogic.pdb`; linking and execution succeed. The warning is not isolated by this slice.
+- Debug `SortingLogicTests` and `SoundEngineTests` were started but stopped after several minutes of CPU-active execution without results. These suites are unrelated to the text-layout change; their incomplete runs are not counted as passes.
+- `git diff --check` passed. The current worktree has no changes to sorting, sound, or settings behavior.
+
+Next: capture fixed-seed trace signatures, Counting/Radix audio operands and PCM fixtures, settings migration/persistence fixtures, and baseline measurement counters. Only after those regression boundaries are recorded should the mechanical `SortingLogic` extraction begin.

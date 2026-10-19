@@ -28,6 +28,26 @@ struct UiFontReference
 		: family(familyName), style(faceStyle) {}
 };
 
+// Effective text settings shared by measurement and rasterization. Keeping the
+// logical height beside the font raster parameters prevents wrapped text from
+// being measured with a different style than the one that is drawn.
+struct ResolvedTextStyle
+{
+	UiFontReference font;
+	int rasterSize;
+	int dpi;
+	float logicalHeight;
+	ResolvedTextStyle(const UiFontReference& fontValue = UiFontReference(), int rasterSizeValue = 12,
+		int dpiValue = 96, float logicalHeightValue = 12.0f)
+		: font(fontValue), rasterSize(rasterSizeValue), dpi(dpiValue), logicalHeight(logicalHeightValue) {}
+	bool operator==(const ResolvedTextStyle& other) const
+	{
+		return font.family == other.font.family && font.style == other.font.style &&
+			rasterSize == other.rasterSize && dpi == other.dpi && logicalHeight == other.logicalHeight;
+	}
+	bool operator!=(const ResolvedTextStyle& other) const { return !(*this == other); }
+};
+
 struct UiTokenValue
 {
 	UiTokenType type;

@@ -27,6 +27,7 @@ public:
 	void setText(std::string text, std::string fontFace, int fontSize);
 	void setText(std::string text, std::string fontFace, int fontSize, SDL_Color color);
 	void setText(std::string text, const UiFontReference& font, int fontSize, SDL_Color color, int dpi = 96);
+	void setText(std::string text, const ResolvedTextStyle& style, SDL_Color color);
 	void setContent(std::string text);
 	glm::vec2 getTextureDimensions() const { return dimensions_; }
 	GLuint getTextureId() const { return textureId_; }
@@ -35,6 +36,7 @@ public:
 	const std::string& requestedFontFamily() const { return requestedFontFamily_; }
 	GLfloat getHeightProportion() const { return heightPercent_; }
 	static glm::vec2 measureText(const std::string& text, const UiFontReference& font, int fontSize, int dpi = 96);
+	static glm::vec2 measureText(const std::string& text, const ResolvedTextStyle& style);
 	static void clearFontCache();
 
 private:

@@ -417,34 +417,10 @@ std::string formatDuration(float seconds)
 		return color;
 	}
 
-	void appendWrappedLines(std::vector<std::string>& lines, const std::string& paragraph, float maximumWidth,
-		const UiFontReference& font, int rasterSize, int dpi)
+	float measureLogicalTextWidth(const std::string& text, const ResolvedTextStyle& style)
 	{
-		if (paragraph.empty())
-		{
-			lines.push_back(std::string());
-			return;
-		}
-		const float dpiScale = 96.0f / static_cast<float>(std::max(1, dpi));
-		auto measuredWidth = [&](const std::string& text)
-		{
-			return TextLabel::measureText(text, font, rasterSize, dpi).x * dpiScale;
-		};
-		std::istringstream words(paragraph);
-		std::string word;
-		std::string line;
-		while (words >> word)
-		{
-			const std::string candidate = line.empty() ? word : line + " " + word;
-			if (!line.empty() && measuredWidth(candidate) > maximumWidth)
-			{
-				lines.push_back(line);
-				line = word;
-			}
-			else line = candidate;
-		}
-		if (!line.empty()) lines.push_back(line);
-		else if (lines.empty()) lines.push_back(std::string());
+		const glm::vec2 dimensions = TextLabel::measureText(text, style);
+		return dimensions.x * 96.0f / static_cast<float>(std::max(1, style.dpi));
 	}
 }
 
@@ -466,7 +442,9 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	algorithmMenuOpen_(false), algorithmMenuVariantPane_(false), algorithmSearchFocused_(false), pendingAlgorithmSelection_(false), algorithmMenuStatus_(),
 	algorithmMenuBounds_(), algorithmSearchBounds_(), algorithmFamilyBounds_(), algorithmVariantBounds_(),
 	settingsScrollViewport_(), algorithmFamilyScrollViewport_(), algorithmVariantScrollViewport_(),
-	algorithmProfileScrollViewport_(), algorithmProfileScrollTrack_(), algorithmProfileScrollThumb_(), algorithmProfileLines_(),
+	algorithmProfileScrollViewport_(), algorithmProfileComplexityLayout_(measureLogicalTextWidth),
+	algorithmProfileDescriptionLayout_(measureLogicalTextWidth),
+	algorithmProfileScrollTrack_(), algorithmProfileScrollThumb_(),
 	algorithmProfileAlgorithm_(), algorithmProfileLineHeight_(18.0f), algorithmProfileVisible_(false), draggingAlgorithmProfileScroll_(false),
 	algorithmProfileDragStartY_(0.0f), algorithmProfileDragStartOffset_(0.0f),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
@@ -812,14 +790,7 @@ void ControlPanel::updateLayout()
 void ControlPanel::layoutMainComboPopups()
 {
 	layoutResult_.popupBounds.clear();
-	const int logicalWidth = window_.getLogicalWidth();
-	const int dpi = logicalWidth > 0 ? std::max(48, std::min(384,
-		static_cast<int>(std::lround(96.0 * window_.getDrawableWidth() / logicalWidth)))) : 96;
-	const UiTokenValue fontValue = effectiveUiTokenValue(renderPreferences_.appearance.activePreset,
-		activeTheme(renderPreferences_), "typeface.primary");
-	const UiFontReference font = fontValue.type == UiTokenType::Font ? fontValue.font : UiFontReference();
-	const float textHeight = 13.0f * themeNumber(renderPreferences_, "typography.body_size", 14.0f) / 14.0f;
-	const int rasterSize = std::max(8, static_cast<int>(std::lround(textHeight * 72.0f / 96.0f)));
+	const ResolvedTextStyle textStyle = resolveTextStyle(13.0f);
 
 	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 	{
@@ -832,9 +803,9 @@ void ControlPanel::layoutMainComboPopups()
 		float popupWidth = widget->bounds().width;
 		for (std::size_t option = 0; option < widget->options().size(); ++option)
 		{
-			const glm::vec2 measured = TextLabel::measureText(widget->options()[option], font, rasterSize, dpi);
+			const glm::vec2 measured = TextLabel::measureText(widget->options()[option], textStyle);
 			if (measured.y > 0.0f)
-				popupWidth = std::max(popupWidth, measured.x * textHeight / measured.y + 22.0f);
+				popupWidth = std::max(popupWidth, measured.x * textStyle.logicalHeight / measured.y + 22.0f);
 		}
 		popupWidth = std::min(popupWidth, std::max(0.0f, static_cast<float>(width_) - 16.0f));
 		const std::size_t visibleOptions = widget->visibleOptionCount();
@@ -1678,7 +1649,6 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	const UiPresetId preset = renderPreferences_.appearance.activePreset;
 	const bool classicVga = preset == UiPresetId::FlatVgaDos || preset == UiPresetId::ClassicWindows95;
 	const bool windows95 = preset == UiPresetId::ClassicWindows95;
-	algorithmProfileLines_.clear();
 	algorithmProfileVisible_ = false;
 	algorithmProfileScrollTrack_ = UiRect();
 	algorithmProfileScrollThumb_ = UiRect();
@@ -1839,13 +1809,8 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 			}
 
 			const float profileTextHeight = 13.0f;
-			const float profileFontScale = themeNumber(renderPreferences_, "typography.body_size", 14.0f) / 14.0f;
-			const int profileRasterSize = std::max(8, static_cast<int>(std::lround(profileTextHeight * profileFontScale * 72.0f / 96.0f)));
-			const int logicalWidth = window_.getLogicalWidth();
-			const int dpi = logicalWidth > 0 ? std::max(48, std::min(384,
-				static_cast<int>(std::lround(96.0 * window_.getDrawableWidth() / logicalWidth)))) : 96;
-			const UiTokenValue profileFontValue = effectiveUiTokenValue(preset, activeTheme(renderPreferences_), "typeface.primary");
-			const UiFontReference profileFont = profileFontValue.type == UiTokenType::Font ? profileFontValue.font : UiFontReference();
+			const ResolvedTextStyle profileTextStyle = resolveTextStyle(profileTextHeight);
+			const ResolvedTextStyle complexityTextStyle = resolveTextStyle(11.0f);
 			const bool showShortcuts = cardHeight >= 112.0f;
 			float shortcutY = card.y + 70.0f;
 			if (showShortcuts && cardHeight >= 150.0f) shortcutY = card.y + card.height - 58.0f;
@@ -1853,8 +1818,8 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 			const float profileWidth = std::max(0.0f, card.width - 16.0f);
 			const std::string complexity = (capabilities.available ? capabilities.timeComplexity : "Unknown") +
 				std::string(" time  |  ") + (capabilities.available ? capabilities.spaceComplexity : "Unknown") + " space";
-			std::vector<std::string> complexityLines;
-			appendWrappedLines(complexityLines, complexity, profileWidth, profileFont, profileRasterSize, dpi);
+			algorithmProfileComplexityLayout_.update(complexity, profileWidth, complexityTextStyle);
+			const std::vector<std::string>& complexityLines = algorithmProfileComplexityLayout_.lines();
 			const float complexityLineHeight = 13.0f;
 			const ClipBounds cardClip(card.x + 2.0f, card.y + 2.0f, std::max(0.0f, card.width - 4.0f),
 				std::max(0.0f, card.height - 4.0f));
@@ -1866,7 +1831,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 				if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(complexityLines[lineIndex], "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 }));
 				else labels_[labelId]->setContent(complexityLines[lineIndex]);
 				drawText(*labels_[labelId], UiRect(card.x + 8.0f, card.y + 27.0f + lineIndex * complexityLineHeight, profileWidth, complexityLineHeight),
-					11.0f, palette.mutedText, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
+					complexityTextStyle, palette.mutedText, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
 			}
 
 			const float factsY = card.y + 30.0f + static_cast<float>(complexityLines.size()) * complexityLineHeight + 3.0f;
@@ -1896,29 +1861,29 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 				submitBox(UiRect(profileFrame.x, profileFrame.y + profileFrame.height - 1.0f, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
 				submitBox(UiRect(profileFrame.x, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
 				submitBox(UiRect(profileFrame.x + profileFrame.width - 1.0f, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-				appendWrappedLines(algorithmProfileLines_, capabilities.behavior, profileTextViewport.width, profileFont, profileRasterSize, dpi);
-				algorithmProfileLineHeight_ = std::max(17.0f, profileTextHeight * profileFontScale * 1.42f);
+				algorithmProfileDescriptionLayout_.update(capabilities.behavior, profileTextViewport.width, profileTextStyle);
+				const std::vector<std::string>& descriptionLines = algorithmProfileDescriptionLayout_.lines();
+				algorithmProfileLineHeight_ = std::max(17.0f, profileTextStyle.logicalHeight * 1.42f);
 				algorithmProfileScrollViewport_.configure(profileTextViewport,
-					static_cast<float>(algorithmProfileLines_.size()) * algorithmProfileLineHeight_, algorithmProfileLineHeight_,
+					static_cast<float>(descriptionLines.size()) * algorithmProfileLineHeight_, algorithmProfileLineHeight_,
 					algorithmProfileScrollViewport_.offset());
 				const ClipBounds profileClip(profileTextViewport.x, profileTextViewport.y,
 					profileTextViewport.width, profileTextViewport.height);
 				const std::size_t firstLine = algorithmProfileScrollViewport_.firstVisibleItem(algorithmProfileLineHeight_);
-				const std::size_t visibleLines = algorithmProfileScrollViewport_.visibleItemCount(algorithmProfileLines_.size(), algorithmProfileLineHeight_);
-				const std::size_t endLine = std::min(algorithmProfileLines_.size(), firstLine + visibleLines);
+				const std::size_t visibleLines = algorithmProfileScrollViewport_.visibleItemCount(descriptionLines.size(), algorithmProfileLineHeight_);
+				const std::size_t endLine = std::min(descriptionLines.size(), firstLine + visibleLines);
 				for (std::size_t lineIndex = firstLine; lineIndex < endLine; ++lineIndex)
 				{
 					const std::string labelId = "#rail_profile_line_" + std::to_string(lineIndex);
-					if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
-					else labels_[labelId]->setContent(algorithmProfileLines_[lineIndex]);
+					if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(descriptionLines[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
+					else labels_[labelId]->setContent(descriptionLines[lineIndex]);
 					const float lineY = profileTextViewport.y + static_cast<float>(lineIndex) * algorithmProfileLineHeight_ - algorithmProfileScrollViewport_.offset();
 					drawText(*labels_[labelId], UiRect(profileTextViewport.x, lineY, profileTextViewport.width, algorithmProfileLineHeight_),
-						profileTextHeight, palette.text, TextLayer, profileClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
+						profileTextStyle, palette.text, TextLayer, profileClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
 				}
 			}
 			else
 			{
-				algorithmProfileLines_.clear();
 				algorithmProfileScrollViewport_.configure(UiRect(), 0.0f, profileTextHeight, 0.0f);
 			}
 			if (algorithmProfileScrollViewport_.maximumOffset() > 0.0f && profileFrame.height > 0.0f)
@@ -2392,8 +2357,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 	}
 }
 
-void ControlPanel::drawText(TextLabel& label, const UiRect& bounds, float targetHeight, const glm::vec4& tint,
-	RenderLayer layer, const ClipBounds& clip, TextOverflowPolicy overflow, TextHorizontalAlignment alignment)
+ResolvedTextStyle ControlPanel::resolveTextStyle(float targetHeight) const
 {
 	const UiTokenValue fontValue = effectiveUiTokenValue(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_), "typeface.primary");
 	const UiFontReference font = drawingAppearanceEditor_ ? UiFontReference() :
@@ -2414,13 +2378,25 @@ void ControlPanel::drawText(TextLabel& label, const UiRect& bounds, float target
 	// DPI, 72 points per inch yields the requested logical pixel height directly;
 	// doubling the size and shrinking the texture made every label visibly soft.
 	const int rasterSize = std::max(8, static_cast<int>(std::lround(targetHeight * 72.0f / 96.0f)));
-	label.setText(label.text(), font, rasterSize, SDL_Color{ 255, 255, 255, 255 }, dpi);
+	return ResolvedTextStyle(font, rasterSize, dpi, targetHeight);
+}
+
+void ControlPanel::drawText(TextLabel& label, const UiRect& bounds, float targetHeight, const glm::vec4& tint,
+	RenderLayer layer, const ClipBounds& clip, TextOverflowPolicy overflow, TextHorizontalAlignment alignment)
+{
+	drawText(label, bounds, resolveTextStyle(targetHeight), tint, layer, clip, overflow, alignment);
+}
+
+void ControlPanel::drawText(TextLabel& label, const UiRect& bounds, const ResolvedTextStyle& style, const glm::vec4& tint,
+	RenderLayer layer, const ClipBounds& clip, TextOverflowPolicy overflow, TextHorizontalAlignment alignment)
+{
+	label.setText(label.text(), style, SDL_Color{ 255, 255, 255, 255 });
 	fontFallbackActive_ = fontFallbackActive_ || label.usingFallbackFont();
 	const glm::vec2 dimensions = label.getTextureDimensions();
 	if (label.getTextureId() == 0 || dimensions.x <= 0.0f || dimensions.y <= 0.0f || bounds.width <= 0.0f || bounds.height <= 0.0f)
 		return;
 	const TextQuadLayout textLayout = layoutTextQuad(ClipBounds(bounds.x, bounds.y, bounds.width, bounds.height),
-		dimensions, targetHeight, overflow, SDL_GetTicks(), clip, alignment);
+		dimensions, style.logicalHeight, overflow, SDL_GetTicks(), clip, alignment);
 	if (!textLayout.visible) return;
 	renderer_.submit(QuadInstance(textLayout.position, textLayout.size,
 		RenderDescriptor(tint, label.getTextureId(), MaterialId::Text), layer, textLayout.clip));

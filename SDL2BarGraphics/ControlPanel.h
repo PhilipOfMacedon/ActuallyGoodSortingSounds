@@ -15,6 +15,7 @@
 #include "UserSettings.h"
 #include "Window.h"
 #include "LayoutMetrics.h"
+#include "TextBlockLayout.h"
 #include "../SortingLogic/SortingLogic.h"
 
 class ControlPanel
@@ -98,9 +99,10 @@ private:
 	UiScrollViewport algorithmFamilyScrollViewport_;
 	UiScrollViewport algorithmVariantScrollViewport_;
 	UiScrollViewport algorithmProfileScrollViewport_;
+	TextBlockLayout algorithmProfileComplexityLayout_;
+	TextBlockLayout algorithmProfileDescriptionLayout_;
 	UiRect algorithmProfileScrollTrack_;
 	UiRect algorithmProfileScrollThumb_;
-	std::vector<std::string> algorithmProfileLines_;
 	std::string algorithmProfileAlgorithm_;
 	float algorithmProfileLineHeight_;
 	bool algorithmProfileVisible_;
@@ -144,8 +146,12 @@ private:
 	void drawSettingsControl(const UiWidget& widget, const ThemePalette& palette);
 	void drawSliderControl(const UiWidget& widget, const ThemePalette& palette, const ClipBounds& clip, RenderLayer layer);
 	void drawWidget(const UiWidget& widget, const ThemePalette& palette, RenderLayer layer, bool popup = false);
+	ResolvedTextStyle resolveTextStyle(float targetHeight) const;
 	void drawText(TextLabel& label, const UiRect& bounds, float targetHeight, const glm::vec4& tint, RenderLayer layer,
 		const ClipBounds& clip = ClipBounds(), TextOverflowPolicy overflow = TextOverflowPolicy::Fit,
+		TextHorizontalAlignment alignment = TextHorizontalAlignment::Center);
+	void drawText(TextLabel& label, const UiRect& bounds, const ResolvedTextStyle& style, const glm::vec4& tint,
+		RenderLayer layer, const ClipBounds& clip = ClipBounds(), TextOverflowPolicy overflow = TextOverflowPolicy::Fit,
 		TextHorizontalAlignment alignment = TextHorizontalAlignment::Center);
 	void submitBox(const UiRect& bounds, const glm::vec4& color, MaterialId material, RenderLayer layer, const ClipBounds& clip = ClipBounds());
 	void processAction(const UiAction& action, AppAction& output);
