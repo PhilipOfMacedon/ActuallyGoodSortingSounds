@@ -12,6 +12,8 @@ namespace sortinglogic
 	static const std::size_t MinItemCount = 2;
 	static const std::size_t MaxItemCount = 1024;
 	static const std::size_t DefaultTraceOperationLimit = 1000000;
+	static const std::size_t DefaultTraceWorkLimit = 8000000;
+	static const std::size_t DefaultTraceByteLimit = 128u * 1024u * 1024u;
 	static const float MinRunDurationSeconds = 1.0f;
 	static const float MaxRunDurationSeconds = 120.0f;
 	static const std::size_t SnapshotInterval = 4096;
@@ -37,10 +39,11 @@ namespace sortinglogic
 		float value;
 		std::int32_t integerKey;
 		bool hasIntegerKey;
-		SortItem() : stableId(0), value(0.0f), integerKey(0), hasIntegerKey(false) {}
-		SortItem(std::uint64_t id, float itemValue) : stableId(id), value(itemValue), integerKey(0), hasIntegerKey(false) {}
+		bool orientationReversed;
+		SortItem() : stableId(0), value(0.0f), integerKey(0), hasIntegerKey(false), orientationReversed(false) {}
+		SortItem(std::uint64_t id, float itemValue) : stableId(id), value(itemValue), integerKey(0), hasIntegerKey(false), orientationReversed(false) {}
 		SortItem(std::uint64_t id, std::int32_t key, float normalizedValue)
-			: stableId(id), value(normalizedValue), integerKey(key), hasIntegerKey(true) {}
+			: stableId(id), value(normalizedValue), integerKey(key), hasIntegerKey(true), orientationReversed(false) {}
 	};
 
 	// Numeric values are stable IDs persisted in settings. Do not renumber them.
@@ -49,14 +52,106 @@ namespace sortinglogic
 		Insertion = 1001, Bubble = 1002, Selection = 1003, Shell = 1004,
 		Merge = 1005, Quick = 1006, Heap = 1007, Counting = 1008,
 		Radix = 1009, Gnome = 1010, Cocktail = 1011, Comb = 1012,
-		OddEven = 1013, Pancake = 1014, Stooge = 1015, Bogo = 1016
+		OddEven = 1013, Pancake = 1014, Stooge = 1015, Bogo = 1016,
+		ArrayvAmericanFlag = 1017, ArrayvBinaryQuickIterative = 1018,
+		ArrayvBinaryQuickRecursive = 1019, ArrayvClassicGravity = 1020,
+		ArrayvFlash = 1021, ArrayvGravity = 1022, ArrayvInPlaceLsdRadix = 1023,
+		ArrayvIndex = 1024, ArrayvLsdRadix = 1025, ArrayvMsdRadix = 1026,
+		ArrayvPigeonhole = 1027, ArrayvRotateLsdRadix = 1028,
+		ArrayvRotateMsdRadix = 1029, ArrayvShatter = 1030,
+		ArrayvSimpleShatter = 1031, ArrayvSimplisticGravity = 1032,
+		ArrayvStatic = 1033, ArrayvTime = 1034, ArrayvStacklessAmericanFlag = 1035,
+		ArrayvStacklessBinaryQuick = 1036, ArrayvOptimizedBubble = 1037,
+		ArrayvUnoptimizedBubble = 1038, ArrayvBinaryGnome = 1039,
+		ArrayvCircleIterative = 1040, ArrayvCircleRecursive = 1041,
+		ArrayvClassicThreeSmoothComb = 1042, ArrayvOptimizedCocktail = 1043,
+		ArrayvUnoptimizedCocktail = 1044, ArrayvOptimizedGnome = 1045,
+		ArrayvShove = 1046, ArrayvSlope = 1047, ArrayvBinaryInsertion = 1048,
+		ArrayvRecursiveShell = 1049, ArrayvBingo = 1050,
+		ArrayvDoubleSelection = 1051, ArrayvStableSelection = 1052,
+		ArrayvCycle = 1053, ArrayvTernaryHeap = 1054,
+		ArrayvBaseNHeap = 1055, ArrayvMinHeap = 1056,
+		ArrayvFlippedMinHeap = 1057, ArrayvBottomUpHeap = 1058,
+		ArrayvBinomialHeap = 1059, ArrayvLazyHeap = 1060,
+		ArrayvMinMaxHeap = 1061, ArrayvOutOfPlaceHeap = 1062,
+		ArrayvTriangularHeap = 1063, ArrayvWeakHeap = 1064,
+		ArrayvPoplarHeap = 1065, ArrayvBurntPancake = 1066,
+		CanonicalBurntPancake = 1067, ArrayvPancakeInsertion = 1068,
+		ArrayvSwaplessBubble = 1069, ArrayvThreeSmoothCombRecursive = 1070,
+		ArrayvThreeSmoothCombParallel = 1071,
+		ArrayvBitonicIterative = 1072, ArrayvBitonicRecursive = 1073,
+		ArrayvBitonicParallel = 1074, ArrayvBoseNelsonIterative = 1075,
+		ArrayvBoseNelsonRecursive = 1076, ArrayvBoseNelsonParallel = 1077,
+		ArrayvOddEvenMergeIterative = 1078, ArrayvOddEvenMergeRecursive = 1079,
+		ArrayvOddEvenMergeParallel = 1080, ArrayvDiamondIterative = 1081,
+		ArrayvDiamondRecursive = 1082, ArrayvPairwiseIterative = 1083,
+		ArrayvPairwiseRecursive = 1084, ArrayvCrease = 1085, ArrayvFold = 1086,
+		ArrayvMergeExchangeIterative = 1087, ArrayvPairwiseMergeIterative = 1088,
+		ArrayvPairwiseMergeRecursive = 1089, ArrayvWeaveIterative = 1090,
+		ArrayvWeaveParallel = 1091, ArrayvWeaveRecursive = 1092,
+		ArrayvMatrix = 1093, ArrayvOptimizedStooge = 1094,
+		ArrayvOptimizedStoogeStudio = 1095, ArrayvQuadStooge = 1096,
+		ArrayvSlow = 1097, ArrayvThreeSmoothCombIterative = 1098,
+		ArrayvCircloid = 1099, ArrayvSilly = 1100, ArrayvSnuffle = 1101,
+		ArrayvCompleteGraph = 1102, ArrayvFun = 1103,
+		ArrayvBozo = 1104, ArrayvBubbleBogo = 1105, ArrayvExchangeBogo = 1106,
+		ArrayvDeterministicBogo = 1107, ArrayvSelectionBogo = 1108, ArrayvLessBogo = 1109,
+		ArrayvLLQuick = 1110, ArrayvLRQuick = 1111, ArrayvLRQuickParallel = 1112,
+		ArrayvCocktailBogo = 1113, ArrayvMedianQuickBogo = 1114, ArrayvQuickBogo = 1115,
+		ArrayvRandomGuess = 1116, ArrayvOptimizedGuess = 1117,
+		ArrayvSmartGuess = 1118, ArrayvGuess = 1119,
+		ArrayvBogoBogo = 1120, ArrayvMergeBogo = 1121, ArrayvSmartBogoBogo = 1122,
+		ArrayvDualPivotQuick = 1123, ArrayvOptimizedDualPivotQuick = 1124,
+		ArrayvStableQuick = 1125, ArrayvStableQuickParallel = 1126, ArrayvForcedStableQuick = 1127,
+		ArrayvBinaryMerge = 1128, ArrayvOptimizedBottomUpMerge = 1129,
+		ArrayvTernaryLLQuick = 1130, ArrayvTernaryLRQuick = 1131,
+		ArrayvStablePermutation = 1132, ArrayvTable = 1133,
+		ArrayvHybridComb = 1134, ArrayvIntroCircleIterative = 1135, ArrayvIntroCircleRecursive = 1136,
+		ArrayvDoubleInsertion = 1137, ArrayvBinaryDoubleInsertion = 1138, ArrayvIntroSort = 1139,
+		ArrayvPatience = 1140, ArrayvShellParallel = 1141, ArrayvMergeInsertion = 1142,
+		ArrayvStalinOverwrite = 1143, CanonicalStalinFilter = 1144,
+		ArrayvClassicTree = 1145, ArrayvTree = 1146, ArrayvStrand = 1147,
+		ArrayvAATree = 1148, ArrayvAVLTree = 1149, ArrayvSplayTree = 1150,
+		ArrayvRedBlackTree = 1151, ArrayvIterativeTopDownMerge = 1152,
+		ArrayvInPlaceMerge = 1153, ArrayvParallelMerge = 1154,
+		ArrayvRotateMerge = 1155, ArrayvRotateMergeParallel = 1156,
+		ArrayvStacklessRotateMerge = 1157, ArrayvBlockSwapMerge = 1158,
+		ArrayvWeavedMerge = 1159, ArrayvTwinMerge = 1160,
+		ArrayvTim = 1161, ArrayvCocktailMerge = 1162,
+		ArrayvImprovedInPlaceMerge = 1163, ArrayvBlockInsertion = 1164,
+		ArrayvBufferedStooge = 1165, ArrayvBadSort = 1166,
+		ArrayvAsynchronous = 1167, ArrayvPDMerge = 1168,
+		ArrayvStableCycle = 1169, ArrayvClassicTournament = 1170,
+		ArrayvTournament = 1171, ArrayvSmoothSort = 1172,
+		ArrayvBinomialSmoothSort = 1173, ArrayvImprovedBlockSelection = 1174,
+		ArrayvStacklessHybridQuick = 1175, ArrayvStacklessDualPivotQuick = 1176,
+		ArrayvHanoi = 1177, ArrayvLibrary = 1178, ArrayvSimplifiedLibrary = 1179,
+		ArrayvWeaveMerge = 1180, ArrayvLaziest = 1181, ArrayvLazierest = 1182,
+		ArrayvLazyStable = 1183, ArrayvOptimizedLazyStable = 1184,
+		ArrayvFifthMerge = 1185, ArrayvQuadMerge = 1186,
+		ArrayvBufferPartitionMerge = 1187, ArrayvParallelBlockMerge = 1188,
+		ArrayvOptimizedRotateMerge = 1189, ArrayvGrail = 1190,
+		ArrayvAdaptiveGrail = 1191, ArrayvPDQBranched = 1192,
+		ArrayvPDQBranchless = 1193, ArrayvSqrt = 1194,
+		ArrayvSynchronousSqrt = 1195, ArrayvEcta = 1196,
+		ArrayvCircularGrail = 1197, ArrayvUnstableGrail = 1198,
+		ArrayvDropMerge = 1199, ArrayvParallelGrail = 1200, ArrayvMedianMerge = 1201,
+		ArrayvRemi = 1202, ArrayvChalice = 1203, ArrayvFlan = 1204,
+		ArrayvFlux = 1205, ArrayvKota = 1206, ArrayvOptimizedWeaveMerge = 1207,
+		ArrayvWiki = 1208, ArrayvYujisBufferedMerge2 = 1209,
+		ArrayvAndrey = 1210, ArrayvNewShuffleMerge = 1211
 	};
 
 	enum class SemanticEventType
 	{
 		Compare, Probe, HoldKey, ShiftItem, PlaceKey, Swap, WriteItem, DiscardItem,
 		WriteRange, AuxiliaryItemWrite, CounterWrite, ResizeAuxiliary, ResizeCounterWorkspace,
-		PhaseBegin, PhaseEnd, Complete
+		PhaseBegin, PhaseEnd, SetOrientation, ReplaceScalar, CompactRange, Complete, CarryWrite
+	};
+	enum class AlgorithmOutcome
+	{
+		SortedPermutation, SortedStablePermutation, SortedValueRewrite, SortedWithDiscards,
+		IncompleteDemonstration, DemonstrationOnly
 	};
 	enum class ComparisonResult : int { Less = -1, Equal = 0, Greater = 1 };
 	enum class SemanticRole
@@ -104,10 +199,12 @@ namespace sortinglogic
 		std::uint64_t firstItemId, secondItemId;
 		SortItem item, beforeItem, beforeSecondItem;
 		std::vector<SortSlot> beforeSlots, afterSlots;
+		std::vector<int> beforeCounters;
 		ComparisonResult comparison;
 		std::string firstLane, secondLane, workspaceName;
 		SemanticRole firstRole, secondRole;
 		bool completionScan, beforeOccupied, beforeSecondOccupied;
+		bool beforeBoolean, afterBoolean;
 		int beforeCounter, afterCounter;
 		std::size_t beforeSize, afterSize;
 		std::string metricName;
@@ -168,6 +265,7 @@ namespace sortinglogic
 		std::vector<AlgorithmMetricDescriptor> metrics;
 		std::vector<SemanticRole> comparisonAudioRoles;
 		bool reverseAudioOperandOrder;
+		std::vector<InputDomain> supportedDomains;
 		AlgorithmDescriptor(SortAlgorithm valueId, const char* key, const char* name, const char* time,
 			const char* space, bool isStable, bool isInPlace, bool floats, bool integers,
 			AlgorithmTraceRequestBuilder requestBuilder,
@@ -175,12 +273,14 @@ namespace sortinglogic
 			const std::vector<AlgorithmMetricDescriptor>& applicableMetrics = std::vector<AlgorithmMetricDescriptor>(),
 			std::size_t maximumItems = MaxItemCount, const char* behaviorLabel = "general permutation sort",
 			const char* familyKey = nullptr, const char* methodKey = nullptr, const char* familyName = nullptr,
-			const std::vector<SemanticRole>& audioRoles = std::vector<SemanticRole>(), bool reverseAudioOperands = false)
+			const std::vector<SemanticRole>& audioRoles = std::vector<SemanticRole>(), bool reverseAudioOperands = false,
+			const std::vector<InputDomain>& domains = std::vector<InputDomain>())
 			: id(valueId), stableId(key), familyId(familyKey ? familyKey : key), variantId(methodKey ? methodKey : key),
 			familyDisplayName(familyName ? familyName : name), displayName(name), timeComplexity(time), spaceComplexity(space), stable(isStable),
 			inPlace(isInPlace), supportsNormalizedFloat(floats), supportsIntegerKeys(integers), safeMaxItemCount(maximumItems),
 			behavior(behaviorLabel), buildRequest(requestBuilder),
-			supportedOptions(options), metrics(applicableMetrics), comparisonAudioRoles(audioRoles), reverseAudioOperandOrder(reverseAudioOperands) {}
+			supportedOptions(options), metrics(applicableMetrics), comparisonAudioRoles(audioRoles), reverseAudioOperandOrder(reverseAudioOperands),
+			supportedDomains(domains) {}
 	};
 
 	const std::vector<AlgorithmDescriptor>& algorithmCatalog();
@@ -209,6 +309,7 @@ namespace sortinglogic
 		MergeWritebackMode mergeWritebackMode;
 		MergeExecutionMode mergeExecutionMode;
 		bool mergeBufferVisualizationEnabled;
+		int radixBase, bucketCount, timeMagnitude, rotateMergeBufferSize;
 		std::uint32_t inputSeed;
 		std::vector<SortItem> input;
 		SortState initialState;
@@ -219,7 +320,10 @@ namespace sortinglogic
 		std::vector<RegionAnnotation> annotations;
 		std::map<std::size_t, SortState> snapshots;
 		std::size_t operationCount;
+		std::size_t workSteps;
+		std::size_t accountedBytes;
 		bool complete;
+		AlgorithmOutcome outcome;
 		std::string completionReason;
 		SortTrace();
 	};
@@ -241,12 +345,19 @@ namespace sortinglogic
 		bool mergeBufferVisualizationEnabled;
 		std::uint32_t inputSeed;
 		std::size_t maxOperations;
+		std::size_t maxWorkSteps;
+		std::size_t maxTraceBytes;
+		int radixBase;
+		int bucketCount;
+		int timeMagnitude;
+		int rotateMergeBufferSize;
 		TraceBuildRequest() : input(), familyId(), variantId(), algorithm(SortAlgorithm::Insertion), direction(SortDirection::Ascending),
 			profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats), pattern(InputPattern::Random),
 			shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
 			mergeExecutionMode(MergeExecutionMode::BottomUp), completionScanEnabled(false),
 			mergeBufferVisualizationEnabled(true), inputSeed(0),
-			maxOperations(DefaultTraceOperationLimit) {}
+			maxOperations(DefaultTraceOperationLimit), maxWorkSteps(DefaultTraceWorkLimit),
+			maxTraceBytes(DefaultTraceByteLimit), radixBase(0), bucketCount(0), timeMagnitude(10), rotateMergeBufferSize(64) {}
 	};
 
 	enum class TraceBuildStatus { Complete, Partial, Failed };

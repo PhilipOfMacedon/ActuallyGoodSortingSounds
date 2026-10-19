@@ -35,5 +35,6 @@ struct ThemePalette
 };
 
 const ThemePalette& paletteFor(PaletteId id);
+ThemePalette paletteForAppearance(UiPresetId preset, const UiThemeCustomization& customization);
 const char* paletteDisplayName(PaletteId id);
 const std::vector<PaletteId>& paletteCatalog();

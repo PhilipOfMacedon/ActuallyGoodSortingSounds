@@ -99,6 +99,54 @@ namespace
 			glm::vec4(0.31f, 0.37f, 0.39f, 1.0f),
 			glm::vec4(0.12f, 0.16f, 0.18f, 0.50f),
 			glm::vec4(0.35f, 0.43f, 0.45f, 1.0f)
+		},
+		{
+			"vga-classic", "VGA 95",
+			glm::vec4(0.035f, 0.040f, 0.052f, 1.0f),
+			glm::vec4(0.00f, 0.79f, 0.86f, 1.0f),
+			glm::vec4(1.00f, 0.55f, 0.05f, 1.0f),
+			glm::vec4(0.12f, 0.92f, 0.22f, 1.0f),
+			glm::vec4(0.72f, 0.30f, 0.88f, 1.0f),
+			glm::vec4(0.98f, 0.62f, 0.05f, 1.0f),
+			glm::vec4(0.10f, 0.13f, 0.18f, 1.0f),
+			glm::vec4(0.08f, 0.14f, 0.25f, 1.0f),
+			glm::vec4(0.13f, 0.20f, 0.32f, 1.0f),
+			glm::vec4(0.07f, 0.11f, 0.18f, 1.0f),
+			glm::vec4(0.08f, 0.14f, 0.23f, 1.0f),
+			glm::vec4(0.05f, 0.66f, 0.77f, 1.0f),
+			glm::vec4(0.13f, 0.20f, 0.32f, 1.0f),
+			glm::vec4(0.06f, 0.55f, 0.18f, 1.0f),
+			glm::vec4(0.25f, 0.32f, 0.43f, 1.0f),
+			glm::vec4(0.84f, 0.89f, 0.95f, 1.0f),
+			glm::vec4(0.14f, 0.20f, 0.33f, 1.0f),
+			glm::vec4(0.90f, 0.94f, 0.99f, 1.0f),
+			glm::vec4(0.64f, 0.73f, 0.84f, 1.0f),
+			glm::vec4(0.0f, 0.0f, 0.0f, 0.68f),
+			glm::vec4(0.60f, 0.68f, 0.79f, 1.0f)
+		},
+		{
+			"windows-95", "Windows 95 Classic",
+			glm::vec4(0.025f, 0.035f, 0.055f, 1.0f),
+			glm::vec4(0.00f, 0.88f, 0.90f, 1.0f),
+			glm::vec4(1.00f, 0.58f, 0.04f, 1.0f),
+			glm::vec4(0.15f, 0.92f, 0.24f, 1.0f),
+			glm::vec4(0.75f, 0.35f, 0.85f, 1.0f),
+			glm::vec4(0.98f, 0.62f, 0.02f, 1.0f),
+			glm::vec4(0.77f, 0.77f, 0.77f, 1.0f),
+			glm::vec4(0.06f, 0.13f, 0.25f, 1.0f),
+			glm::vec4(0.75f, 0.75f, 0.75f, 1.0f),
+			glm::vec4(0.38f, 0.38f, 0.38f, 1.0f),
+			glm::vec4(0.75f, 0.75f, 0.75f, 1.0f),
+			glm::vec4(0.08f, 0.26f, 0.62f, 1.0f),
+			glm::vec4(0.55f, 0.55f, 0.55f, 1.0f),
+			glm::vec4(0.12f, 0.47f, 0.18f, 1.0f),
+			glm::vec4(0.30f, 0.30f, 0.30f, 1.0f),
+			glm::vec4(0.86f, 0.86f, 0.86f, 1.0f),
+			glm::vec4(0.32f, 0.32f, 0.32f, 1.0f),
+			glm::vec4(0.05f, 0.07f, 0.10f, 1.0f),
+			glm::vec4(0.73f, 0.73f, 0.73f, 1.0f),
+			glm::vec4(0.0f, 0.0f, 0.0f, 0.55f),
+			glm::vec4(0.28f, 0.28f, 0.28f, 1.0f)
 		}
 	};
 }
@@ -110,6 +158,34 @@ const ThemePalette& paletteFor(PaletteId id)
 		if (catalog[i] == id)
 			return palettes[i];
 	return palettes[0];
+}
+
+ThemePalette paletteForAppearance(UiPresetId preset, const UiThemeCustomization& customization)
+{
+	ThemePalette result = paletteFor(customization.palette);
+	const struct ColorBinding { const char* token; glm::vec4 ThemePalette::*member; } bindings[] =
+	{
+		{ "color.background", &ThemePalette::background }, { "color.bar", &ThemePalette::bar },
+		{ "color.compared", &ThemePalette::compared }, { "color.held", &ThemePalette::held },
+		{ "color.shifted", &ThemePalette::shifted }, { "color.write_target", &ThemePalette::writeTarget },
+		{ "color.gap", &ThemePalette::gap }, { "color.panel", &ThemePalette::panel },
+		{ "color.button", &ThemePalette::button }, { "color.disabled_button", &ThemePalette::disabledButton },
+		{ "color.value_button", &ThemePalette::valueButton }, { "color.accent", &ThemePalette::accent },
+		{ "color.run", &ThemePalette::run }, { "color.play_active", &ThemePalette::playActive },
+		{ "color.timeline_rail", &ThemePalette::timelineRail }, { "color.timeline_thumb", &ThemePalette::timelineThumb },
+		{ "color.reset", &ThemePalette::reset }, { "color.text", &ThemePalette::text },
+		{ "color.muted_text", &ThemePalette::mutedText }, { "color.overlay_dim", &ThemePalette::overlayDim },
+		{ "color.border", &ThemePalette::border }
+	};
+	for (std::size_t i = 0; i < sizeof(bindings) / sizeof(bindings[0]); ++i)
+	{
+		const std::map<std::string, UiTokenValue>::const_iterator value = customization.overrides.find(bindings[i].token);
+		if (value == customization.overrides.end() || value->second.type != UiTokenType::Color) continue;
+		const UiColor& c = value->second.color;
+		result.*(bindings[i].member) = glm::vec4(c.r, c.g, c.b, c.a);
+	}
+	(void)preset;
+	return result;
 }
 
 const char* paletteDisplayName(PaletteId id)
@@ -124,7 +200,9 @@ const std::vector<PaletteId>& paletteCatalog()
 		PaletteId::Cyan,
 		PaletteId::Amber,
 		PaletteId::Monochrome,
-		PaletteId::Light
+		PaletteId::Light,
+		PaletteId::VgaClassic,
+		PaletteId::Windows95
 	};
 	return catalog;
 }

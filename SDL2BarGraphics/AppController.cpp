@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <utility>
 
 #include "BarCountSteps.h"
@@ -62,6 +63,7 @@ namespace
 		return left.visual.palette == right.visual.palette &&
 			left.visual.spacing == right.visual.spacing &&
 			left.visual.panelExpanded == right.visual.panelExpanded &&
+			sameUiAppearancePreferences(left.appearance, right.appearance) &&
 			left.simulation.itemCount == right.simulation.itemCount &&
 			left.simulation.durationSeconds == right.simulation.durationSeconds &&
 			left.simulation.playbackTimingMode == right.simulation.playbackTimingMode &&
@@ -193,7 +195,7 @@ AppController::AppController(ISettingsPersistence& settingsPersistence)
 		: sortinglogic::SortDirection::Ascending);
 	const sortinglogic::AlgorithmDescriptor* savedAlgorithm = sortinglogic::algorithmDescriptorById(
 		preferences_.simulation.familyId, preferences_.simulation.variantId);
-	if (savedAlgorithm && sortinglogic::algorithmSupports(savedAlgorithm->id, preferences_.simulation.profile))
+	if (savedAlgorithm && sortinglogic::algorithmSupports(savedAlgorithm->id, preferences_.simulation.domain))
 		simulation_.selectAlgorithm(savedAlgorithm->id);
 	simulation_.setShellGapSequence(preferences_.simulation.shellGapSequence);
 	simulation_.setMergeWritebackMode(preferences_.simulation.mergeWritebackMode);
@@ -210,6 +212,23 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 	sortinglogic::TraceBuildRequest request;
 	sortinglogic::CommandResult result = simulation_.beginTraceBuild(request);
 	if (!result.accepted) return result;
+	const sortinglogic::AlgorithmDescriptor* traceAlgorithm = sortinglogic::algorithmDescriptor(request.algorithm);
+	if (traceAlgorithm)
+	{
+		std::set<std::string> configuredGroups;
+		for (std::size_t optionIndex = 0; optionIndex < traceAlgorithm->supportedOptions.size(); ++optionIndex)
+		{
+			const sortinglogic::AlgorithmOptionDescriptor& option = traceAlgorithm->supportedOptions[optionIndex];
+			const std::string group(option.groupId);
+			if (!configuredGroups.insert(group).second) continue;
+			const int value = algorithmOptionValue(preferences_, *traceAlgorithm, group);
+			if (group == "heap_arity" || group == "bucket_count") request.bucketCount = value;
+			else if (group == "grail_buffer_mode") request.bucketCount = value;
+			else if (group == "radix_base") request.radixBase = value;
+			else if (group == "time_magnitude") request.timeMagnitude = value;
+			else if (group == "rotate_buffer_capacity") request.rotateMergeBufferSize = value;
+		}
+	}
 
 	playbackPending_ = playWhenReady;
 	std::string error;
@@ -231,6 +250,39 @@ void AppController::setAudioPreparationPending(bool pending)
 	audioPreparationGateEnabled_ = true;
 	audioPreparationPending_ = pending;
 	startPendingPlaybackIfReady();
+}
+
+bool AppController::applyAppearance(const UiAppearancePreferences& appearance, std::string* error)
+{
+	if (static_cast<int>(appearance.activePreset) < static_cast<int>(UiPresetId::Current) ||
+		static_cast<int>(appearance.activePreset) > static_cast<int>(UiPresetId::ClassicWindows95))
+	{
+		if (error) *error = "The selected interface preset is unavailable.";
+		return false;
+	}
+	for (std::size_t i = 0; i < uiPresetCatalog().size(); ++i)
+	{
+		const UiPresetId preset = uiPresetCatalog()[i];
+		const std::map<UiPresetId, UiThemeCustomization>::const_iterator found = appearance.themes.find(preset);
+		if (found == appearance.themes.end() || !validateUiThemeCustomization(preset, found->second, error)) return false;
+	}
+	UserPreferences candidate = preferences_;
+	candidate.appearance = appearance;
+	candidate.visual.palette = appearance.themes.find(UiPresetId::Current)->second.palette;
+	if (!candidate.isValid())
+	{
+		if (error && error->empty()) *error = "The appearance settings are invalid.";
+		return false;
+	}
+	if (!settingsPersistence_.save(candidate, error))
+	{
+		persistenceStatus_ = "Could not save appearance" + (error && !error->empty() ? ": " + *error : ".");
+		return false;
+	}
+	preferences_ = candidate;
+	persistenceStatus_ = "Appearance saved.";
+	if (error) error->clear();
+	return true;
 }
 
 void AppController::startPendingPlaybackIfReady()
@@ -366,6 +418,14 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		result = simulation_.setItemCount(static_cast<std::size_t>(next));
 		break;
 	}
+	case AppActionKind::AdjustItemCount:
+	{
+		const int delta = static_cast<int>(std::lround(action.value));
+		const int next = std::max(static_cast<int>(sortinglogic::MinItemCount),
+			std::min(static_cast<int>(sortinglogic::MaxItemCount), static_cast<int>(simulation_.itemCount()) + delta));
+		result = simulation_.setItemCount(static_cast<std::size_t>(next));
+		break;
+	}
 	case AppActionKind::SetItemCount:
 		result = simulation_.setItemCount(action.selection < 0 ? 0U : static_cast<std::size_t>(action.selection));
 		break;
@@ -373,6 +433,12 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
 		else result = simulation_.setDuration(std::max(sortinglogic::MinRunDurationSeconds, simulation_.durationSeconds() - 1.0f));
+		break;
+	case AppActionKind::AdjustDuration:
+		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
+		else result = simulation_.setDuration(std::max(sortinglogic::MinRunDurationSeconds,
+			std::min(sortinglogic::MaxRunDurationSeconds, simulation_.durationSeconds() + action.value)));
 		break;
 	case AppActionKind::IncreaseDuration:
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
@@ -387,11 +453,30 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::SeekFraction:
 		result = simulation_.seekToFraction(action.value);
 		break;
+	case AppActionKind::SetUiPreset:
+		if (action.selection < static_cast<int>(UiPresetId::Current) || action.selection > static_cast<int>(UiPresetId::ClassicWindows95))
+			result = sortinglogic::CommandResult(false, "The selected interface preset is unavailable.");
+		else
+			preferences_.appearance.activePreset = static_cast<UiPresetId>(action.selection);
+		break;
+	case AppActionKind::ApplyAppearance:
+	{
+		if (!action.appearance) return sortinglogic::CommandResult(false, "The appearance draft is missing.");
+		std::string error;
+		if (!applyAppearance(*action.appearance, &error))
+			return sortinglogic::CommandResult(false, error.empty() ? "Could not apply the appearance." : error);
+		return sortinglogic::CommandResult(true, "Appearance saved.");
+	}
 	case AppActionKind::SetPalette:
-		if (action.selection < static_cast<int>(PaletteId::Cyan) || action.selection > static_cast<int>(PaletteId::Light))
+		if (action.selection < static_cast<int>(PaletteId::Cyan) || action.selection > static_cast<int>(PaletteId::Windows95))
 			result = sortinglogic::CommandResult(false, "The selected color palette is invalid.");
 		else
-			preferences_.visual.palette = static_cast<PaletteId>(action.selection);
+		{
+			const UiPresetId preset = preferences_.appearance.activePreset;
+			UiThemeCustomization& theme = preferences_.appearance.themes[preset];
+			selectUiPalette(theme, static_cast<PaletteId>(action.selection));
+			if (preset == UiPresetId::Current) preferences_.visual.palette = theme.palette;
+		}
 		break;
 	case AppActionKind::SetSpacing:
 		if (action.selection < static_cast<int>(BarSpacingMode::None) || action.selection > static_cast<int>(BarSpacingMode::Comfortable))
@@ -404,6 +489,9 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		break;
 	case AppActionKind::TogglePanelExpanded:
 		preferences_.visual.panelExpanded = !preferences_.visual.panelExpanded;
+		break;
+	case AppActionKind::ToggleBorderlessFullscreen:
+		// Fullscreen is a window-session action handled by the SDL host.
 		break;
 	case AppActionKind::SetInputProfile:
 		if (action.selection < static_cast<int>(sortinglogic::InputProfile::NormalizedFloat) ||
@@ -475,7 +563,13 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			if (result.accepted) preferences_.simulation.mergeWritebackMode = simulation_.mergeWritebackMode();
 		}
 		else
-			result = sortinglogic::CommandResult(false, "No option handler is registered for this algorithm option group.");
+		{
+			const sortinglogic::RenderSnapshot snapshot = simulation_.snapshot();
+			if (snapshot.buildingTrace || snapshot.playing)
+				result = sortinglogic::CommandResult(false, "Algorithm options are locked while a trace is building or playing.");
+			else
+				result = sortinglogic::CommandResult(true, "The selected option will be used for the next trace.");
+		}
 		if (result.accepted && previousStableId != option->stableId)
 			preferences_.algorithmOptions[algorithmOptionSettingsKey(descriptor->familyId, descriptor->variantId,
 				action.optionGroupId)] = option->stableId;
@@ -581,7 +675,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		synchronizeReferenceTransport(wasPlaying);
 	if (result.accepted && simulation_.snapshot().hasTrace &&
 		(action.kind == AppActionKind::SetPlaybackTimingMode || action.kind == AppActionKind::DecreaseDuration ||
-		 action.kind == AppActionKind::IncreaseDuration || action.kind == AppActionKind::SetDuration))
+		 action.kind == AppActionKind::IncreaseDuration || action.kind == AppActionKind::AdjustDuration || action.kind == AppActionKind::SetDuration))
 		audioPreparationPending_ = true;
 	if (result.accepted)
 		synchronizeSimulationPreferences();
@@ -704,7 +798,7 @@ SoundEngine::Parameters AppController::effectiveAudio() const
 void AppController::synchronizeSimulationPreferences()
 {
 	preferences_.simulation.itemCount = static_cast<int>(simulation_.itemCount());
-	preferences_.simulation.durationSeconds = static_cast<int>(simulation_.durationSeconds());
+	preferences_.simulation.durationSeconds = simulation_.durationSeconds();
 	preferences_.simulation.descending = simulation_.direction() == sortinglogic::SortDirection::Descending;
 	preferences_.simulation.algorithm = static_cast<int>(simulation_.algorithm());
 	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(simulation_.algorithm());

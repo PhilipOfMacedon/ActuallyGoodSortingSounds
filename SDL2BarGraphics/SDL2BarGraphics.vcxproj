@@ -35,6 +35,9 @@
     <ClCompile Include="Texture.cpp" />
     <ClCompile Include="ThemePalette.cpp" />
     <ClCompile Include="UiLayer.cpp" />
+    <ClCompile Include="UiAppearance.cpp" />
+    <ClCompile Include="UiArchitecture.cpp" />
+    <ClCompile Include="WindowsFontCatalog.cpp" />
     <ClCompile Include="UserSettings.cpp" />
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
@@ -59,6 +62,9 @@
     <ClInclude Include="Texture.h" />
     <ClInclude Include="ThemePalette.h" />
     <ClInclude Include="UiLayer.h" />
+    <ClInclude Include="UiAppearance.h" />
+    <ClInclude Include="UiArchitecture.h" />
+    <ClInclude Include="WindowsFontCatalog.h" />
     <ClInclude Include="UserSettings.h" />
     <ClInclude Include="Window.h" />
   </ItemGroup>
@@ -140,6 +146,9 @@
     <ClCompile>
       <LanguageStandard>stdcpp14</LanguageStandard>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>dwrite.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

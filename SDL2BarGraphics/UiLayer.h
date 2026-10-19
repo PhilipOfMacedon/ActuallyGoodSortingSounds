@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -19,12 +20,44 @@ struct UiRect
 	}
 };
 
+// Reusable clipped viewport state for dynamic UI lists. The owner provides
+// content bounds and paints/hit-tests child rows inside viewport(); wheel input
+// is consumed only when its pointer is inside that viewport.
+class UiScrollViewport
+{
+public:
+	UiScrollViewport();
+	void configure(const UiRect& viewport, float contentExtent, float rowExtent, float requestedOffset = 0.0f);
+	const UiRect& viewport() const { return viewport_; }
+	float offset() const { return offset_; }
+	float maximumOffset() const;
+	float contentExtent() const { return contentExtent_; }
+	float rowExtent() const { return rowExtent_; }
+	void setOffset(float value);
+	bool scrollWheel(float x, float y, int wheelDelta, float rowsPerWheel = 3.0f);
+	void ensureItemVisible(std::size_t index, float itemExtent = 0.0f);
+	std::size_t firstVisibleItem(float itemExtent = 0.0f) const;
+	std::size_t visibleItemCount(std::size_t itemCount, float itemExtent = 0.0f) const;
+	int itemAt(float x, float y, std::size_t itemCount, float itemExtent = 0.0f) const;
+	UiRect itemBounds(std::size_t index, float itemExtent = 0.0f) const;
+	bool itemIntersectsViewport(std::size_t index, float itemExtent = 0.0f) const;
+
+private:
+	UiRect viewport_;
+	float contentExtent_;
+	float rowExtent_;
+	float offset_;
+};
+
 enum class UiWidgetKind
 {
 	Button,
 	ComboBox,
 	Slider
 };
+
+enum class UiWidgetPresentation { Standard, RadioGroup, DosScrollbar, EditableLabel };
+enum class UiControlRole { Standard, PanelToggle, Settings, AlgorithmChoice, BuildTrace, Playback, Reset, EditableValue, Choice };
 
 enum class UiContainerKind
 {
@@ -41,7 +74,10 @@ enum class UiInputType
 	PointerMove,
 	PointerDown,
 	PointerUp,
-	KeyDown
+	KeyDown,
+	TextInput,
+	Wheel,
+	FocusLost
 };
 
 enum class UiKey
@@ -64,19 +100,43 @@ struct UiInputEvent
 	float y;
 	UiKey key;
 	bool shift;
+	bool control;
+	bool alt;
+	int wheelDelta;
+	std::string text;
 	UiInputEvent(UiInputType eventType, float px = 0.0f, float py = 0.0f, UiKey eventKey = UiKey::None, bool shifted = false)
-		: type(eventType), x(px), y(py), key(eventKey), shift(shifted) {}
+		: type(eventType), x(px), y(py), key(eventKey), shift(shifted), control(false), alt(false), wheelDelta(0), text() {}
+	UiInputEvent(UiInputType eventType, const std::string& value)
+		: type(eventType), x(0.0f), y(0.0f), key(UiKey::None), shift(false), control(false), alt(false), wheelDelta(0), text(value) {}
+	UiInputEvent(UiInputType eventType, float px, float py, int wheel)
+		: type(eventType), x(px), y(py), key(UiKey::None), shift(false), control(false), alt(false), wheelDelta(wheel), text() {}
+};
+
+enum class UiEventKind { None, Activated, SelectionChanged, ValueChanged, TextEntered, Wheel, FocusLost };
+
+struct UiEvent
+{
+	std::string controlId;
+	UiEventKind kind;
+	float value;
+	int selection;
+	std::string text;
+	bool shift;
+	bool control;
+	bool alt;
+	UiEvent() : controlId(), kind(UiEventKind::None), value(0.0f), selection(-1), text(), shift(false), control(false), alt(false) {}
 };
 
 struct UiAction
 {
-	enum class ViewCommand { None, OpenSettings, CloseSettings, OpenAlgorithmMenu,
+	enum class ViewCommand { None, OpenSettings, CloseSettings, OpenAlgorithmMenu, OpenAppearanceEditor, CloseAppearanceEditor,
 		ShowAppearanceSettings, ShowAlgorithmSettings, ShowAudioSettings, ShowGeneralAudioSettings,
-		ShowAudioBasic, ShowAudioAdvanced };
+	ShowAudioBasic, ShowAudioAdvanced };
 	AppAction appAction;
 	ViewCommand viewCommand;
+	UiEvent event;
 	UiAction(const AppAction& action = AppAction(), ViewCommand command = ViewCommand::None)
-		: appAction(action), viewCommand(command) {}
+		: appAction(action), viewCommand(command), event() {}
 };
 
 class UiWidget
@@ -85,9 +145,12 @@ public:
 	UiWidget(UiWidgetKind kind, const std::string& id, const std::string& label,
 		const AppAction& action, UiAction::ViewCommand viewCommand);
 	UiWidgetKind kind() const { return kind_; }
+	UiWidgetPresentation presentation() const { return presentation_; }
+	UiControlRole role() const { return role_; }
 	const std::string& id() const { return id_; }
 	const std::string& label() const { return label_; }
 	const UiRect& bounds() const { return bounds_; }
+	const UiRect& popupBounds() const { return popupBounds_; }
 	bool enabled() const { return enabled_; }
 	bool visible() const { return visible_; }
 	bool hovered() const { return hovered_; }
@@ -104,16 +167,23 @@ public:
 	float minimum() const { return sliderMinimum_; }
 	float maximum() const { return sliderMaximum_; }
 	float step() const { return sliderStep_; }
+	float scrollbarArrowSize() const { return scrollbarArrowSize_; }
+	const std::vector<UiRect>& interactiveSubregions() const { return interactiveSubregions_; }
 
-	void setBounds(const UiRect& value) { bounds_ = value; }
+	void setBounds(const UiRect& value);
+	void setPopupBounds(const UiRect& value);
 	void setEnabled(bool value);
 	void setVisible(bool value);
 	void setLabel(const std::string& value) { label_ = value; }
+	void setPresentation(UiWidgetPresentation value) { presentation_ = value; }
+	void setRole(UiControlRole value) { role_ = value; }
+	void setScrollbarArrowSize(float value) { scrollbarArrowSize_ = value < 0.0f ? 0.0f : value; }
+	void setInteractiveSubregions(const std::vector<UiRect>& values) { interactiveSubregions_ = values; }
 	void setOptions(const std::vector<std::string>& values);
 	void setOptionEnabled(std::size_t index, bool enabled);
 	bool optionEnabled(std::size_t index) const;
 	void setSelectedIndex(int value);
-	void setPopupAbove(bool value) { popupAbove_ = value; }
+	void setPopupAbove(bool value);
 	std::size_t firstVisibleOption() const;
 	std::size_t visibleOptionCount() const;
 	void setSliderRange(float minimum, float maximum, float step, float value);
@@ -125,9 +195,12 @@ public:
 private:
 	friend class UIRoot;
 	UiWidgetKind kind_;
+	UiWidgetPresentation presentation_;
+	UiControlRole role_;
 	std::string id_;
 	std::string label_;
 	UiRect bounds_;
+	UiRect popupBounds_;
 	bool enabled_;
 	bool visible_;
 	bool hovered_;
@@ -145,6 +218,11 @@ private:
 	float sliderStep_;
 	float sliderValue_;
 	bool popupAbove_;
+	float scrollbarArrowSize_;
+	std::vector<UiRect> interactiveSubregions_;
+	UiScrollViewport optionViewport_;
+	float optionRowExtent_;
+	void configureOptionViewport(float requestedOffset = -1.0f);
 };
 
 class UiContainer
@@ -189,6 +267,7 @@ public:
 	const UiWidget* find(const std::string& id) const;
 	void setWidgetEnabled(const std::string& id, bool enabled);
 	void setWidgetVisible(const std::string& id, bool visible);
+	void setFocusOrder(const std::vector<std::string>& controlIds) { focusOrder_ = controlIds; }
 	UiContainer& addContainer(const std::string& id, UiContainerKind kind, const std::string& parentId = "root");
 	void attachWidget(const std::string& widgetId, const std::string& containerId);
 	void clearContainers();
@@ -204,6 +283,7 @@ public:
 
 private:
 	std::vector<std::unique_ptr<UiWidget> > widgets_;
+	std::vector<std::string> focusOrder_;
 	UiContainer rootContainer_;
 	std::vector<std::unique_ptr<UiContainer> > containers_;
 	std::map<std::string, UiContainer*> containerLookup_;
@@ -214,13 +294,16 @@ private:
 	bool hasModalBounds_;
 	UiRect modalBounds_;
 	UiAction::ViewCommand dismissCommand_;
+	bool pointerShift_;
+	bool pointerControl_;
+	bool pointerAlt_;
 
 	UiWidget* hitWidget(float x, float y) const;
 	bool isWidgetVisible(const UiWidget* widget) const;
 	void layoutNode(UiContainer& container, const UiRect& bounds, float gap);
 	void focus(UiWidget* widget);
 	void focusNext(bool backwards);
-	bool emit(UiWidget* widget, UiAction& action, bool selection);
+	bool emit(UiWidget* widget, UiAction& action, bool selection, const UiInputEvent* event = nullptr);
 	bool handleKey(const UiInputEvent& event, UiAction& action);
 	bool setSliderFromPointer(UiWidget* widget, float x, UiAction& action);
 };

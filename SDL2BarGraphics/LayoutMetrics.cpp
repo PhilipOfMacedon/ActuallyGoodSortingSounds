@@ -6,7 +6,8 @@ bool sameLayoutInputs(const LayoutCacheKey& left, const LayoutCacheKey& right)
 {
 	return left.logicalWidth == right.logicalWidth && left.logicalHeight == right.logicalHeight &&
 		left.drawableWidth == right.drawableWidth && left.drawableHeight == right.drawableHeight &&
-		left.panelExpanded == right.panelExpanded;
+		left.panelExpanded == right.panelExpanded && left.presetId == right.presetId &&
+		left.appearanceRevision == right.appearanceRevision && left.fontMetricRevision == right.fontMetricRevision;
 }
 
 BarSlotMetrics calculateBarSlotMetrics(float slotWidth, BarSpacingMode mode)

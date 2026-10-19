@@ -12,6 +12,7 @@
 #include "TextLabel.h"
 #include "UserSettings.h"
 #include "Window.h"
+#include "UiLayer.h"
 #include "../SortingLogic/SortingLogic.h"
 
 class ArrayRenderer
@@ -22,7 +23,8 @@ public:
 	void render(
 		const sortinglogic::RenderSnapshot& snapshot,
 		const UserSettings& settings,
-		float chartTop);
+		const UiRect& chartViewport,
+		const ThemePalette& palette);
 
 private:
 	Window& window_;

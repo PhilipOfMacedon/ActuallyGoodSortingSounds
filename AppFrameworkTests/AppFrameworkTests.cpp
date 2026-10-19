@@ -14,9 +14,12 @@
 #include "../SDL2BarGraphics/AppController.h"
 #include "../SDL2BarGraphics/AudioPresentationBridge.h"
 #include "../SDL2BarGraphics/RenderPipeline.h"
+#include "../SDL2BarGraphics/RenderingTypes.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
 #include "../SDL2BarGraphics/UiLayer.h"
+#include "../SDL2BarGraphics/UiArchitecture.h"
 #include "../SDL2BarGraphics/UserSettings.h"
+#include "../SDL2BarGraphics/WindowsFontCatalog.h"
 
 namespace
 {
@@ -48,17 +51,23 @@ namespace
 	class MemorySettings : public ISettingsPersistence
 	{
 	public:
-		MemorySettings() : value(), writes(0) {}
+		MemorySettings() : value(), writes(0), failWrites(false) {}
 		UserPreferences load() const override { return value; }
 		bool save(const UserPreferences& settings, std::string* error = nullptr) const override
 		{
-			value = settings;
 			++writes;
+			if (failWrites)
+			{
+				if (error) *error = "test persistence failure";
+				return false;
+			}
+			value = settings;
 			if (error) error->clear();
 			return true;
 		}
 		mutable UserPreferences value;
 		mutable int writes;
+		mutable bool failWrites;
 	};
 
 	void writeFile(const std::wstring& path, const std::string& text)
@@ -104,6 +113,15 @@ namespace
 			!sameLayoutInputs(base, LayoutCacheKey(1000, 700, 2500, 1750, true)) &&
 			!sameLayoutInputs(base, LayoutCacheKey(1000, 700, 2000, 1400, false)),
 			"layout cache invalidates on resize, DPI change, or persisted panel-state change");
+		const int dpiScales[] = { 100, 150, 200 };
+		for (std::size_t scale = 0; scale < sizeof(dpiScales) / sizeof(dpiScales[0]); ++scale)
+		{
+			const int drawableWidth = 1000 * dpiScales[scale] / 100;
+			const int drawableHeight = 700 * dpiScales[scale] / 100;
+			check(sameLayoutInputs(LayoutCacheKey(1000, 700, drawableWidth, drawableHeight, true),
+				LayoutCacheKey(1000, 700, drawableWidth, drawableHeight, true)),
+				"layout cache remains stable at synthetic 100%, 150%, and 200% DPI scales");
+		}
 	}
 
 	void testBarCountSteps()
@@ -117,6 +135,289 @@ namespace
 		check(adjustBarCount(3, false, false, 2, 800) == 2, "Bars - clamps at the minimum");
 		check(adjustBarCount(799, true, true, 2, 800) == 800, "Bars ++ clamps at the maximum");
 		check(adjustBarCount(800, true, false, 2, 800) == 800, "Bars + clamps at the maximum");
+	}
+
+	void testModifierStepSizes()
+	{
+		check(stepDeltaWithModifiers(10.0f, false, false) == 10.0f &&
+			stepDeltaWithModifiers(10.0f, true, false) == 1.0f &&
+			stepDeltaWithModifiers(10.0f, false, true) == 100.0f &&
+			stepDeltaWithModifiers(10.0f, true, true) == 10.0f,
+			"bar step uses 10 units by default, Ctrl divides by ten, and Shift multiplies by ten");
+		check(stepDeltaWithModifiers(1.0f, false, false) == 1.0f &&
+			std::fabs(stepDeltaWithModifiers(1.0f, true, false) - 0.1f) < 0.00001f &&
+			stepDeltaWithModifiers(1.0f, false, true) == 10.0f &&
+			stepDeltaWithModifiers(1.0f, true, true) == 1.0f,
+			"duration step uses one second by default, Ctrl selects a tenth, and Shift selects ten seconds");
+
+		UIRoot root;
+		root.addButton("modifier", "Modifier");
+		root.find("modifier")->setBounds(UiRect(0, 0, 80, 24));
+		UiInputEvent down(UiInputType::PointerDown, 10, 10);
+		down.control = true;
+		UiAction action;
+		root.handleEvent(down, action);
+		root.handleEvent(UiInputEvent(UiInputType::PointerUp, 10, 10), action);
+		check(action.event.kind == UiEventKind::Activated && action.event.control,
+			"shared button activation retains Ctrl held across the pointer press and release");
+	}
+
+	void testAppearanceAndPresetArchitecture()
+	{
+		const UserPreferences defaults;
+		check(defaults.appearance.activePreset == UiPresetId::Current &&
+			defaults.appearance.themes.find(UiPresetId::Current) != defaults.appearance.themes.end() &&
+			defaults.appearance.themes.find(UiPresetId::FlatVgaDos) != defaults.appearance.themes.end() &&
+			defaults.appearance.themes.find(UiPresetId::FlatVgaDos)->second.palette == PaletteId::VgaClassic &&
+			defaults.appearance.themes.find(UiPresetId::ClassicWindows95) != defaults.appearance.themes.end() &&
+			defaults.appearance.themes.find(UiPresetId::ClassicWindows95)->second.palette == PaletteId::Windows95,
+			"appearance preferences register all built-in bases and start in Current");
+		check(uiPresetDefinition(UiPresetId::Current).tokens.size() >= 33 &&
+			uiPresetDefinition(UiPresetId::FlatVgaDos).tokens.size() > uiPresetDefinition(UiPresetId::Current).tokens.size(),
+			"each preset declares its appearance schema and VGA-only decoration tokens");
+		check(effectiveUiTokenValue(UiPresetId::ClassicWindows95,
+			defaults.appearance.themes.find(UiPresetId::ClassicWindows95)->second, "layout.control_height").number == 40.0,
+			"Classic Windows 95 starts with larger, reference-sized setup controls");
+		check(!findUiToken(uiPresetDefinition(UiPresetId::Current), "scrollbar.thickness") &&
+			findUiToken(uiPresetDefinition(UiPresetId::FlatVgaDos), "scrollbar.thickness") &&
+			effectiveUiTokenValue(UiPresetId::Current, defaults.appearance.themes.find(UiPresetId::Current)->second,
+				"layout.chart_inset").number == 0.0 &&
+			effectiveUiTokenValue(UiPresetId::FlatVgaDos, defaults.appearance.themes.find(UiPresetId::FlatVgaDos)->second,
+				"layout.chart_inset").number == 16.0,
+			"preset schemas omit unsupported scrollbar controls and preserve each layout's factory chart inset");
+
+		UiThemeCustomization current = defaultUiThemeCustomization(UiPresetId::Current, PaletteId::Amber);
+		std::string error;
+		check(setUiTokenValue(UiPresetId::Current, current, "color.bar", UiTokenValue::fromColor(UiColor(0.1f, 0.2f, 0.3f, 0.4f)), &error),
+			"color token accepts a typed override");
+		check(setUiTokenValue(UiPresetId::Current, current, "typography.body_size", UiTokenValue::fromNumber(19.0), &error),
+			"typography token accepts a bounded numeric override");
+		check(setUiTokenValue(UiPresetId::Current, current, "typeface.primary",
+			UiTokenValue::fromFont(UiFontReference("Noto Sans 日本語", "Regular")), &error),
+			"font token retains a Unicode family and face identity");
+		selectUiPalette(current, PaletteId::Monochrome);
+		check(current.palette == PaletteId::Monochrome && current.overrides.find("color.bar") == current.overrides.end() &&
+			current.overrides.find("typography.body_size") != current.overrides.end() && current.overrides.find("typeface.primary") != current.overrides.end(),
+			"palette selection clears color overrides while retaining type and metric overrides");
+		std::map<std::string, UiColor> amberColors;
+		amberColors["color.button"] = UiColor(0.27f, 0.18f, 0.09f, 1.0f);
+		const UiControlPaintStyle amberButton = resolveUiControlPaintStyle(UiPresetId::Current,
+			defaultUiThemeCustomization(UiPresetId::Current, PaletteId::Amber), "button", true, false, false, false, amberColors);
+		check(std::fabs(amberButton.fill.r - 0.27f) < 0.0001f &&
+			std::fabs(amberButton.fill.g - 0.18f) < 0.0001f,
+			"semantic button painter respects the selected base palette when no color override exists");
+
+		UiThemeCustomization vga = defaultUiThemeCustomization(UiPresetId::FlatVgaDos, PaletteId::Amber);
+		check(setUiTokenValue(UiPresetId::FlatVgaDos, vga, "scrollbar.show_arrows", UiTokenValue::fromBoolean(false), &error),
+			"VGA scrollbar decoration has a typed boolean override");
+		check(setUiTokenValue(UiPresetId::FlatVgaDos, vga, "typeface.primary",
+			UiTokenValue::fromFont(UiFontReference("Noto Sans 日本語", "Regular")), &error),
+			"VGA font token accepts Unicode installed-font references");
+		UiAppearanceProfile profile;
+		const std::string encoded = serializeUiAppearanceProfile(UiPresetId::FlatVgaDos, vga);
+		check(parseUiAppearanceProfile(encoded, profile, &error) && profile.preset == UiPresetId::FlatVgaDos &&
+			profile.theme.palette == PaletteId::Amber && profile.theme.overrides.find("scrollbar.show_arrows") != profile.theme.overrides.end() &&
+			profile.theme.overrides.find("typeface.primary") != profile.theme.overrides.end() &&
+			profile.theme.overrides.find("typeface.primary")->second.font.family == "Noto Sans 日本語",
+			"appearance profile round-trips its base identity, palette, and typed overrides");
+		check(parseUiAppearanceProfile(std::string("\xEF\xBB\xBF") + encoded, profile, &error),
+			"appearance profile parser accepts a UTF-8 byte-order mark");
+		check(parseUiAppearanceProfile(encoded + "override.future.token=number:4\n", profile, &error) &&
+			profile.ignoredTokens.size() == 1 && profile.ignoredTokens[0] == "future.token",
+			"profile import reports unknown appearance tokens while preserving known values");
+		UiAppearanceProfile unchangedProfile;
+		unchangedProfile.preset = UiPresetId::Current;
+		check(!parseUiAppearanceProfile("format=agss-ui\nversion=2\npreset=current\npalette=cyan\n", unchangedProfile, &error) &&
+			unchangedProfile.preset == UiPresetId::Current,
+			"unsupported profile versions fail without partially changing the output profile");
+		check(!parseUiAppearanceProfile("format=agss-ui\nversion=1\npreset=unavailable\npalette=cyan\n", unchangedProfile, &error),
+			"profile import rejects unavailable base presets");
+		check(!parseUiAppearanceProfile("format=agss-ui\nversion=1\npreset=current\npalette=cyan\noverride.typography.body_size=number:999\n", unchangedProfile, &error),
+			"profile import rejects invalid known values");
+		const std::string windows95Profile = serializeUiAppearanceProfile(UiPresetId::ClassicWindows95,
+			defaultUiThemeCustomization(UiPresetId::ClassicWindows95));
+		check(parseUiAppearanceProfile(windows95Profile, profile, &error) && profile.preset == UiPresetId::ClassicWindows95 &&
+			profile.theme.palette == PaletteId::Windows95,
+			"Classic Windows 95 identity and factory palette survive portable profile round-trips");
+
+		const char* const ids[] = { "panel_toggle", "settings", "menu_file", "menu_view", "menu_tools",
+			"shuffle", "insta_sort", "insta_invert", "algorithm",
+			"direction", "run", "play", "reset", "previous", "next", "bars_down", "bars_value", "bars_up",
+			"time_down", "time_value", "time_up", "domain", "pattern", "seed_readout" };
+		std::vector<std::string> controlIds(ids, ids + sizeof(ids) / sizeof(ids[0]));
+		const int sizes[][2] = { { 640, 480 }, { 1000, 640 }, { 1920, 1080 } };
+		for (int p = 0; p < 3; ++p)
+		for (std::size_t s = 0; s < sizeof(sizes) / sizeof(sizes[0]); ++s)
+		{
+			UiLayoutInput input;
+			input.width = static_cast<float>(sizes[s][0]);
+			input.height = static_cast<float>(sizes[s][1]);
+			input.expanded = true;
+			const UiPresetId preset = p == 0 ? UiPresetId::Current : p == 1 ? UiPresetId::FlatVgaDos : UiPresetId::ClassicWindows95;
+			const UiLayoutResult layout = calculateUiLayout(preset, input, controlIds);
+			check(layout.chartViewport.width >= 0.0f && layout.chartViewport.height >= 0.0f &&
+				layout.chartViewport.x >= 0.0f && layout.chartViewport.y >= 0.0f,
+				"responsive layout keeps a nonnegative chart viewport");
+			for (std::map<std::string, UiRect>::const_iterator item = layout.controlBounds.begin(); item != layout.controlBounds.end(); ++item)
+				check(item->second.width >= 0.0f && item->second.height >= 0.0f,
+					"responsive layout keeps every control bound nonnegative");
+		}
+		UiLayoutInput narrowVga;
+		narrowVga.width = 640; narrowVga.height = 480; narrowVga.menuHeight = 26;
+		const UiLayoutResult narrow = calculateUiLayout(UiPresetId::FlatVgaDos, narrowVga, controlIds);
+		check(narrow.control("shuffle").y < narrow.chartViewport.y &&
+			narrow.timeline.y >= narrow.chartViewport.y + narrow.chartViewport.height && narrow.chartViewport.height >= 120.0f &&
+			narrow.transportArea.height <= 110.0f,
+			"narrow VGA stacks setup and a compact footer around a usable chart at 640x480");
+		check(narrow.control("algorithm").y < narrow.control("direction").y &&
+			narrow.control("bars_value").y < narrow.chartViewport.y &&
+			narrow.control("play").width > 100.0f && narrow.control("play").y > narrow.timeline.y,
+			"narrow VGA keeps setup rows compact and gives transport buttons readable width below the seek rail");
+		UiLayoutInput wideVga;
+		wideVga.width = 1000; wideVga.height = 640; wideVga.menuHeight = 26;
+		const UiLayoutResult wide = calculateUiLayout(UiPresetId::FlatVgaDos, wideVga, controlIds);
+		check(wide.control("shuffle").x < wide.chartViewport.x && wide.timeline.y > wide.chartViewport.y &&
+			wide.chartViewport.height >= 400.0f && wide.setupRail.height > 300.0f,
+			"wide VGA composition keeps a compact setup rail beside a tall chart");
+		check(wide.control("time_value").y < wide.setupRail.y + 230.0f &&
+			wide.control("play").x < wide.timeline.x && wide.control("reset").x < wide.timeline.x &&
+			wide.telemetry.x == wide.timeline.x && wide.telemetry.y > wide.timeline.y,
+			"wide VGA groups transport buttons on the left and places seek and telemetry in the right footer");
+		check(wide.control("seed_readout").y > wide.control("time_up").y,
+			"wide VGA gives the seed readout its own row beneath the duration controls");
+		check(wide.menuBar.y == 8.0f && wide.control("menu_file").y == wide.menuBar.y &&
+			wide.control("menu_file").y + wide.control("menu_file").height <= wide.header.height &&
+			wide.control("menu_file").x >= wide.control("panel_toggle").x + wide.control("panel_toggle").width,
+			"VGA menus share the top header beside the setup toggle instead of consuming a separate row");
+		const UiLayoutResult wideWindows95 = calculateUiLayout(UiPresetId::ClassicWindows95, wideVga, controlIds);
+		check(wideWindows95.control("play").x < wideWindows95.control("next").x &&
+			wideWindows95.control("next").x < wideWindows95.control("reset").x &&
+			wideWindows95.control("previous").width == 0.0f &&
+			wideWindows95.timelineLeftArrow.width > 0.0f && wideWindows95.timelineRightArrow.width > 0.0f,
+			"wide Windows 95 transport presents Play, Step, and Reset while seek arrows retain previous/next access");
+		UiLayoutInput classicFrame;
+		classicFrame.width = 1000; classicFrame.height = 640; classicFrame.headerHeight = 0; classicFrame.menuHeight = 36;
+		const UiLayoutResult classicFrameLayout = calculateUiLayout(UiPresetId::ClassicWindows95, classicFrame, controlIds);
+		check(classicFrameLayout.menuBar.height == 36.0f && classicFrameLayout.control("shuffle").y >= 42.0f,
+			"Windows 95 composition starts at the native caption and places the menu before setup controls");
+		UiLayoutInput hdVgaInput;
+		hdVgaInput.width = 1920; hdVgaInput.height = 1080; hdVgaInput.menuHeight = 26;
+		const UiLayoutResult hdVga = calculateUiLayout(UiPresetId::FlatVgaDos, hdVgaInput, controlIds);
+		check(hdVga.chartViewport.width >= 1400.0f && hdVga.chartViewport.height >= 800.0f &&
+			hdVga.setupRail.height >= 800.0f && hdVga.telemetry.width >= 1200.0f,
+			"1920x1080 VGA keeps the chart dominant and uses the bottom-right area for readable telemetry");
+		check(hdVga.transportArea.height <= hdVgaInput.transportHeight &&
+			hdVga.control("play").height == 58.0f && hdVga.control("reset").height == 58.0f &&
+			hdVga.timeline.y + hdVga.timeline.height <= hdVga.transportArea.y + hdVga.transportArea.height &&
+			hdVga.telemetry.y + hdVga.telemetry.height <= hdVga.transportArea.y + hdVga.transportArea.height,
+			"large VGA windows keep the footer to its compact transport height and fit the seek rail and telemetry");
+		UiLayoutInput constrainedVga;
+		constrainedVga.width = 320; constrainedVga.height = 240; constrainedVga.margin = 48;
+		constrainedVga.gap = 24; constrainedVga.controlHeight = 64; constrainedVga.railWidth = 440;
+		constrainedVga.transportHeight = 240; constrainedVga.contentGap = 64;
+		const UiLayoutResult constrained = calculateUiLayout(UiPresetId::FlatVgaDos, constrainedVga, controlIds);
+		bool constrainedGeometryValid = constrained.chartViewport.height >= 0.0f &&
+			constrained.timeline.y + constrained.timeline.height <= constrainedVga.height &&
+			constrained.telemetry.y + constrained.telemetry.height <= constrainedVga.height;
+		for (std::map<std::string, UiRect>::const_iterator item = constrained.controlBounds.begin();
+			item != constrained.controlBounds.end(); ++item)
+			constrainedGeometryValid = constrainedGeometryValid && item->second.x >= 0.0f && item->second.y >= 0.0f &&
+				item->second.width >= 0.0f && item->second.height >= 0.0f &&
+				item->second.x + item->second.width <= constrainedVga.width &&
+				item->second.y + item->second.height <= constrainedVga.height;
+		check(constrainedGeometryValid && constrained.chartViewport.height == 0.0f,
+			"small VGA windows and extreme valid metrics collapse safely without negative or off-window controls");
+		bool narrowControlsDoNotOverlap = true;
+		for (std::map<std::string, UiRect>::const_iterator first = narrow.controlBounds.begin(); first != narrow.controlBounds.end(); ++first)
+		{
+			if (first->second.width <= 0.0f || first->second.height <= 0.0f) continue;
+			for (std::map<std::string, UiRect>::const_iterator second = narrow.controlBounds.begin(); second != narrow.controlBounds.end(); ++second)
+			{
+				if (first == second || second->second.width <= 0.0f || second->second.height <= 0.0f) continue;
+				const float overlapWidth = (std::min)(first->second.x + first->second.width, second->second.x + second->second.width) -
+					(std::max)(first->second.x, second->second.x);
+				const float overlapHeight = (std::min)(first->second.y + first->second.height, second->second.y + second->second.height) -
+					(std::max)(first->second.y, second->second.y);
+				if (overlapWidth > 0.0f && overlapHeight > 0.0f) narrowControlsDoNotOverlap = false;
+			}
+		}
+		check(narrowControlsDoNotOverlap, "640x480 VGA hit regions do not overlap after reflow");
+		UiLayoutInput tallerHeader;
+		tallerHeader.width = 1000; tallerHeader.height = 640; tallerHeader.expanded = false; tallerHeader.headerHeight = 80;
+		const UiLayoutResult collapsedCurrent = calculateUiLayout(UiPresetId::Current, tallerHeader, controlIds);
+		check(collapsedCurrent.chartViewport.y >= tallerHeader.headerHeight + tallerHeader.gap,
+			"collapsed Current layout keeps the chart below a customized header");
+
+		const TextQuadLayout marqueeStart = layoutTextQuad(ClipBounds(10.0f, 20.0f, 80.0f, 24.0f),
+			glm::vec2(300.0f, 20.0f), 18.0f, TextOverflowPolicy::Marquee, 0);
+		const TextQuadLayout marqueeMidpoint = layoutTextQuad(ClipBounds(10.0f, 20.0f, 80.0f, 24.0f),
+			glm::vec2(300.0f, 20.0f), 18.0f, TextOverflowPolicy::Marquee, 3207);
+		const TextQuadLayout clampText = layoutTextQuad(ClipBounds(10.0f, 20.0f, 80.0f, 24.0f),
+			glm::vec2(300.0f, 20.0f), 18.0f, TextOverflowPolicy::Clamp, 0);
+		const TextQuadLayout fittedText = layoutTextQuad(ClipBounds(10.0f, 20.0f, 80.0f, 24.0f),
+			glm::vec2(300.0f, 20.0f), 18.0f, TextOverflowPolicy::Fit, 0);
+		const TextQuadLayout centerAlignedLabel = layoutTextQuad(ClipBounds(10.0f, 20.0f, 80.0f, 24.0f),
+			glm::vec2(40.0f, 18.0f), 18.0f, TextOverflowPolicy::Marquee, 0);
+		const TextQuadLayout leftAlignedLabel = layoutTextQuad(ClipBounds(10.0f, 20.0f, 80.0f, 24.0f),
+			glm::vec2(40.0f, 18.0f), 18.0f, TextOverflowPolicy::Marquee, 0, ClipBounds(), TextHorizontalAlignment::Left);
+		check(marqueeStart.visible && marqueeMidpoint.visible && marqueeStart.size.x > 80.0f &&
+			marqueeStart.size.y == 18.0f && marqueeMidpoint.position.x < marqueeStart.position.x &&
+			marqueeStart.clip.width == 80.0f,
+			"shared marquee overflow keeps the requested font size, scrolls text, and clips to control bounds");
+		check(clampText.visible && clampText.size.y == 18.0f && clampText.position.x == marqueeStart.position.x &&
+			fittedText.visible && fittedText.size.x <= 72.0f && fittedText.size.y < clampText.size.y,
+			"shared text layout lets skins choose full-size clamping or legacy fitting");
+		check(centerAlignedLabel.visible && leftAlignedLabel.visible && centerAlignedLabel.position.x == 30.0f &&
+			leftAlignedLabel.position.x == 14.0f,
+			"shared text layout supports an explicit left alignment for short labels while preserving centered defaults");
+
+		RecordingUiPaintContext recorder;
+		recorder.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, UiRect(1, 2, 30, 20), UiColor(1, 0, 0, 1), "button"));
+		check(recorder.commands().size() == 1 && recorder.commands()[0].bounds.width == 30.0f &&
+			recorder.commands()[0].text == "button",
+			"recording paint context captures deterministic geometry and semantic labels for headless checks");
+
+		sortinglogic::RenderSnapshot snapshot;
+		snapshot.itemCount = 80;
+		snapshot.runCompatible = true;
+		UserPreferences preferences;
+		const UiScreenModel noTrace = buildUiScreenModel(snapshot, preferences, false);
+		const UiScreenModel queued = buildUiScreenModel(snapshot, preferences, true);
+		check(noTrace.transport == UiTransportState::NoTrace && noTrace.playCaption == "Generate & Play" &&
+			queued.transport == UiTransportState::Queued && queued.playCaption == "Cancel queued" && !queued.setupEnabled,
+			"presentation model centralizes transport captions and queued-play setup availability");
+		check(noTrace.algorithmCapabilities.available && noTrace.algorithmCapabilities.safeMaximumItemCount > 0 &&
+			!noTrace.algorithmCapabilities.timeComplexity.empty() && !noTrace.inputDomain.empty() && !noTrace.inputPattern.empty(),
+			"presentation model carries algorithm compatibility and complexity capabilities for shared presets");
+		check(traceProgressPercent(false, false, 0, 0) == 0 &&
+			traceProgressPercent(true, false, 63, 100) == 63 &&
+			traceProgressPercent(true, false, 120, 100) == 100 &&
+			traceProgressPercent(true, true, 0, 0) == 100,
+			"collapsed trace progress handles missing, partial, clamped, and completed empty traces");
+		sortinglogic::RenderSnapshot mergeSnapshot;
+		mergeSnapshot.algorithm = sortinglogic::SortAlgorithm::Merge;
+		mergeSnapshot.mergeBufferVisualizationEnabled = false;
+		mergeSnapshot.activeRoles.push_back(sortinglogic::ActiveRole(sortinglogic::SemanticRole::ComparedItem, 11, 0, "merge"));
+		mergeSnapshot.activeRoles.push_back(sortinglogic::ActiveRole(sortinglogic::SemanticRole::WriteTarget, 12, 1, "main"));
+		const std::vector<sortinglogic::ActiveRole> visibleMergeRoles = rolesVisibleOnMainArray(mergeSnapshot);
+		check(visibleMergeRoles.size() == 2 && visibleMergeRoles[0].lane == "main" && visibleMergeRoles[1].lane == "main",
+			"hidden Merge buffer keeps comparison and write roles visible on the primary bars");
+		mergeSnapshot.mergeBufferVisualizationEnabled = true;
+		check(rolesVisibleOnMainArray(mergeSnapshot)[0].lane == "merge",
+			"visible Merge buffer keeps comparison roles attached to the auxiliary lane");
+	}
+
+	void testWindowsFontCatalog()
+	{
+		const WindowsFontCatalog catalog;
+		WindowsFontFace courier;
+		std::string error;
+		check(catalog.resolve("Courier New", "Bold", courier, &error) && !courier.path.empty() &&
+			!courier.pathUtf8.empty() && courier.collectionIndex >= 0,
+			"DirectWrite resolves an installed Courier New face to a local font file and collection index");
+		WindowsFontFace missing;
+		check(!catalog.resolve("AGSS Font That Does Not Exist", "Regular", missing, &error) && !error.empty(),
+			"DirectWrite reports missing installed family and face references for visible fallback handling");
 	}
 
 	void testRenderPipelineContracts()
@@ -155,6 +456,32 @@ namespace
 
 	void testLayoutAndWidgets()
 	{
+		UiScrollViewport scroll;
+		scroll.configure(UiRect(100.0f, 200.0f, 80.0f, 50.0f), 240.0f, 24.0f);
+		check(!scroll.scrollWheel(20.0f, 20.0f, -1) && scroll.offset() == 0.0f,
+			"a scroll viewport ignores wheel input outside its clipped bounds");
+		check(scroll.scrollWheel(110.0f, 220.0f, -1) && scroll.offset() == 72.0f,
+			"a shared scroll viewport advances three rows per wheel notch inside its bounds");
+		check(scroll.itemAt(110.0f, 205.0f, 10, 24.0f) == 3,
+			"scroll viewport hit testing accounts for the current content offset");
+		scroll.ensureItemVisible(9, 24.0f);
+		check(scroll.itemBounds(9, 24.0f).y >= scroll.viewport().y &&
+			scroll.itemBounds(9, 24.0f).y + 24.0f <= scroll.viewport().y + scroll.viewport().height,
+			"keyboard navigation can scroll a selected row fully into view");
+		scroll.configure(UiRect(100.0f, 200.0f, 80.0f, 50.0f), 60.0f, 24.0f, 900.0f);
+		check(scroll.offset() == 10.0f && scroll.visibleItemCount(3, 24.0f) == 3,
+			"layout updates clamp stale offsets when content shrinks or the viewport changes");
+
+		UIRoot orderedRoot;
+		orderedRoot.addButton("first", "First");
+		orderedRoot.addButton("second", "Second");
+		orderedRoot.setFocusOrder(std::vector<std::string>{ "second", "first" });
+		UiAction orderedAction;
+		orderedRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Tab), orderedAction);
+		check(orderedRoot.find("second")->focused(), "keyboard focus follows the layout-provided control order");
+		orderedRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Tab), orderedAction);
+		check(orderedRoot.find("first")->focused(), "layout focus order wraps after its final control");
+
 		const float afterWheel = settingsScrollOffsetAfterWheel(0.0f, -1, 48.0f, 28.0f * 48.0f, 400.0f);
 		check(afterWheel == 144.0f && settingsScrollOffsetAfterWheel(afterWheel, 1, 48.0f, 28.0f * 48.0f, 400.0f) == 0.0f,
 			"audio settings scrolling advances and reverses by three rows per wheel notch");
@@ -184,6 +511,18 @@ namespace
 		check(action.appAction.kind == AppActionKind::SelectAlgorithm && action.appAction.selection == 1,
 			"dropdown emits a typed selected action");
 		check(!root.hasOpenCombo(), "selection closes the dropdown");
+		UIRoot widePopupRoot;
+		widePopupRoot.addComboBox("menu", std::vector<std::string>{ "File", "A much longer menu command" }, 0,
+			AppAction(AppActionKind::Run));
+		widePopupRoot.find("menu")->setBounds(UiRect(10.0f, 10.0f, 60.0f, 24.0f));
+		widePopupRoot.find("menu")->setPopupBounds(UiRect(10.0f, 34.0f, 190.0f, 48.0f));
+		check(widePopupRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 15.0f, 15.0f), action),
+			"wide-popup combo opens from its original compact trigger");
+		const UiRect wideOption = widePopupRoot.find("menu")->optionBounds(1);
+		check(wideOption.width == 190.0f && wideOption.x + wideOption.width > 70.0f &&
+			widePopupRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 180.0f, wideOption.y + 4.0f), action) &&
+			action.appAction.kind == AppActionKind::Run && action.event.selection == 1,
+			"dropdown paints and hit-tests the same popup bounds even beyond its invoking menu width");
 		check(root.handleEvent(UiInputEvent(UiInputType::PointerDown, combo.x + 5.0f, combo.y + 5.0f), action),
 			"visible combo can be reopened after selection");
 		root.setWidgetVisible("choice", true);
@@ -272,6 +611,71 @@ namespace
 		bandRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, visibleBand.x + 4.0f, visibleBand.y + 4.0f), action);
 		check(action.appAction.kind == AppActionKind::SelectAudioBand && action.appAction.selection == 55,
 			"a high frequency band remains directly selectable in the bounded dropdown");
+
+		UIRoot popupScrollRoot;
+		std::vector<std::string> popupOptions;
+		for (int i = 0; i < 60; ++i) popupOptions.push_back("option " + std::to_string(i));
+		popupScrollRoot.addComboBox("long_popup", popupOptions, 0, AppAction(AppActionKind::SelectAudioBand));
+		popupScrollRoot.find("long_popup")->setBounds(UiRect(20.0f, 20.0f, 180.0f, 20.0f));
+		popupScrollRoot.find("long_popup")->setPopupBounds(UiRect(20.0f, 40.0f, 180.0f, 160.0f));
+		popupScrollRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 25.0f, 25.0f), action);
+		check(popupScrollRoot.handleEvent(UiInputEvent(UiInputType::Wheel, 40.0f, 50.0f, -1), action) &&
+			popupScrollRoot.find("long_popup")->firstVisibleOption() == 3,
+			"open long combo popups scroll with the shared viewport even when the pointer is outside the widget bounds");
+		const UiRect scrolledOption = popupScrollRoot.find("long_popup")->optionBounds(3);
+		popupScrollRoot.handleEvent(UiInputEvent(UiInputType::PointerDown,
+			scrolledOption.x + 4.0f, scrolledOption.y + 4.0f), action);
+		check(popupScrollRoot.find("long_popup")->selectedIndex() == 3,
+			"scrolled popup rows remain clipped and hit-test to their corresponding option");
+		popupScrollRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Enter), action);
+		for (int i = 0; i < 12; ++i) popupScrollRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), action);
+		check(popupScrollRoot.find("long_popup")->selectedIndex() == 15 &&
+			popupScrollRoot.find("long_popup")->firstVisibleOption() <= 15 &&
+			popupScrollRoot.find("long_popup")->firstVisibleOption() + popupScrollRoot.find("long_popup")->visibleOptionCount() > 15,
+			"keyboard navigation keeps the focused combo selection visible after scrolling");
+
+		UIRoot radioRoot;
+		radioRoot.addComboBox("direction", std::vector<std::string>{ "Ascending", "Descending" }, 0,
+			AppAction(AppActionKind::SetDirection));
+		radioRoot.find("direction")->setPresentation(UiWidgetPresentation::RadioGroup);
+		radioRoot.find("direction")->setBounds(UiRect(10, 10, 200, 30));
+		radioRoot.find("direction")->setInteractiveSubregions(std::vector<UiRect>{ UiRect(10, 10, 100, 30), UiRect(110, 10, 100, 30) });
+		radioRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 150, 20), action);
+		check(radioRoot.find("direction")->selectedIndex() == 1 && action.event.kind == UiEventKind::SelectionChanged,
+			"radio group pointer selection changes one exclusive value and emits a semantic event");
+		radioRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Left), action);
+		check(radioRoot.find("direction")->selectedIndex() == 0,
+			"radio group arrow navigation changes the selection without opening a popup");
+
+		UIRoot dosRoot;
+		dosRoot.addSlider("dos", "DOS slider", 0, 10, 1, 5, AppAction(AppActionKind::SetDuration));
+		dosRoot.find("dos")->setPresentation(UiWidgetPresentation::DosScrollbar);
+		dosRoot.find("dos")->setScrollbarArrowSize(10);
+		dosRoot.find("dos")->setBounds(UiRect(20, 20, 100, 30));
+		dosRoot.find("dos")->setInteractiveSubregions(std::vector<UiRect>{ UiRect(20, 26, 10, 18), UiRect(30, 28, 80, 14), UiRect(110, 26, 10, 18) });
+		dosRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 115, 30), action);
+		check(dosRoot.find("dos")->value() == 6.0f,
+			"DOS scrollbar right arrow is an independent interactive subregion");
+		dosRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 70, 35), action);
+		check(dosRoot.find("dos")->value() == 5.0f,
+			"DOS scrollbar track maps pointer position onto its value range");
+
+		UIRoot textRoot;
+		textRoot.addButton("search", "Search");
+		textRoot.find("search")->setBounds(UiRect(5, 5, 80, 24));
+		textRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 10, 10), action);
+		textRoot.handleEvent(UiInputEvent(UiInputType::PointerUp, 10, 10), action);
+		check(textRoot.handleEvent(UiInputEvent(UiInputType::TextInput, std::string("token")), action) &&
+			action.event.kind == UiEventKind::TextEntered && action.event.text == "token",
+			"normalized text input is delivered to the focused shared control");
+		check(textRoot.handleEvent(UiInputEvent(UiInputType::Wheel, 10, 10, -2), action) &&
+			action.event.kind == UiEventKind::Wheel && action.event.value == -2.0f,
+			"normalized wheel input identifies its target control");
+		textRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 10, 10), action);
+		check(textRoot.find("search")->pressed(), "pointer down enters the shared pressed state");
+		textRoot.handleEvent(UiInputEvent(UiInputType::FocusLost), action);
+		check(!textRoot.find("search")->pressed() && action.event.kind == UiEventKind::FocusLost,
+			"focus loss releases pointer capture and emits a lifecycle event");
 	}
 
 	void testSettingsStore()
@@ -289,7 +693,7 @@ namespace
 			"missing settings use ascending Insertion Sort");
 		check(defaults.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
 			"fixed-duration playback remains the default timing mode");
-		check(defaults.version == 6 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
+		check(defaults.version == 8 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			defaults.simulation.familyId == "insertion-methods" && defaults.simulation.variantId == "insertion" &&
 			defaults.simulation.profile == sortinglogic::InputProfile::NormalizedFloat &&
 			defaults.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Halving,
@@ -304,16 +708,23 @@ namespace
 			std::fabs(defaults.reconstructedAudio.minimumFrequencyHz - 104.0322699094767) < 1e-12 &&
 			std::fabs(defaults.reconstructedAudio.maximumFrequencyHz - 4054.6605862015895) < 1e-12 &&
 			std::fabs(defaults.reconstructedAudio.secondOperandDelayMicroseconds - 225.66891905936825) < 1e-9,
-			"version-6 defaults use the calibrated reconstructed burst profile");
+			"version-8 defaults use the calibrated reconstructed burst profile");
 		for (std::size_t i = 0; i < SoundEngine::BandCount; ++i)
 			check(defaults.audio.bandTrimDb[i] == 0.0f, "every per-band trim defaults to zero");
 
 		UserSettings saved;
 		saved.visual.palette = PaletteId::Light;
 		saved.visual.spacing = BarSpacingMode::Comfortable;
+		saved.appearance.activePreset = UiPresetId::FlatVgaDos;
+		saved.appearance.themes[UiPresetId::Current].palette = PaletteId::Light;
+		saved.appearance.themes[UiPresetId::FlatVgaDos].palette = PaletteId::Amber;
+		check(setUiTokenValue(UiPresetId::Current, saved.appearance.themes[UiPresetId::Current], "color.bar",
+			UiTokenValue::fromColor(UiColor(0.2f, 0.3f, 0.4f, 1.0f))), "settings fixture accepts Current color override");
+		check(setUiTokenValue(UiPresetId::FlatVgaDos, saved.appearance.themes[UiPresetId::FlatVgaDos], "scrollbar.show_arrows",
+			UiTokenValue::fromBoolean(false)), "settings fixture accepts VGA decoration override");
 		saved.visual.panelExpanded = false;
 		saved.simulation.itemCount = 800;
-		saved.simulation.durationSeconds = 120;
+		saved.simulation.durationSeconds = 17.25f;
 		saved.simulation.playbackTimingMode = SoundEngine::PlaybackTimingMode::ReferenceCadence;
 		saved.simulation.descending = true;
 		saved.simulation.algorithm = static_cast<int>(sortinglogic::SortAlgorithm::Merge);
@@ -328,6 +739,7 @@ namespace
 		saved.algorithmOptions[algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence")] = "ciura";
 		saved.algorithmOptions[algorithmOptionSettingsKey("merge-sort", "merge", "execution_mode")] = "top_down";
 		saved.algorithmOptions[algorithmOptionSettingsKey("merge-sort", "merge", "writeback_mode")] = "animated_writes";
+		saved.algorithmOptions[algorithmOptionSettingsKey("merge-hybrid", "optimized-rotate", "rotate_buffer_capacity")] = "items_128";
 		saved.audio.masterLevel = 0.73f;
 		saved.audio.bedLevel = 0.42f;
 		saved.audio.bedHarmonicExponent = 2.25f;
@@ -386,10 +798,16 @@ namespace
 		SettingsStore restartedStore(path);
 		const UserSettings loaded = restartedStore.load();
 		check(loaded.visual.palette == saved.visual.palette && loaded.visual.spacing == saved.visual.spacing, "settings round-trip palette and spacing");
+		check(loaded.appearance.activePreset == saved.appearance.activePreset &&
+			loaded.appearance.themes.at(UiPresetId::Current).palette == PaletteId::Light &&
+			loaded.appearance.themes.at(UiPresetId::FlatVgaDos).palette == PaletteId::Amber &&
+			loaded.appearance.themes.at(UiPresetId::Current).overrides.find("color.bar") != loaded.appearance.themes.at(UiPresetId::Current).overrides.end() &&
+			loaded.appearance.themes.at(UiPresetId::FlatVgaDos).overrides.find("scrollbar.show_arrows") != loaded.appearance.themes.at(UiPresetId::FlatVgaDos).overrides.end(),
+			"settings round-trip independent preset palettes, active base, and appearance overrides");
 		check(loaded.visual.panelExpanded == saved.visual.panelExpanded && loaded.simulation.itemCount == saved.simulation.itemCount, "settings round-trip panel state and item count");
 		check(loaded.simulation.durationSeconds == saved.simulation.durationSeconds && loaded.simulation.descending == saved.simulation.descending, "settings round-trip duration and direction");
 		check(loaded.simulation.playbackTimingMode == saved.simulation.playbackTimingMode,
-			"version-6 settings round-trip playback timing mode");
+			"version-7 settings round-trip playback timing mode");
 		check(loaded.simulation.algorithm == saved.simulation.algorithm, "settings round-trip selected algorithm");
 		check(loaded.simulation.familyId == saved.simulation.familyId && loaded.simulation.variantId == saved.simulation.variantId,
 			"settings round-trip stable family and variant IDs");
@@ -404,7 +822,8 @@ namespace
 		check(loaded.algorithmOptions.find(algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence")) != loaded.algorithmOptions.end() &&
 			loaded.algorithmOptions.find(algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence"))->second == "ciura" &&
 			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "execution_mode"))->second == "top_down" &&
-			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "writeback_mode"))->second == "animated_writes",
+			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "writeback_mode"))->second == "animated_writes" &&
+			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-hybrid", "optimized-rotate", "rotate_buffer_capacity"))->second == "items_128",
 			"algorithm option values round-trip by stable family, variant, and option IDs");
 		check(loaded.familyAudioDefaults.find("merge-sort") != loaded.familyAudioDefaults.end() &&
 			loaded.familyAudioDefaults.find("merge-sort")->second.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 9.5f &&
@@ -454,11 +873,11 @@ namespace
 			loaded.reconstructedAudio.lowPassEnabled == saved.reconstructedAudio.lowPassEnabled &&
 			loaded.reconstructedAudio.mapping == saved.reconstructedAudio.mapping &&
 			loaded.reconstructedAudio.idlePolicy == saved.reconstructedAudio.idlePolicy,
-			"version-6 settings round-trip every reconstructed synthesis parameter");
+			"version-7 settings round-trip every reconstructed synthesis parameter");
 
 		writeFile(path, "version=1\npalette=light\nspacing=none\npanel_expanded=0\nitem_count=123\nduration_seconds=42\ndescending=1\nalgorithm=0\n");
 		const UserPreferences migrated = store.load();
-		check(migrated.version == 6 && migrated.visual.palette == PaletteId::Light && migrated.visual.spacing == BarSpacingMode::None &&
+		check(migrated.version == 8 && migrated.visual.palette == PaletteId::Light && migrated.visual.spacing == BarSpacingMode::None &&
 			migrated.simulation.itemCount == 123 && migrated.simulation.durationSeconds == 42 && migrated.simulation.descending,
 			"version-1 settings migrate without losing appearance or simulation values");
 		check(migrated.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
@@ -471,7 +890,7 @@ namespace
 			"version-1 settings receive the selected profile audio defaults");
 		writeFile(path, "version=2\npalette=amber\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nalgorithm=0\naudio_master=0.61\n");
 		const UserPreferences migratedV2 = store.load();
-		check(migratedV2.version == 6 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
+		check(migratedV2.version == 8 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
 			migratedV2.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			migratedV2.simulation.profile == sortinglogic::InputProfile::NormalizedFloat,
 			"version-2 settings retain existing values and migrate new fields");
@@ -506,23 +925,51 @@ namespace
 		check(malformedVariantAudio.isValid() && variantAudioLevels(malformedVariantAudio, "insertion-methods", "insertion")
 			.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 0.0f,
 			"malformed v5 variant audio values safely fall back to the inherited level");
-		const std::wstring migrationBackup = path + L".pre-v6.bak";
+		const std::wstring migrationBackup = path + L".pre-v8.bak";
 		DeleteFileW(migrationBackup.c_str());
 		UserPreferences migratingV5 = store.load();
 		migratingV5.visual.palette = PaletteId::Light;
+		migratingV5.appearance.themes[UiPresetId::Current].palette = PaletteId::Light;
 		check(store.save(migratingV5, &error) && GetFileAttributesW(migrationBackup.c_str()) != INVALID_FILE_ATTRIBUTES,
-			"first successful version-6 save preserves the previous version-5 settings file");
+			"first successful version-8 save preserves the previous settings file");
 		SettingsStore backupStore(migrationBackup);
 		check(backupStore.load().visual.palette == PaletteId::Cyan && store.load().visual.palette == PaletteId::Light,
 			"migration backup retains the old values while the active settings file upgrades");
 		const UserPreferences roundTripVersion6 = store.load();
 		check(store.save(roundTripVersion6, &error) && backupStore.load().visual.palette == PaletteId::Cyan,
-			"later version-6 saves do not replace the one-time migration backup");
+			"later version-8 saves do not replace the one-time migration backup");
 		writeFile(path, "version=5\npalette=amber\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=merge-sort\nvariant_id=merge\nprofile=normalized_float\nmerge_execution_mode=bottom_up\noption.merge-sort.merge.execution_mode=unknown_mode\n");
 		const UserPreferences malformedOption = store.load();
 		check(malformedOption.isValid() && malformedOption.simulation.mergeExecutionMode == sortinglogic::MergeExecutionMode::BottomUp &&
 			malformedOption.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "execution_mode")) == malformedOption.algorithmOptions.end(),
 			"unknown v5 option IDs safely fall back to the catalog and typed default");
+		writeFile(path, "version=6\npalette=light\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\nfamily_audio.insertion-methods.comparison=8.5\nvariant_audio.insertion-methods.insertion.comparison=-6.5\n");
+		const UserPreferences migratedV6 = store.load();
+		check(migratedV6.version == 8 &&
+			familyAudioLevels(migratedV6, "insertion-methods").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 8.5f &&
+			variantAudioLevels(migratedV6, "insertion-methods", "insertion").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == -6.5f,
+			"version-6 migration to version-8 preserves family and variant algorithm audio gains");
+		writeFile(path, "version=7\npalette=light\nspacing=compact\npanel_expanded=1\nitem_count=91\nduration_seconds=10\ndescending=0\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\nui_active_preset=flat-vga-dos\nui.current.palette=light\nui.flat-vga-dos.palette=cyan\nui.flat-vga-dos.override.scrollbar.show_arrows=bogus\n");
+		const UserPreferences malformedAppearance = store.load();
+		check(malformedAppearance.isValid() && malformedAppearance.simulation.itemCount == 91 &&
+			malformedAppearance.appearance.activePreset == UiPresetId::FlatVgaDos &&
+			malformedAppearance.appearance.themes.at(UiPresetId::FlatVgaDos).palette == PaletteId::Light,
+			"malformed saved appearance falls back independently without discarding otherwise valid application preferences");
+		writeFile(path, "version=7\npalette=not-a-palette\nspacing=compact\npanel_expanded=1\nitem_count=92\nduration_seconds=10\ndescending=0\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\n");
+		const UserPreferences malformedLegacyAppearance = store.load();
+		check(malformedLegacyAppearance.isValid() && malformedLegacyAppearance.simulation.itemCount == 92 &&
+			malformedLegacyAppearance.appearance.themes.at(UiPresetId::Current).palette == PaletteId::Cyan,
+			"malformed version-7 compatibility palette falls back without discarding valid simulation settings");
+		writeFile(path, "version=7\npalette=amber\nspacing=comfortable\npanel_expanded=0\nitem_count=96\nduration_seconds=12\ndescending=1\nfamily_id=merge-sort\nvariant_id=merge\nprofile=normalized_float\nmerge_execution_mode=bottom_up\nmerge_writeback_mode=animated_writes\noption.merge-sort.merge.execution_mode=top_down\noption.merge-sort.merge.writeback_mode=animated_writes\nfamily_audio.merge-sort.comparison=5.5\nvariant_audio.merge-sort.merge.comparison=-2.5\n");
+		const UserPreferences migratedV7 = store.load();
+		check(migratedV7.version == 8 && migratedV7.simulation.familyId == "merge-sort" &&
+			migratedV7.simulation.variantId == "merge" &&
+			migratedV7.simulation.mergeExecutionMode == sortinglogic::MergeExecutionMode::TopDown &&
+			migratedV7.simulation.mergeWritebackMode == sortinglogic::MergeWritebackMode::AnimatedWrites,
+			"version-7 to version-8 migration preserves the selected algorithm and stable execution options");
+		check(familyAudioLevels(migratedV7, "merge-sort").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 5.5f &&
+			variantAudioLevels(migratedV7, "merge-sort", "merge").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == -2.5f,
+			"version-7 to version-8 migration preserves family and variant audio gain overrides");
 
 		writeFile(path, "version=garbage\npalette=banana\n");
 		const UserSettings malformed = store.load();
@@ -544,6 +991,18 @@ namespace
 		check(invalidRange.visual.palette == PaletteId::Cyan && invalidRange.visual.spacing == BarSpacingMode::Compact, "out-of-range settings safely fall back to defaults");
 		DeleteFileW(path.c_str());
 		check(store.load().simulation.itemCount == 80, "deleted settings return defaults");
+	}
+
+	void testFractionalDurationStepPersists()
+	{
+		MemorySettings persistence;
+		AppController app(persistence);
+		const sortinglogic::CommandResult adjusted = app.dispatch(AppAction(AppActionKind::AdjustDuration, 0.1f));
+		check(adjusted.accepted && std::fabs(app.snapshot().durationSeconds - 10.1f) < 0.0001f &&
+			std::fabs(persistence.value.simulation.durationSeconds - 10.1f) < 0.0001f,
+			"fractional duration steps update the simulation and persist without integer truncation");
+		check(adjusted.message.find("10.1 seconds") != std::string::npos,
+			"duration feedback reports the fraction that was actually applied");
 	}
 
 	void testAppControllerDispatchAndPersistence()
@@ -657,6 +1116,45 @@ namespace
 				"controller preferences survive settings-file reload in a fresh app instance");
 		}
 		DeleteFileW(restartPath.c_str());
+	}
+
+	void testAppearanceApplyIsTransactionalAndTransportNeutral()
+	{
+		MemorySettings persistence;
+		AppController app(persistence);
+		check(app.dispatch(AppAction(AppActionKind::BuildTrace)).accepted, "appearance transaction fixture starts trace generation");
+		const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < deadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		app.dispatch(AppAction(AppActionKind::SeekFraction, 0.4f));
+		app.dispatch(AppAction(AppActionKind::TogglePlayback));
+		const sortinglogic::RenderSnapshot before = app.snapshot();
+		UiAppearancePreferences draft = app.preferences().appearance;
+		draft.activePreset = UiPresetId::FlatVgaDos;
+		draft.themes[UiPresetId::FlatVgaDos].palette = PaletteId::Amber;
+		std::string validationError;
+		check(setUiTokenValue(UiPresetId::FlatVgaDos, draft.themes[UiPresetId::FlatVgaDos],
+			"scrollbar.show_arrows", UiTokenValue::fromBoolean(false), &validationError),
+			"appearance apply fixture has a valid VGA draft");
+		AppAction apply(AppActionKind::ApplyAppearance);
+		apply.appearance.reset(new UiAppearancePreferences(draft));
+		persistence.failWrites = true;
+		const sortinglogic::CommandResult failed = app.dispatch(apply);
+		check(!failed.accepted && app.preferences().appearance.activePreset == UiPresetId::Current &&
+			app.snapshot().hasTrace == before.hasTrace && app.snapshot().cursor == before.cursor && app.snapshot().playing == before.playing,
+			"appearance save failure leaves saved preferences and live transport unchanged");
+		persistence.failWrites = false;
+		const sortinglogic::CommandResult applied = app.dispatch(apply);
+		const sortinglogic::RenderSnapshot after = app.snapshot();
+		check(applied.accepted && app.preferences().appearance.activePreset == UiPresetId::FlatVgaDos &&
+			app.preferences().appearance.themes.at(UiPresetId::Current).palette == PaletteId::Cyan &&
+			app.preferences().appearance.themes.at(UiPresetId::FlatVgaDos).palette == PaletteId::Amber,
+			"successful appearance apply commits the selected preset while keeping the other base customization");
+		check(after.hasTrace == before.hasTrace && after.cursor == before.cursor && after.playing == before.playing,
+			"applying appearance preserves trace, cursor, and playback state");
 	}
 
 	void testRestoreReconstructedDefaultsScope()
@@ -982,7 +1480,17 @@ namespace
 		denseBuilt.trace = sortinglogic::SortTraceBuilder::build(denseRequest);
 		dense.completeTraceBuild(std::move(denseBuilt));
 		const std::shared_ptr<const sortinglogic::SortTrace> denseTrace = dense.currentTrace();
-		check(denseTrace && denseTrace->events.size() > 319600, "800-item reverse trace contains dense ordered comparison events");
+		std::size_t denseComparisonEvents = 0;
+		if (denseTrace)
+			for (std::size_t i = 0; i < denseTrace->events.size(); ++i)
+				if (denseTrace->events[i].type == sortinglogic::SemanticEventType::Compare) ++denseComparisonEvents;
+		const std::string denseTraceMessage = std::string("800-item reverse trace contains dense ordered comparison events (actual ") +
+			(denseTrace ? std::to_string(denseTrace->events.size()) + ", comparisons " + std::to_string(denseComparisonEvents) +
+				", complete " + (denseTrace->complete ? "true" : "false") + ", reason " + denseTrace->completionReason : "no trace") + ")";
+		const bool denseTraceRespectsBudget = denseTrace && !denseTrace->complete &&
+			denseTrace->completionReason.find("128 MiB") != std::string::npos;
+		check(denseTrace && denseTrace->events.size() > 100000 && denseComparisonEvents > 50000 && denseTraceRespectsBudget,
+			"800-item reverse trace remains dense and returns a playable prefix at the accounted memory cap");
 		AudioPresentationBridge denseBridge;
 		LatestAudioStateMailbox denseMailbox;
 		denseBridge.update(dense, dense.snapshot(), parameters, denseMailbox);
@@ -1130,6 +1638,27 @@ namespace
 		app.dispatch(AppAction(AppActionKind::TogglePlayback));
 	}
 
+	void testDistributionAlgorithmsSelectableFromDefaultInput()
+	{
+		MemorySettings persistence;
+		AppController app(persistence);
+		check(app.snapshot().domain == sortinglogic::InputDomain::NormalizedFloats,
+			"distribution selection fixture starts in the default normalized-float domain");
+		const sortinglogic::CommandResult counting = app.dispatch(AppAction(AppActionKind::SelectAlgorithm,
+			"distribution-sorts", "counting"));
+		check(counting.accepted && app.snapshot().algorithm == sortinglogic::SortAlgorithm::Counting &&
+			app.snapshot().domain == sortinglogic::InputDomain::NonnegativeIntegerKeys &&
+			app.snapshot().pattern == sortinglogic::InputPattern::Random &&
+			app.preferences().simulation.variantId == "counting",
+			"selecting Counting from the algorithm browser switches to its compatible integer domain and persists it");
+		const sortinglogic::CommandResult radix = app.dispatch(AppAction(AppActionKind::SelectAlgorithm,
+			"distribution-sorts", "radix"));
+		check(radix.accepted && app.snapshot().algorithm == sortinglogic::SortAlgorithm::Radix &&
+			app.snapshot().domain == sortinglogic::InputDomain::NonnegativeIntegerKeys &&
+			app.preferences().simulation.variantId == "radix",
+			"selecting Radix from the algorithm browser changes the active algorithm without losing its compatible domain");
+	}
+
 	void testMetadataAlgorithmOptions()
 	{
 		MemorySettings persistence;
@@ -1159,6 +1688,69 @@ namespace
 			"execution_mode", "missing_option", topDownValue);
 		check(!app.dispatch(invalid).accepted && persistence.writes == writesBeforeInvalid,
 			"unknown stable option IDs are rejected without persisting a change");
+
+		const sortinglogic::AlgorithmDescriptor* baseN = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::ArrayvBaseNHeap);
+		check(baseN && app.dispatch(AppAction(AppActionKind::SelectAlgorithm, baseN->familyId, baseN->variantId)).accepted,
+			"Base-N Heap can be selected from its stable family and variant IDs");
+		const AppAction baseEight(AppActionKind::SetAlgorithmOption, baseN->familyId, baseN->variantId,
+			"heap_arity", "base_8", 8);
+		check(app.dispatch(baseEight).accepted &&
+			app.preferences().algorithmOptions.find(algorithmOptionSettingsKey(baseN->familyId, baseN->variantId, "heap_arity"))->second == "base_8",
+			"catalog-driven Base-N arity selection persists by stable option ID");
+		check(app.dispatch(AppAction(AppActionKind::BuildTrace)).accepted,
+			"Base-N trace starts after choosing a non-default arity");
+		const std::chrono::steady_clock::time_point buildDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < buildDeadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		const std::shared_ptr<const sortinglogic::SortTrace> baseNTrace = app.snapshot().hasTrace
+			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
+		check(baseNTrace && baseNTrace->bucketCount == 8,
+			"AppController routes catalog-selected heap arity into the immutable trace request");
+
+		const sortinglogic::AlgorithmDescriptor* rotateMerge = sortinglogic::algorithmDescriptor(
+			sortinglogic::SortAlgorithm::ArrayvOptimizedRotateMerge);
+		check(rotateMerge && algorithmOptionValue(app.preferences(), *rotateMerge, "rotate_buffer_capacity") == 64 &&
+			app.dispatch(AppAction(AppActionKind::SelectAlgorithm, rotateMerge->familyId, rotateMerge->variantId)).accepted,
+			"Optimized Rotate Merge exposes its pinned default 64-item temporary buffer");
+		const AppAction rotateBuffer(AppActionKind::SetAlgorithmOption, rotateMerge->familyId, rotateMerge->variantId,
+			"rotate_buffer_capacity", "items_16", 16);
+		check(app.dispatch(rotateBuffer).accepted &&
+			app.preferences().algorithmOptions.find(algorithmOptionSettingsKey(rotateMerge->familyId, rotateMerge->variantId,
+				"rotate_buffer_capacity"))->second == "items_16",
+			"Optimized Rotate Merge buffer capacity dispatches and persists by stable option ID");
+		check(app.dispatch(AppAction(AppActionKind::BuildTrace)).accepted,
+			"Optimized Rotate Merge trace starts after selecting a configured buffer capacity");
+		const std::chrono::steady_clock::time_point rotateDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < rotateDeadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		const std::shared_ptr<const sortinglogic::SortTrace> rotateTrace = app.snapshot().hasTrace
+			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
+		check(rotateTrace && rotateTrace->rotateMergeBufferSize == 16,
+			"AppController routes configured temporary-buffer capacity into the immutable trace request");
+
+		const sortinglogic::AlgorithmDescriptor* grail = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::ArrayvGrail);
+		check(grail && app.dispatch(AppAction(AppActionKind::SelectAlgorithm, grail->familyId, grail->variantId)).accepted &&
+			app.dispatch(AppAction(AppActionKind::SetAlgorithmOption, grail->familyId, grail->variantId,
+				"grail_buffer_mode", "static_buffer", 1)).accepted,
+			"Grail's static buffer mode is selectable through the catalog-driven settings model");
+		check(app.dispatch(AppAction(AppActionKind::BuildTrace)).accepted,
+			"Grail trace starts after selecting a static merge buffer");
+		const std::chrono::steady_clock::time_point grailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < grailDeadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		const std::shared_ptr<const sortinglogic::SortTrace> grailTrace = app.snapshot().hasTrace
+			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
+		check(grailTrace && grailTrace->bucketCount == 1,
+			"AppController routes Grail's selected buffer mode into the immutable trace request");
 	}
 
 	void testPlaybackTimingActions()
@@ -1251,12 +1843,18 @@ int main()
 {
 	testSpacing();
 	testBarCountSteps();
+	testModifierStepSizes();
+	testAppearanceAndPresetArchitecture();
+	testWindowsFontCatalog();
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
 	testSettingsStore();
+	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();
+	testAppearanceApplyIsTransactionalAndTransportNeutral();
 	testRestoreReconstructedDefaultsScope();
 	testShowcaseActions();
+	testDistributionAlgorithmsSelectableFromDefaultInput();
 	testMetadataAlgorithmOptions();
 	testPlaybackTimingActions();
 	testAudioPreparationPlaybackGate();

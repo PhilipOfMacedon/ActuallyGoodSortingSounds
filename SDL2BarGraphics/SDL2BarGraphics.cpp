@@ -19,6 +19,11 @@ namespace
 {
 	void handleKeyEvent(const SDL_KeyboardEvent& key, Window& window, AppController& app)
 	{
+		if ((key.keysym.sym == SDLK_RETURN || key.keysym.sym == SDLK_KP_ENTER) && (key.keysym.mod & KMOD_ALT) != 0)
+		{
+			window.toggleBorderlessFullscreen();
+			return;
+		}
 		if (key.repeat && key.keysym.sym != SDLK_UP && key.keysym.sym != SDLK_DOWN &&
 			key.keysym.sym != SDLK_LEFTBRACKET && key.keysym.sym != SDLK_RIGHTBRACKET)
 			return;
@@ -26,7 +31,10 @@ namespace
 		AppAction action;
 		switch (key.keysym.sym)
 		{
-		case SDLK_ESCAPE: window.setShouldClose(true); return;
+		case SDLK_ESCAPE:
+			if (window.isBorderlessFullscreen()) window.toggleBorderlessFullscreen();
+			else window.setShouldClose(true);
+			return;
 		case SDLK_r: action.kind = AppActionKind::Shuffle; break;
 		case SDLK_a: action.kind = AppActionKind::InstaSort; break;
 		case SDLK_i: action.kind = AppActionKind::InstaInvert; break;
@@ -69,12 +77,34 @@ namespace
 				audioOutput.armDiagnosticCapture();
 				continue;
 			}
+			if (event.type == SDL_KEYDOWN && !controls.textEntryActive())
+			{
+				const SDL_KeyboardEvent& key = event.key;
+				const bool fullscreenShortcut = (key.keysym.sym == SDLK_RETURN || key.keysym.sym == SDLK_KP_ENTER) &&
+					(key.keysym.mod & KMOD_ALT) != 0;
+				const SDL_Keymod spaceModifiers = static_cast<SDL_Keymod>(KMOD_SHIFT | KMOD_CTRL | KMOD_ALT | KMOD_GUI);
+				const bool playShortcut = key.keysym.sym == SDLK_SPACE &&
+					(key.keysym.mod & spaceModifiers) == 0 && !controls.modalUiOpen();
+				if (fullscreenShortcut || playShortcut)
+				{
+					handleKeyEvent(key, window, app);
+					continue;
+				}
+			}
 			AppAction action;
 			if (controls.handleEvent(event, action))
 			{
 				if (action.kind != AppActionKind::None)
 				{
-					app.dispatch(action);
+					if (action.kind == AppActionKind::ToggleBorderlessFullscreen)
+					{
+						window.toggleBorderlessFullscreen();
+						continue;
+					}
+					const sortinglogic::CommandResult result = app.dispatch(action);
+					controls.completeActionResult(action, result);
+					if (result.accepted && (action.kind == AppActionKind::SetUiPreset || action.kind == AppActionKind::ApplyAppearance))
+						window.setClassicWindows95Caption(app.preferences().appearance.activePreset == UiPresetId::ClassicWindows95);
 					if (action.kind == AppActionKind::RetryAudioDevice)
 					{
 						if (audioOutput.retry()) audioBridge.republish(audioMailbox);
@@ -98,6 +128,7 @@ int main(int argc, char** argv)
 
 	SettingsStore settingsStore;
 	AppController app(settingsStore);
+	mainWindow.setClassicWindows95Caption(app.preferences().appearance.activePreset == UiPresetId::ClassicWindows95);
 	LatestAudioStateMailbox audioMailbox;
 	AudioPresentationBridge audioBridge;
 	SdlAudioOutput audioOutput(audioMailbox);
@@ -137,14 +168,17 @@ int main(int argc, char** argv)
 		if (audioOutput.available() && audioPlayheadReady && audioOutput.readPlayheadFeedback(playhead))
 			app.applyAudioPlayhead(playhead, audioBridge.timelineGeneration(), audioBridge.transportRevision());
 		snapshot = app.snapshot();
-		frameCoordinator.beginFrame(paletteFor(app.preferences().visual.palette).background);
-		arrayRenderer.render(snapshot, app.preferences(), controlPanel.chartTop());
+		const UiThemeCustomization& activeTheme = app.preferences().appearance.themes.find(app.preferences().appearance.activePreset)->second;
+		const ThemePalette palette = paletteForAppearance(app.preferences().appearance.activePreset, activeTheme);
 		std::string audioStatus = audioOutput.status();
 		if (audioOutput.outputOverloadCount() > 0)
 			audioStatus += " | output safety clamp: " + std::to_string(audioOutput.outputOverloadCount()) + " samples";
 		if (audioBridge.timelinePreparing()) audioStatus = "Preparing audio timeline...";
 		else if (!audioBridge.timelineError().empty())
 			audioStatus = "Timeline error: " + audioBridge.timelineError() + " | sorting remains available";
+		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());
+		frameCoordinator.beginFrame(palette.background);
+		arrayRenderer.render(snapshot, app.preferences(), controlPanel.chartViewport(), palette);
 		controlPanel.render(snapshot, app.persistenceStatus(), audioStatus, app.playbackPending());
 		frameCoordinator.finishFrame();
 	}

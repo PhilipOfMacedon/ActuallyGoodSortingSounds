@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "../SortingLogic/SortingLogic.h"
 #include "../SortingLogic/TraceBuildService.h"
 #include "UserSettings.h"
@@ -23,15 +25,20 @@ enum class AppActionKind
 	DecreaseCountCoarse,
 	IncreaseCountFine,
 	IncreaseCountCoarse,
+	AdjustItemCount,
 	SetItemCount,
+	AdjustDuration,
 	DecreaseDuration,
 	IncreaseDuration,
 	SetDuration,
 	SeekFraction,
+	SetUiPreset,
+	ApplyAppearance,
 	SetPalette,
 	SetSpacing,
 	SetPanelExpanded,
 	TogglePanelExpanded,
+	ToggleBorderlessFullscreen,
 	SetInputProfile,
 	SetInputDomain,
 	SetInputPattern,
@@ -81,6 +88,7 @@ struct AppAction
 	AudioParameterId audioParameter;
 	ReconstructedAudioParameterId reconstructedAudioParameter;
 	int index;
+	std::shared_ptr<const UiAppearancePreferences> appearance;
 
 	AppAction(AppActionKind action = AppActionKind::None, float argument = 0.0f, int selected = 0,
 		AudioParameterId parameter = AudioParameterId::MasterLevel, int arrayIndex = 0)
@@ -117,6 +125,7 @@ public:
 	sortinglogic::CommandResult dispatch(const AppAction& action);
 	void update(float deltaSeconds, bool audioClockAvailable = false);
 	void setAudioPreparationPending(bool pending);
+	bool applyAppearance(const UiAppearancePreferences& appearance, std::string* error = nullptr);
 	bool playbackPending() const { return playbackPending_; }
 	void applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
 		std::uint64_t currentTimelineGeneration, std::uint64_t currentTransportRevision);

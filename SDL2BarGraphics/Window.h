@@ -33,6 +33,9 @@ public:
 	void clearWindow();
 	void refreshMetrics();
 	int initialize();
+	void toggleBorderlessFullscreen();
+	void setClassicWindows95Caption(bool enabled);
+	bool isBorderlessFullscreen() const { return borderlessFullscreen; }
 	SDL_Window* getWindow() const { return mainWindow; }
 
 private:
@@ -47,6 +50,11 @@ private:
 	GLint bufferWidth;
 	GLint bufferHeight;
 	bool shouldClose;
+	bool borderlessFullscreen;
+	int windowedX;
+	int windowedY;
+	int windowedWidth;
+	int windowedHeight;
 	bool sdlInitialized;
 	bool ttfInitialized;
 };

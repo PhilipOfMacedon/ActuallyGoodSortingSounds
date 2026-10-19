@@ -3,13 +3,20 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <iomanip>
 #include <limits>
 #include <set>
 #include <sstream>
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+#include <commdlg.h>
+
 #include "LayoutMetrics.h"
 #include "SettingsScroll.h"
+#include "WindowsFontCatalog.h"
 
 namespace
 {
@@ -98,6 +105,102 @@ namespace
 		return names;
 	}
 
+	std::vector<std::string> uiPresetNames()
+	{
+		std::vector<std::string> names;
+		const std::vector<UiPresetId>& catalog = uiPresetCatalog();
+		for (std::size_t i = 0; i < catalog.size(); ++i) names.push_back(uiPresetDefinition(catalog[i]).displayName);
+		return names;
+	}
+
+	const WindowsFontCatalog& uiFontCatalog()
+	{
+		static const WindowsFontCatalog catalog;
+		return catalog;
+	}
+
+	std::vector<std::string> fontFamilyNames()
+	{
+		std::vector<std::string> names;
+		const std::vector<WindowsFontFace>& faces = uiFontCatalog().faces();
+		for (std::size_t i = 0; i < faces.size(); ++i)
+			if (std::find(names.begin(), names.end(), faces[i].family) == names.end()) names.push_back(faces[i].family);
+		return names;
+	}
+
+	std::vector<std::string> fontStyleNames(const std::string& family)
+	{
+		std::vector<std::string> names;
+		const std::vector<WindowsFontFace>& faces = uiFontCatalog().faces();
+		for (std::size_t i = 0; i < faces.size(); ++i)
+			if (faces[i].family == family && std::find(names.begin(), names.end(), faces[i].style) == names.end()) names.push_back(faces[i].style);
+		return names;
+	}
+
+	std::string appearanceTokenLabel(const UiTokenDescriptor& descriptor)
+	{
+		return std::string(uiTokenCategoryName(descriptor.category)) + " | " + descriptor.description + " [" + descriptor.stableId + "]";
+	}
+
+	std::string tokenDisplayValue(const UiTokenValue& value)
+	{
+		std::ostringstream text;
+		text << std::fixed << std::setprecision(3);
+		switch (value.type)
+		{
+		case UiTokenType::Color:
+			text << "R " << value.color.r << "  G " << value.color.g << "  B " << value.color.b << "  A " << value.color.a;
+			break;
+		case UiTokenType::Number: text << value.number; break;
+		case UiTokenType::Boolean: text << (value.boolean ? "ON" : "OFF"); break;
+		case UiTokenType::Choice: text << value.text; break;
+		case UiTokenType::Font: text << value.font.family << " | " << value.font.style; break;
+		}
+		return text.str();
+	}
+
+	bool writeUtf8File(const std::wstring& path, const std::string& contents, std::string* error)
+	{
+		HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file == INVALID_HANDLE_VALUE)
+		{
+			if (error) *error = "Could not create the profile file.";
+			return false;
+		}
+		DWORD written = 0;
+		const BOOL ok = WriteFile(file, contents.data(), static_cast<DWORD>(contents.size()), &written, nullptr) && written == contents.size();
+		CloseHandle(file);
+		if (!ok && error) *error = "Could not write the full profile file.";
+		return ok != FALSE;
+	}
+
+bool readUtf8File(const std::wstring& path, std::string& contents, std::string* error)
+	{
+		HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file == INVALID_HANDLE_VALUE)
+		{
+			if (error) *error = "Could not open the profile file.";
+			return false;
+		}
+		LARGE_INTEGER size;
+		if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 || size.QuadPart > 1024 * 1024)
+		{
+			CloseHandle(file);
+			if (error) *error = "The profile file is too large or could not be read.";
+			return false;
+		}
+		contents.assign(static_cast<std::size_t>(size.QuadPart), '\0');
+		DWORD read = 0;
+		const BOOL ok = contents.empty() || ReadFile(file, &contents[0], static_cast<DWORD>(contents.size()), &read, nullptr);
+		CloseHandle(file);
+		if (!ok || read != contents.size())
+		{
+			if (error) *error = "Could not read the full profile file.";
+			return false;
+		}
+		return true;
+	}
+
 	std::vector<std::string> spacingNames()
 	{
 		std::vector<std::string> names;
@@ -176,37 +279,96 @@ namespace
 		return true;
 	}
 
+std::string formatDuration(float seconds)
+{
+	std::ostringstream value;
+	value << std::setprecision(6) << seconds << " sec";
+	return value.str();
+}
+
 	int paletteIndex(PaletteId id) { return static_cast<int>(id); }
 	int spacingIndex(BarSpacingMode mode) { return static_cast<int>(mode); }
+
+	const UiThemeCustomization& activeTheme(const UserPreferences& settings)
+	{
+		const std::map<UiPresetId, UiThemeCustomization>::const_iterator found = settings.appearance.themes.find(settings.appearance.activePreset);
+		if (found != settings.appearance.themes.end()) return found->second;
+		static const UiThemeCustomization fallback;
+		return fallback;
+	}
+
+	float themeNumber(const UserPreferences& settings, const char* tokenId, float fallback)
+	{
+		const UiTokenValue value = effectiveUiTokenValue(settings.appearance.activePreset, activeTheme(settings), tokenId);
+		return value.type == UiTokenType::Number ? static_cast<float>(value.number) : fallback;
+	}
+
+	bool themeBoolean(const UserPreferences& settings, const char* tokenId, bool fallback)
+	{
+		const UiPresetId preset = settings.appearance.activePreset;
+		const UiTokenValue value = effectiveUiTokenValue(preset, activeTheme(settings), tokenId);
+		return value.type == UiTokenType::Boolean ? value.boolean : fallback;
+	}
+
+	unsigned long long appearanceRevision(const UserPreferences& settings, UiInvalidation invalidation)
+	{
+		unsigned long long hash = 1469598103934665603ULL;
+		const UiPresetId preset = settings.appearance.activePreset;
+		const UiPresetDefinition& definition = uiPresetDefinition(preset);
+		const UiThemeCustomization& theme = activeTheme(settings);
+		for (std::size_t tokenIndex = 0; tokenIndex < definition.tokens.size(); ++tokenIndex)
+		{
+			const UiTokenDescriptor& descriptor = definition.tokens[tokenIndex];
+			if ((static_cast<int>(descriptor.invalidation) & static_cast<int>(invalidation)) == 0) continue;
+			const std::string encoded = encodeUiTokenValue(effectiveUiTokenValue(preset, theme, descriptor.stableId));
+			for (std::size_t i = 0; i < descriptor.stableId.size(); ++i)
+				hash = (hash ^ static_cast<unsigned char>(descriptor.stableId[i])) * 1099511628211ULL;
+			for (std::size_t i = 0; i < encoded.size(); ++i)
+				hash = (hash ^ static_cast<unsigned char>(encoded[i])) * 1099511628211ULL;
+		}
+		return hash;
+	}
+
+	unsigned long long layoutRevision(const UserPreferences& settings)
+	{
+		return appearanceRevision(settings, UiInvalidation::Layout);
+	}
+
+	unsigned long long fontMetricRevision(const UserPreferences& settings)
+	{
+		return appearanceRevision(settings, UiInvalidation::Typography);
+	}
+
+	std::map<std::string, UiColor> paletteColors(const ThemePalette& palette)
+	{
+		std::map<std::string, UiColor> colors;
+		colors["color.background"] = UiColor(palette.background.r, palette.background.g, palette.background.b, palette.background.a);
+		colors["color.bar"] = UiColor(palette.bar.r, palette.bar.g, palette.bar.b, palette.bar.a);
+		colors["color.compared"] = UiColor(palette.compared.r, palette.compared.g, palette.compared.b, palette.compared.a);
+		colors["color.held"] = UiColor(palette.held.r, palette.held.g, palette.held.b, palette.held.a);
+		colors["color.shifted"] = UiColor(palette.shifted.r, palette.shifted.g, palette.shifted.b, palette.shifted.a);
+		colors["color.write_target"] = UiColor(palette.writeTarget.r, palette.writeTarget.g, palette.writeTarget.b, palette.writeTarget.a);
+		colors["color.gap"] = UiColor(palette.gap.r, palette.gap.g, palette.gap.b, palette.gap.a);
+		colors["color.panel"] = UiColor(palette.panel.r, palette.panel.g, palette.panel.b, palette.panel.a);
+		colors["color.button"] = UiColor(palette.button.r, palette.button.g, palette.button.b, palette.button.a);
+		colors["color.disabled_button"] = UiColor(palette.disabledButton.r, palette.disabledButton.g, palette.disabledButton.b, palette.disabledButton.a);
+		colors["color.value_button"] = UiColor(palette.valueButton.r, palette.valueButton.g, palette.valueButton.b, palette.valueButton.a);
+		colors["color.accent"] = UiColor(palette.accent.r, palette.accent.g, palette.accent.b, palette.accent.a);
+		colors["color.run"] = UiColor(palette.run.r, palette.run.g, palette.run.b, palette.run.a);
+		colors["color.play_active"] = UiColor(palette.playActive.r, palette.playActive.g, palette.playActive.b, palette.playActive.a);
+		colors["color.reset"] = UiColor(palette.reset.r, palette.reset.g, palette.reset.b, palette.reset.a);
+		colors["color.text"] = UiColor(palette.text.r, palette.text.g, palette.text.b, palette.text.a);
+		colors["color.muted_text"] = UiColor(palette.mutedText.r, palette.mutedText.g, palette.mutedText.b, palette.mutedText.a);
+		colors["color.border"] = UiColor(palette.border.r, palette.border.g, palette.border.b, palette.border.a);
+		colors["color.timeline_rail"] = UiColor(palette.timelineRail.r, palette.timelineRail.g, palette.timelineRail.b, palette.timelineRail.a);
+		colors["color.timeline_thumb"] = UiColor(palette.timelineThumb.r, palette.timelineThumb.g, palette.timelineThumb.b, palette.timelineThumb.a);
+		return colors;
+	}
+
 	std::string algorithmLabel(sortinglogic::SortAlgorithm algorithm)
 	{
 		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(algorithm);
 		return descriptor ? descriptor->displayName : "Select algorithm";
-	}
-
-	std::string compactFamilyName(const char* displayName)
-	{
-		std::string name = displayName ? displayName : "";
-		const char* suffixes[] = { " Methods", " Sorts", " Sort" };
-		for (std::size_t i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); ++i)
-		{
-			const std::string suffix(suffixes[i]);
-			if (name.size() > suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0)
-			{
-				name.erase(name.size() - suffix.size());
-				break;
-			}
-		}
-		return name;
-	}
-
-	std::string compactVariantName(const char* displayName)
-	{
-		std::string name = displayName ? displayName : "";
-		const std::string longWord("Transposition");
-		const std::size_t position = name.find(longWord);
-		if (position != std::string::npos) name.replace(position, longWord.size(), "Trans.");
-		return name;
 	}
 
 	std::string algorithmOptionWidgetId(const sortinglogic::AlgorithmDescriptor& algorithm, const std::string& groupId)
@@ -219,6 +381,8 @@ namespace
 		if (groupId == "gap_sequence") return "Shell gap sequence";
 		if (groupId == "execution_mode") return "Merge execution order";
 		if (groupId == "writeback_mode") return "Merge writeback";
+		if (groupId == "rotate_buffer_capacity") return "Temporary buffer capacity";
+		if (groupId == "grail_buffer_mode") return "Grail buffer mode";
 		std::string caption = groupId;
 		std::replace(caption.begin(), caption.end(), '_', ' ');
 		if (!caption.empty()) caption[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(caption[0])));
@@ -252,26 +416,66 @@ namespace
 		color.b = std::min(1.0f, color.b * 1.18f + 0.025f);
 		return color;
 	}
+
+	void appendWrappedLines(std::vector<std::string>& lines, const std::string& paragraph, float maximumWidth,
+		const UiFontReference& font, int rasterSize, int dpi)
+	{
+		if (paragraph.empty())
+		{
+			lines.push_back(std::string());
+			return;
+		}
+		const float dpiScale = 96.0f / static_cast<float>(std::max(1, dpi));
+		auto measuredWidth = [&](const std::string& text)
+		{
+			return TextLabel::measureText(text, font, rasterSize, dpi).x * dpiScale;
+		};
+		std::istringstream words(paragraph);
+		std::string word;
+		std::string line;
+		while (words >> word)
+		{
+			const std::string candidate = line.empty() ? word : line + " " + word;
+			if (!line.empty() && measuredWidth(candidate) > maximumWidth)
+			{
+				lines.push_back(line);
+				line = word;
+			}
+			else line = candidate;
+		}
+		if (!line.empty()) lines.push_back(line);
+		else if (lines.empty()) lines.push_back(std::string());
+	}
 }
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), settingsUi_(), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+	mainUi_(), settingsUi_(), appearanceUi_(), session_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
 	status_(new TextLabel("Ready.", "Courier New Bold", 14, { 238, 246, 249, 255 })),
+	collapsedSummary_(new TextLabel("Insertion Sort - 0%", "Courier New Bold", 20, { 255, 255, 255, 255 })),
 	settingsTitle_(new TextLabel("Settings", "Courier New Bold", 17, { 238, 246, 249, 255 })),
 	settingsSaveStatus_(new TextLabel("Preferences save automatically.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	audioDeviceStatus_(new TextLabel("Audio device is not initialized.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
-	displayedDetail_(), displayedStatus_(), displayedSaveStatus_(), lastDetailUpdate_(0),
-	timelineBounds_(), headerBounds_(), gearBounds_(), settingsPanelBounds_(), settingsContentBounds_(), draggingTimeline_(false),
-	settingsOpen_(false), algorithmMenuOpen_(false), algorithmMenuVariantPane_(false), algorithmSearchFocused_(false),
-	algorithmSearch_(), algorithmMenuFamily_(), algorithmFamilySelection_(0), algorithmVariantSelection_(0),
-	algorithmFamilyScroll_(0), algorithmVariantScroll_(0), algorithmMenuBounds_(), algorithmSearchBounds_(),
-	algorithmFamilyBounds_(), algorithmVariantBounds_(), settingsTab_(0), audioAdvanced_(false), settingsScrollOffset_(0.0f), selectedBand_(3),
-	chartTop_(184.0f), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false),
-	inlineEditWidgetId_(), inlineEditBuffer_(), inlineEditReplaceOnNextDigit_(false)
+	displayedDetail_(), displayedStatus_(), displayedCollapsedSummary_(), displayedSaveStatus_(), lastDetailUpdate_(0),
+	timelineBounds_(), timelineControlBounds_(), timelineLeftArrowBounds_(), timelineRightArrowBounds_(),
+	headerBounds_(), gearBounds_(), settingsPanelBounds_(), settingsContentBounds_(), draggingTimeline_(false),
+	settingsOpen_(false), appearanceEditorOpen_(false), appearanceWasSettingsOpen_(false), appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
+	algorithmMenuOpen_(false), algorithmMenuVariantPane_(false), algorithmSearchFocused_(false), pendingAlgorithmSelection_(false), algorithmMenuStatus_(),
+	algorithmMenuBounds_(), algorithmSearchBounds_(), algorithmFamilyBounds_(), algorithmVariantBounds_(),
+	settingsScrollViewport_(), algorithmFamilyScrollViewport_(), algorithmVariantScrollViewport_(),
+	algorithmProfileScrollViewport_(), algorithmProfileScrollTrack_(), algorithmProfileScrollThumb_(), algorithmProfileLines_(),
+	algorithmProfileAlgorithm_(), algorithmProfileLineHeight_(18.0f), algorithmProfileVisible_(false), draggingAlgorithmProfileScroll_(false),
+	algorithmProfileDragStartY_(0.0f), algorithmProfileDragStartOffset_(0.0f),
+	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
+	inlineEditWidgetId_(), inlineEditBuffer_(), inlineEditReplaceOnNextDigit_(false), inlineEditAppearanceValue_(false),
+	appearanceDraft_(settings.appearance), appearanceEditingPreset_(settings.appearance.activePreset), appearanceSearch_(),
+	appearanceCategoryFilter_(0), selectedAppearanceToken_(), filteredAppearanceTokens_(), appearanceError_(), appearancePanelBounds_(), appearanceColorSwatchBounds_(),
+	appearanceEditorTitle_(new TextLabel("Appearance customization", "Courier New Bold", 18, { 255, 255, 255, 255 })),
+	appearanceTokenDescription_(new TextLabel("", "Courier New Bold", 13, { 255, 255, 255, 255 })),
+	appearanceStatus_(new TextLabel("", "Courier New Bold", 12, { 255, 255, 255, 255 }))
 {
 	createWidgets();
 	updateLayout();
@@ -279,7 +483,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 
 ControlPanel::~ControlPanel()
 {
-	if (!inlineEditWidgetId_.empty() || algorithmMenuOpen_) SDL_StopTextInput();
+	if (!inlineEditWidgetId_.empty() || algorithmMenuOpen_ || appearanceSearchFocused_) SDL_StopTextInput();
 }
 
 bool ControlPanel::isReady() const
@@ -291,6 +495,15 @@ void ControlPanel::createWidgets()
 {
 	mainUi_.addButton("panel_toggle", ">>", AppAction(AppActionKind::TogglePanelExpanded));
 	mainUi_.addButton("settings", "[=]", AppAction(), UiAction::ViewCommand::OpenSettings);
+	mainUi_.addComboBox("menu_file", std::vector<std::string>{ "File", "Build Trace", "Generate & Play", "Reset" }, 0);
+	mainUi_.addComboBox("menu_view", std::vector<std::string>{ "View", "Toggle Setup", "Borderless Fullscreen" }, 0);
+	mainUi_.addComboBox("menu_tools", std::vector<std::string>{ "Tools", "Algorithm Browser...", "Settings...", "Appearance..." }, 0);
+	mainUi_.find("menu_file")->setOptionEnabled(0, false);
+	mainUi_.find("menu_view")->setOptionEnabled(0, false);
+	mainUi_.find("menu_tools")->setOptionEnabled(0, false);
+	mainUi_.find("menu_file")->setPopupAbove(false);
+	mainUi_.find("menu_view")->setPopupAbove(false);
+	mainUi_.find("menu_tools")->setPopupAbove(false);
 	mainUi_.addButton("shuffle", "Shuffle", AppAction(AppActionKind::Shuffle));
 	mainUi_.addButton("insta_sort", "Insta-sort", AppAction(AppActionKind::InstaSort));
 	mainUi_.addButton("insta_invert", "Insta-invert", AppAction(AppActionKind::InstaInvert));
@@ -303,21 +516,25 @@ void ControlPanel::createWidgets()
 	mainUi_.addButton("reset", "Reset", AppAction(AppActionKind::Reset));
 	mainUi_.addButton("previous", "< Event", AppAction(AppActionKind::PreviousEvent));
 	mainUi_.addButton("next", "Event >", AppAction(AppActionKind::NextEvent));
-	mainUi_.addButton("bars_down_coarse", "Bars --", AppAction(AppActionKind::DecreaseCountCoarse));
-	mainUi_.addButton("bars_down_fine", "Bars -", AppAction(AppActionKind::DecreaseCountFine));
+	mainUi_.addButton("bars_down", "Bars --", AppAction(AppActionKind::AdjustItemCount, -10.0f));
 	mainUi_.addButton("bars_value", "80 bars");
-	mainUi_.addButton("bars_up_fine", "Bars +", AppAction(AppActionKind::IncreaseCountFine));
-	mainUi_.addButton("bars_up_coarse", "Bars ++", AppAction(AppActionKind::IncreaseCountCoarse));
-	mainUi_.addButton("time_down", "Time -", AppAction(AppActionKind::DecreaseDuration));
+	mainUi_.addButton("bars_up", "Bars ++", AppAction(AppActionKind::AdjustItemCount, 10.0f));
+	mainUi_.addButton("time_down", "Time --", AppAction(AppActionKind::AdjustDuration, -1.0f));
 	mainUi_.addButton("time_value", "10 sec");
-	mainUi_.addButton("time_up", "Time +", AppAction(AppActionKind::IncreaseDuration));
+	mainUi_.addButton("time_up", "Time ++", AppAction(AppActionKind::AdjustDuration, 1.0f));
+	mainUi_.addComboBox("domain", domainNames(), static_cast<int>(settings_.simulation.domain), AppAction(AppActionKind::SetInputDomain));
+	mainUi_.addComboBox("pattern", inputPatternNames(), static_cast<int>(settings_.simulation.pattern), AppAction(AppActionKind::SetInputPattern));
+	mainUi_.addButton("seed_readout", "Seed");
+	mainUi_.addButton("start_overlay", "Generate & Play", AppAction(AppActionKind::GenerateAndPlay));
 	settingsUi_.addButton("appearance_tab", "Appearance", AppAction(), UiAction::ViewCommand::ShowAppearanceSettings);
 	settingsUi_.addButton("algorithm_tab", "Algorithm", AppAction(), UiAction::ViewCommand::ShowAlgorithmSettings);
 	settingsUi_.addButton("audio_tab", "General Audio", AppAction(), UiAction::ViewCommand::ShowGeneralAudioSettings);
 	settingsUi_.addButton("audio_basic_tab", "Basic", AppAction(), UiAction::ViewCommand::ShowAudioBasic);
 	settingsUi_.addButton("audio_advanced_tab", "Advanced", AppAction(), UiAction::ViewCommand::ShowAudioAdvanced);
-	settingsUi_.addComboBox("palette", paletteNames(), paletteIndex(settings_.visual.palette), AppAction(AppActionKind::SetPalette));
+	settingsUi_.addComboBox("preset", uiPresetNames(), static_cast<int>(settings_.appearance.activePreset), AppAction(AppActionKind::SetUiPreset));
+	settingsUi_.addComboBox("palette", paletteNames(), paletteIndex(activeTheme(settings_).palette), AppAction(AppActionKind::SetPalette));
 	settingsUi_.addComboBox("spacing", spacingNames(), spacingIndex(settings_.visual.spacing), AppAction(AppActionKind::SetSpacing));
+	settingsUi_.addButton("appearance_customize", "Customize appearance...", AppAction(), UiAction::ViewCommand::OpenAppearanceEditor);
 	settingsUi_.addComboBox("domain", domainNames(), static_cast<int>(settings_.simulation.domain), AppAction(AppActionKind::SetInputDomain));
 	settingsUi_.addComboBox("pattern", inputPatternNames(), static_cast<int>(settings_.simulation.pattern), AppAction(AppActionKind::SetInputPattern));
 	settingsUi_.addComboBox("playback_timing", std::vector<std::string>{ "Fixed duration", "Reference cadence" },
@@ -326,8 +543,10 @@ void ControlPanel::createWidgets()
 		settings_.simulation.mergeBufferVisualizationEnabled ? 1 : 0, AppAction(AppActionKind::SetMergeBufferVisualization));
 	settingsUi_.addComboBox("completion_scan", booleanNames(), settings_.simulation.completionScanEnabled ? 1 : 0,
 		AppAction(AppActionKind::SetCompletionScan));
+	settingsCaptions_["preset"] = "Interface preset";
 	settingsCaptions_["palette"] = "Palette";
 	settingsCaptions_["spacing"] = "Bar spacing";
+	settingsCaptions_["appearance_customize"] = "";
 	settingsCaptions_["domain"] = "Input domain";
 	settingsCaptions_["pattern"] = "Input pattern";
 	settingsCaptions_["playback_timing"] = "Playback timing";
@@ -407,11 +626,54 @@ void ControlPanel::createWidgets()
 	settingsUi_.addButton("audio_retry", "Retry audio device", AppAction(AppActionKind::RetryAudioDevice));
 	settingsUi_.addButton("settings_close", "Done", AppAction(), UiAction::ViewCommand::CloseSettings);
 	settingsUi_.addContainer("settings_panel", UiContainerKind::Panel);
+	appearanceUi_.addComboBox("appearance_preset", uiPresetNames(), static_cast<int>(settings_.appearance.activePreset));
+	appearanceUi_.addComboBox("appearance_palette", paletteNames(), paletteIndex(activeTheme(settings_).palette));
+	appearanceUi_.addComboBox("appearance_category", std::vector<std::string>{ "All categories", "Colors", "Typography", "Spacing / layout", "Decorations" }, 0);
+	appearanceUi_.addButton("appearance_search", "Search appearance tokens");
+	appearanceUi_.addComboBox("appearance_token", std::vector<std::string>(), 0);
+	appearanceUi_.addButton("appearance_value_down", "-");
+	appearanceUi_.addButton("appearance_value", "0");
+	appearanceUi_.addButton("appearance_value_up", "+");
+	appearanceUi_.addSlider("appearance_value_slider", "Property value", 0.0f, 1.0f, 0.01f, 0.0f, AppAction());
+	appearanceUi_.addButton("appearance_color", "Pick color...");
+	appearanceUi_.addButton("appearance_color_alpha", "Alpha 1.000");
+	appearanceUi_.addSlider("appearance_color_r", "Red", 0.0f, 1.0f, 0.01f, 0.0f, AppAction());
+	appearanceUi_.addSlider("appearance_color_g", "Green", 0.0f, 1.0f, 0.01f, 0.0f, AppAction());
+	appearanceUi_.addSlider("appearance_color_b", "Blue", 0.0f, 1.0f, 0.01f, 0.0f, AppAction());
+	appearanceUi_.addSlider("appearance_color_a", "Alpha", 0.0f, 1.0f, 0.01f, 1.0f, AppAction());
+	appearanceUi_.addButton("appearance_boolean", "Toggle value");
+	appearanceUi_.addComboBox("appearance_choice", std::vector<std::string>(), 0);
+	appearanceUi_.addComboBox("appearance_font_family", std::vector<std::string>(), 0);
+	appearanceUi_.addComboBox("appearance_font_style", std::vector<std::string>(), 0);
+	appearanceUi_.addButton("appearance_reset_token", "Reset property");
+	appearanceUi_.addButton("appearance_reset_theme", "Reset this preset");
+	appearanceUi_.addButton("appearance_import", "Import profile...");
+	appearanceUi_.addButton("appearance_export", "Export profile...");
+	appearanceUi_.addButton("appearance_apply", "Apply");
+	appearanceUi_.addButton("appearance_cancel", "Cancel");
+	mainUi_.find("panel_toggle")->setRole(UiControlRole::PanelToggle);
+	mainUi_.find("settings")->setRole(UiControlRole::Settings);
+	mainUi_.find("algorithm")->setRole(UiControlRole::AlgorithmChoice);
+	mainUi_.find("run")->setRole(UiControlRole::BuildTrace);
+	mainUi_.find("play")->setRole(UiControlRole::Playback);
+	mainUi_.find("reset")->setRole(UiControlRole::Reset);
+	mainUi_.find("bars_value")->setRole(UiControlRole::EditableValue);
+	mainUi_.find("time_value")->setRole(UiControlRole::EditableValue);
+	mainUi_.find("start_overlay")->setRole(UiControlRole::Playback);
+	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
+		if (mainUi_.widgets()[i]->kind() == UiWidgetKind::ComboBox) mainUi_.widgets()[i]->setRole(UiControlRole::Choice);
+	for (std::size_t i = 0; i < settingsUi_.widgets().size(); ++i)
+		if (settingsUi_.widgets()[i]->kind() == UiWidgetKind::ComboBox) settingsUi_.widgets()[i]->setRole(UiControlRole::Choice);
 
 	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 	{
 		const UiWidget& widget = *mainUi_.widgets()[i];
 		labels_[widget.id()].reset(new TextLabel(widget.label(), "Courier New Bold", 16, { 238, 246, 249, 255 }));
+	}
+	for (std::size_t i = 0; i < appearanceUi_.widgets().size(); ++i)
+	{
+		const UiWidget& widget = *appearanceUi_.widgets()[i];
+		labels_[widget.id()].reset(new TextLabel(widget.label(), "Courier New Bold", 15, { 255, 255, 255, 255 }));
 	}
 	for (std::size_t i = 0; i < settingsUi_.widgets().size(); ++i)
 	{
@@ -430,6 +692,7 @@ void ControlPanel::createWidgets()
 	}
 	for (std::map<std::string, std::string>::const_iterator i = settingsCaptions_.begin(); i != settingsCaptions_.end(); ++i)
 		labels_[i->first + "#caption"].reset(new TextLabel(i->second, "Courier New Bold", 12, { 238, 246, 249, 255 }));
+	refreshAppearanceTokens();
 }
 
 void ControlPanel::updateLayout()
@@ -438,77 +701,80 @@ void ControlPanel::updateLayout()
 	height_ = window_.getLogicalHeight();
 	if (width_ <= 0 || height_ <= 0)
 		return;
+	const UiPresetId preset = renderPreferences_.appearance.activePreset;
 	const LayoutCacheKey currentKey(width_, height_, window_.getDrawableWidth(), window_.getDrawableHeight(),
-		settings_.visual.panelExpanded);
+		settings_.visual.panelExpanded, static_cast<int>(preset), layoutRevision(renderPreferences_), fontMetricRevision(renderPreferences_));
 	if (layoutCacheValid_ && sameLayoutInputs(layoutKey_, currentKey))
 	{
 		layoutSettingsControls();
+		layoutMainComboPopups();
 		layoutAlgorithmMenu();
 		return;
 	}
 	layoutKey_ = currentKey;
 	layoutCacheValid_ = true;
-	headerBounds_ = UiRect(0.0f, 0.0f, static_cast<float>(width_), 42.0f);
-	const ResponsivePanelLayout panelLayout = calculatePanelLayout(width_, settings_.visual.panelExpanded);
-	const bool wide = panelLayout.wide;
-	const float margin = 16.0f;
-	const float availableWidth = std::max(1.0f, static_cast<float>(width_) - 2.0f * margin);
-	const float gap = width_ < 620 ? 3.0f : 6.0f;
-	const float rowHeight = 30.0f;
-	mainUi_.clearContainers();
-	mainUi_.addContainer("main_panel", UiContainerKind::Panel);
-	mainUi_.addContainer("header_overlay", UiContainerKind::Overlay, "main_panel");
-	mainUi_.attachWidget("panel_toggle", "header_overlay");
-	mainUi_.attachWidget("settings", "header_overlay");
-	mainUi_.addContainer("main_rows", UiContainerKind::Column, "main_panel");
-	std::vector<std::string> groupA;
-	groupA.push_back("shuffle"); groupA.push_back("insta_sort"); groupA.push_back("insta_invert"); groupA.push_back("algorithm");
-	std::vector<std::string> groupB;
-	groupB.push_back("direction"); groupB.push_back("run"); groupB.push_back("play"); groupB.push_back("reset");
-	std::vector<std::string> groupC;
-	groupC.push_back("previous"); groupC.push_back("next"); groupC.push_back("bars_down_coarse"); groupC.push_back("bars_down_fine"); groupC.push_back("bars_value");
-	std::vector<std::string> groupD;
-	groupD.push_back("bars_up_fine"); groupD.push_back("bars_up_coarse"); groupD.push_back("time_down"); groupD.push_back("time_value"); groupD.push_back("time_up");
-	mainUi_.layoutContainer("main_panel", headerBounds_);
-	mainUi_.find("panel_toggle")->setBounds(UiRect(12.0f, 8.0f, 28.0f, 26.0f));
-	mainUi_.find("settings")->setBounds(UiRect(static_cast<float>(width_ - 42), 8.0f, 30.0f, 26.0f));
-	gearBounds_ = mainUi_.find("settings")->bounds();
-	if (wide)
+	laidOutPreset_ = preset;
+	UiLayoutInput layoutInput;
+	layoutInput.width = static_cast<float>(width_);
+	layoutInput.height = static_cast<float>(height_);
+	layoutInput.expanded = settings_.visual.panelExpanded;
+	layoutInput.headerHeight = preset == UiPresetId::ClassicWindows95 ? 0.0f :
+		themeNumber(renderPreferences_, "layout.header_height", 42.0f);
+	layoutInput.menuHeight = preset == UiPresetId::Current ? 0.0f : themeNumber(renderPreferences_, "layout.menu_height", 26.0f);
+	layoutInput.margin = themeNumber(renderPreferences_, "layout.control_margin", preset == UiPresetId::Current ? 16.0f : 12.0f);
+	layoutInput.gap = themeNumber(renderPreferences_, "layout.control_gap", 6.0f);
+	layoutInput.controlHeight = themeNumber(renderPreferences_, "layout.control_height", 30.0f);
+	layoutInput.railWidth = themeNumber(renderPreferences_, "layout.rail_width", 340.0f);
+	layoutInput.transportHeight = themeNumber(renderPreferences_, "layout.transport_height", 88.0f);
+	layoutInput.chartInset = themeNumber(renderPreferences_, "layout.chart_inset", preset == UiPresetId::Current ? 0.0f : 16.0f);
+	layoutInput.contentGap = themeNumber(renderPreferences_, "layout.content_gap", 14.0f);
+	layoutInput.timelineArrowSize = themeNumber(renderPreferences_, "scrollbar.arrow_size", 14.0f);
+	std::vector<std::string> controlIds;
+	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i) controlIds.push_back(mainUi_.widgets()[i]->id());
+	layoutResult_ = calculateUiLayout(preset, layoutInput, controlIds);
+	mainUi_.setFocusOrder(layoutResult_.focusOrder);
+	headerBounds_ = layoutResult_.header;
+	timelineBounds_ = layoutResult_.timelineTrack.width > 0.0f ? layoutResult_.timelineTrack : layoutResult_.timeline;
+	timelineControlBounds_ = layoutResult_.timeline;
+	timelineLeftArrowBounds_ = layoutResult_.timelineLeftArrow;
+	timelineRightArrowBounds_ = layoutResult_.timelineRightArrow;
+	chartViewport_ = layoutResult_.chartViewport;
+	for (std::map<std::string, UiRect>::const_iterator bounds = layoutResult_.controlBounds.begin();
+		bounds != layoutResult_.controlBounds.end(); ++bounds)
 	{
-		std::vector<std::string> top = groupA;
-		top.insert(top.end(), groupB.begin(), groupB.end());
-		std::vector<std::string> bottom = groupC;
-		bottom.insert(bottom.end(), groupD.begin(), groupD.end());
-		mainUi_.addContainer("row_top", UiContainerKind::Row, "main_rows");
-		mainUi_.addContainer("row_bottom", UiContainerKind::Row, "main_rows");
-		for (std::size_t i = 0; i < top.size(); ++i) mainUi_.attachWidget(top[i], "row_top");
-		for (std::size_t i = 0; i < bottom.size(); ++i) mainUi_.attachWidget(bottom[i], "row_bottom");
-		mainUi_.layoutContainer("row_top", UiRect(margin, panelLayout.rowY[0], availableWidth, rowHeight), gap);
-		mainUi_.layoutContainer("row_bottom", UiRect(margin, panelLayout.rowY[1], availableWidth, rowHeight), gap);
-		timelineBounds_ = UiRect(margin, panelLayout.timelineY, availableWidth, 10.0f);
-		chartTop_ = panelLayout.chartTop;
+		UiWidget* widget = mainUi_.find(bounds->first);
+		if (widget) widget->setBounds(bounds->second);
 	}
-	else
+	mainUi_.find("direction")->setPresentation(preset != UiPresetId::Current
+		? UiWidgetPresentation::RadioGroup : UiWidgetPresentation::Standard);
+	mainUi_.find("direction")->setInteractiveSubregions(layoutResult_.interactiveSubregions["direction"]);
+	mainUi_.find("bars_value")->setPresentation(UiWidgetPresentation::EditableLabel);
+	mainUi_.find("time_value")->setPresentation(UiWidgetPresentation::EditableLabel);
+	for (std::size_t i = 0; i < settingsUi_.widgets().size(); ++i)
 	{
-		const std::vector<std::string>* groups[] = { &groupA, &groupB, &groupC, &groupD };
-		for (std::size_t row = 0; row < 4; ++row)
+		UiWidget* widget = settingsUi_.widgets()[i].get();
+		if (widget->kind() == UiWidgetKind::Slider)
 		{
-			const std::string rowId = "row_" + std::to_string(row);
-			mainUi_.addContainer(rowId, UiContainerKind::Row, "main_rows");
-			for (std::size_t i = 0; i < groups[row]->size(); ++i)
-				mainUi_.attachWidget((*groups[row])[i], rowId);
-			mainUi_.layoutContainer(rowId, UiRect(margin, panelLayout.rowY[row], availableWidth, rowHeight), gap);
+			widget->setPresentation(preset != UiPresetId::Current ? UiWidgetPresentation::DosScrollbar : UiWidgetPresentation::Standard);
+			widget->setScrollbarArrowSize(preset != UiPresetId::Current &&
+				themeBoolean(renderPreferences_, "scrollbar.show_arrows", true)
+				? themeNumber(renderPreferences_, "scrollbar.arrow_size", 14.0f) : 0.0f);
 		}
-		timelineBounds_ = UiRect(margin, panelLayout.timelineY, availableWidth, 10.0f);
-		chartTop_ = panelLayout.chartTop;
+		else if (widget->kind() == UiWidgetKind::ComboBox && widget->options().size() == 2 &&
+			(widget->id().find("enabled") != std::string::npos || widget->id().find("visualization") != std::string::npos ||
+			 widget->id().find("completion_scan") != std::string::npos || widget->id() == "completion_scan"))
+			widget->setPresentation(preset != UiPresetId::Current ? UiWidgetPresentation::RadioGroup : UiWidgetPresentation::Standard);
+		else widget->setPresentation(UiWidgetPresentation::Standard);
 	}
 	if (!settings_.visual.panelExpanded)
 	{
-		chartTop_ = panelLayout.chartTop;
 		for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 		{
 			const UiWidget* widget = mainUi_.widgets()[i].get();
-			mainUi_.setWidgetVisible(widget->id(), widget->id() == "panel_toggle" || widget->id() == "settings");
+			const std::string& id = widget->id();
+			const bool headerControl = (preset != UiPresetId::ClassicWindows95 && (id == "panel_toggle" || id == "settings")) ||
+				(preset != UiPresetId::Current && (id == "menu_file" || id == "menu_view" || id == "menu_tools"));
+			mainUi_.setWidgetVisible(id, headerControl || id == "start_overlay");
 		}
 	}
 	else
@@ -516,7 +782,20 @@ void ControlPanel::updateLayout()
 		for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 			mainUi_.setWidgetVisible(mainUi_.widgets()[i]->id(), true);
 	}
+	const bool hasClassicRail = preset != UiPresetId::Current;
+	mainUi_.setWidgetVisible("menu_file", hasClassicRail);
+	mainUi_.setWidgetVisible("menu_view", hasClassicRail);
+	mainUi_.setWidgetVisible("menu_tools", hasClassicRail);
+	mainUi_.setWidgetVisible("run", !hasClassicRail);
+	mainUi_.setWidgetVisible("panel_toggle", preset != UiPresetId::ClassicWindows95);
+	mainUi_.setWidgetVisible("settings", preset != UiPresetId::ClassicWindows95);
+	const bool wideLayout = width_ >= 900;
+	mainUi_.setWidgetVisible("domain", hasClassicRail && wideLayout && settings_.visual.panelExpanded);
+	mainUi_.setWidgetVisible("pattern", hasClassicRail && wideLayout && settings_.visual.panelExpanded);
+	mainUi_.setWidgetVisible("seed_readout", hasClassicRail && wideLayout && settings_.visual.panelExpanded);
+	mainUi_.setWidgetVisible("start_overlay", !settings_.visual.panelExpanded);
 	mainUi_.find("panel_toggle")->setLabel(settings_.visual.panelExpanded ? "v" : ">");
+	gearBounds_ = mainUi_.find("settings")->bounds();
 
 	const float panelWidth = std::min(520.0f, std::max(180.0f, static_cast<float>(width_) - 32.0f));
 	const float panelHeight = std::min(650.0f, std::max(300.0f, static_cast<float>(height_) - 54.0f));
@@ -527,6 +806,59 @@ void ControlPanel::updateLayout()
 		settingsUi_.setModalBounds(settingsPanelBounds_, UiAction::ViewCommand::CloseSettings);
 	layoutAlgorithmMenu();
 	layoutSettingsControls();
+	layoutMainComboPopups();
+}
+
+void ControlPanel::layoutMainComboPopups()
+{
+	layoutResult_.popupBounds.clear();
+	const int logicalWidth = window_.getLogicalWidth();
+	const int dpi = logicalWidth > 0 ? std::max(48, std::min(384,
+		static_cast<int>(std::lround(96.0 * window_.getDrawableWidth() / logicalWidth)))) : 96;
+	const UiTokenValue fontValue = effectiveUiTokenValue(renderPreferences_.appearance.activePreset,
+		activeTheme(renderPreferences_), "typeface.primary");
+	const UiFontReference font = fontValue.type == UiTokenType::Font ? fontValue.font : UiFontReference();
+	const float textHeight = 13.0f * themeNumber(renderPreferences_, "typography.body_size", 14.0f) / 14.0f;
+	const int rasterSize = std::max(8, static_cast<int>(std::lround(textHeight * 72.0f / 96.0f)));
+
+	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
+	{
+		UiWidget* widget = mainUi_.widgets()[i].get();
+		widget->setPopupBounds(UiRect());
+		if (widget->kind() != UiWidgetKind::ComboBox || !widget->visible() ||
+			widget->bounds().width <= 0.0f || widget->bounds().height <= 0.0f || widget->options().empty())
+			continue;
+
+		float popupWidth = widget->bounds().width;
+		for (std::size_t option = 0; option < widget->options().size(); ++option)
+		{
+			const glm::vec2 measured = TextLabel::measureText(widget->options()[option], font, rasterSize, dpi);
+			if (measured.y > 0.0f)
+				popupWidth = std::max(popupWidth, measured.x * textHeight / measured.y + 22.0f);
+		}
+		popupWidth = std::min(popupWidth, std::max(0.0f, static_cast<float>(width_) - 16.0f));
+		const std::size_t visibleOptions = widget->visibleOptionCount();
+		const float popupHeight = std::min(widget->bounds().height * static_cast<float>(visibleOptions),
+			std::max(0.0f, static_cast<float>(height_) - 16.0f));
+		const float popupX = std::max(8.0f, std::min(widget->bounds().x,
+			static_cast<float>(width_) - popupWidth - 8.0f));
+		float popupY = widget->bounds().y + widget->bounds().height;
+		bool popupAbove = false;
+		if (popupY + popupHeight > static_cast<float>(height_) - 8.0f)
+		{
+			const float aboveY = widget->bounds().y - popupHeight;
+			if (aboveY >= 8.0f)
+			{
+				popupY = aboveY;
+				popupAbove = true;
+			}
+			else popupY = std::max(8.0f, static_cast<float>(height_) - popupHeight - 8.0f);
+		}
+		const UiRect popup(popupX, popupY, popupWidth, popupHeight);
+		widget->setPopupAbove(popupAbove);
+		widget->setPopupBounds(popup);
+		layoutResult_.popupBounds[widget->id()] = popup;
+	}
 }
 
 void ControlPanel::layoutSettingsControls()
@@ -541,7 +873,7 @@ void ControlPanel::layoutSettingsControls()
 	settingsUi_.find("audio_basic_tab")->setBounds(UiRect(x, settingsPanelBounds_.y + 77.0f, (width - 4.0f) * 0.5f, 24.0f));
 	settingsUi_.find("audio_advanced_tab")->setBounds(UiRect(x + (width + 4.0f) * 0.5f, settingsPanelBounds_.y + 77.0f,
 		(width - 4.0f) * 0.5f, 24.0f));
-	const float contentOffset = settingsTab_ == 2 ? 112.0f : 82.0f;
+	const float contentOffset = session_.settingsPage == 2 ? 112.0f : 82.0f;
 	settingsContentBounds_ = UiRect(x, settingsPanelBounds_.y + contentOffset, width,
 		std::max(28.0f, settingsPanelBounds_.height - contentOffset - 60.0f));
 	const float footerY = settingsPanelBounds_.y + settingsPanelBounds_.height - 38.0f;
@@ -549,11 +881,11 @@ void ControlPanel::layoutSettingsControls()
 		footerY, 76.0f, 26.0f));
 	settingsUi_.find("audio_retry")->setBounds(UiRect(x, footerY, std::min(190.0f, width - 90.0f), 26.0f));
 	std::vector<std::string> active;
-	if (settingsTab_ == 0)
+	if (session_.settingsPage == 0)
 	{
-		active.push_back("palette"); active.push_back("spacing");
+		active.push_back("preset"); active.push_back("palette"); active.push_back("spacing"); active.push_back("appearance_customize");
 	}
-	else if (settingsTab_ == 1)
+	else if (session_.settingsPage == 1)
 	{
 		active.push_back("domain"); active.push_back("pattern");
 		active.push_back("playback_timing");
@@ -599,7 +931,7 @@ void ControlPanel::layoutSettingsControls()
 	}
 	else
 	{
-		if (!audioAdvanced_)
+		if (!session_.audioAdvanced)
 		{
 			const char* basicAudio[] = { "recon_enabled", "recon_master", "recon_idle_policy", "recon_release", "recon_restore" };
 			active.assign(basicAudio, basicAudio + sizeof(basicAudio) / sizeof(basicAudio[0]));
@@ -616,7 +948,7 @@ void ControlPanel::layoutSettingsControls()
 	visibleWidgetIds.insert("algorithm_tab");
 	visibleWidgetIds.insert("audio_tab");
 	visibleWidgetIds.insert("settings_close");
-	if (settingsTab_ == 2)
+	if (session_.settingsPage == 2)
 	{
 		visibleWidgetIds.insert("audio_retry");
 		visibleWidgetIds.insert("audio_basic_tab");
@@ -625,11 +957,13 @@ void ControlPanel::layoutSettingsControls()
 	const float rowHeight = 48.0f;
 	const float contentBottom = settingsContentBounds_.y + settingsContentBounds_.height;
 	const float totalHeight = static_cast<float>(active.size()) * rowHeight;
-	settingsScrollOffset_ = std::max(0.0f, std::min(settingsScrollOffset_, std::max(0.0f, totalHeight - settingsContentBounds_.height)));
+	settingsScrollViewport_.configure(settingsContentBounds_, totalHeight, rowHeight, session_.settingsScroll);
+	session_.settingsScroll = settingsScrollViewport_.offset();
 	for (std::size_t i = 0; i < active.size(); ++i)
 	{
-		const float rowY = settingsContentBounds_.y + static_cast<float>(i) * rowHeight - settingsScrollOffset_;
-		const bool visible = rowY >= settingsContentBounds_.y - 0.5f && rowY + rowHeight <= contentBottom + 0.5f;
+		const UiRect rowBounds = settingsScrollViewport_.itemBounds(i, rowHeight);
+		const float rowY = rowBounds.y;
+		const bool visible = settingsScrollViewport_.itemIntersectsViewport(i, rowHeight) && rowY + rowHeight <= contentBottom + 0.5f;
 		if (visible) visibleWidgetIds.insert(active[i]);
 		UiWidget* widget = settingsUi_.find(active[i]);
 		if (!widget) continue;
@@ -639,6 +973,29 @@ void ControlPanel::layoutSettingsControls()
 			widget->setBounds(UiRect(x, rowY + 8.0f, width, 28.0f));
 		else
 			widget->setBounds(UiRect(x, rowY, width, 43.0f));
+		std::vector<UiRect> interactive;
+		if (widget->presentation() == UiWidgetPresentation::RadioGroup && !widget->options().empty())
+		{
+			const float segment = widget->bounds().width / static_cast<float>(widget->options().size());
+			for (std::size_t option = 0; option < widget->options().size(); ++option)
+				interactive.push_back(UiRect(widget->bounds().x + static_cast<float>(option) * segment,
+					widget->bounds().y, segment, widget->bounds().height));
+		}
+		else if (widget->kind() == UiWidgetKind::Slider && widget->presentation() == UiWidgetPresentation::DosScrollbar)
+		{
+			const float arrow = std::min(widget->scrollbarArrowSize(), widget->bounds().width * 0.25f);
+			const float trackHeight = std::min(themeNumber(renderPreferences_, "scrollbar.thickness", 8.0f),
+				std::max(1.0f, widget->bounds().height - 29.0f));
+			const float y = widget->bounds().y + 28.0f;
+			if (arrow > 0.0f)
+			{
+				interactive.push_back(UiRect(widget->bounds().x, y - 2.0f, arrow, trackHeight + 4.0f));
+				interactive.push_back(UiRect(widget->bounds().x + arrow, y,
+					std::max(1.0f, widget->bounds().width - 2.0f * arrow), trackHeight));
+				interactive.push_back(UiRect(widget->bounds().x + widget->bounds().width - arrow, y - 2.0f, arrow, trackHeight + 4.0f));
+			}
+		}
+		widget->setInteractiveSubregions(interactive);
 		if (active[i] == "band_selector")
 			widget->setPopupAbove(widget->bounds().y + widget->bounds().height * 9.0f >
 				settingsPanelBounds_.y + settingsPanelBounds_.height - 46.0f);
@@ -702,35 +1059,58 @@ void ControlPanel::updateAlgorithmAudioControls(const sortinglogic::AlgorithmDes
 
 void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending)
 {
-	const bool busy = snapshot.buildingTrace || snapshot.playing;
+	screenModel_ = buildUiScreenModel(snapshot, renderPreferences_, playbackPending, displayedSaveStatus_);
+	const bool busy = !screenModel_.setupEnabled;
 	const char* setupIds[] = { "shuffle", "insta_sort", "insta_invert", "algorithm", "direction", "run",
-		"bars_down_coarse", "bars_down_fine", "bars_up_fine", "bars_up_coarse", "time_down", "time_up" };
+		"bars_down", "bars_up", "time_down", "time_up" };
 	for (std::size_t i = 0; i < sizeof(setupIds) / sizeof(setupIds[0]); ++i)
 	{
 		mainUi_.setWidgetEnabled(setupIds[i], !busy);
 	}
-	mainUi_.setWidgetEnabled("run", !busy && snapshot.runCompatible);
-	mainUi_.setWidgetEnabled("play", snapshot.playing || snapshot.buildingTrace || snapshot.hasTrace || snapshot.runCompatible);
+	mainUi_.setWidgetEnabled("run", screenModel_.runEnabled);
+	mainUi_.setWidgetEnabled("play", screenModel_.playEnabled);
 	UiWidget* algorithm = mainUi_.find("algorithm");
 	if (algorithm) algorithm->setLabel(algorithmLabel(snapshot.algorithm));
-	const char* playLabel = snapshot.playing ? "Pause" :
-		(playbackPending ? "Cancel queued" :
-		(snapshot.buildingTrace ? "Play when ready" :
-		(!snapshot.hasTrace ? "Generate & Play" : (snapshot.complete ? "Replay" : "Play"))));
-	mainUi_.find("play")->setLabel(playLabel);
+	std::string playCaption = screenModel_.playCaption;
+	if (renderPreferences_.appearance.activePreset != UiPresetId::Current)
+	{
+		switch (screenModel_.transport)
+		{
+		case UiTransportState::NoTrace: playCaption = "Play"; break;
+		case UiTransportState::Ready: playCaption = "Play"; break;
+		case UiTransportState::Playing: playCaption = "Pause"; break;
+		case UiTransportState::Queued: playCaption = "Cancel"; break;
+		case UiTransportState::Building: playCaption = "Queue Play"; break;
+		case UiTransportState::Preparing: playCaption = "Preparing"; break;
+		case UiTransportState::Replay: playCaption = "Replay"; break;
+		}
+	}
+	mainUi_.find("play")->setLabel(playCaption);
 	mainUi_.find("bars_value")->setLabel(std::to_string(snapshot.itemCount) + " bars");
+	mainUi_.find("seed_readout")->setLabel("Seed " + std::to_string(snapshot.inputSeed));
+	mainUi_.setWidgetEnabled("seed_readout", false);
 	const bool referenceCadence = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence;
 	mainUi_.setWidgetEnabled("bars_value", !busy);
 	mainUi_.setWidgetEnabled("time_value", !busy && !referenceCadence);
-	if (referenceCadence)
-	{
-		std::ostringstream duration;
-		duration << std::fixed << std::setprecision(2) << snapshot.audioEligibleEventCount / 300.0 << " sec";
-		mainUi_.find("time_value")->setLabel(duration.str());
-	}
-	else mainUi_.find("time_value")->setLabel(std::to_string(static_cast<int>(snapshot.durationSeconds)) + " sec");
+	mainUi_.find("time_value")->setLabel(screenModel_.durationCaption);
 	mainUi_.find("direction")->setSelectedIndex(snapshot.direction == sortinglogic::SortDirection::Descending ? 1 : 0);
-	settingsUi_.find("palette")->setSelectedIndex(paletteIndex(settings_.visual.palette));
+	mainUi_.find("domain")->setSelectedIndex(static_cast<int>(snapshot.domain));
+	mainUi_.find("pattern")->setSelectedIndex(static_cast<int>(snapshot.pattern));
+	mainUi_.setWidgetEnabled("domain", !busy);
+	mainUi_.setWidgetEnabled("pattern", !busy);
+	mainUi_.setWidgetVisible("start_overlay", !settings_.visual.panelExpanded && !snapshot.hasTrace && !snapshot.buildingTrace);
+	mainUi_.setWidgetEnabled("start_overlay", screenModel_.playEnabled);
+	mainUi_.find("menu_file")->setOptionEnabled(1, screenModel_.runEnabled);
+	mainUi_.find("menu_file")->setOptionEnabled(2, screenModel_.playEnabled);
+	mainUi_.find("menu_file")->setOptionEnabled(3, true);
+	for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
+		pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
+		mainUi_.find("pattern")->setOptionEnabled(static_cast<std::size_t>(pattern),
+			sortinglogic::inputPatternCompatible(snapshot.domain, static_cast<sortinglogic::InputPattern>(pattern)) &&
+			(static_cast<sortinglogic::InputPattern>(pattern) != sortinglogic::InputPattern::AndrutReference ||
+				sortinglogic::algorithmSupports(snapshot.algorithm, sortinglogic::InputDomain::NormalizedFloats)));
+	settingsUi_.find("preset")->setSelectedIndex(static_cast<int>(renderPreferences_.appearance.activePreset));
+	settingsUi_.find("palette")->setSelectedIndex(paletteIndex(activeTheme(renderPreferences_).palette));
 	settingsUi_.find("spacing")->setSelectedIndex(spacingIndex(settings_.visual.spacing));
 	settingsUi_.find("domain")->setSelectedIndex(static_cast<int>(settings_.simulation.domain));
 	settingsUi_.find("pattern")->setSelectedIndex(static_cast<int>(settings_.simulation.pattern));
@@ -775,8 +1155,9 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
 		pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
 		settingsUi_.find("pattern")->setOptionEnabled(static_cast<std::size_t>(pattern),
-			static_cast<sortinglogic::InputPattern>(pattern) == sortinglogic::InputPattern::AndrutReference ||
-			sortinglogic::inputPatternCompatible(snapshot.domain, static_cast<sortinglogic::InputPattern>(pattern)));
+			sortinglogic::inputPatternCompatible(snapshot.domain, static_cast<sortinglogic::InputPattern>(pattern)) &&
+			(static_cast<sortinglogic::InputPattern>(pattern) != sortinglogic::InputPattern::AndrutReference ||
+				sortinglogic::algorithmSupports(snapshot.algorithm, sortinglogic::InputDomain::NormalizedFloats)));
 	updateAudioControls();
 	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(snapshot.algorithm);
 	if (descriptor) updateAlgorithmAudioControls(*descriptor);
@@ -807,26 +1188,40 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, cons
 			i->second->setText(text, "Courier New Bold", widget->kind() == UiWidgetKind::ComboBox ? 14 : 12, textColor);
 		}
 	}
-	title_->setText("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, textColor);
-	settingsTitle_->setText(settingsTabTitle(settingsTab_, settings_), "Courier New Bold", 17, textColor);
-	const std::string direction = snapshot.direction == sortinglogic::SortDirection::Ascending ? "Ascending" : "Descending";
+	title_->setText(renderPreferences_.appearance.activePreset == UiPresetId::ClassicWindows95
+		? "Actually Good Sorting Sounds" : "Sorting Simulation | deterministic event trace", "Courier New Bold", 18, textColor);
+	mainUi_.find("next")->setLabel(renderPreferences_.appearance.activePreset == UiPresetId::ClassicWindows95 ? "Step" : "Event >");
+	settingsTitle_->setText(settingsTabTitle(session_.settingsPage, settings_), "Courier New Bold", 17, textColor);
 	std::ostringstream detailText;
-	detailText << sortinglogic::algorithmDisplayName(snapshot.algorithm) << "  |  " << direction << "  |  " << snapshot.itemCount << " bars  |  ";
-	detailText << sortinglogic::inputDomainName(snapshot.domain) << " / " << sortinglogic::inputPatternName(snapshot.pattern) << "  |  ";
-	const sortinglogic::AlgorithmDescriptor* facts = sortinglogic::algorithmDescriptor(snapshot.algorithm);
-	if (facts) detailText << (facts->stable ? "Stable" : "Unstable") << (facts->inPlace ? ", in-place" : ", auxiliary space")
-		<< "  |  " << facts->timeComplexity << " time, " << facts->spaceComplexity << " space  |  ";
-	if (snapshot.algorithm == sortinglogic::SortAlgorithm::Shell)
-		detailText << "Gap sequence: " << sortinglogic::shellGapSequenceName(snapshot.shellGapSequence) << "  |  ";
-	if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
-	else if (snapshot.buildingTrace) detailText << "Building trace";
-	else detailText << "No trace";
-	detailText << "  |  " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
-	if (settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
-		detailText << snapshot.audioEligibleEventCount / 300.0;
-	else detailText << snapshot.durationSeconds;
-	detailText << " sec";
-	if (snapshot.inputSeed) detailText << "  |  seed " << snapshot.inputSeed;
+	const UiAlgorithmCapabilities& facts = screenModel_.algorithmCapabilities;
+	if (renderPreferences_.appearance.activePreset != UiPresetId::Current)
+	{
+		if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
+		else if (snapshot.buildingTrace) detailText << "Building trace";
+		else detailText << "No trace";
+		detailText << " | " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
+		if (settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			detailText << snapshot.audioEligibleEventCount / 300.0;
+		else detailText << snapshot.durationSeconds;
+		detailText << " sec | seed " << snapshot.inputSeed;
+	}
+	else
+	{
+		detailText << screenModel_.algorithm << "  |  " << screenModel_.direction << "  |  " << screenModel_.itemCount << " bars  |  ";
+		detailText << screenModel_.inputDomain << " / " << screenModel_.inputPattern << "  |  ";
+		if (facts.available) detailText << (facts.stable ? "Stable" : "Unstable") << (facts.inPlace ? ", in-place" : ", auxiliary space")
+			<< "  |  " << facts.timeComplexity << " time, " << facts.spaceComplexity << " space  |  ";
+		if (!screenModel_.shellGapSequence.empty()) detailText << "Gap sequence: " << screenModel_.shellGapSequence << "  |  ";
+		if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
+		else if (snapshot.buildingTrace) detailText << "Building trace";
+		else detailText << "No trace";
+		detailText << "  |  " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
+		if (settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			detailText << snapshot.audioEligibleEventCount / 300.0;
+		else detailText << snapshot.durationSeconds;
+		detailText << " sec";
+		if (snapshot.inputSeed) detailText << "  |  seed " << snapshot.inputSeed;
+	}
 	const std::string nextDetail = detailText.str();
 	const Uint32 now = SDL_GetTicks();
 	const bool allowLiveTextUpdate = !snapshot.playing || now - lastDetailUpdate_ >= 200;
@@ -837,23 +1232,27 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, cons
 		lastDetailUpdate_ = now;
 	}
 	std::ostringstream statusText;
-	if (!snapshot.runCompatible) statusText << snapshot.compatibilityMessage << " | ";
-	if (snapshot.hasTrace)
+	if (renderPreferences_.appearance.activePreset != UiPresetId::Current)
+	{
+		if (!snapshot.runCompatible) statusText << facts.compatibilityMessage << " | ";
+		else statusText << screenModel_.algorithm << " | " << screenModel_.inputDomain << "/" << screenModel_.inputPattern << " | ";
+		if (snapshot.hasTrace)
+			statusText << "Cmp " << snapshot.metrics.comparisons << " | Swap " << snapshot.metrics.swaps
+				<< " | Main " << snapshot.metrics.primaryWrites << " | Aux " << snapshot.metrics.auxiliaryItemWrites
+				<< "/" << snapshot.metrics.auxiliaryCounterUpdates << " | Peak " << snapshot.metrics.peakAuxiliaryCapacity;
+		else statusText << snapshot.status;
+	}
+	else if (!snapshot.runCompatible) statusText << facts.compatibilityMessage << " | ";
+	if (renderPreferences_.appearance.activePreset == UiPresetId::Current && snapshot.hasTrace)
 	{
 		statusText << "Cmp " << snapshot.metrics.comparisons << "  Swap " << snapshot.metrics.swaps
 			<< "  Main " << snapshot.metrics.primaryWrites << "  Aux " << snapshot.metrics.auxiliaryItemWrites
 			<< "/" << snapshot.metrics.auxiliaryCounterUpdates << "  Peak " << snapshot.metrics.peakAuxiliaryCapacity;
-		if (facts)
-			for (std::size_t metric = 0; metric < facts->metrics.size(); ++metric)
-			{
-				const std::map<std::string, std::uint64_t>::const_iterator value =
-					snapshot.metrics.algorithm.find(facts->metrics[metric].key);
-				if (value != snapshot.metrics.algorithm.end())
-					statusText << "  " << facts->metrics[metric].displayName << " " << value->second;
-			}
+		for (std::size_t metric = 0; metric < facts.metrics.size(); ++metric)
+			statusText << "  " << facts.metrics[metric].caption << " " << facts.metrics[metric].value;
 		statusText << "  |  " << snapshot.status;
 	}
-	else statusText << snapshot.status;
+	else if (renderPreferences_.appearance.activePreset == UiPresetId::Current) statusText << snapshot.status;
 	const std::string statusValue = statusText.str();
 	const std::string nextStatus = statusValue.size() > 220 ? statusValue.substr(0, 217) + "..." : statusValue;
 	if (nextStatus != displayedStatus_ && allowLiveTextUpdate)
@@ -861,14 +1260,37 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, cons
 		status_->setText(nextStatus, "Courier New Bold", 14, textColor);
 		displayedStatus_ = nextStatus;
 	}
-	settingsTitle_->setText(settingsTabTitle(settingsTab_, settings_), "Courier New Bold", 17, textColor);
-	const std::string saveStatus = displayedSaveStatus_.empty() ? "Preferences save automatically." : displayedSaveStatus_;
+	std::ostringstream collapsedSummary;
+	collapsedSummary << sortinglogic::algorithmDisplayName(snapshot.algorithm) << " - "
+		<< traceProgressPercent(snapshot.hasTrace, snapshot.complete, snapshot.cursor, snapshot.eventCount) << "%";
+	const std::string nextCollapsedSummary = collapsedSummary.str();
+	if (nextCollapsedSummary != displayedCollapsedSummary_ && allowLiveTextUpdate)
+	{
+		collapsedSummary_->setText(nextCollapsedSummary, "Courier New Bold", 20, textColor);
+		displayedCollapsedSummary_ = nextCollapsedSummary;
+	}
+	settingsTitle_->setText(settingsTabTitle(session_.settingsPage, settings_), "Courier New Bold", 17, textColor);
+	const UiTokenValue requestedFont = effectiveUiTokenValue(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_), "typeface.primary");
+	const std::string saveStatus = fontFallbackActive_ && requestedFont.type == UiTokenType::Font
+		? "Font " + requestedFont.font.family + " " + requestedFont.font.style + " unavailable; using bundled Courier New."
+		: displayedSaveStatus_.empty() ? "Preferences save automatically." : displayedSaveStatus_;
 	settingsSaveStatus_->setText(saveStatus, "Courier New Bold", 12, textColor);
 }
 
 bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 {
+	if (!appearanceEditorOpen_ && !algorithmMenuOpen_ && !appearanceSearchFocused_ && inlineEditWidgetId_.empty() &&
+		event.type == SDL_KEYDOWN && !event.key.repeat &&
+		event.key.keysym.sym == SDLK_F12 && (event.key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT)) == (KMOD_CTRL | KMOD_SHIFT))
+	{
+		openAppearanceEditor();
+		return true;
+	}
+	renderPreferences_ = settings_;
+	if (appearanceEditorOpen_) renderPreferences_.appearance = appearanceDraft_;
 	updateLayout();
+	if (appearanceEditorOpen_)
+		return handleAppearanceEditorEvent(event, action);
 	if (algorithmMenuOpen_)
 		return handleAlgorithmMenuEvent(event, action);
 	if (!settingsOpen_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
@@ -928,13 +1350,70 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	{
 		int mouseX = 0, mouseY = 0;
 		SDL_GetMouseState(&mouseX, &mouseY);
-		if ((settingsTab_ == 1 || settingsTab_ == 2) && settingsContentBounds_.contains(static_cast<float>(mouseX), static_cast<float>(mouseY)))
+		if (session_.settingsPage == 1 || session_.settingsPage == 2)
 		{
-			settingsScrollOffset_ = settingsScrollOffsetAfterWheel(settingsScrollOffset_, event.wheel.y,
-				48.0f, 36.0f * 48.0f, settingsContentBounds_.height);
-			layoutSettingsControls();
+			if (settingsScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+			{
+				session_.settingsScroll = settingsScrollViewport_.offset();
+				layoutSettingsControls();
+			}
 		}
 		return true;
+	}
+	if (!settingsOpen_ && algorithmProfileVisible_ && event.type == SDL_MOUSEWHEEL)
+	{
+		int mouseX = 0, mouseY = 0;
+		SDL_GetMouseState(&mouseX, &mouseY);
+		if (algorithmProfileScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+			return true;
+	}
+	if (!settingsOpen_ && algorithmProfileVisible_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+		algorithmProfileScrollViewport_.maximumOffset() > 0.0f &&
+		algorithmProfileScrollTrack_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+	{
+		const float trackTravel = algorithmProfileScrollTrack_.height - algorithmProfileScrollThumb_.height;
+		if (trackTravel > 0.0f && !algorithmProfileScrollThumb_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+		{
+			const float fraction = std::max(0.0f, std::min(1.0f,
+				(static_cast<float>(event.button.y) - algorithmProfileScrollTrack_.y - algorithmProfileScrollThumb_.height * 0.5f) / trackTravel));
+			algorithmProfileScrollViewport_.setOffset(fraction * algorithmProfileScrollViewport_.maximumOffset());
+		}
+		draggingAlgorithmProfileScroll_ = true;
+		algorithmProfileDragStartY_ = static_cast<float>(event.button.y);
+		algorithmProfileDragStartOffset_ = algorithmProfileScrollViewport_.offset();
+		return true;
+	}
+	if (!settingsOpen_ && algorithmProfileVisible_ && event.type == SDL_MOUSEMOTION && draggingAlgorithmProfileScroll_)
+	{
+		const float trackTravel = algorithmProfileScrollTrack_.height - algorithmProfileScrollThumb_.height;
+		if (trackTravel > 0.0f)
+		{
+			const float ratio = algorithmProfileScrollViewport_.maximumOffset() / trackTravel;
+			algorithmProfileScrollViewport_.setOffset(algorithmProfileDragStartOffset_ +
+				(static_cast<float>(event.motion.y) - algorithmProfileDragStartY_) * ratio);
+		}
+		return true;
+	}
+	if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT && draggingAlgorithmProfileScroll_)
+	{
+		draggingAlgorithmProfileScroll_ = false;
+		return true;
+	}
+	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+		draggingAlgorithmProfileScroll_ = false;
+	if (!settingsOpen_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+		settings_.visual.panelExpanded && timelineControlBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+	{
+		if (timelineLeftArrowBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+		{
+			action = AppAction(AppActionKind::PreviousEvent);
+			return true;
+		}
+		if (timelineRightArrowBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+		{
+			action = AppAction(AppActionKind::NextEvent);
+			return true;
+		}
 	}
 	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
 		inRect(timelineBounds_, event.button.x, event.button.y) && settings_.visual.panelExpanded && !settingsOpen_)
@@ -979,14 +1458,34 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		}
 		input = UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, key,
 			(event.key.keysym.mod & KMOD_SHIFT) != 0);
+		input.control = (event.key.keysym.mod & KMOD_CTRL) != 0;
+		input.alt = (event.key.keysym.mod & KMOD_ALT) != 0;
 	}
+	else if (event.type == SDL_MOUSEWHEEL)
+	{
+		int mouseX = 0, mouseY = 0;
+		SDL_GetMouseState(&mouseX, &mouseY);
+		input = UiInputEvent(UiInputType::Wheel, static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y);
+	}
+	else if (event.type == SDL_TEXTINPUT)
+		input = UiInputEvent(UiInputType::TextInput, std::string(event.text.text));
+	else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+		input = UiInputEvent(UiInputType::FocusLost);
 	else
 		translated = false;
 	if (!translated)
 		return settingsOpen_ || action.kind != AppActionKind::None;
+	if (event.type == SDL_MOUSEBUTTONDOWN)
+	{
+		const SDL_Keymod modifiers = SDL_GetModState();
+		input.shift = (modifiers & KMOD_SHIFT) != 0;
+		input.control = (modifiers & KMOD_CTRL) != 0;
+		input.alt = (modifiers & KMOD_ALT) != 0;
+	}
 	UiAction uiAction;
 	const bool consumed = (settingsOpen_ ? settingsUi_ : mainUi_).handleEvent(input, uiAction);
-	if (consumed && (uiAction.viewCommand != UiAction::ViewCommand::None || uiAction.appAction.kind != AppActionKind::None))
+	if (consumed && (uiAction.viewCommand != UiAction::ViewCommand::None || uiAction.appAction.kind != AppActionKind::None ||
+		uiAction.event.kind != UiEventKind::None))
 	{
 		AppAction processedAction;
 		processAction(uiAction, processedAction);
@@ -998,6 +1497,41 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 
 void ControlPanel::processAction(const UiAction& action, AppAction& output)
 {
+	if (action.event.kind == UiEventKind::SelectionChanged &&
+		(action.event.controlId == "menu_file" || action.event.controlId == "menu_view" || action.event.controlId == "menu_tools"))
+	{
+		UiWidget* menu = mainUi_.find(action.event.controlId);
+		const int selected = action.event.selection;
+		if (menu) menu->setSelectedIndex(0);
+		if (action.event.controlId == "menu_file")
+		{
+			if (selected == 1) output = AppAction(AppActionKind::BuildTrace);
+			else if (selected == 2) output = AppAction(AppActionKind::GenerateAndPlay);
+			else if (selected == 3) output = AppAction(AppActionKind::Reset);
+		}
+		else if (action.event.controlId == "menu_view")
+		{
+			if (selected == 1) output = AppAction(AppActionKind::TogglePanelExpanded);
+			else if (selected == 2) output = AppAction(AppActionKind::ToggleBorderlessFullscreen);
+		}
+		else if (action.event.controlId == "menu_tools")
+		{
+			if (selected == 1) openAlgorithmMenu();
+			else if (selected == 2) processAction(UiAction(AppAction(), UiAction::ViewCommand::OpenSettings), output);
+			else if (selected == 3) openAppearanceEditor();
+		}
+		return;
+	}
+	if (action.viewCommand == UiAction::ViewCommand::OpenAppearanceEditor)
+	{
+		openAppearanceEditor();
+		return;
+	}
+	if (action.viewCommand == UiAction::ViewCommand::CloseAppearanceEditor)
+	{
+		closeAppearanceEditor(true);
+		return;
+	}
 	if (action.viewCommand == UiAction::ViewCommand::OpenAlgorithmMenu)
 	{
 		openAlgorithmMenu();
@@ -1019,9 +1553,9 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	if (action.viewCommand == UiAction::ViewCommand::ShowAudioBasic ||
 		action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced)
 	{
-		settingsTab_ = 2;
-		audioAdvanced_ = action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced;
-		settingsScrollOffset_ = 0.0f;
+		session_.settingsPage = 2;
+		session_.audioAdvanced = action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced;
+		session_.settingsScroll = 0.0f;
 		settingsUi_.closeCombo();
 		layoutSettingsControls();
 		return;
@@ -1031,9 +1565,9 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		action.viewCommand == UiAction::ViewCommand::ShowAudioSettings ||
 		action.viewCommand == UiAction::ViewCommand::ShowGeneralAudioSettings)
 	{
-		settingsTab_ = action.viewCommand == UiAction::ViewCommand::ShowAppearanceSettings ? 0 :
+		session_.settingsPage = action.viewCommand == UiAction::ViewCommand::ShowAppearanceSettings ? 0 :
 			action.viewCommand == UiAction::ViewCommand::ShowAlgorithmSettings ? 1 : 2;
-		settingsScrollOffset_ = 0.0f;
+		session_.settingsScroll = 0.0f;
 		settingsUi_.closeCombo();
 		layoutSettingsControls();
 		return;
@@ -1078,9 +1612,36 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	}
 	if (action.appAction.kind == AppActionKind::SelectAudioBand)
 	{
-		selectedBand_ = std::max(0, std::min(static_cast<int>(SoundEngine::BandCount) - 1, action.appAction.selection));
+		session_.selectedAudioBand = std::max(0, std::min(static_cast<int>(SoundEngine::BandCount) - 1, action.appAction.selection));
 		updateAudioControls();
 		layoutSettingsControls();
+	}
+	if (action.event.kind == UiEventKind::Activated &&
+		(action.event.controlId == "bars_down" || action.event.controlId == "bars_up"))
+	{
+		const float direction = action.event.controlId == "bars_down" ? -1.0f : 1.0f;
+		output = AppAction(AppActionKind::AdjustItemCount,
+			direction * stepDeltaWithModifiers(10.0f, action.event.control, action.event.shift));
+		return;
+	}
+	if (action.event.kind == UiEventKind::Activated &&
+		(action.event.controlId == "time_down" || action.event.controlId == "time_up"))
+	{
+		const float direction = action.event.controlId == "time_down" ? -1.0f : 1.0f;
+		output = AppAction(AppActionKind::AdjustDuration,
+			direction * stepDeltaWithModifiers(1.0f, action.event.control, action.event.shift));
+		return;
+	}
+	if (action.appAction.kind == AppActionKind::SetUiPreset)
+	{
+		mainUi_.closeCombo();
+		settingsUi_.closeCombo();
+		draggingTimeline_ = false;
+		cancelInlineEdit();
+		mainUi_.setInputCaptured(false);
+		settingsUi_.setInputCaptured(settingsOpen_);
+		session_.onPresetChanged();
+		layoutCacheValid_ = false;
 	}
 	output = action.appAction;
 }
@@ -1095,61 +1656,348 @@ void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const st
 	const std::string& audioStatus, bool playbackPending)
 {
 	if (!isReady()) return;
+	prepareFrame(snapshot, persistenceStatus, playbackPending);
+	const ThemePalette palette = paletteForAppearance(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_));
+	syncLabels(snapshot, palette);
+	fontFallbackActive_ = false;
+	drawMainPanel(snapshot, palette);
+	if (settingsOpen_ && !appearanceEditorOpen_) drawSettingsPanel(palette, audioStatus);
+	if (algorithmMenuOpen_) drawAlgorithmMenu(palette);
+	if (appearanceEditorOpen_) drawAppearanceEditor();
+}
+
+void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
+	const std::string& persistenceStatus, bool playbackPending)
+{
+	renderPreferences_ = settings_;
+	if (appearanceEditorOpen_) renderPreferences_.appearance = appearanceDraft_;
 	displayedSaveStatus_ = persistenceStatus;
 	updateLayout();
 	updateWidgetStates(snapshot, playbackPending);
 	layoutAlgorithmMenu();
-	const ThemePalette& palette = paletteFor(settings_.visual.palette);
-	syncLabels(snapshot, palette);
-	drawMainPanel(snapshot, palette, playbackPending);
-	if (settingsOpen_) drawSettingsPanel(palette, audioStatus);
-	if (algorithmMenuOpen_) drawAlgorithmMenu(palette);
 }
 
-void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette, bool playbackPending)
+void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette)
 {
-	submitBox(headerBounds_, palette.panel, PanelMaterial, UiLayer);
-	drawWidget(*mainUi_.find("panel_toggle"), palette, UiLayer);
-	drawWidget(*mainUi_.find("settings"), palette, UiLayer);
-	UiRect titleBounds(48.0f, 5.0f, std::max(1.0f, static_cast<float>(width_) - 102.0f), 22.0f);
-	drawText(*title_, titleBounds, 17.0f, palette.text, TextLayer);
+	const UiPresetId preset = renderPreferences_.appearance.activePreset;
+	const bool classicVga = preset == UiPresetId::FlatVgaDos || preset == UiPresetId::ClassicWindows95;
+	const bool windows95 = preset == UiPresetId::ClassicWindows95;
+	algorithmProfileLines_.clear();
+	algorithmProfileVisible_ = false;
+	algorithmProfileScrollTrack_ = UiRect();
+	algorithmProfileScrollThumb_ = UiRect();
+	submitBox(headerBounds_, windows95 ? palette.accent : palette.panel, PanelMaterial, UiLayer);
+	if (layoutResult_.menuBar.height > 0.0f)
+	{
+		submitBox(layoutResult_.menuBar, windows95 ? palette.button : palette.panel, PanelMaterial, UiLayer);
+		const glm::vec4 menuEdge = windows95 ? glm::vec4(0.33f, 0.33f, 0.33f, 1.0f) :
+			glm::vec4(palette.border.r, palette.border.g, palette.border.b, palette.border.a);
+		submitBox(UiRect(layoutResult_.menuBar.x, layoutResult_.menuBar.y + layoutResult_.menuBar.height - 1.0f,
+			layoutResult_.menuBar.width, 1.0f), menuEdge, ButtonMaterial, layerOffset(UiLayer, 1));
+	}
+	if (classicVga && settings_.visual.panelExpanded)
+	{
+		const UiRect transport = layoutResult_.transportArea;
+		if (transport.width > 0.0f && transport.height > 0.0f)
+		{
+			submitBox(transport, palette.panel, PanelMaterial, UiLayer);
+			const float border = 1.0f;
+			const glm::vec4 edge(palette.border.r, palette.border.g, palette.border.b, palette.border.a);
+			submitBox(UiRect(transport.x, transport.y, transport.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(transport.x, transport.y + transport.height - border, transport.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+		}
+		if (width_ >= 900)
+		{
+			const UiRect rail = layoutResult_.setupRail;
+			submitBox(rail, palette.panel, PanelMaterial, UiLayer);
+			const float border = 1.0f;
+			const glm::vec4 edge(palette.border.r, palette.border.g, palette.border.b, palette.border.a);
+			submitBox(UiRect(rail.x, rail.y, rail.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(rail.x, rail.y + rail.height - border, rail.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(rail.x, rail.y, border, rail.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(rail.x + rail.width - border, rail.y, border, rail.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			const UiRect chart = chartViewport_;
+			if (chart.width > 0.0f && chart.height > 0.0f)
+			{
+				submitBox(UiRect(chart.x, chart.y, chart.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(chart.x, chart.y + chart.height - border, chart.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(chart.x, chart.y, border, chart.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(chart.x + chart.width - border, chart.y, border, chart.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			}
+		}
+	}
+	if (mainUi_.find("panel_toggle")->visible()) drawWidget(*mainUi_.find("panel_toggle"), palette, UiLayer);
+	if (mainUi_.find("settings")->visible()) drawWidget(*mainUi_.find("settings"), palette, UiLayer);
+	float titleLeft = 48.0f;
+	float titleRight = static_cast<float>(width_) - 54.0f;
+	if (classicVga && !windows95 && mainUi_.find("menu_tools")->visible())
+		titleLeft = mainUi_.find("menu_tools")->bounds().x + mainUi_.find("menu_tools")->bounds().width + 12.0f;
+	if (!mainUi_.find("settings")->visible()) titleRight = static_cast<float>(width_) - 12.0f;
+	UiRect titleBounds(titleLeft, 5.0f, std::max(1.0f, titleRight - titleLeft), 22.0f);
+	if (!windows95) drawText(*title_, titleBounds, 17.0f, palette.text, TextLayer, ClipBounds(), TextOverflowPolicy::Marquee);
+	const char* menuIds[] = { "menu_file", "menu_view", "menu_tools" };
+	for (std::size_t i = 0; i < sizeof(menuIds) / sizeof(menuIds[0]); ++i)
+		drawWidget(*mainUi_.find(menuIds[i]), palette, UiLayer);
 	if (!settings_.visual.panelExpanded)
 	{
-		std::ostringstream compact;
-		compact << sortinglogic::algorithmDisplayName(snapshot.algorithm) << " | "
-			<< (snapshot.direction == sortinglogic::SortDirection::Ascending ? "Ascending" : "Descending") << " | ";
-		if (snapshot.buildingTrace) compact << (playbackPending ? "Building trace | play queued" : "Building trace");
-		else if (playbackPending) compact << "Preparing playback";
-		else if (snapshot.playing) compact << "Playing";
-		else if (snapshot.hasTrace) compact << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
-		else compact << snapshot.itemCount << " bars | Ready";
-		status_->setText(compact.str(), "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
-		drawText(*status_, UiRect(50.0f, 25.0f, std::max(1.0f, static_cast<float>(width_) - 104.0f), 14.0f),
-			12.0f, palette.mutedText, TextLayer);
+		const UiRect chart = chartViewport_;
+		if (chart.width > 0.0f && chart.height > 0.0f)
+		{
+			// Draw a small pixel triangle instead of using a directional glyph so
+			// orientation remains crisp and theme-independent at every font size.
+			const float cell = 2.0f;
+			const float triangleWidth = 14.0f;
+			const float triangleX = chart.x + 10.0f;
+			const float triangleY = chart.y + 7.0f;
+			const glm::vec4 white(1.0f, 1.0f, 1.0f, 1.0f);
+			for (int row = 0; row < 7; ++row)
+			{
+				const int rowFromTip = snapshot.direction == sortinglogic::SortDirection::Ascending ? row : 6 - row;
+				const float rowWidth = static_cast<float>(rowFromTip + 1) * cell;
+				const UiRect pixelRow(triangleX + (triangleWidth - rowWidth) * 0.5f,
+					triangleY + static_cast<float>(row) * cell, rowWidth, cell);
+				submitBox(pixelRow, white, MaterialId::PixelIcon, TextLayer);
+			}
+			const UiRect summaryBounds(triangleX + triangleWidth + 8.0f, chart.y + 3.0f,
+				std::max(0.0f, chart.x + chart.width - (triangleX + triangleWidth + 16.0f)), 26.0f);
+			drawText(*collapsedSummary_, summaryBounds, 20.0f, white, TextLayer,
+				ClipBounds(chart.x, chart.y, chart.width, chart.height), TextOverflowPolicy::Marquee,
+				TextHorizontalAlignment::Left);
+		}
+		if (mainUi_.find("start_overlay")->visible())
+		{
+			const UiRect chart = chartViewport_;
+			const UiRect button = mainUi_.find("start_overlay")->bounds();
+			const float cardWidth = std::min(480.0f, std::max(0.0f, chart.width - 24.0f));
+			const UiRect card(std::max(0.0f, chart.x + (chart.width - cardWidth) * 0.5f),
+				std::max(headerBounds_.height + 8.0f, button.y - 74.0f), cardWidth, 142.0f);
+			submitBox(card, palette.panel, PanelMaterial, RenderLayer::MainControls);
+			const glm::vec4 edge(palette.border.r, palette.border.g, palette.border.b, palette.border.a);
+			submitBox(UiRect(card.x, card.y, card.width, 2.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(card.x, card.y + card.height - 2.0f, card.width, 2.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			if (!labels_["#collapsed_empty_title"])
+				labels_["#collapsed_empty_title"].reset(new TextLabel("No trace has been generated", "Courier New Bold", 16, SDL_Color{ 255, 255, 255, 255 }));
+			if (!labels_["#collapsed_empty_hint"])
+				labels_["#collapsed_empty_hint"].reset(new TextLabel("Start the simulation to reveal the event trace. Shortcut: Space", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 }));
+			drawText(*labels_["#collapsed_empty_title"], UiRect(card.x + 8.0f, card.y + 12.0f, card.width - 16.0f, 22.0f),
+				16.0f, palette.text, TextLayer);
+			drawText(*labels_["#collapsed_empty_hint"], UiRect(card.x + 8.0f, card.y + 42.0f, card.width - 16.0f, 18.0f),
+				12.0f, palette.mutedText, TextLayer);
+			drawWidget(*mainUi_.find("start_overlay"), palette, UiLayer);
+		}
+		// The collapsed branch returns before the full control composition. Keep
+		// menu popups in the upper overlay pass so the chart cannot hide them.
+		for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
+			if (mainUi_.widgets()[i]->visible() && mainUi_.widgets()[i]->expanded())
+				drawWidget(*mainUi_.widgets()[i], palette, DropdownLayer, true);
 		return;
 	}
 	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 	{
 		const UiWidget& widget = *mainUi_.widgets()[i];
-		if (widget.id() != "panel_toggle" && widget.id() != "settings" && widget.visible())
+		if (widget.id() != "panel_toggle" && widget.id() != "settings" &&
+			widget.id() != "menu_file" && widget.id() != "menu_view" && widget.id() != "menu_tools" &&
+			widget.visible())
 		{
 			drawWidget(widget, palette, UiLayer);
 		}
 	}
-	if (snapshot.hasTrace || snapshot.buildingTrace)
+	if (classicVga && width_ >= 900 && layoutResult_.setupRail.height > 220.0f)
+	{
+		const UiRect rail = layoutResult_.setupRail;
+		const UiRect seed = mainUi_.find("seed_readout")->bounds();
+		const float cardY = std::max(seed.y + seed.height + 12.0f, rail.y + 258.0f);
+		const float cardBottom = rail.y + rail.height - 10.0f;
+		const float cardHeight = std::max(0.0f, cardBottom - cardY);
+		if (cardHeight >= 78.0f)
+		{
+			algorithmProfileVisible_ = true;
+			const UiRect card(rail.x + 8.0f, cardY, std::max(0.0f, rail.width - 16.0f), cardHeight);
+			submitBox(card, palette.background, PanelMaterial, UiLayer);
+			const glm::vec4 edge(palette.border.r, palette.border.g, palette.border.b, palette.border.a);
+			const float border = 1.0f;
+			submitBox(UiRect(card.x, card.y, card.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(card.x, card.y + card.height - border, card.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(card.x, card.y, border, card.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(card.x + card.width - border, card.y, border, card.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			const UiAlgorithmCapabilities& capabilities = screenModel_.algorithmCapabilities;
+			std::ostringstream inputTypes;
+			inputTypes << "Supported input: ";
+			if (capabilities.supportsNormalizedFloat) inputTypes << "FLOAT";
+			if (capabilities.supportsNormalizedFloat && capabilities.supportsIntegerKeys) inputTypes << " / ";
+			if (capabilities.supportsIntegerKeys) inputTypes << "INTEGER";
+			if (!capabilities.supportsNormalizedFloat && !capabilities.supportsIntegerKeys) inputTypes << "NONE";
+			std::ostringstream safeLimit;
+			safeLimit << "Safe setup limit: " << capabilities.safeMaximumItemCount << " bars";
+			if (!labels_["#rail_profile_title"])
+			{
+				labels_["#rail_profile_title"].reset(new TextLabel("ALGORITHM PROFILE", "Courier New Bold", 14, SDL_Color{ 255, 255, 255, 255 }));
+				labels_["#rail_shortcuts_title"].reset(new TextLabel("KEYBOARD", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 }));
+				labels_["#rail_shortcuts"].reset(new TextLabel("SPACE Play  |  1 Build  |  D Order", "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 }));
+				labels_["#rail_fullscreen"].reset(new TextLabel("ALT+ENTER Fullscreen", "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 }));
+			}
+			if (algorithmProfileAlgorithm_ != screenModel_.algorithm)
+			{
+				algorithmProfileAlgorithm_ = screenModel_.algorithm;
+				algorithmProfileScrollViewport_.setOffset(0.0f);
+			}
+
+			const float profileTextHeight = 13.0f;
+			const float profileFontScale = themeNumber(renderPreferences_, "typography.body_size", 14.0f) / 14.0f;
+			const int profileRasterSize = std::max(8, static_cast<int>(std::lround(profileTextHeight * profileFontScale * 72.0f / 96.0f)));
+			const int logicalWidth = window_.getLogicalWidth();
+			const int dpi = logicalWidth > 0 ? std::max(48, std::min(384,
+				static_cast<int>(std::lround(96.0 * window_.getDrawableWidth() / logicalWidth)))) : 96;
+			const UiTokenValue profileFontValue = effectiveUiTokenValue(preset, activeTheme(renderPreferences_), "typeface.primary");
+			const UiFontReference profileFont = profileFontValue.type == UiTokenType::Font ? profileFontValue.font : UiFontReference();
+			const UiRect profileOuter(card.x + 6.0f, card.y + 30.0f, std::max(0.0f, card.width - 12.0f),
+				std::max(0.0f, card.height - 38.0f));
+			const bool showShortcuts = cardHeight >= 112.0f;
+			float shortcutY = card.y + 70.0f;
+			if (showShortcuts && cardHeight >= 150.0f) shortcutY = card.y + card.height - 58.0f;
+			const float profileBottom = showShortcuts ? shortcutY - 10.0f : card.y + card.height - 8.0f;
+			const float profileHeight = std::max(0.0f, profileBottom - profileOuter.y);
+			const UiRect profileFrame(profileOuter.x, profileOuter.y, profileOuter.width, profileHeight);
+			const UiRect profileTextViewport(profileFrame.x + 7.0f, profileFrame.y + 6.0f,
+				std::max(0.0f, profileFrame.width - 24.0f), std::max(0.0f, profileFrame.height - 12.0f));
+			submitBox(profileFrame, palette.panel, ButtonMaterial, UiLayer);
+			submitBox(UiRect(profileFrame.x, profileFrame.y, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(profileFrame.x, profileFrame.y + profileFrame.height - 1.0f, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(profileFrame.x, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+			submitBox(UiRect(profileFrame.x + profileFrame.width - 1.0f, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+
+			const std::string timeFact = std::string("Time complexity: ") + (capabilities.available ? capabilities.timeComplexity : "Unknown");
+			const std::string spaceFact = std::string("Space complexity: ") + (capabilities.available ? capabilities.spaceComplexity : "Unknown");
+			appendWrappedLines(algorithmProfileLines_, timeFact, profileTextViewport.width, profileFont, profileRasterSize, dpi);
+			appendWrappedLines(algorithmProfileLines_, spaceFact, profileTextViewport.width, profileFont, profileRasterSize, dpi);
+			appendWrappedLines(algorithmProfileLines_, std::string("Stability: ") + (capabilities.stable ? "Stable" : "Unstable"),
+				profileTextViewport.width, profileFont, profileRasterSize, dpi);
+			appendWrappedLines(algorithmProfileLines_, std::string("Memory: ") + (capabilities.inPlace ? "In-place" : "Auxiliary space"),
+				profileTextViewport.width, profileFont, profileRasterSize, dpi);
+			appendWrappedLines(algorithmProfileLines_, inputTypes.str(), profileTextViewport.width, profileFont, profileRasterSize, dpi);
+			appendWrappedLines(algorithmProfileLines_, safeLimit.str(), profileTextViewport.width, profileFont, profileRasterSize, dpi);
+			if (!capabilities.behavior.empty())
+				appendWrappedLines(algorithmProfileLines_, std::string("Method: ") + capabilities.behavior,
+					profileTextViewport.width, profileFont, profileRasterSize, dpi);
+			if (!capabilities.compatibilityMessage.empty())
+				appendWrappedLines(algorithmProfileLines_, std::string("Compatibility: ") + capabilities.compatibilityMessage,
+					profileTextViewport.width, profileFont, profileRasterSize, dpi);
+			algorithmProfileLineHeight_ = std::max(17.0f, profileTextHeight * profileFontScale * 1.42f);
+			algorithmProfileScrollViewport_.configure(profileTextViewport,
+				static_cast<float>(algorithmProfileLines_.size()) * algorithmProfileLineHeight_, algorithmProfileLineHeight_,
+				algorithmProfileScrollViewport_.offset());
+			drawText(*labels_["#rail_profile_title"], UiRect(card.x + 8.0f, card.y + 8.0f, card.width - 16.0f, 15.0f),
+				14.0f, palette.text, TextLayer, ClipBounds(), TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
+			const ClipBounds profileClip(profileTextViewport.x, profileTextViewport.y,
+				profileTextViewport.width, profileTextViewport.height);
+			const std::size_t firstLine = algorithmProfileScrollViewport_.firstVisibleItem(algorithmProfileLineHeight_);
+			const std::size_t visibleLines = algorithmProfileScrollViewport_.visibleItemCount(algorithmProfileLines_.size(), algorithmProfileLineHeight_);
+			const std::size_t endLine = std::min(algorithmProfileLines_.size(), firstLine + visibleLines);
+			for (std::size_t lineIndex = firstLine; lineIndex < endLine; ++lineIndex)
+			{
+				const std::string labelId = "#rail_profile_line_" + std::to_string(lineIndex);
+				if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
+				else labels_[labelId]->setText(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 });
+				const float lineY = profileTextViewport.y + static_cast<float>(lineIndex) * algorithmProfileLineHeight_ - algorithmProfileScrollViewport_.offset();
+				drawText(*labels_[labelId], UiRect(profileTextViewport.x, lineY, profileTextViewport.width, algorithmProfileLineHeight_),
+					profileTextHeight, palette.text, TextLayer, profileClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
+			}
+			if (algorithmProfileScrollViewport_.maximumOffset() > 0.0f && profileFrame.height > 0.0f)
+			{
+				algorithmProfileScrollTrack_ = UiRect(profileFrame.x + profileFrame.width - 11.0f,
+					profileTextViewport.y, 5.0f, profileTextViewport.height);
+				submitBox(algorithmProfileScrollTrack_, palette.timelineRail, TimelineMaterial, UiLayer);
+				const float thumbHeight = std::min(algorithmProfileScrollTrack_.height,
+					std::max(18.0f, algorithmProfileScrollTrack_.height * profileTextViewport.height /
+						std::max(1.0f, algorithmProfileScrollViewport_.contentExtent())));
+				const float thumbTravel = std::max(0.0f, algorithmProfileScrollTrack_.height - thumbHeight);
+				const float scrollFraction = algorithmProfileScrollViewport_.maximumOffset() > 0.0f
+					? algorithmProfileScrollViewport_.offset() / algorithmProfileScrollViewport_.maximumOffset() : 0.0f;
+				algorithmProfileScrollThumb_ = UiRect(algorithmProfileScrollTrack_.x,
+					algorithmProfileScrollTrack_.y + thumbTravel * scrollFraction, algorithmProfileScrollTrack_.width, thumbHeight);
+				submitBox(algorithmProfileScrollThumb_, palette.accent, MaterialId::TimelineThumb, layerOffset(UiLayer, 1));
+			}
+			if (showShortcuts)
+			{
+				const float separatorY = shortcutY - 8.0f;
+				submitBox(UiRect(card.x + 8.0f, separatorY, std::max(0.0f, card.width - 16.0f), 1.0f), edge,
+					ButtonMaterial, layerOffset(UiLayer, 1));
+				drawText(*labels_["#rail_shortcuts_title"], UiRect(card.x + 8.0f, shortcutY, card.width - 16.0f, 15.0f),
+					12.0f, palette.text, TextLayer);
+				drawText(*labels_["#rail_shortcuts"], UiRect(card.x + 8.0f, shortcutY + 18.0f, card.width - 16.0f, 15.0f),
+					11.0f, palette.mutedText, TextLayer);
+				drawText(*labels_["#rail_fullscreen"], UiRect(card.x + 8.0f, shortcutY + 34.0f, card.width - 16.0f, 15.0f),
+					11.0f, palette.mutedText, TextLayer);
+			}
+		}
+	}
+	if (snapshot.hasTrace || snapshot.buildingTrace || classicVga)
 	{
 		const glm::vec4 rail = palette.timelineRail;
 		submitBox(timelineBounds_, rail, TimelineMaterial, UiLayer);
 		const double timelineDuration = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
 			? snapshot.audioEligibleEventCount / 300.0 : snapshot.durationSeconds;
-		const float fraction = timelineDuration <= 0.0 ? 0.0f :
+		const float fraction = (!snapshot.hasTrace && !snapshot.buildingTrace) || timelineDuration <= 0.0 ? 0.0f :
 			static_cast<float>(std::max(0.0, std::min(1.0, snapshot.elapsedSeconds / timelineDuration)));
 		submitBox(UiRect(timelineBounds_.x, timelineBounds_.y, timelineBounds_.width * fraction, timelineBounds_.height), palette.accent, AccentMaterial, layerOffset(UiLayer, 1));
-		submitBox(UiRect(timelineBounds_.x + std::max(0.0f, timelineBounds_.width * fraction - 4.0f), timelineBounds_.y - 3.0f, 8.0f, timelineBounds_.height + 6.0f), palette.timelineThumb, MaterialId::TimelineThumb, layerOffset(UiLayer, 1));
+		if (classicVga)
+		{
+			const float tickHeight = std::min(7.0f, timelineBounds_.height * 0.45f);
+			for (int tick = 0; tick <= 10; ++tick)
+			{
+				const float x = timelineBounds_.x + timelineBounds_.width * static_cast<float>(tick) / 10.0f;
+				submitBox(UiRect(x, timelineBounds_.y + timelineBounds_.height - tickHeight, 1.0f, tickHeight),
+					palette.text, MaterialId::PixelIcon, layerOffset(UiLayer, 2));
+			}
+		}
+		const float thumbWidth = classicVga ? std::min(12.0f, timelineBounds_.width) : 8.0f;
+		submitBox(UiRect(timelineBounds_.x + std::max(0.0f, timelineBounds_.width * fraction - thumbWidth * 0.5f),
+			timelineBounds_.y - (classicVga ? 3.0f : 3.0f), thumbWidth, timelineBounds_.height + 6.0f),
+			palette.timelineThumb, MaterialId::TimelineThumb, layerOffset(UiLayer, 1));
+		if (timelineLeftArrowBounds_.width > 0.0f && timelineRightArrowBounds_.width > 0.0f)
+		{
+			const UiRect arrows[] = { timelineLeftArrowBounds_, timelineRightArrowBounds_ };
+			for (int side = 0; side < 2; ++side)
+			{
+				const UiRect& arrow = arrows[side];
+				submitBox(arrow, palette.button, ButtonMaterial, UiLayer);
+				const glm::vec4 bright(windows95 ? 0.96f : palette.text.r, windows95 ? 0.96f : palette.text.g,
+					windows95 ? 0.96f : palette.text.b, 1.0f);
+				const glm::vec4 dark(windows95 ? 0.25f : palette.border.r, windows95 ? 0.25f : palette.border.g,
+					windows95 ? 0.25f : palette.border.b, 1.0f);
+				submitBox(UiRect(arrow.x, arrow.y, arrow.width, 1.0f), bright, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(arrow.x, arrow.y, 1.0f, arrow.height), bright, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(arrow.x, arrow.y + arrow.height - 1.0f, arrow.width, 1.0f), dark, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(arrow.x + arrow.width - 1.0f, arrow.y, 1.0f, arrow.height), dark, ButtonMaterial, layerOffset(UiLayer, 1));
+				const char* leftArrow[] = { "..#", ".##", "###", ".##", "..#" };
+				const char* rightArrow[] = { "#..", "##.", "###", "##.", "#.." };
+				const char* const* pattern = side == 0 ? leftArrow : rightArrow;
+				const float pixel = std::max(1.0f, std::min(2.0f, arrow.height / 8.0f));
+				const float iconWidth = pixel * 3.0f;
+				const float iconHeight = pixel * 5.0f;
+				const float iconX = arrow.x + (arrow.width - iconWidth) * 0.5f;
+				const float iconY = arrow.y + (arrow.height - iconHeight) * 0.5f;
+				for (int row = 0; row < 5; ++row)
+					for (int column = 0; column < 3; ++column)
+						if (pattern[row][column] == '#')
+							submitBox(UiRect(iconX + column * pixel, iconY + row * pixel, pixel, pixel),
+								palette.text, MaterialId::PixelIcon, layerOffset(UiLayer, 2));
+			}
+		}
 	}
-	const float detailY = timelineBounds_.y + 14.0f;
-	drawText(*detail_, UiRect(16.0f, detailY, static_cast<float>(width_) - 32.0f, 18.0f), 13.0f, palette.text, TextLayer);
-	drawText(*status_, UiRect(16.0f, detailY + 19.0f, static_cast<float>(width_) - 32.0f, 18.0f), 13.0f, palette.mutedText, TextLayer);
+	if (classicVga && layoutResult_.telemetry.width > 0.0f)
+	{
+		drawText(*detail_, UiRect(layoutResult_.telemetry.x, layoutResult_.telemetry.y,
+			layoutResult_.telemetry.width, 14.0f), 12.0f, palette.text, TextLayer);
+		drawText(*status_, UiRect(layoutResult_.telemetry.x, layoutResult_.telemetry.y + 14.0f,
+			layoutResult_.telemetry.width, 14.0f), 11.0f, palette.mutedText, TextLayer);
+	}
+	else
+	{
+		const float detailY = timelineBounds_.y + 14.0f;
+		drawText(*detail_, UiRect(16.0f, detailY, static_cast<float>(width_) - 32.0f, 18.0f), 13.0f, palette.text, TextLayer);
+		drawText(*status_, UiRect(16.0f, detailY + 19.0f, static_cast<float>(width_) - 32.0f, 18.0f), 13.0f, palette.mutedText, TextLayer);
+	}
 	// Open combo options are submitted last within the UI layer, preserving their painter order over the chart.
 	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 		if (mainUi_.widgets()[i]->visible() && mainUi_.widgets()[i]->expanded())
@@ -1169,19 +2017,19 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 	const UiWidget* tabs[] = { &appearanceTab, &algorithmTab, &audioTab };
 	for (int tab = 0; tab < 3; ++tab)
 	{
-		submitBox(tabs[tab]->bounds(), tab == settingsTab_ ? palette.accent : palette.button, ButtonMaterial, controlLayer);
+		submitBox(tabs[tab]->bounds(), tab == session_.settingsPage ? palette.accent : palette.button, ButtonMaterial, controlLayer);
 		drawWidget(*tabs[tab], palette, controlLayer);
 	}
-	const UiRect activeTab = tabs[settingsTab_]->bounds();
+	const UiRect activeTab = tabs[session_.settingsPage]->bounds();
 	submitBox(UiRect(activeTab.x, activeTab.y + activeTab.height - 2.0f, activeTab.width, 2.0f),
 		palette.accent, AccentMaterial, layerOffset(controlLayer, 1));
 	submitBox(settingsContentBounds_, palette.background, PanelMaterial, SettingsLayer);
-	if (settingsTab_ == 2)
+	if (session_.settingsPage == 2)
 	{
 		const UiWidget* audioGroups[] = { settingsUi_.find("audio_basic_tab"), settingsUi_.find("audio_advanced_tab") };
 		for (int i = 0; i < 2; ++i)
 		{
-			submitBox(audioGroups[i]->bounds(), (audioAdvanced_ == (i == 1)) ? palette.accent : palette.button,
+			submitBox(audioGroups[i]->bounds(), (session_.audioAdvanced == (i == 1)) ? palette.accent : palette.button,
 				ButtonMaterial, controlLayer);
 			drawWidget(*audioGroups[i], palette, controlLayer);
 		}
@@ -1195,7 +2043,7 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 		drawSettingsControl(widget, palette);
 	}
 	drawWidget(*settingsUi_.find("settings_close"), palette, RenderLayer::SettingsControls);
-	if (settingsTab_ == 2)
+	if (session_.settingsPage == 2)
 	{
 		const SoundEngine::ReconstructedParameters& p = settings_.reconstructedAudio;
 		const SoundEngine::ReconstructedParameters defaults;
@@ -1251,19 +2099,54 @@ void ControlPanel::drawSettingsControl(const UiWidget& widget, const ThemePalett
 		return;
 	}
 	if (widget.kind() != UiWidgetKind::Slider) return;
+	drawSliderControl(widget, palette, clip, RenderLayer::SettingsControls);
+}
+
+void ControlPanel::drawSliderControl(const UiWidget& widget, const ThemePalette& palette, const ClipBounds& clip, RenderLayer layer)
+{
 	std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id());
 	if (label != labels_.end())
+	{
+		if (drawingAppearanceEditor_)
+		{
+			std::ostringstream caption;
+			caption << widget.label() << "  " << std::fixed << std::setprecision(2) << widget.value();
+			label->second->setText(caption.str(), "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+		}
 		drawText(*label->second, UiRect(widget.bounds().x, widget.bounds().y + 1.0f, widget.bounds().width, 16.0f),
 			11.0f, palette.text, SettingsTextLayer, clip);
+	}
 	const float fraction = widget.maximum() <= widget.minimum() ? 0.0f :
 		(widget.value() - widget.minimum()) / (widget.maximum() - widget.minimum());
-	const float railY = widget.bounds().y + 29.0f;
-	const UiRect rail(widget.bounds().x + 2.0f, railY, std::max(1.0f, widget.bounds().width - 4.0f), 4.0f);
-	submitBox(rail, palette.timelineRail, TimelineMaterial, RenderLayer::SettingsControls, clip);
-	submitBox(UiRect(rail.x, rail.y, rail.width * fraction, rail.height), palette.accent, AccentMaterial, RenderLayer::SettingsControls, clip);
-	const float knobX = rail.x + rail.width * fraction - 5.0f;
-	submitBox(UiRect(knobX, rail.y - 3.0f, 10.0f, 10.0f), widget.focused() ? palette.held : palette.text,
-		MaterialId::TimelineThumb, RenderLayer::SettingsControls, clip);
+	const float railY = widget.bounds().y + 28.0f;
+	const bool dos = widget.presentation() == UiWidgetPresentation::DosScrollbar;
+	const float arrow = dos ? std::min(widget.scrollbarArrowSize(), widget.bounds().width * 0.25f) : 2.0f;
+	const float dosThickness = std::min(themeNumber(renderPreferences_, "scrollbar.thickness", 8.0f),
+		std::max(1.0f, widget.bounds().height - 29.0f));
+	const UiRect rail = dos && widget.interactiveSubregions().size() >= 3
+		? widget.interactiveSubregions()[1]
+		: UiRect(widget.bounds().x + arrow, railY, std::max(1.0f, widget.bounds().width - 2.0f * arrow), dos ? dosThickness : 4.0f);
+	submitBox(rail, palette.timelineRail, TimelineMaterial, layer, clip);
+	submitBox(UiRect(rail.x, rail.y, rail.width * fraction, rail.height), palette.accent, AccentMaterial, layer, clip);
+	const float thumbWidth = dos ? std::max(8.0f, std::min(widget.bounds().width,
+		themeNumber(renderPreferences_, "scrollbar.thumb_min_size", 20.0f))) : 10.0f;
+	const float knobX = rail.x + rail.width * fraction - thumbWidth * 0.5f;
+	submitBox(UiRect(knobX, rail.y - (dos ? 1.0f : 3.0f), thumbWidth, dos ? 10.0f : 10.0f), widget.focused() ? palette.held : palette.text,
+		MaterialId::TimelineThumb, layer, clip);
+	if (dos && arrow > 0.0f)
+	{
+		const float side = std::max(10.0f, arrow);
+		const UiRect leftArrow = widget.interactiveSubregions().size() >= 3 ? widget.interactiveSubregions()[0]
+			: UiRect(widget.bounds().x, widget.bounds().y + 27.0f, side, 12.0f);
+		const UiRect rightArrow = widget.interactiveSubregions().size() >= 3 ? widget.interactiveSubregions()[2]
+			: UiRect(widget.bounds().x + widget.bounds().width - side, widget.bounds().y + 27.0f, side, 12.0f);
+		submitBox(leftArrow, palette.button, ButtonMaterial, layer, clip);
+		submitBox(rightArrow, palette.button, ButtonMaterial, layer, clip);
+		const float centerY = leftArrow.y + leftArrow.height * 0.5f;
+		submitBox(UiRect(leftArrow.x + side * 0.35f, centerY, side * 0.30f, 1.0f), palette.text, MaterialId::PixelIcon, layer, clip);
+		submitBox(UiRect(rightArrow.x + side * 0.35f, centerY, side * 0.30f, 1.0f), palette.text, MaterialId::PixelIcon, layer, clip);
+		submitBox(UiRect(rightArrow.x + side * 0.47f, centerY - 2.0f, 1.0f, 5.0f), palette.text, MaterialId::PixelIcon, layer, clip);
+	}
 }
 
 void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palette, RenderLayer layer, bool popup)
@@ -1277,31 +2160,110 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 			if (bounds.width <= 0.0f || bounds.height <= 0.0f) continue;
 			const bool selected = static_cast<int>(option) == widget.selectedIndex();
 			submitBox(bounds, !widget.optionEnabled(option) ? palette.disabledButton : selected ? palette.accent : palette.button, PopupMaterial, layer, screenClip);
-			std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id() + "#option" + std::to_string(option));
-			if (label != labels_.end())
+			const std::string labelId = widget.id() + "#option" + std::to_string(option);
+			std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(labelId);
+			if (label == labels_.end())
 			{
-				label->second->setText(widget.options()[option], "Courier New Bold", 14, SDL_Color{ 255, 255, 255, 255 });
-				drawText(*label->second, UiRect(bounds.x + 2.0f, bounds.y, bounds.width - 4.0f, bounds.height), 13.0f,
-					widget.optionEnabled(option) ? palette.text : palette.mutedText, layerOffset(layer, 1), screenClip);
+				labels_[labelId].reset(new TextLabel(widget.options()[option], "Courier New Bold", 14, { 255, 255, 255, 255 }));
+				label = labels_.find(labelId);
 			}
+			label->second->setText(widget.options()[option], "Courier New Bold", 14, SDL_Color{ 255, 255, 255, 255 });
+			drawText(*label->second, UiRect(bounds.x + 2.0f, bounds.y, bounds.width - 4.0f, bounds.height), 13.0f,
+				widget.optionEnabled(option) ? palette.text : palette.mutedText, layerOffset(layer, 1), screenClip,
+				TextOverflowPolicy::Marquee);
 		}
 		return;
 	}
 	if (!widget.visible()) return;
-	glm::vec4 fill = widget.kind() == UiWidgetKind::ComboBox ? palette.button : palette.button;
-	if (widget.id() == "bars_value" || widget.id() == "time_value") fill = palette.valueButton;
-	if (widget.id() == "run") fill = palette.run;
-	if (widget.id() == "play" && widget.label() == "Pause") fill = palette.playActive;
-	if (widget.id() == "reset") fill = palette.reset;
-	if (!widget.enabled()) fill = palette.disabledButton;
-	else if (widget.pressed()) fill = glm::vec4(fill.r * 0.78f, fill.g * 0.78f, fill.b * 0.78f, fill.a);
-	else if (widget.hovered()) fill = brighter(fill);
-	if (widget.expanded()) fill = palette.accent;
-	submitBox(widget.bounds(), fill, widget.kind() == UiWidgetKind::ComboBox ? ValueMaterial : ButtonMaterial, layer, screenClip);
-	if (widget.focused())
-		submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, 2.0f), palette.held, AccentMaterial, layerOffset(layer, 1), screenClip);
-	if (widget.id() == "panel_toggle")
+	const UiPresetId preset = drawingAppearanceEditor_ ? appearanceEditingPreset_ : renderPreferences_.appearance.activePreset;
+	const UiThemeCustomization readableEditorTheme = defaultUiThemeCustomization(preset, PaletteId::Monochrome);
+	const UiThemeCustomization& paintTheme = drawingAppearanceEditor_ ? readableEditorTheme : activeTheme(renderPreferences_);
+	const bool playbackActive = widget.role() == UiControlRole::Playback && screenModel_.transport == UiTransportState::Playing;
+	const std::string role = widget.role() == UiControlRole::BuildTrace
+		? (preset == UiPresetId::FlatVgaDos ? "button" : "run") :
+		playbackActive ? "play-active" : widget.role() == UiControlRole::Playback ? "play" :
+		widget.role() == UiControlRole::Reset ? "reset" : widget.role() == UiControlRole::EditableValue ? "value" :
+		widget.role() == UiControlRole::Choice || widget.role() == UiControlRole::AlgorithmChoice ? "choice" : "button";
+	const UiControlPaintStyle style = resolveUiControlPaintStyle(preset, paintTheme, role,
+		widget.enabled(), widget.hovered(), widget.pressed(), widget.expanded(),
+		paletteColors(drawingAppearanceEditor_ ? paletteForAppearance(UiPresetId::Current, readableEditorTheme) : palette));
+	const glm::vec4 fill(style.fill.r, style.fill.g, style.fill.b, style.fill.a);
+	const bool classicMenu = preset == UiPresetId::ClassicWindows95 &&
+		(widget.id() == "menu_file" || widget.id() == "menu_view" || widget.id() == "menu_tools");
+	if (!classicMenu || widget.hovered() || widget.expanded())
+		submitBox(widget.bounds(), classicMenu ? palette.accent : fill,
+			widget.kind() == UiWidgetKind::ComboBox ? ValueMaterial : ButtonMaterial, layer, screenClip);
+	const float border = std::max(0.0f, style.borderWidth);
+	if (border > 0.0f && !classicMenu)
 	{
+		const glm::vec4 edge(style.border.r, style.border.g, style.border.b, style.border.a);
+		submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, border), edge, ButtonMaterial, layerOffset(layer, 1), screenClip);
+		submitBox(UiRect(widget.bounds().x, widget.bounds().y + widget.bounds().height - border, widget.bounds().width, border), edge, ButtonMaterial, layerOffset(layer, 1), screenClip);
+		submitBox(UiRect(widget.bounds().x, widget.bounds().y, border, widget.bounds().height), edge, ButtonMaterial, layerOffset(layer, 1), screenClip);
+		submitBox(UiRect(widget.bounds().x + widget.bounds().width - border, widget.bounds().y, border, widget.bounds().height), edge, ButtonMaterial, layerOffset(layer, 1), screenClip);
+		if (preset == UiPresetId::FlatVgaDos)
+		{
+			const glm::vec4 highlight(std::min(1.0f, edge.r * 1.18f + 0.12f),
+				std::min(1.0f, edge.g * 1.18f + 0.12f), std::min(1.0f, edge.b * 1.18f + 0.12f), edge.a);
+			const glm::vec4 shadow(fill.r * 0.42f, fill.g * 0.42f, fill.b * 0.42f, 1.0f);
+			submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, border), highlight, ButtonMaterial, layerOffset(layer, 2), screenClip);
+			submitBox(UiRect(widget.bounds().x, widget.bounds().y, border, widget.bounds().height), highlight, ButtonMaterial, layerOffset(layer, 2), screenClip);
+			submitBox(UiRect(widget.bounds().x, widget.bounds().y + widget.bounds().height - border, widget.bounds().width, border), shadow, ButtonMaterial, layerOffset(layer, 2), screenClip);
+			submitBox(UiRect(widget.bounds().x + widget.bounds().width - border, widget.bounds().y, border, widget.bounds().height), shadow, ButtonMaterial, layerOffset(layer, 2), screenClip);
+		}
+		else if (preset == UiPresetId::ClassicWindows95)
+		{
+			const glm::vec4 light(0.96f, 0.96f, 0.96f, 1.0f);
+			const glm::vec4 shadow(0.25f, 0.25f, 0.25f, 1.0f);
+			const glm::vec4 topLeft = widget.pressed() ? shadow : light;
+			const glm::vec4 bottomRight = widget.pressed() ? light : shadow;
+			submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, border), topLeft, ButtonMaterial, layerOffset(layer, 2), screenClip);
+			submitBox(UiRect(widget.bounds().x, widget.bounds().y, border, widget.bounds().height), topLeft, ButtonMaterial, layerOffset(layer, 2), screenClip);
+			submitBox(UiRect(widget.bounds().x, widget.bounds().y + widget.bounds().height - border, widget.bounds().width, border), bottomRight, ButtonMaterial, layerOffset(layer, 2), screenClip);
+			submitBox(UiRect(widget.bounds().x + widget.bounds().width - border, widget.bounds().y, border, widget.bounds().height), bottomRight, ButtonMaterial, layerOffset(layer, 2), screenClip);
+		}
+	}
+	if (widget.focused())
+		submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, std::max(1.0f, border)), palette.held, AccentMaterial, layerOffset(layer, 1), screenClip);
+	if (widget.presentation() == UiWidgetPresentation::RadioGroup)
+	{
+		const std::size_t count = widget.options().size();
+		if (count == 0) return;
+		const float cellWidth = widget.bounds().width / static_cast<float>(count);
+		for (std::size_t option = 0; option < count; ++option)
+		{
+			const UiRect cell(widget.bounds().x + static_cast<float>(option) * cellWidth, widget.bounds().y, cellWidth, widget.bounds().height);
+			const bool selected = static_cast<int>(option) == widget.selectedIndex();
+			const glm::vec4 cellFill = !widget.optionEnabled(option) ? palette.disabledButton : selected ? palette.accent : palette.button;
+			submitBox(cell, cellFill, ButtonMaterial, layerOffset(layer, 1), screenClip);
+			if (style.squareIndicator)
+			{
+				const UiTokenValue indicatorToken = effectiveUiTokenValue(preset, paintTheme, "selection.indicator_size");
+				const float requestedIndicator = indicatorToken.type == UiTokenType::Number
+					? static_cast<float>(indicatorToken.number) : 12.0f;
+				const float indicator = std::min(requestedIndicator, std::max(1.0f, cell.height - 8.0f));
+				const float ix = cell.x + 7.0f;
+				const float iy = cell.y + (cell.height - indicator) * 0.5f;
+				submitBox(UiRect(ix, iy, indicator, indicator), selected ? palette.text : palette.panel, ButtonMaterial, layerOffset(layer, 2), screenClip);
+				if (selected && indicator > 4.0f)
+					submitBox(UiRect(ix + 3.0f, iy + 3.0f, indicator - 6.0f, indicator - 6.0f), palette.accent, ButtonMaterial, layerOffset(layer, 3), screenClip);
+			}
+			std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id() + "#option" + std::to_string(option));
+			if (label != labels_.end()) drawText(*label->second, UiRect(cell.x + (style.squareIndicator ? 22.0f : 2.0f), cell.y,
+				cell.width - (style.squareIndicator ? 24.0f : 4.0f), cell.height), 13.0f,
+				widget.optionEnabled(option) ? palette.text : palette.mutedText, layerOffset(layer, 2), screenClip,
+				TextOverflowPolicy::Marquee);
+		}
+		return;
+	}
+	if (widget.role() == UiControlRole::PanelToggle)
+	{
+		if (preset == UiPresetId::FlatVgaDos)
+		{
+			std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id());
+			if (label != labels_.end()) drawText(*label->second, widget.bounds(), 14.0f, palette.text, layerOffset(layer, 2), screenClip);
+			return;
+		}
 		const float x = widget.bounds().x;
 		const float y = widget.bounds().y;
 		const float pixel = 3.0f;
@@ -1323,8 +2285,14 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		}
 		return;
 	}
-	if (widget.id() == "settings")
+	if (widget.role() == UiControlRole::Settings)
 	{
+		if (preset == UiPresetId::FlatVgaDos)
+		{
+			std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id());
+			if (label != labels_.end()) drawText(*label->second, widget.bounds(), 13.0f, palette.text, layerOffset(layer, 2), screenClip);
+			return;
+		}
 		const float x = widget.bounds().x;
 		const float y = widget.bounds().y;
 		const float pixel = 4.0f;
@@ -1340,48 +2308,103 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		submitBox(UiRect(cx + 11, cy + 4, pixel, pixel), color, MaterialId::Gear, layerOffset(layer, 2), screenClip);
 		return;
 	}
-	if (widget.id() == "algorithm")
+	if (widget.role() == UiControlRole::AlgorithmChoice)
 	{
 		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(
 			static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
 		if (descriptor)
 		{
-			const std::string familyKey("#algorithm_family_button");
 			const std::string variantKey("#algorithm_variant_button");
-			if (!labels_[familyKey]) labels_[familyKey].reset(new TextLabel("", "Courier New Bold", 10, SDL_Color{ 238, 246, 249, 255 }));
 			if (!labels_[variantKey]) labels_[variantKey].reset(new TextLabel("", "Courier New Bold", 10, SDL_Color{ 238, 246, 249, 255 }));
-			labels_[familyKey]->setText(compactFamilyName(descriptor->familyDisplayName), "Courier New Bold", 10, SDL_Color{ 238, 246, 249, 255 });
-			labels_[variantKey]->setText(compactVariantName(descriptor->displayName), "Courier New Bold", 10, SDL_Color{ 238, 246, 249, 255 });
-			drawText(*labels_[familyKey], UiRect(widget.bounds().x + 2.0f, widget.bounds().y + 1.0f,
-				widget.bounds().width - 4.0f, widget.bounds().height * 0.48f), 10.0f, palette.text, layerOffset(layer, 2), screenClip);
-			drawText(*labels_[variantKey], UiRect(widget.bounds().x + 2.0f, widget.bounds().y + widget.bounds().height * 0.48f,
-				widget.bounds().width - 4.0f, widget.bounds().height * 0.48f), 10.0f, palette.text, layerOffset(layer, 2), screenClip);
+			labels_[variantKey]->setText(descriptor->displayName, "Courier New Bold", 10, SDL_Color{ 238, 246, 249, 255 });
+			drawText(*labels_[variantKey], widget.bounds(), 14.0f, palette.text, layerOffset(layer, 2), screenClip,
+				TextOverflowPolicy::Marquee);
 			return;
 		}
 	}
+	if (style.drawArrow && preset != UiPresetId::Current && widget.kind() == UiWidgetKind::ComboBox && !classicMenu)
+	{
+		const UiTokenValue arrowToken = effectiveUiTokenValue(preset, paintTheme, "control.arrow_size");
+		const float arrow = arrowToken.type == UiTokenType::Number ? static_cast<float>(arrowToken.number) : 6.0f;
+		const float cx = widget.bounds().x + widget.bounds().width - arrow - 7.0f;
+		const float cy = widget.bounds().y + widget.bounds().height * 0.5f;
+		for (int row = 0; row < 3; ++row)
+			submitBox(UiRect(cx + row, cy - 1.0f + row, std::max(1.0f, arrow - row * 2.0f), 1.0f),
+				palette.text, MaterialId::PixelIcon, layerOffset(layer, 2), screenClip);
+	}
+	if (preset == UiPresetId::ClassicWindows95 &&
+		(widget.id() == "play" || widget.id() == "previous" || widget.id() == "next" || widget.id() == "reset"))
+	{
+		static const char* playIcon[] = { "..#....", "..##...", "..###..", "..##...", "..#...." };
+		static const char* pauseIcon[] = { ".##.##.", ".##.##.", ".##.##.", ".##.##.", ".##.##." };
+		static const char* previousIcon[] = { "#...#..", "#..##..", "#.###..", "#..##..", "#...#.." };
+		static const char* nextIcon[] = { "..#...#", "..##..#", ".###.#.", "..##..#", "..#...#" };
+		static const char* resetIcon[] = { ".#####.", "##...#.", "#..##..", "#..##..", ".#...##", ".#####." };
+		const char* const* icon = widget.id() == "reset" ? resetIcon :
+			widget.id() == "previous" ? previousIcon : widget.id() == "next" ? nextIcon :
+			(screenModel_.transport == UiTransportState::Playing ? pauseIcon : playIcon);
+		const int rows = widget.id() == "reset" ? 6 : 5;
+		const int columns = 7;
+		const float pixel = std::max(2.0f, std::min(4.0f, widget.bounds().height / 14.0f));
+		const float iconX = widget.bounds().x + 8.0f;
+		const float iconY = widget.bounds().y + (widget.bounds().height - rows * pixel) * 0.5f;
+		const glm::vec4 iconColor = widget.id() == "play" ? palette.writeTarget :
+			widget.id() == "reset" ? palette.shifted : palette.bar;
+		for (int row = 0; row < rows; ++row)
+			for (int column = 0; column < columns; ++column)
+				if (icon[row][column] == '#')
+					submitBox(UiRect(iconX + column * pixel, iconY + row * pixel, pixel - 0.5f, pixel - 0.5f),
+						iconColor, MaterialId::PixelIcon, layerOffset(layer, 2), screenClip);
+		std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id());
+		if (label != labels_.end())
+			drawText(*label->second, UiRect(iconX + columns * pixel + 6.0f, widget.bounds().y,
+				widget.bounds().x + widget.bounds().width - iconX - columns * pixel - 10.0f, widget.bounds().height),
+				13.0f, palette.text, layerOffset(layer, 2), screenClip);
+		return;
+	}
 	std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id());
 	if (label != labels_.end())
-		drawText(*label->second, widget.bounds(), widget.kind() == UiWidgetKind::ComboBox ? 13.0f : 14.0f,
-			palette.text, layerOffset(layer, 2), screenClip);
+	{
+		UiRect labelBounds = widget.bounds();
+		if (style.drawArrow && widget.kind() == UiWidgetKind::ComboBox)
+			labelBounds.width = std::max(1.0f, labelBounds.width - themeNumber(renderPreferences_, "control.arrow_size", 6.0f) - 12.0f);
+		drawText(*label->second, labelBounds, widget.kind() == UiWidgetKind::ComboBox ? 13.0f : 14.0f,
+			palette.text, layerOffset(layer, 2), screenClip, TextOverflowPolicy::Marquee);
+	}
 }
 
-void ControlPanel::drawText(TextLabel& label, const UiRect& bounds, float targetHeight, const glm::vec4& tint, RenderLayer layer, const ClipBounds& clip)
+void ControlPanel::drawText(TextLabel& label, const UiRect& bounds, float targetHeight, const glm::vec4& tint,
+	RenderLayer layer, const ClipBounds& clip, TextOverflowPolicy overflow, TextHorizontalAlignment alignment)
 {
+	const UiTokenValue fontValue = effectiveUiTokenValue(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_), "typeface.primary");
+	const UiFontReference font = drawingAppearanceEditor_ ? UiFontReference() :
+		fontValue.type == UiTokenType::Font ? fontValue.font : UiFontReference();
+	if (!drawingAppearanceEditor_)
+	{
+		const char* sizeToken = targetHeight >= 16.0f ? "typography.title_size" :
+			targetHeight >= 14.0f ? "typography.control_size" :
+			targetHeight >= 12.0f ? "typography.body_size" : "typography.caption_size";
+		const float factorySize = targetHeight >= 16.0f ? 18.0f :
+			targetHeight >= 14.0f ? 16.0f : targetHeight >= 12.0f ? 14.0f : 12.0f;
+		targetHeight *= themeNumber(renderPreferences_, sizeToken, factorySize) / factorySize;
+	}
+	const int logicalWidth = window_.getLogicalWidth();
+	const int dpi = logicalWidth > 0 ? std::max(48, std::min(384,
+		static_cast<int>(std::lround(96.0 * window_.getDrawableWidth() / logicalWidth)))) : 96;
+	// SDL_ttf interprets its size argument in points. With the matching output
+	// DPI, 72 points per inch yields the requested logical pixel height directly;
+	// doubling the size and shrinking the texture made every label visibly soft.
+	const int rasterSize = std::max(8, static_cast<int>(std::lround(targetHeight * 72.0f / 96.0f)));
+	label.setText(label.text(), font, rasterSize, SDL_Color{ 255, 255, 255, 255 }, dpi);
+	fontFallbackActive_ = fontFallbackActive_ || label.usingFallbackFont();
 	const glm::vec2 dimensions = label.getTextureDimensions();
 	if (label.getTextureId() == 0 || dimensions.x <= 0.0f || dimensions.y <= 0.0f || bounds.width <= 0.0f || bounds.height <= 0.0f)
 		return;
-	float height = std::min(targetHeight, std::max(1.0f, bounds.height - 2.0f));
-	float width = dimensions.x * height / dimensions.y;
-	const float maxWidth = std::max(1.0f, bounds.width - 8.0f);
-	if (width > maxWidth)
-	{
-		const float factor = maxWidth / width;
-		width *= factor;
-		height *= factor;
-	}
-	const glm::vec2 position(bounds.x + (bounds.width - width) * 0.5f, bounds.y + (bounds.height - height) * 0.5f);
-	renderer_.submit(QuadInstance(position, glm::vec2(width, height),
-		RenderDescriptor(tint, label.getTextureId(), MaterialId::Text), layer, clip));
+	const TextQuadLayout textLayout = layoutTextQuad(ClipBounds(bounds.x, bounds.y, bounds.width, bounds.height),
+		dimensions, targetHeight, overflow, SDL_GetTicks(), clip, alignment);
+	if (!textLayout.visible) return;
+	renderer_.submit(QuadInstance(textLayout.position, textLayout.size,
+		RenderDescriptor(tint, label.getTextureId(), MaterialId::Text), layer, textLayout.clip));
 }
 
 void ControlPanel::submitBox(const UiRect& bounds, const glm::vec4& color, MaterialId material, RenderLayer layer, const ClipBounds& clip)
@@ -1404,14 +2427,16 @@ void ControlPanel::openAlgorithmMenu()
 	const sortinglogic::AlgorithmDescriptor* current = sortinglogic::algorithmDescriptor(
 		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
 	algorithmMenuOpen_ = true;
+	pendingAlgorithmSelection_ = false;
+	algorithmMenuStatus_.clear();
 	algorithmMenuVariantPane_ = false;
 	algorithmSearchFocused_ = true;
-	algorithmSearch_.clear();
-	algorithmMenuFamily_ = current ? current->familyId : sortinglogic::FamilyId();
-	algorithmFamilySelection_ = 0;
-	algorithmVariantSelection_ = 0;
-	algorithmFamilyScroll_ = 0;
-	algorithmVariantScroll_ = 0;
+	session_.algorithmSearch.clear();
+	session_.algorithmFamily = current ? current->familyId : sortinglogic::FamilyId();
+	session_.algorithmFamilySelection = 0;
+	session_.algorithmVariantSelection = 0;
+	session_.algorithmFamilyScroll = 0;
+	session_.algorithmVariantScroll = 0;
 	mainUi_.closeCombo();
 	SDL_StartTextInput();
 	layoutAlgorithmMenu();
@@ -1420,6 +2445,8 @@ void ControlPanel::openAlgorithmMenu()
 void ControlPanel::closeAlgorithmMenu()
 {
 	algorithmMenuOpen_ = false;
+	pendingAlgorithmSelection_ = false;
+	algorithmMenuStatus_.clear();
 	algorithmMenuVariantPane_ = false;
 	algorithmSearchFocused_ = false;
 	SDL_StopTextInput();
@@ -1427,11 +2454,28 @@ void ControlPanel::closeAlgorithmMenu()
 
 void ControlPanel::beginInlineEdit(const std::string& widgetId)
 {
+	if ((widgetId == "appearance_value" || widgetId == "appearance_color_alpha") && appearanceEditorOpen_)
+	{
+		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditingPreset_), selectedAppearanceToken_);
+		if (!descriptor || (widgetId == "appearance_value" && descriptor->type != UiTokenType::Number) ||
+			(widgetId == "appearance_color_alpha" && descriptor->type != UiTokenType::Color)) return;
+		const UiTokenValue value = effectiveUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_);
+		std::ostringstream text;
+		text << std::setprecision(9) << (widgetId == "appearance_color_alpha" ? value.color.a : value.number);
+		inlineEditWidgetId_ = widgetId;
+		inlineEditBuffer_ = text.str();
+		inlineEditAppearanceValue_ = true;
+		inlineEditReplaceOnNextDigit_ = true;
+		SDL_StartTextInput();
+		updateInlineEditLabel();
+		return;
+	}
 	if (widgetId != "bars_value" && widgetId != "time_value") return;
 	inlineEditWidgetId_ = widgetId;
+	inlineEditAppearanceValue_ = false;
 	inlineEditBuffer_ = widgetId == "bars_value"
 		? std::to_string(settings_.simulation.itemCount)
-		: std::to_string(settings_.simulation.durationSeconds);
+		: ([this]() { std::ostringstream value; value << std::setprecision(6) << settings_.simulation.durationSeconds; return value.str(); })();
 	inlineEditReplaceOnNextDigit_ = true;
 	SDL_StartTextInput();
 	updateInlineEditLabel();
@@ -1440,6 +2484,12 @@ void ControlPanel::beginInlineEdit(const std::string& widgetId)
 void ControlPanel::updateInlineEditLabel()
 {
 	if (inlineEditWidgetId_.empty()) return;
+	if (inlineEditAppearanceValue_)
+	{
+		UiWidget* value = appearanceUi_.find(inlineEditWidgetId_);
+		if (value) value->setLabel(inlineEditBuffer_ + "|");
+		return;
+	}
 	UiWidget* widget = mainUi_.find(inlineEditWidgetId_);
 	if (!widget) return;
 	widget->setLabel(inlineEditBuffer_ + "|" + (inlineEditWidgetId_ == "bars_value" ? " bars" : " sec"));
@@ -1450,7 +2500,10 @@ bool ControlPanel::appendInlineEditText(const char* text)
 	if (!text) return true;
 	for (const char* character = text; *character; ++character)
 	{
-		if (*character < '0' || *character > '9') continue;
+		const bool digit = *character >= '0' && *character <= '9';
+		const bool decimal = *character == '.' && (inlineEditAppearanceValue_ || inlineEditWidgetId_ == "time_value");
+		const bool sign = *character == '-' && inlineEditAppearanceValue_;
+		if (!digit && !decimal && !sign) continue;
 		if (inlineEditReplaceOnNextDigit_)
 		{
 			inlineEditBuffer_.clear();
@@ -1464,15 +2517,54 @@ bool ControlPanel::appendInlineEditText(const char* text)
 
 bool ControlPanel::commitInlineEdit(AppAction& action)
 {
-	int value = 0;
-	if (!parseInlineInteger(inlineEditBuffer_, value)) return false;
+	if (inlineEditAppearanceValue_)
+	{
+		char* end = nullptr;
+		const double parsed = std::strtod(inlineEditBuffer_.c_str(), &end);
+		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditingPreset_), selectedAppearanceToken_);
+		if (!descriptor || !end || end == inlineEditBuffer_.c_str() || *end != '\0' || !std::isfinite(parsed) ||
+			parsed < descriptor->minimum || parsed > descriptor->maximum)
+		{
+			appearanceError_ = descriptor ? "Enter a value between " + std::to_string(descriptor->minimum) + " and " +
+				std::to_string(descriptor->maximum) + "." : "The selected appearance property is unavailable.";
+			return false;
+		}
+		std::string error;
+		UiTokenValue nextValue;
+		if (inlineEditWidgetId_ == "appearance_color_alpha")
+		{
+			nextValue = effectiveUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_);
+			if (nextValue.type != UiTokenType::Color) return false;
+			nextValue.color.a = static_cast<float>(parsed);
+		}
+		else nextValue = UiTokenValue::fromNumber(parsed);
+		if (!setUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_, nextValue, &error))
+		{
+			appearanceError_ = error;
+			return false;
+		}
+		inlineEditWidgetId_.clear(); inlineEditBuffer_.clear(); inlineEditAppearanceValue_ = false;
+		inlineEditReplaceOnNextDigit_ = false; SDL_StopTextInput();
+		appearanceError_.clear(); updateAppearanceEditorControls();
+		return true;
+	}
 	if (inlineEditWidgetId_ == "bars_value")
+	{
+		int value = 0;
+		if (!parseInlineInteger(inlineEditBuffer_, value)) return false;
 		action = AppAction(AppActionKind::SetItemCount, 0.0f, value);
+	}
 	else if (inlineEditWidgetId_ == "time_value")
-		action = AppAction(AppActionKind::SetDuration, static_cast<float>(value));
+	{
+		char* end = nullptr;
+		const float value = std::strtof(inlineEditBuffer_.c_str(), &end);
+		if (!end || end == inlineEditBuffer_.c_str() || *end != '\0' || !std::isfinite(value)) return false;
+		action = AppAction(AppActionKind::SetDuration, value);
+	}
 	else return false;
 	inlineEditWidgetId_.clear();
 	inlineEditBuffer_.clear();
+	inlineEditAppearanceValue_ = false;
 	inlineEditReplaceOnNextDigit_ = false;
 	SDL_StopTextInput();
 	return true;
@@ -1481,6 +2573,13 @@ bool ControlPanel::commitInlineEdit(AppAction& action)
 void ControlPanel::cancelInlineEdit()
 {
 	if (inlineEditWidgetId_.empty()) return;
+	if (inlineEditAppearanceValue_)
+	{
+		inlineEditWidgetId_.clear(); inlineEditBuffer_.clear(); inlineEditAppearanceValue_ = false;
+		inlineEditReplaceOnNextDigit_ = false; SDL_StopTextInput();
+		updateAppearanceEditorControls();
+		return;
+	}
 	const bool editingBarCount = inlineEditWidgetId_ == "bars_value";
 	inlineEditWidgetId_.clear();
 	inlineEditBuffer_.clear();
@@ -1490,7 +2589,701 @@ void ControlPanel::cancelInlineEdit()
 	if (widget)
 		widget->setLabel(editingBarCount
 			? std::to_string(settings_.simulation.itemCount) + " bars"
-			: std::to_string(settings_.simulation.durationSeconds) + " sec");
+			: formatDuration(settings_.simulation.durationSeconds));
+}
+
+void ControlPanel::openAppearanceEditor()
+{
+	if (appearanceEditorOpen_) return;
+	appearanceWasSettingsOpen_ = settingsOpen_;
+	appearanceDraft_ = settings_.appearance;
+	appearanceEditingPreset_ = appearanceDraft_.activePreset;
+	appearanceSearch_.clear();
+	appearanceError_.clear();
+	settingsOpen_ = true;
+	session_.settingsPage = 0;
+	appearanceEditorOpen_ = true;
+	appearanceSearchFocused_ = false;
+	mainUi_.closeCombo();
+	settingsUi_.closeCombo();
+	appearanceUi_.closeCombo();
+	mainUi_.setInputCaptured(true);
+	settingsUi_.setInputCaptured(false);
+	appearanceUi_.setInputCaptured(true);
+	refreshAppearanceTokens();
+	updateAppearanceEditorControls();
+	layoutAppearanceEditor();
+}
+
+void ControlPanel::closeAppearanceEditor(bool restore)
+{
+	if (!appearanceEditorOpen_) return;
+	if (!inlineEditWidgetId_.empty()) cancelInlineEdit();
+	if (appearanceSearchFocused_)
+	{
+		appearanceSearchFocused_ = false;
+		SDL_StopTextInput();
+	}
+	if (restore) appearanceDraft_ = settings_.appearance;
+	appearanceEditorOpen_ = false;
+	appearanceUi_.closeCombo();
+	appearanceUi_.setInputCaptured(false);
+	settingsOpen_ = appearanceWasSettingsOpen_;
+	settingsUi_.setInputCaptured(settingsOpen_);
+	mainUi_.setInputCaptured(settingsOpen_);
+	layoutCacheValid_ = false;
+}
+
+void ControlPanel::refreshAppearanceTokens()
+{
+	const UiPresetDefinition& definition = uiPresetDefinition(appearanceEditingPreset_);
+	std::vector<std::string> options;
+	filteredAppearanceTokens_.clear();
+	for (std::size_t i = 0; i < definition.tokens.size(); ++i)
+	{
+		const UiTokenDescriptor& descriptor = definition.tokens[i];
+		if (appearanceCategoryFilter_ > 0 &&
+			static_cast<int>(descriptor.category) != appearanceCategoryFilter_ - 1) continue;
+		const std::string searchable = std::string(uiTokenCategoryName(descriptor.category)) + " " + descriptor.description + " " + descriptor.stableId;
+		if (!containsText(searchable, appearanceSearch_)) continue;
+		filteredAppearanceTokens_.push_back(descriptor.stableId);
+		options.push_back(appearanceTokenLabel(descriptor));
+	}
+	if (filteredAppearanceTokens_.empty()) selectedAppearanceToken_.clear();
+	else if (std::find(filteredAppearanceTokens_.begin(), filteredAppearanceTokens_.end(), selectedAppearanceToken_) == filteredAppearanceTokens_.end())
+		selectedAppearanceToken_ = filteredAppearanceTokens_[0];
+	UiWidget* selector = appearanceUi_.find("appearance_token");
+	if (selector)
+	{
+		selector->setOptions(options);
+		const std::vector<std::string>::const_iterator selected = std::find(filteredAppearanceTokens_.begin(), filteredAppearanceTokens_.end(), selectedAppearanceToken_);
+		selector->setSelectedIndex(selected == filteredAppearanceTokens_.end() ? 0 : static_cast<int>(selected - filteredAppearanceTokens_.begin()));
+		for (std::size_t i = 0; i < options.size(); ++i)
+		{
+			const std::string labelId = selector->id() + "#option" + std::to_string(i);
+			if (labels_.find(labelId) == labels_.end()) labels_[labelId].reset(new TextLabel(options[i], "Courier New Bold", 12, { 255, 255, 255, 255 }));
+			else labels_[labelId]->setText(options[i], "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+		}
+	}
+	updateAppearanceEditorControls();
+}
+
+void ControlPanel::updateAppearanceEditorControls()
+{
+	if (!appearanceEditorOpen_) return;
+	appearanceUi_.find("appearance_preset")->setSelectedIndex(static_cast<int>(appearanceEditingPreset_));
+	UiThemeCustomization& theme = appearanceDraft_.themes[appearanceEditingPreset_];
+	appearanceUi_.find("appearance_palette")->setSelectedIndex(static_cast<int>(theme.palette));
+	appearanceUi_.find("appearance_category")->setSelectedIndex(appearanceCategoryFilter_);
+	appearanceUi_.find("appearance_search")->setLabel(appearanceSearch_.empty() ? "Search tokens" : "Search: " + appearanceSearch_);
+	UiWidget* token = appearanceUi_.find("appearance_token");
+	const std::vector<std::string>::const_iterator selected = std::find(filteredAppearanceTokens_.begin(), filteredAppearanceTokens_.end(), selectedAppearanceToken_);
+	if (token) token->setSelectedIndex(selected == filteredAppearanceTokens_.end() ? 0 : static_cast<int>(selected - filteredAppearanceTokens_.begin()));
+
+	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditingPreset_), selectedAppearanceToken_);
+	const bool hasToken = descriptor != nullptr;
+	const UiTokenValue value = hasToken ? effectiveUiTokenValue(appearanceEditingPreset_, theme, selectedAppearanceToken_) : UiTokenValue();
+	appearanceUi_.setWidgetVisible("appearance_token", !filteredAppearanceTokens_.empty());
+	appearanceUi_.setWidgetVisible("appearance_value_down", hasToken && descriptor->type == UiTokenType::Number);
+	appearanceUi_.setWidgetVisible("appearance_value", hasToken && descriptor->type == UiTokenType::Number);
+	appearanceUi_.setWidgetVisible("appearance_value_up", hasToken && descriptor->type == UiTokenType::Number);
+	appearanceUi_.setWidgetVisible("appearance_value_slider", hasToken && descriptor->type == UiTokenType::Number);
+	appearanceUi_.setWidgetVisible("appearance_color", hasToken && descriptor->type == UiTokenType::Color);
+	appearanceUi_.setWidgetVisible("appearance_color_alpha", hasToken && descriptor->type == UiTokenType::Color);
+	appearanceUi_.setWidgetVisible("appearance_color_r", hasToken && descriptor->type == UiTokenType::Color);
+	appearanceUi_.setWidgetVisible("appearance_color_g", hasToken && descriptor->type == UiTokenType::Color);
+	appearanceUi_.setWidgetVisible("appearance_color_b", hasToken && descriptor->type == UiTokenType::Color);
+	appearanceUi_.setWidgetVisible("appearance_color_a", hasToken && descriptor->type == UiTokenType::Color);
+	appearanceUi_.setWidgetVisible("appearance_boolean", hasToken && descriptor->type == UiTokenType::Boolean);
+	appearanceUi_.setWidgetVisible("appearance_choice", hasToken && descriptor->type == UiTokenType::Choice);
+	appearanceUi_.setWidgetVisible("appearance_font_family", hasToken && descriptor->type == UiTokenType::Font);
+	appearanceUi_.setWidgetVisible("appearance_font_style", hasToken && descriptor->type == UiTokenType::Font);
+	if (hasToken)
+	{
+		std::string description = appearanceTokenLabel(*descriptor);
+		if (descriptor->type == UiTokenType::Color)
+			description += " | Chart bars and marks use the same color tokens as the interface.";
+		appearanceTokenDescription_->setText(description, "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+	}
+	else
+		appearanceTokenDescription_->setText("No appearance tokens match this search.", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+
+	if (value.type == UiTokenType::Number)
+	{
+		appearanceUi_.find("appearance_value")->setLabel(tokenDisplayValue(value));
+		const float minimum = static_cast<float>(descriptor->minimum);
+		const float maximum = static_cast<float>(descriptor->maximum);
+		const float step = maximum - minimum <= 1.0f ? 0.01f : 1.0f;
+		appearanceUi_.find("appearance_value_slider")->setSliderRange(minimum, maximum, step, static_cast<float>(value.number));
+	}
+	else if (value.type == UiTokenType::Color)
+	{
+		appearanceUi_.find("appearance_color")->setLabel("Pick RGB | " + tokenDisplayValue(value));
+		appearanceUi_.find("appearance_color_alpha")->setLabel("Alpha " + tokenDisplayValue(UiTokenValue::fromNumber(value.color.a)));
+		appearanceUi_.find("appearance_color_r")->setSliderValue(value.color.r);
+		appearanceUi_.find("appearance_color_g")->setSliderValue(value.color.g);
+		appearanceUi_.find("appearance_color_b")->setSliderValue(value.color.b);
+		appearanceUi_.find("appearance_color_a")->setSliderValue(value.color.a);
+	}
+	else if (value.type == UiTokenType::Boolean) appearanceUi_.find("appearance_boolean")->setLabel(value.boolean ? "Checked" : "Unchecked");
+	else if (value.type == UiTokenType::Choice)
+	{
+		UiWidget* choice = appearanceUi_.find("appearance_choice");
+		choice->setOptions(descriptor->choices);
+		const std::vector<std::string>::const_iterator at = std::find(descriptor->choices.begin(), descriptor->choices.end(), value.text);
+		choice->setSelectedIndex(at == descriptor->choices.end() ? 0 : static_cast<int>(at - descriptor->choices.begin()));
+	}
+	else if (value.type == UiTokenType::Font)
+	{
+		std::vector<std::string> families = fontFamilyNames();
+		if (std::find(families.begin(), families.end(), value.font.family) == families.end()) families.push_back(value.font.family);
+		UiWidget* family = appearanceUi_.find("appearance_font_family");
+		family->setOptions(families);
+		family->setSelectedIndex(static_cast<int>(std::find(families.begin(), families.end(), value.font.family) - families.begin()));
+		std::vector<std::string> styles = fontStyleNames(value.font.family);
+		if (styles.empty()) styles.push_back(value.font.style);
+		else if (std::find(styles.begin(), styles.end(), value.font.style) == styles.end()) styles.push_back(value.font.style);
+		UiWidget* style = appearanceUi_.find("appearance_font_style");
+		style->setOptions(styles);
+		style->setSelectedIndex(static_cast<int>(std::find(styles.begin(), styles.end(), value.font.style) - styles.begin()));
+	}
+	for (std::size_t i = 0; i < appearanceUi_.widgets().size(); ++i)
+	{
+		const UiWidget& widget = *appearanceUi_.widgets()[i];
+		std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id());
+		if (label != labels_.end())
+			label->second->setText(widget.label(), "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+	}
+	layoutAppearanceEditor();
+}
+
+void ControlPanel::layoutAppearanceEditor()
+{
+	if (!appearanceEditorOpen_ || width_ <= 0 || height_ <= 0) return;
+	const float margin = 12.0f;
+	const float panelWidth = std::min(880.0f, std::max(1.0f, static_cast<float>(width_) - margin * 2.0f));
+	const float panelHeight = std::min(660.0f, std::max(1.0f, static_cast<float>(height_) - margin * 2.0f));
+	appearancePanelBounds_ = UiRect((static_cast<float>(width_) - panelWidth) * 0.5f,
+		(static_cast<float>(height_) - panelHeight) * 0.5f, panelWidth, panelHeight);
+	const float left = appearancePanelBounds_.x + 18.0f;
+	const float contentWidth = std::max(1.0f, appearancePanelBounds_.width - 36.0f);
+	const float scale = std::min(1.0f, panelHeight / 660.0f);
+	const float gap = 8.0f * scale;
+	const float row = 30.0f * scale;
+	const float top = appearancePanelBounds_.y + 58.0f * scale;
+	const float half = std::max(1.0f, (contentWidth - gap) * 0.5f);
+	appearanceUi_.find("appearance_preset")->setBounds(UiRect(left, top, half, row));
+	appearanceUi_.find("appearance_palette")->setBounds(UiRect(left + half + gap, top, half, row));
+	const float filterY = top + row + 8.0f * scale;
+	appearanceUi_.find("appearance_category")->setBounds(UiRect(left, filterY, half, row));
+	appearanceUi_.find("appearance_search")->setBounds(UiRect(left + half + gap, filterY, half, row));
+	appearanceUi_.find("appearance_token")->setBounds(UiRect(left, filterY + row + 8.0f * scale, contentWidth, row));
+	const float propertyY = appearancePanelBounds_.y + 210.0f * scale;
+	appearanceColorSwatchBounds_ = UiRect(left, propertyY, contentWidth, 42.0f * scale);
+	const float propertyButton = std::min(54.0f, half);
+	appearanceUi_.find("appearance_value_down")->setBounds(UiRect(left, propertyY, propertyButton, row));
+	appearanceUi_.find("appearance_value")->setBounds(UiRect(left + propertyButton + gap, propertyY,
+		std::max(1.0f, contentWidth - 2.0f * (propertyButton + gap)), row));
+	appearanceUi_.find("appearance_value_up")->setBounds(UiRect(left + contentWidth - propertyButton, propertyY, propertyButton, row));
+	appearanceUi_.find("appearance_value_slider")->setBounds(UiRect(left, propertyY + row + gap, contentWidth, 42.0f * scale));
+	const float colorActionsY = propertyY + 50.0f * scale;
+	appearanceUi_.find("appearance_color")->setBounds(UiRect(left, colorActionsY, half, row));
+	appearanceUi_.find("appearance_color_alpha")->setBounds(UiRect(left + half + gap, colorActionsY, half, row));
+	const float colorSliderY = colorActionsY + row + 8.0f * scale;
+	const char* colorSliderIds[] = { "appearance_color_r", "appearance_color_g", "appearance_color_b", "appearance_color_a" };
+	for (std::size_t i = 0; i < sizeof(colorSliderIds) / sizeof(colorSliderIds[0]); ++i)
+		appearanceUi_.find(colorSliderIds[i])->setBounds(UiRect(left, colorSliderY + static_cast<float>(i) * 42.0f * scale,
+			contentWidth, 40.0f * scale));
+	appearanceUi_.find("appearance_boolean")->setBounds(UiRect(left, propertyY, contentWidth, row));
+	appearanceUi_.find("appearance_choice")->setBounds(UiRect(left, propertyY, contentWidth, row));
+	appearanceUi_.find("appearance_font_family")->setBounds(UiRect(left, propertyY, contentWidth, row));
+	appearanceUi_.find("appearance_font_style")->setBounds(UiRect(left, propertyY + row + gap, contentWidth, row));
+	const float bottomY = appearancePanelBounds_.y + panelHeight - 40.0f * scale;
+	const float actionsY = bottomY - 2.0f * row - 2.0f * gap;
+	appearanceUi_.find("appearance_reset_token")->setBounds(UiRect(left, actionsY, half, row));
+	appearanceUi_.find("appearance_reset_theme")->setBounds(UiRect(left + half + gap, actionsY, half, row));
+	appearanceUi_.find("appearance_import")->setBounds(UiRect(left, actionsY + row + gap, half, row));
+	appearanceUi_.find("appearance_export")->setBounds(UiRect(left + half + gap, actionsY + row + gap, half, row));
+	appearanceUi_.find("appearance_cancel")->setBounds(UiRect(left, bottomY, half, row));
+	appearanceUi_.find("appearance_apply")->setBounds(UiRect(left + half + gap, bottomY, half, row));
+	const char* popupIds[] = { "appearance_category", "appearance_token", "appearance_choice", "appearance_font_family", "appearance_font_style" };
+	for (std::size_t i = 0; i < sizeof(popupIds) / sizeof(popupIds[0]); ++i)
+	{
+		UiWidget* widget = appearanceUi_.find(popupIds[i]);
+		if (widget)
+			widget->setPopupAbove(widget->bounds().y + widget->bounds().height *
+				(static_cast<float>(widget->visibleOptionCount()) + 1.0f) > appearancePanelBounds_.y + appearancePanelBounds_.height - 8.0f);
+	}
+	appearanceUi_.setModalBounds(appearancePanelBounds_, UiAction::ViewCommand::CloseAppearanceEditor);
+}
+
+void ControlPanel::drawAppearanceEditor()
+{
+	if (!appearanceEditorOpen_) return;
+	const UiPresetId preset = appearanceEditingPreset_;
+	const ThemePalette readable = paletteForAppearance(preset,
+		defaultUiThemeCustomization(preset, PaletteId::Monochrome));
+	drawingAppearanceEditor_ = true;
+	submitBox(UiRect(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_)),
+		readable.overlayDim, MaterialId::ModalDim, DimLayer);
+	submitBox(appearancePanelBounds_, readable.panel, PanelMaterial, SettingsLayer);
+	submitBox(UiRect(appearancePanelBounds_.x, appearancePanelBounds_.y, appearancePanelBounds_.width, 2.0f),
+		readable.accent, AccentMaterial, RenderLayer::SettingsAccent);
+	drawText(*appearanceEditorTitle_, UiRect(appearancePanelBounds_.x + 18.0f, appearancePanelBounds_.y + 14.0f,
+		appearancePanelBounds_.width - 36.0f, 26.0f), 17.0f, readable.text, SettingsTextLayer);
+	const float left = appearancePanelBounds_.x + 18.0f;
+	const float top = appearancePanelBounds_.y + 40.0f;
+	const float contentWidth = std::max(1.0f, appearancePanelBounds_.width - 36.0f);
+	const float scale = std::min(1.0f, appearancePanelBounds_.height / 660.0f);
+	const UiRect controlClip(appearancePanelBounds_.x + 1.0f, top,
+		appearancePanelBounds_.width - 2.0f, std::max(0.0f, appearancePanelBounds_.height - 120.0f * scale));
+	const ClipBounds clip(controlClip.x, controlClip.y, controlClip.width, controlClip.height);
+	const UiTokenValue selectedValue = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], selectedAppearanceToken_);
+	if (selectedValue.type == UiTokenType::Color)
+	{
+		const UiColor& c = selectedValue.color;
+		const glm::vec4 fill(c.r, c.g, c.b, c.a);
+		submitBox(appearanceColorSwatchBounds_, fill, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		const float edge = std::max(1.0f, 1.0f * scale);
+		submitBox(UiRect(appearanceColorSwatchBounds_.x, appearanceColorSwatchBounds_.y,
+			appearanceColorSwatchBounds_.width, edge), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		submitBox(UiRect(appearanceColorSwatchBounds_.x, appearanceColorSwatchBounds_.y + appearanceColorSwatchBounds_.height - edge,
+			appearanceColorSwatchBounds_.width, edge), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		submitBox(UiRect(appearanceColorSwatchBounds_.x, appearanceColorSwatchBounds_.y, edge,
+			appearanceColorSwatchBounds_.height), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		submitBox(UiRect(appearanceColorSwatchBounds_.x + appearanceColorSwatchBounds_.width - edge,
+			appearanceColorSwatchBounds_.y, edge, appearanceColorSwatchBounds_.height), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
+	}
+	drawText(*appearanceTokenDescription_, UiRect(left, appearancePanelBounds_.y + 170.0f * scale,
+		contentWidth, 32.0f * scale), 12.0f, readable.mutedText, SettingsTextLayer, clip);
+	const char* rowIds[] = { "appearance_preset", "appearance_palette", "appearance_category", "appearance_search", "appearance_token",
+		"appearance_value_down", "appearance_value", "appearance_value_up", "appearance_value_slider",
+		"appearance_color", "appearance_color_alpha", "appearance_color_r", "appearance_color_g", "appearance_color_b", "appearance_color_a", "appearance_boolean",
+		"appearance_choice", "appearance_font_family", "appearance_font_style" };
+	for (std::size_t i = 0; i < sizeof(rowIds) / sizeof(rowIds[0]); ++i)
+	{
+		const UiWidget* widget = appearanceUi_.find(rowIds[i]);
+		if (!widget || !widget->visible()) continue;
+		if (widget->kind() == UiWidgetKind::Slider)
+		{
+			drawSliderControl(*widget, readable, clip, RenderLayer::SettingsControls);
+			continue;
+		}
+		submitBox(widget->bounds(), widget->enabled() ? readable.button : readable.disabledButton,
+			widget->kind() == UiWidgetKind::ComboBox ? ValueMaterial : ButtonMaterial, RenderLayer::SettingsControls, clip);
+		drawWidget(*widget, readable, RenderLayer::SettingsControls);
+	}
+	appearanceStatus_->setText(appearanceError_.empty() ? "Changes preview behind this editor. Apply saves; Cancel discards." : appearanceError_,
+		"Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+	const float bottomY = appearancePanelBounds_.y + appearancePanelBounds_.height - 40.0f * scale;
+	const float row = 30.0f * scale;
+	const float gap = 8.0f * scale;
+	const float actionsY = bottomY - 2.0f * row - 2.0f * gap;
+	drawText(*appearanceStatus_, UiRect(left, actionsY - 26.0f * scale,
+		contentWidth, 18.0f * scale), 11.0f, appearanceError_.empty() ? readable.mutedText : readable.accent,
+		SettingsTextLayer, ClipBounds(appearancePanelBounds_.x, appearancePanelBounds_.y,
+		appearancePanelBounds_.width, appearancePanelBounds_.height));
+	const char* actionIds[] = { "appearance_reset_token", "appearance_reset_theme", "appearance_import",
+		"appearance_export", "appearance_apply", "appearance_cancel" };
+	for (std::size_t i = 0; i < sizeof(actionIds) / sizeof(actionIds[0]); ++i)
+	{
+		const UiWidget* widget = appearanceUi_.find(actionIds[i]);
+		if (!widget) continue;
+		submitBox(widget->bounds(), widget->id() == "appearance_apply" ? readable.accent : readable.button,
+			ButtonMaterial, RenderLayer::SettingsControls);
+		drawWidget(*widget, readable, RenderLayer::SettingsControls);
+	}
+	if (appearanceUi_.hasOpenCombo())
+		for (std::size_t i = 0; i < appearanceUi_.widgets().size(); ++i)
+			if (appearanceUi_.widgets()[i]->visible() && appearanceUi_.widgets()[i]->expanded())
+				drawWidget(*appearanceUi_.widgets()[i], readable, RenderLayer::SettingsDropdown, true);
+	drawingAppearanceEditor_ = false;
+}
+
+bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction& action)
+{
+	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+	{
+		cancelInlineEdit();
+		appearanceSearchFocused_ = false;
+		SDL_StopTextInput();
+		UiAction lost;
+		appearanceUi_.handleEvent(UiInputEvent(UiInputType::FocusLost), lost);
+		return true;
+	}
+	if (!inlineEditWidgetId_.empty() && inlineEditAppearanceValue_)
+	{
+		if (event.type == SDL_TEXTINPUT) return appendInlineEditText(event.text.text);
+		if (event.type == SDL_KEYDOWN)
+		{
+			const SDL_Keycode key = event.key.keysym.sym;
+			if (key == SDLK_TAB)
+			{
+				if (!commitInlineEdit(action)) return true;
+				UiAction navigation;
+				appearanceUi_.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Tab,
+					(event.key.keysym.mod & KMOD_SHIFT) != 0), navigation);
+				return true;
+			}
+			if (key == SDLK_ESCAPE) { cancelInlineEdit(); return true; }
+			if (key == SDLK_RETURN || key == SDLK_KP_ENTER) { commitInlineEdit(action); return true; }
+			if (key == SDLK_BACKSPACE)
+			{
+				inlineEditReplaceOnNextDigit_ = false;
+				if (!inlineEditBuffer_.empty()) inlineEditBuffer_.erase(inlineEditBuffer_.size() - 1);
+				updateInlineEditLabel();
+				return true;
+			}
+			if (key == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
+			{
+				inlineEditBuffer_.clear(); inlineEditReplaceOnNextDigit_ = false; updateInlineEditLabel(); return true;
+			}
+			return true;
+		}
+	}
+	if (appearanceSearchFocused_)
+	{
+		if (event.type == SDL_TEXTINPUT)
+		{
+			if (appearanceSearch_.size() < 96) appearanceSearch_ += event.text.text;
+			refreshAppearanceTokens();
+			return true;
+		}
+		if (event.type == SDL_KEYDOWN)
+		{
+			if (event.key.keysym.sym == SDLK_ESCAPE)
+			{
+				if (appearanceUi_.hasOpenCombo())
+				{
+					UiAction closed; appearanceUi_.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Escape), closed);
+					return true;
+				}
+				closeAppearanceEditor(true); return true;
+			}
+			if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)
+			{ appearanceSearchFocused_ = false; SDL_StopTextInput(); return true; }
+			if (event.key.keysym.sym == SDLK_TAB)
+			{
+				appearanceSearchFocused_ = false; SDL_StopTextInput();
+				UiAction navigation;
+				appearanceUi_.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Tab,
+					(event.key.keysym.mod & KMOD_SHIFT) != 0), navigation);
+				return true;
+			}
+			if (event.key.keysym.sym == SDLK_BACKSPACE)
+			{
+				if (!appearanceSearch_.empty()) appearanceSearch_.erase(appearanceSearch_.size() - 1);
+				refreshAppearanceTokens(); return true;
+			}
+			if (event.key.keysym.sym == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
+			{ appearanceSearch_.clear(); refreshAppearanceTokens(); return true; }
+			return true;
+		}
+	}
+	if (appearanceSearchFocused_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+		!inRect(appearanceUi_.find("appearance_search")->bounds(), event.button.x, event.button.y))
+	{
+		appearanceSearchFocused_ = false;
+		SDL_StopTextInput();
+	}
+	if (!inlineEditWidgetId_.empty() && inlineEditAppearanceValue_ && event.type == SDL_MOUSEBUTTONDOWN &&
+		!commitInlineEdit(action)) return true;
+	if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE && !appearanceUi_.hasOpenCombo())
+	{
+		closeAppearanceEditor(true);
+		return true;
+	}
+	UiInputEvent input(UiInputType::PointerMove);
+	bool translated = true;
+	if (event.type == SDL_MOUSEMOTION)
+		input = UiInputEvent(UiInputType::PointerMove, static_cast<float>(event.motion.x), static_cast<float>(event.motion.y));
+	else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+		input = UiInputEvent(UiInputType::PointerDown, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
+	else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
+		input = UiInputEvent(UiInputType::PointerUp, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
+	else if (event.type == SDL_MOUSEWHEEL)
+	{
+		int mouseX = 0, mouseY = 0; SDL_GetMouseState(&mouseX, &mouseY);
+		input = UiInputEvent(UiInputType::Wheel, static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y);
+	}
+	else if (event.type == SDL_TEXTINPUT)
+		input = UiInputEvent(UiInputType::TextInput, std::string(event.text.text));
+	else if (event.type == SDL_KEYDOWN)
+	{
+		UiKey key = UiKey::None;
+		switch (event.key.keysym.sym)
+		{
+		case SDLK_TAB: key = UiKey::Tab; break;
+		case SDLK_RETURN: case SDLK_KP_ENTER: key = UiKey::Enter; break;
+		case SDLK_SPACE: key = UiKey::Space; break;
+		case SDLK_ESCAPE: key = UiKey::Escape; break;
+		case SDLK_UP: key = UiKey::Up; break;
+		case SDLK_DOWN: key = UiKey::Down; break;
+		case SDLK_LEFT: key = UiKey::Left; break;
+		case SDLK_RIGHT: key = UiKey::Right; break;
+		default: translated = false; break;
+		}
+		input = UiInputEvent(UiInputType::KeyDown, 0, 0, key, (event.key.keysym.mod & KMOD_SHIFT) != 0);
+		input.control = (event.key.keysym.mod & KMOD_CTRL) != 0;
+		input.alt = (event.key.keysym.mod & KMOD_ALT) != 0;
+	}
+	else translated = false;
+	if (!translated) return true;
+	if (event.type == SDL_MOUSEBUTTONDOWN)
+	{
+		const SDL_Keymod modifiers = SDL_GetModState();
+		input.shift = (modifiers & KMOD_SHIFT) != 0;
+		input.control = (modifiers & KMOD_CTRL) != 0;
+		input.alt = (modifiers & KMOD_ALT) != 0;
+	}
+	UiAction uiAction;
+	const bool consumed = appearanceUi_.handleEvent(input, uiAction);
+	if (uiAction.viewCommand == UiAction::ViewCommand::CloseAppearanceEditor)
+	{
+		closeAppearanceEditor(true);
+		return true;
+	}
+	if (consumed)
+	{
+		if (uiAction.event.controlId == "appearance_search" && uiAction.event.kind == UiEventKind::Activated)
+		{
+			appearanceSearchFocused_ = true;
+			SDL_StartTextInput();
+		}
+		else if (uiAction.event.kind != UiEventKind::None)
+			processAppearanceEditorAction(uiAction, action);
+	}
+	return consumed || appearanceEditorOpen_;
+}
+
+void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppAction& output)
+{
+	const std::string& id = action.event.controlId;
+	if (id == "appearance_preset")
+	{
+		const int lastPreset = static_cast<int>(uiPresetCatalog().size()) - 1;
+		appearanceEditingPreset_ = static_cast<UiPresetId>(std::max(0, std::min(action.event.selection, lastPreset)));
+		appearanceDraft_.activePreset = appearanceEditingPreset_;
+		appearanceUi_.closeCombo();
+		refreshAppearanceTokens();
+		appearanceError_.clear();
+		return;
+	}
+	if (id == "appearance_palette")
+	{
+		UiThemeCustomization& theme = appearanceDraft_.themes[appearanceEditingPreset_];
+		const int lastPalette = static_cast<int>(paletteCatalog().size()) - 1;
+		selectUiPalette(theme, static_cast<PaletteId>(std::max(0, std::min(action.event.selection, lastPalette))));
+		appearanceError_.clear(); updateAppearanceEditorControls(); return;
+	}
+	if (id == "appearance_category")
+	{
+		appearanceCategoryFilter_ = std::max(0, std::min(action.event.selection, 4));
+		appearanceUi_.closeCombo();
+		refreshAppearanceTokens();
+		appearanceError_.clear();
+		return;
+	}
+	if (id == "appearance_token")
+	{
+		if (action.event.selection >= 0 && static_cast<std::size_t>(action.event.selection) < filteredAppearanceTokens_.size())
+			selectedAppearanceToken_ = filteredAppearanceTokens_[static_cast<std::size_t>(action.event.selection)];
+		appearanceError_.clear(); updateAppearanceEditorControls(); return;
+	}
+	if (id == "appearance_search") return;
+	if (action.event.kind == UiEventKind::ValueChanged &&
+		(id == "appearance_value_slider" || id == "appearance_color_r" || id == "appearance_color_g" ||
+		 id == "appearance_color_b" || id == "appearance_color_a"))
+	{
+		UiTokenValue value = effectiveUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_);
+		if (id == "appearance_value_slider" && value.type == UiTokenType::Number)
+			value.number = action.event.value;
+		else if (value.type == UiTokenType::Color)
+		{
+			if (id == "appearance_color_r") value.color.r = action.event.value;
+			else if (id == "appearance_color_g") value.color.g = action.event.value;
+			else if (id == "appearance_color_b") value.color.b = action.event.value;
+			else if (id == "appearance_color_a") value.color.a = action.event.value;
+		}
+		else return;
+		std::string error;
+		if (!setUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_, value, &error))
+			appearanceError_ = error;
+		else appearanceError_.clear();
+		updateAppearanceEditorControls();
+		return;
+	}
+	if (id == "appearance_value") { beginInlineEdit(id); return; }
+	if (id == "appearance_color_alpha") { beginInlineEdit(id); return; }
+	if (id == "appearance_value_down") { adjustAppearanceNumber(-1.0f); return; }
+	if (id == "appearance_value_up") { adjustAppearanceNumber(1.0f); return; }
+	if (id == "appearance_color") { chooseAppearanceColor(); return; }
+	if (id == "appearance_boolean")
+	{
+		const UiTokenValue before = effectiveUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_);
+		std::string error;
+		if (!setUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_,
+			UiTokenValue::fromBoolean(!before.boolean), &error)) appearanceError_ = error;
+		else appearanceError_.clear();
+		updateAppearanceEditorControls(); return;
+	}
+	if (id == "appearance_choice")
+	{
+		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditingPreset_), selectedAppearanceToken_);
+		if (descriptor && action.event.selection >= 0 && static_cast<std::size_t>(action.event.selection) < descriptor->choices.size())
+		{
+			std::string error;
+			if (!setUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_,
+				UiTokenValue::fromChoice(descriptor->choices[static_cast<std::size_t>(action.event.selection)]), &error)) appearanceError_ = error;
+			else appearanceError_.clear();
+		}
+		updateAppearanceEditorControls(); return;
+	}
+	if (id == "appearance_font_family" || id == "appearance_font_style")
+	{
+		const UiTokenValue current = effectiveUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_);
+		if (current.type == UiTokenType::Font)
+		{
+			UiFontReference font = current.font;
+			const UiWidget* widget = appearanceUi_.find(id);
+			if (widget && action.event.selection >= 0 && static_cast<std::size_t>(action.event.selection) < widget->options().size())
+			{
+				if (id == "appearance_font_family")
+				{
+					font.family = widget->options()[static_cast<std::size_t>(action.event.selection)];
+					const std::vector<std::string> styles = fontStyleNames(font.family);
+					if (!styles.empty()) font.style = styles[0];
+				}
+				else font.style = widget->options()[static_cast<std::size_t>(action.event.selection)];
+				std::string error;
+				if (!setUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_,
+					UiTokenValue::fromFont(font), &error)) appearanceError_ = error;
+				else appearanceError_.clear();
+			}
+		}
+		updateAppearanceEditorControls(); return;
+	}
+	if (id == "appearance_reset_token") { resetAppearanceToken(); return; }
+	if (id == "appearance_reset_theme")
+	{
+		appearanceDraft_.themes[appearanceEditingPreset_] = defaultUiThemeCustomization(appearanceEditingPreset_);
+		appearanceError_.clear(); updateAppearanceEditorControls(); return;
+	}
+	if (id == "appearance_import") { importAppearanceProfile(); return; }
+	if (id == "appearance_export") { exportAppearanceProfile(); return; }
+	if (id == "appearance_cancel") { closeAppearanceEditor(true); return; }
+	if (id == "appearance_apply")
+	{
+		appearanceDraft_.activePreset = appearanceEditingPreset_;
+		output = AppAction(AppActionKind::ApplyAppearance);
+		output.appearance.reset(new UiAppearancePreferences(appearanceDraft_));
+	}
+}
+
+void ControlPanel::resetAppearanceToken()
+{
+	if (selectedAppearanceToken_.empty()) return;
+	appearanceDraft_.themes[appearanceEditingPreset_].overrides.erase(selectedAppearanceToken_);
+	appearanceError_.clear(); updateAppearanceEditorControls();
+}
+
+void ControlPanel::adjustAppearanceNumber(float direction)
+{
+	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditingPreset_), selectedAppearanceToken_);
+	if (!descriptor || descriptor->type != UiTokenType::Number) return;
+	const UiTokenValue current = effectiveUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_);
+	const double increment = descriptor->maximum - descriptor->minimum > 100.0 ? 1.0 : 0.5;
+	std::string error;
+	if (!setUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_,
+		UiTokenValue::fromNumber(std::max(descriptor->minimum, std::min(descriptor->maximum, current.number + direction * increment))), &error))
+		appearanceError_ = error;
+	else appearanceError_.clear();
+	updateAppearanceEditorControls();
+}
+
+void ControlPanel::chooseAppearanceColor()
+{
+	const UiTokenValue value = effectiveUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_);
+	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditingPreset_), selectedAppearanceToken_);
+	if (!descriptor || descriptor->type != UiTokenType::Color || value.type != UiTokenType::Color) return;
+	static COLORREF customColors[16] = {};
+	CHOOSECOLORW dialog = {};
+	dialog.lStructSize = sizeof(dialog);
+	dialog.hwndOwner = window_.getWindow() ? GetActiveWindow() : nullptr;
+	dialog.rgbResult = RGB(static_cast<BYTE>(value.color.r * 255.0f), static_cast<BYTE>(value.color.g * 255.0f), static_cast<BYTE>(value.color.b * 255.0f));
+	dialog.lpCustColors = customColors;
+	dialog.Flags = CC_FULLOPEN | CC_RGBINIT;
+	if (!ChooseColorW(&dialog)) return;
+	UiColor color(static_cast<float>(GetRValue(dialog.rgbResult)) / 255.0f,
+		static_cast<float>(GetGValue(dialog.rgbResult)) / 255.0f,
+		static_cast<float>(GetBValue(dialog.rgbResult)) / 255.0f, value.color.a);
+	std::string error;
+	if (!setUiTokenValue(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_], selectedAppearanceToken_,
+		UiTokenValue::fromColor(color), &error)) appearanceError_ = error;
+	else appearanceError_.clear();
+	updateAppearanceEditorControls();
+}
+
+void ControlPanel::importAppearanceProfile()
+{
+	wchar_t path[MAX_PATH] = {};
+	OPENFILENAMEW dialog = {};
+	dialog.lStructSize = sizeof(dialog); dialog.hwndOwner = window_.getWindow() ? GetActiveWindow() : nullptr;
+	dialog.lpstrFilter = L"AGSS UI profiles (*.agss-ui.ini)\0*.agss-ui.ini\0INI files (*.ini)\0*.ini\0All files (*.*)\0*.*\0\0";
+	dialog.lpstrFile = path; dialog.nMaxFile = MAX_PATH; dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+	if (!GetOpenFileNameW(&dialog)) return;
+	std::string contents, error;
+	if (!readUtf8File(path, contents, &error)) { appearanceError_ = error; return; }
+	UiAppearanceProfile profile;
+	if (!parseUiAppearanceProfile(contents, profile, &error)) { appearanceError_ = error; return; }
+	appearanceDraft_.themes[profile.preset] = profile.theme;
+	appearanceDraft_.activePreset = profile.preset;
+	appearanceEditingPreset_ = profile.preset;
+	appearanceError_.clear();
+	if (!profile.ignoredTokens.empty())
+	{
+		appearanceError_ = "Imported profile; ignored unknown tokens: ";
+		for (std::size_t i = 0; i < profile.ignoredTokens.size(); ++i)
+		{
+			if (i) appearanceError_ += ", ";
+			appearanceError_ += profile.ignoredTokens[i];
+		}
+	}
+	refreshAppearanceTokens();
+}
+
+void ControlPanel::exportAppearanceProfile()
+{
+	wchar_t path[MAX_PATH] = L"appearance.agss-ui.ini";
+	OPENFILENAMEW dialog = {};
+	dialog.lStructSize = sizeof(dialog); dialog.hwndOwner = window_.getWindow() ? GetActiveWindow() : nullptr;
+	dialog.lpstrFilter = L"AGSS UI profiles (*.agss-ui.ini)\0*.agss-ui.ini\0\0";
+	dialog.lpstrFile = path; dialog.nMaxFile = MAX_PATH; dialog.lpstrDefExt = L"agss-ui.ini";
+	dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+	if (!GetSaveFileNameW(&dialog)) return;
+	std::string error;
+	const std::string contents = serializeUiAppearanceProfile(appearanceEditingPreset_, appearanceDraft_.themes[appearanceEditingPreset_]);
+	if (!writeUtf8File(path, contents, &error)) appearanceError_ = error;
+	else appearanceError_ = "Appearance profile exported.";
+}
+
+void ControlPanel::completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result)
+{
+	if (action.kind == AppActionKind::SelectAlgorithm && algorithmMenuOpen_ && pendingAlgorithmSelection_)
+	{
+		pendingAlgorithmSelection_ = false;
+		if (result.accepted) closeAlgorithmMenu();
+		else algorithmMenuStatus_ = result.message.empty() ? "Pause playback before changing algorithms." : result.message;
+		return;
+	}
+	if (action.kind != AppActionKind::ApplyAppearance || !appearanceEditorOpen_) return;
+	if (!result.accepted)
+	{
+		appearanceError_ = result.message.empty() ? "Could not save appearance. Check the settings file and try again." : result.message;
+		return;
+	}
+	appearanceDraft_ = settings_.appearance;
+	closeAppearanceEditor(false);
 }
 
 void ControlPanel::layoutAlgorithmMenu()
@@ -1506,7 +3299,7 @@ void ControlPanel::layoutAlgorithmMenu()
 	algorithmMenuBounds_ = UiRect(left, top, menuWidth, menuHeight);
 	algorithmSearchBounds_ = UiRect(left + 12.0f, top + 12.0f, menuWidth - 24.0f, 30.0f);
 	const float paneTop = top + 52.0f;
-	const float paneHeight = std::max(64.0f, menuHeight - 64.0f);
+	const float paneHeight = std::max(64.0f, menuHeight - 96.0f);
 	const float familyWidth = (menuWidth - 36.0f) * 0.46f;
 	algorithmFamilyBounds_ = UiRect(left + 12.0f, paneTop, familyWidth, paneHeight);
 	algorithmVariantBounds_ = UiRect(algorithmFamilyBounds_.x + familyWidth + 12.0f, paneTop,
@@ -1516,29 +3309,34 @@ void ControlPanel::layoutAlgorithmMenu()
 void ControlPanel::selectAlgorithmMenuVariant(const sortinglogic::AlgorithmDescriptor& algorithm, AppAction& action)
 {
 	action = AppAction(AppActionKind::SelectAlgorithm, algorithm.familyId, algorithm.variantId);
-	closeAlgorithmMenu();
+	pendingAlgorithmSelection_ = true;
+	algorithmMenuStatus_.clear();
 }
 
 bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action)
 {
 	layoutAlgorithmMenu();
 	const std::vector<AlgorithmFamilyEntry> families = algorithmFamilies();
-	std::vector<const AlgorithmFamilyEntry*> matches = visibleFamilies(families, algorithmSearch_);
+	std::vector<const AlgorithmFamilyEntry*> matches = visibleFamilies(families, session_.algorithmSearch);
 	const AlgorithmFamilyEntry* selectedFamily = nullptr;
 	for (std::size_t i = 0; i < matches.size(); ++i)
-		if (matches[i]->id == algorithmMenuFamily_) { selectedFamily = matches[i]; algorithmFamilySelection_ = static_cast<int>(i); break; }
+		if (matches[i]->id == session_.algorithmFamily) { selectedFamily = matches[i]; session_.algorithmFamilySelection = static_cast<int>(i); break; }
 	if (!selectedFamily && !matches.empty())
 	{
-		algorithmFamilySelection_ = std::max(0, std::min(algorithmFamilySelection_, static_cast<int>(matches.size()) - 1));
-		selectedFamily = matches[static_cast<std::size_t>(algorithmFamilySelection_)];
-		algorithmMenuFamily_ = selectedFamily->id;
-		algorithmVariantSelection_ = 0;
+		session_.algorithmFamilySelection = std::max(0, std::min(session_.algorithmFamilySelection, static_cast<int>(matches.size()) - 1));
+		selectedFamily = matches[static_cast<std::size_t>(session_.algorithmFamilySelection)];
+		session_.algorithmFamily = selectedFamily->id;
+		session_.algorithmVariantSelection = 0;
 	}
-	std::vector<const sortinglogic::AlgorithmDescriptor*> variants = visibleVariants(selectedFamily, algorithmSearch_);
+	std::vector<const sortinglogic::AlgorithmDescriptor*> variants = visibleVariants(selectedFamily, session_.algorithmSearch);
 	const int familyVisible = std::max(1, static_cast<int>(algorithmFamilyBounds_.height / 30.0f));
 	const int variantVisible = std::max(1, static_cast<int>(algorithmVariantBounds_.height / 30.0f));
-	algorithmFamilyScroll_ = std::max(0, std::min(algorithmFamilyScroll_, std::max(0, static_cast<int>(matches.size()) - familyVisible)));
-	algorithmVariantScroll_ = std::max(0, std::min(algorithmVariantScroll_, std::max(0, static_cast<int>(variants.size()) - variantVisible)));
+	algorithmFamilyScrollViewport_.configure(algorithmFamilyBounds_, static_cast<float>(matches.size()) * 30.0f, 30.0f,
+		static_cast<float>(session_.algorithmFamilyScroll) * 30.0f);
+	algorithmVariantScrollViewport_.configure(algorithmVariantBounds_, static_cast<float>(variants.size()) * 30.0f, 30.0f,
+		static_cast<float>(session_.algorithmVariantScroll) * 30.0f);
+	session_.algorithmFamilyScroll = static_cast<int>(algorithmFamilyScrollViewport_.offset() / 30.0f + 0.5f);
+	session_.algorithmVariantScroll = static_cast<int>(algorithmVariantScrollViewport_.offset() / 30.0f + 0.5f);
 	auto keepSelectionVisible = [](int selection, int visible, int count, int& scroll)
 	{
 		if (selection < scroll) scroll = selection;
@@ -1547,23 +3345,24 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 	};
 	if (event.type == SDL_TEXTINPUT && algorithmSearchFocused_)
 	{
-		if (algorithmSearch_.size() < 64) algorithmSearch_ += event.text.text;
-		algorithmFamilyScroll_ = algorithmVariantScroll_ = 0;
-		algorithmFamilySelection_ = algorithmVariantSelection_ = 0;
+		if (session_.algorithmSearch.size() < 64) session_.algorithmSearch += event.text.text;
+		session_.algorithmFamilyScroll = session_.algorithmVariantScroll = 0;
+		session_.algorithmFamilySelection = session_.algorithmVariantSelection = 0;
 		return true;
 	}
 	if (event.type == SDL_MOUSEWHEEL)
 	{
 		int mouseX = 0, mouseY = 0;
 		SDL_GetMouseState(&mouseX, &mouseY);
-		if (algorithmFamilyBounds_.contains(static_cast<float>(mouseX), static_cast<float>(mouseY)))
-			algorithmFamilyScroll_ = std::max(0, std::min(std::max(0, static_cast<int>(matches.size()) - familyVisible), algorithmFamilyScroll_ - event.wheel.y * 3));
-		else if (algorithmVariantBounds_.contains(static_cast<float>(mouseX), static_cast<float>(mouseY)))
-			algorithmVariantScroll_ = std::max(0, std::min(std::max(0, static_cast<int>(variants.size()) - variantVisible), algorithmVariantScroll_ - event.wheel.y * 3));
+		if (algorithmFamilyScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+			session_.algorithmFamilyScroll = static_cast<int>(algorithmFamilyScrollViewport_.offset() / 30.0f + 0.5f);
+		else if (algorithmVariantScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+			session_.algorithmVariantScroll = static_cast<int>(algorithmVariantScrollViewport_.offset() / 30.0f + 0.5f);
 		return true;
 	}
 	if (event.type == SDL_KEYDOWN)
 	{
+		if (pendingAlgorithmSelection_) return true;
 		const SDL_Keycode key = event.key.keysym.sym;
 		if (key == SDLK_ESCAPE)
 		{
@@ -1573,8 +3372,8 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 		}
 		if (key == SDLK_BACKSPACE && algorithmSearchFocused_)
 		{
-			if (!algorithmSearch_.empty()) algorithmSearch_.erase(algorithmSearch_.size() - 1);
-			algorithmFamilyScroll_ = algorithmVariantScroll_ = 0;
+			if (!session_.algorithmSearch.empty()) session_.algorithmSearch.erase(session_.algorithmSearch.size() - 1);
+			session_.algorithmFamilyScroll = session_.algorithmVariantScroll = 0;
 			return true;
 		}
 		if (key == SDLK_TAB)
@@ -1585,16 +3384,22 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 		if (key == SDLK_UP || key == SDLK_DOWN)
 		{
 			algorithmSearchFocused_ = false;
-			int& selection = algorithmMenuVariantPane_ ? algorithmVariantSelection_ : algorithmFamilySelection_;
+			int& selection = algorithmMenuVariantPane_ ? session_.algorithmVariantSelection : session_.algorithmFamilySelection;
 			const int count = algorithmMenuVariantPane_ ? static_cast<int>(variants.size()) : static_cast<int>(matches.size());
 			if (count > 0)
 				selection = std::max(0, std::min(count - 1, selection + (key == SDLK_DOWN ? 1 : -1)));
 			if (algorithmMenuVariantPane_)
-				keepSelectionVisible(selection, variantVisible, count, algorithmVariantScroll_);
+			{
+				algorithmVariantScrollViewport_.ensureItemVisible(static_cast<std::size_t>(selection), 30.0f);
+				session_.algorithmVariantScroll = static_cast<int>(algorithmVariantScrollViewport_.offset() / 30.0f + 0.5f);
+				keepSelectionVisible(selection, variantVisible, count, session_.algorithmVariantScroll);
+			}
 			else
 			{
-				keepSelectionVisible(selection, familyVisible, count, algorithmFamilyScroll_);
-				if (count > 0) algorithmMenuFamily_ = matches[static_cast<std::size_t>(selection)]->id;
+				algorithmFamilyScrollViewport_.ensureItemVisible(static_cast<std::size_t>(selection), 30.0f);
+				session_.algorithmFamilyScroll = static_cast<int>(algorithmFamilyScrollViewport_.offset() / 30.0f + 0.5f);
+				keepSelectionVisible(selection, familyVisible, count, session_.algorithmFamilyScroll);
+				if (count > 0) session_.algorithmFamily = matches[static_cast<std::size_t>(selection)]->id;
 			}
 			return true;
 		}
@@ -1603,14 +3408,14 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 			algorithmSearchFocused_ = false;
 			if (!matches.empty())
 			{
-				algorithmMenuFamily_ = matches[static_cast<std::size_t>(algorithmFamilySelection_)]->id;
-				selectedFamily = matches[static_cast<std::size_t>(algorithmFamilySelection_)];
-				variants = visibleVariants(selectedFamily, algorithmSearch_);
-				algorithmVariantSelection_ = 0;
+				session_.algorithmFamily = matches[static_cast<std::size_t>(session_.algorithmFamilySelection)]->id;
+				selectedFamily = matches[static_cast<std::size_t>(session_.algorithmFamilySelection)];
+				variants = visibleVariants(selectedFamily, session_.algorithmSearch);
+				session_.algorithmVariantSelection = 0;
 				for (std::size_t i = 0; i < variants.size(); ++i)
-					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) algorithmVariantSelection_ = static_cast<int>(i);
+					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) session_.algorithmVariantSelection = static_cast<int>(i);
 				algorithmMenuVariantPane_ = true;
-				algorithmVariantScroll_ = 0;
+				session_.algorithmVariantScroll = 0;
 			}
 			return true;
 		}
@@ -1621,9 +3426,14 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 			return true;
 		}
 		if ((key == SDLK_RETURN || key == SDLK_KP_ENTER) && algorithmMenuVariantPane_ &&
-			!variants.empty() && algorithmVariantSelection_ >= 0 && static_cast<std::size_t>(algorithmVariantSelection_) < variants.size())
+			!variants.empty() && session_.algorithmVariantSelection >= 0 && static_cast<std::size_t>(session_.algorithmVariantSelection) < variants.size())
 		{
-			selectAlgorithmMenuVariant(*variants[static_cast<std::size_t>(algorithmVariantSelection_)], action);
+			if (!screenModel_.setupEnabled)
+			{
+				algorithmMenuStatus_ = "Pause playback and wait for trace preparation before changing algorithms.";
+				return true;
+			}
+			selectAlgorithmMenuVariant(*variants[static_cast<std::size_t>(session_.algorithmVariantSelection)], action);
 			return true;
 		}
 		return true;
@@ -1632,6 +3442,7 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 		return true;
 	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 	{
+		if (pendingAlgorithmSelection_) return true;
 		const float px = static_cast<float>(event.button.x), py = static_cast<float>(event.button.y);
 		if (!algorithmMenuBounds_.contains(px, py))
 		{
@@ -1646,27 +3457,32 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 		algorithmSearchFocused_ = false;
 		if (algorithmFamilyBounds_.contains(px, py) && !matches.empty())
 		{
-			const int row = algorithmFamilyScroll_ + static_cast<int>((py - algorithmFamilyBounds_.y) / 30.0f);
+			const int row = algorithmFamilyScrollViewport_.itemAt(px, py, matches.size(), 30.0f);
 			if (row >= 0 && static_cast<std::size_t>(row) < matches.size())
 			{
-				algorithmFamilySelection_ = row;
-				algorithmMenuFamily_ = matches[static_cast<std::size_t>(row)]->id;
+				session_.algorithmFamilySelection = row;
+				session_.algorithmFamily = matches[static_cast<std::size_t>(row)]->id;
 				selectedFamily = matches[static_cast<std::size_t>(row)];
-				variants = visibleVariants(selectedFamily, algorithmSearch_);
-				algorithmVariantSelection_ = 0;
+				variants = visibleVariants(selectedFamily, session_.algorithmSearch);
+				session_.algorithmVariantSelection = 0;
 				for (std::size_t i = 0; i < variants.size(); ++i)
-					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) algorithmVariantSelection_ = static_cast<int>(i);
+					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) session_.algorithmVariantSelection = static_cast<int>(i);
 				algorithmMenuVariantPane_ = true;
-				algorithmVariantScroll_ = 0;
+				session_.algorithmVariantScroll = 0;
 			}
 			return true;
 		}
 		if (algorithmVariantBounds_.contains(px, py) && !variants.empty())
 		{
-			const int row = algorithmVariantScroll_ + static_cast<int>((py - algorithmVariantBounds_.y) / 30.0f);
+			const int row = algorithmVariantScrollViewport_.itemAt(px, py, variants.size(), 30.0f);
 			if (row >= 0 && static_cast<std::size_t>(row) < variants.size())
 			{
-				algorithmVariantSelection_ = row;
+				session_.algorithmVariantSelection = row;
+				if (!screenModel_.setupEnabled)
+				{
+					algorithmMenuStatus_ = "Pause playback and wait for trace preparation before changing algorithms.";
+					return true;
+				}
 				selectAlgorithmMenuVariant(*variants[static_cast<std::size_t>(row)], action);
 			}
 			return true;
@@ -1679,11 +3495,15 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 {
 	const std::vector<AlgorithmFamilyEntry> families = algorithmFamilies();
-	const std::vector<const AlgorithmFamilyEntry*> matches = visibleFamilies(families, algorithmSearch_);
+	const std::vector<const AlgorithmFamilyEntry*> matches = visibleFamilies(families, session_.algorithmSearch);
 	const AlgorithmFamilyEntry* selectedFamily = nullptr;
 	for (std::size_t i = 0; i < matches.size(); ++i)
-		if (matches[i]->id == algorithmMenuFamily_) { selectedFamily = matches[i]; break; }
-	const std::vector<const sortinglogic::AlgorithmDescriptor*> variants = visibleVariants(selectedFamily, algorithmSearch_);
+		if (matches[i]->id == session_.algorithmFamily) { selectedFamily = matches[i]; break; }
+	const std::vector<const sortinglogic::AlgorithmDescriptor*> variants = visibleVariants(selectedFamily, session_.algorithmSearch);
+	algorithmFamilyScrollViewport_.configure(algorithmFamilyBounds_, static_cast<float>(matches.size()) * 30.0f, 30.0f,
+		static_cast<float>(session_.algorithmFamilyScroll) * 30.0f);
+	algorithmVariantScrollViewport_.configure(algorithmVariantBounds_, static_cast<float>(variants.size()) * 30.0f, 30.0f,
+		static_cast<float>(session_.algorithmVariantScroll) * 30.0f);
 	const ClipBounds screen(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
 	const ClipBounds familyClip(algorithmFamilyBounds_.x, algorithmFamilyBounds_.y, algorithmFamilyBounds_.width, algorithmFamilyBounds_.height);
 	const ClipBounds variantClip(algorithmVariantBounds_.x, algorithmVariantBounds_.y, algorithmVariantBounds_.width, algorithmVariantBounds_.height);
@@ -1693,18 +3513,21 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	submitBox(algorithmSearchBounds_, algorithmSearchFocused_ ? palette.valueButton : palette.background, PopupMaterial, RenderLayer::SettingsDropdown, screen);
 	if (!labels_["#algorithm_search"]) labels_["#algorithm_search"].reset(new TextLabel("", "Courier New Bold", 14, { 238, 246, 249, 255 }));
 	TextLabel& searchLabel = *labels_["#algorithm_search"];
-	searchLabel.setText(std::string("Search algorithms: ") + algorithmSearch_ + (algorithmSearchFocused_ ? "_" : ""),
+	searchLabel.setText(std::string("Search algorithms: ") + session_.algorithmSearch + (algorithmSearchFocused_ ? "_" : ""),
 		"Courier New Bold", 14, SDL_Color{ 238, 246, 249, 255 });
 	drawText(searchLabel, algorithmSearchBounds_, 14.0f, palette.text, RenderLayer::SettingsDropdownText, screen);
 	submitBox(algorithmFamilyBounds_, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
 	submitBox(algorithmVariantBounds_, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
 	const float rowHeight = 30.0f;
-	const int familyRows = std::max(1, static_cast<int>(algorithmFamilyBounds_.height / rowHeight));
-	for (int row = 0; row < familyRows && algorithmFamilyScroll_ + row < static_cast<int>(matches.size()); ++row)
+	const std::size_t familyFirst = algorithmFamilyScrollViewport_.firstVisibleItem(rowHeight);
+	const std::size_t familyRows = algorithmFamilyScrollViewport_.visibleItemCount(matches.size(), rowHeight);
+	for (std::size_t row = 0; row < familyRows; ++row)
 	{
-		const AlgorithmFamilyEntry* family = matches[static_cast<std::size_t>(algorithmFamilyScroll_ + row)];
-		const UiRect bounds(algorithmFamilyBounds_.x, algorithmFamilyBounds_.y + row * rowHeight, algorithmFamilyBounds_.width, rowHeight);
-		const bool selected = family->id == algorithmMenuFamily_;
+		const std::size_t familyIndex = familyFirst + row;
+		if (familyIndex >= matches.size()) break;
+		const AlgorithmFamilyEntry* family = matches[familyIndex];
+		const UiRect bounds = algorithmFamilyScrollViewport_.itemBounds(familyIndex, rowHeight);
+		const bool selected = family->id == session_.algorithmFamily;
 		submitBox(bounds, selected ? palette.accent : palette.button, PopupMaterial, RenderLayer::SettingsDropdown, familyClip);
 		const std::string key = "#menu_family_" + family->id;
 		if (!labels_[key]) labels_[key].reset(new TextLabel(family->name, "Courier New Bold", 13, { 238, 246, 249, 255 }));
@@ -1719,19 +3542,24 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	}
 	if (selectedFamily)
 	{
-		const int variantRows = std::max(1, static_cast<int>(algorithmVariantBounds_.height / rowHeight));
-		for (int row = 0; row < variantRows && algorithmVariantScroll_ + row < static_cast<int>(variants.size()); ++row)
+		const std::size_t variantFirst = algorithmVariantScrollViewport_.firstVisibleItem(rowHeight);
+		const std::size_t variantRows = algorithmVariantScrollViewport_.visibleItemCount(variants.size(), rowHeight);
+		for (std::size_t row = 0; row < variantRows; ++row)
 		{
-			const sortinglogic::AlgorithmDescriptor* variant = variants[static_cast<std::size_t>(algorithmVariantScroll_ + row)];
-			const UiRect bounds(algorithmVariantBounds_.x, algorithmVariantBounds_.y + row * rowHeight, algorithmVariantBounds_.width, rowHeight);
+			const std::size_t variantIndex = variantFirst + row;
+			if (variantIndex >= variants.size()) break;
+			const sortinglogic::AlgorithmDescriptor* variant = variants[variantIndex];
+			const UiRect bounds = algorithmVariantScrollViewport_.itemBounds(variantIndex, rowHeight);
 			const bool selected = static_cast<int>(variant->id) == settings_.simulation.algorithm;
-			const bool keyboardSelected = algorithmMenuVariantPane_ && algorithmVariantScroll_ + row == algorithmVariantSelection_;
-			submitBox(bounds, keyboardSelected ? palette.accent : selected ? palette.accent : palette.button, PopupMaterial, RenderLayer::SettingsDropdown, variantClip);
+			const bool keyboardSelected = algorithmMenuVariantPane_ && static_cast<int>(variantIndex) == session_.algorithmVariantSelection;
+			const glm::vec4 variantFill = screenModel_.setupEnabled
+				? (keyboardSelected || selected ? palette.accent : palette.button) : palette.disabledButton;
+			submitBox(bounds, variantFill, PopupMaterial, RenderLayer::SettingsDropdown, variantClip);
 			const std::string key = "#menu_variant_" + selectedFamily->id + "_" + variant->variantId;
 			if (!labels_[key]) labels_[key].reset(new TextLabel(variant->displayName, "Courier New Bold", 13, { 238, 246, 249, 255 }));
 			labels_[key]->setText(variant->displayName, "Courier New Bold", 13, SDL_Color{ 238, 246, 249, 255 });
 			drawText(*labels_[key], UiRect(bounds.x + 8.0f, bounds.y, bounds.width - 16.0f, bounds.height), 12.0f,
-				palette.text, RenderLayer::SettingsDropdownText, variantClip);
+				screenModel_.setupEnabled ? palette.text : palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
 		}
 		if (variants.empty())
 		{
@@ -1743,5 +3571,16 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	{
 		if (!labels_["#algorithm_choose_family"]) labels_["#algorithm_choose_family"].reset(new TextLabel("Choose a family to see its variants", "Courier New Bold", 13, { 238, 246, 249, 255 }));
 		drawText(*labels_["#algorithm_choose_family"], algorithmVariantBounds_, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
+	}
+	const std::string menuStatus = !algorithmMenuStatus_.empty() ? algorithmMenuStatus_ :
+		!screenModel_.setupEnabled ? "Pause playback before changing algorithms." : std::string();
+	if (!menuStatus.empty())
+	{
+		if (!labels_["#algorithm_menu_status"])
+			labels_["#algorithm_menu_status"].reset(new TextLabel("", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 }));
+		labels_["#algorithm_menu_status"]->setText(menuStatus, "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+		drawText(*labels_["#algorithm_menu_status"], UiRect(algorithmMenuBounds_.x + 12.0f,
+			algorithmMenuBounds_.y + algorithmMenuBounds_.height - 30.0f, algorithmMenuBounds_.width - 24.0f, 18.0f),
+			11.0f, palette.mutedText, RenderLayer::SettingsDropdownText, screen);
 	}
 }

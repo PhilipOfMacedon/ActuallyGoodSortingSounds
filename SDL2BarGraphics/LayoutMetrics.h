@@ -25,8 +25,13 @@ struct LayoutCacheKey
 	int drawableWidth;
 	int drawableHeight;
 	bool panelExpanded;
-	LayoutCacheKey(int logicalW = 0, int logicalH = 0, int drawableW = 0, int drawableH = 0, bool expanded = true)
-		: logicalWidth(logicalW), logicalHeight(logicalH), drawableWidth(drawableW), drawableHeight(drawableH), panelExpanded(expanded) {}
+	int presetId;
+	unsigned long long appearanceRevision;
+	unsigned long long fontMetricRevision;
+	LayoutCacheKey(int logicalW = 0, int logicalH = 0, int drawableW = 0, int drawableH = 0, bool expanded = true,
+		int preset = 0, unsigned long long appearance = 0, unsigned long long fonts = 0)
+		: logicalWidth(logicalW), logicalHeight(logicalH), drawableWidth(drawableW), drawableHeight(drawableH),
+			panelExpanded(expanded), presetId(preset), appearanceRevision(appearance), fontMetricRevision(fonts) {}
 };
 
 bool sameLayoutInputs(const LayoutCacheKey& left, const LayoutCacheKey& right);

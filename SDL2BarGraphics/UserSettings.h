@@ -7,14 +7,7 @@
 #include "../SoundEngine/SoundEngine.h"
 #include "../SoundEngine/ReconstructedSound.h"
 #include "../SoundEngine/AudioTimeline.h"
-
-enum class PaletteId
-{
-	Cyan,
-	Amber,
-	Monochrome,
-	Light
-};
+#include "UiAppearance.h"
 
 enum class BarSpacingMode
 {
@@ -34,7 +27,7 @@ struct VisualPreferences
 struct SimulationPreferences
 {
 	int itemCount;
-	int durationSeconds;
+	float durationSeconds;
 	SoundEngine::PlaybackTimingMode playbackTimingMode;
 	bool descending;
 	int algorithm;
@@ -78,6 +71,7 @@ struct UserPreferences
 {
 	int version;
 	VisualPreferences visual;
+	UiAppearancePreferences appearance;
 	SimulationPreferences simulation;
 	SoundEngine::Parameters audio;
 	SoundEngine::ReconstructedParameters reconstructedAudio;

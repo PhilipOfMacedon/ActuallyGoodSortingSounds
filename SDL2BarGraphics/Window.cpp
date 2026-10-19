@@ -3,6 +3,18 @@
 #include <cstdlib>
 #include <iostream>
 
+#include <SDL_syswm.h>
+#include <dwmapi.h>
+
+#pragma comment(lib, "dwmapi.lib")
+
+#ifndef DWMWA_CAPTION_COLOR
+#define DWMWA_CAPTION_COLOR 35
+#endif
+#ifndef DWMWA_TEXT_COLOR
+#define DWMWA_TEXT_COLOR 36
+#endif
+
 Window::Window()
 	: Window(800, 600, "Untitled")
 {
@@ -18,6 +30,11 @@ Window::Window(GLint width, GLint height, const char* title)
 	bufferWidth(0),
 	bufferHeight(0),
 	shouldClose(true),
+	borderlessFullscreen(false),
+	windowedX(SDL_WINDOWPOS_CENTERED),
+	windowedY(SDL_WINDOWPOS_CENTERED),
+	windowedWidth(width),
+	windowedHeight(height),
 	sdlInitialized(false),
 	ttfInitialized(false)
 {
@@ -70,6 +87,37 @@ void Window::refreshMetrics()
 		bufferHeight = drawableHeight;
 		glViewport(0, 0, bufferWidth, bufferHeight);
 	}
+}
+
+void Window::toggleBorderlessFullscreen()
+{
+	if (!mainWindow) return;
+	if (!borderlessFullscreen)
+	{
+		SDL_GetWindowPosition(mainWindow, &windowedX, &windowedY);
+		SDL_GetWindowSize(mainWindow, &windowedWidth, &windowedHeight);
+		if (SDL_SetWindowFullscreen(mainWindow, SDL_WINDOW_FULLSCREEN_DESKTOP) == 0)
+			borderlessFullscreen = true;
+	}
+	else if (SDL_SetWindowFullscreen(mainWindow, 0) == 0)
+	{
+		borderlessFullscreen = false;
+		SDL_SetWindowPosition(mainWindow, windowedX, windowedY);
+		SDL_SetWindowSize(mainWindow, windowedWidth, windowedHeight);
+	}
+	refreshMetrics();
+}
+
+void Window::setClassicWindows95Caption(bool enabled)
+{
+	if (!mainWindow) return;
+	SDL_SysWMinfo info;
+	SDL_VERSION(&info.version);
+	if (!SDL_GetWindowWMInfo(mainWindow, &info)) return;
+	const COLORREF caption = enabled ? RGB(0, 0, 128) : static_cast<COLORREF>(0xFFFFFFFF);
+	const COLORREF text = enabled ? RGB(255, 255, 255) : static_cast<COLORREF>(0xFFFFFFFF);
+	DwmSetWindowAttribute(info.info.win.window, DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
+	DwmSetWindowAttribute(info.info.win.window, DWMWA_TEXT_COLOR, &text, sizeof(text));
 }
 
 int Window::initialize()

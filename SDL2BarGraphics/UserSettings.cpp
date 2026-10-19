@@ -11,7 +11,7 @@
 
 namespace
 {
-	const int CurrentVersion = 6;
+	const int CurrentVersion = 8;
 	const wchar_t* SettingsDirectory = L"\\ActuallyGoodSortingSounds";
 	const wchar_t* SettingsFile = L"\\settings.ini";
 	const char* audioChannelId(AlgorithmAudioChannel channel);
@@ -41,6 +41,8 @@ namespace
 		case PaletteId::Amber: return "amber";
 		case PaletteId::Monochrome: return "monochrome";
 		case PaletteId::Light: return "light";
+		case PaletteId::VgaClassic: return "vga-classic";
+		case PaletteId::Windows95: return "windows-95";
 		}
 		return "cyan";
 	}
@@ -51,8 +53,52 @@ namespace
 		else if (value == "amber") result = PaletteId::Amber;
 		else if (value == "monochrome") result = PaletteId::Monochrome;
 		else if (value == "light") result = PaletteId::Light;
+		else if (value == "vga-classic") result = PaletteId::VgaClassic;
+		else if (value == "windows-95") result = PaletteId::Windows95;
 		else return false;
 		return true;
+	}
+
+	void readAppearance(const std::map<std::string, std::string>& values, int version, UserPreferences& preferences)
+	{
+		preferences.appearance = UiAppearancePreferences();
+		preferences.appearance.themes[UiPresetId::Current] = defaultUiThemeCustomization(UiPresetId::Current, preferences.visual.palette);
+		preferences.appearance.themes[UiPresetId::FlatVgaDos] = defaultUiThemeCustomization(UiPresetId::FlatVgaDos, preferences.visual.palette);
+		preferences.appearance.themes[UiPresetId::ClassicWindows95] = defaultUiThemeCustomization(UiPresetId::ClassicWindows95);
+		if (version < 7) return;
+
+		std::map<std::string, std::string>::const_iterator found = values.find("ui_active_preset");
+		if (found != values.end() && !parseUiPresetId(found->second, preferences.appearance.activePreset))
+			preferences.appearance.activePreset = UiPresetId::Current;
+
+		const std::vector<UiPresetId>& presets = uiPresetCatalog();
+		for (std::size_t presetIndex = 0; presetIndex < presets.size(); ++presetIndex)
+		{
+			const UiPresetId preset = presets[presetIndex];
+			const std::string base = "ui." + uiPresetStableId(preset);
+			UiThemeCustomization candidate = defaultUiThemeCustomization(preset,
+				preset == UiPresetId::ClassicWindows95 ? PaletteId::Windows95 : preferences.visual.palette);
+			bool valid = true;
+			found = values.find(base + ".palette");
+			if (found != values.end() && !parsePalette(found->second, candidate.palette)) valid = false;
+			const std::string overridePrefix = base + ".override.";
+			for (std::map<std::string, std::string>::const_iterator item = values.begin(); item != values.end(); ++item)
+			{
+				if (item->first.compare(0, overridePrefix.size(), overridePrefix) != 0) continue;
+				const std::string tokenId = item->first.substr(overridePrefix.size());
+				const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), tokenId);
+				if (!descriptor) continue;
+				UiTokenValue parsed;
+				if (!decodeUiTokenValue(item->second, descriptor->type, parsed) ||
+					!setUiTokenValue(preset, candidate, tokenId, parsed))
+					valid = false;
+			}
+			if (!valid || !validateUiThemeCustomization(preset, candidate))
+				candidate = defaultUiThemeCustomization(preset,
+					preset == UiPresetId::ClassicWindows95 ? PaletteId::Windows95 : preferences.visual.palette);
+			preferences.appearance.themes[preset] = candidate;
+		}
+		preferences.visual.palette = preferences.appearance.themes[UiPresetId::Current].palette;
 	}
 
 	std::string spacingName(BarSpacingMode mode)
@@ -611,6 +657,11 @@ std::string algorithmOptionStableId(const UserPreferences& preferences,
 		preferredValue = static_cast<int>(preferences.simulation.mergeWritebackMode);
 		hasPreferredValue = true;
 	}
+	else if (algorithm.id == sortinglogic::SortAlgorithm::ArrayvOptimizedRotateMerge && groupId == "rotate_buffer_capacity")
+	{
+		preferredValue = 64;
+		hasPreferredValue = true;
+	}
 	for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
 	{
 		const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[i];
@@ -739,14 +790,14 @@ SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(
 	shellGapSequence(sortinglogic::ShellGapSequence::Halving),
 	mergeWritebackMode(sortinglogic::MergeWritebackMode::AtomicRangeWrite),
 	mergeExecutionMode(sortinglogic::MergeExecutionMode::BottomUp), mergeBufferVisualizationEnabled(true), completionScanEnabled(false) {}
-UserPreferences::UserPreferences() : version(CurrentVersion), visual(), simulation(), audio(), reconstructedAudio(), familyAudioDefaults(),
+UserPreferences::UserPreferences() : version(CurrentVersion), visual(), appearance(), simulation(), audio(), reconstructedAudio(), familyAudioDefaults(),
 	variantAudioOffsets(), algorithmOptions() {}
 
 bool UserPreferences::isValid() const
 {
 	return version == CurrentVersion && simulation.itemCount >= static_cast<int>(sortinglogic::MinItemCount) &&
 		simulation.itemCount <= static_cast<int>(sortinglogic::MaxItemCount) &&
-		simulation.durationSeconds >= 1 && simulation.durationSeconds <= 120 &&
+		std::isfinite(simulation.durationSeconds) && simulation.durationSeconds >= 1.0f && simulation.durationSeconds <= 120.0f &&
 		sortinglogic::algorithmDescriptorById(simulation.familyId, simulation.variantId) != nullptr &&
 		sortinglogic::algorithmDescriptorById(simulation.familyId, simulation.variantId)->id ==
 			static_cast<sortinglogic::SortAlgorithm>(simulation.algorithm) &&
@@ -764,8 +815,20 @@ bool UserPreferences::isValid() const
 		 static_cast<int>(simulation.mergeExecutionMode) == static_cast<int>(sortinglogic::MergeExecutionMode::TopDown)) &&
 		(static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::FixedDuration) ||
 		 static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence)) &&
-		static_cast<int>(visual.palette) >= 0 && static_cast<int>(visual.palette) <= static_cast<int>(PaletteId::Light) &&
+		static_cast<int>(visual.palette) >= 0 && static_cast<int>(visual.palette) <= static_cast<int>(PaletteId::Windows95) &&
 		static_cast<int>(visual.spacing) >= 0 && static_cast<int>(visual.spacing) <= static_cast<int>(BarSpacingMode::Comfortable) &&
+		static_cast<int>(appearance.activePreset) >= static_cast<int>(UiPresetId::Current) &&
+		static_cast<int>(appearance.activePreset) <= static_cast<int>(UiPresetId::ClassicWindows95) &&
+		[&]()
+		{
+			const std::vector<UiPresetId>& presets = uiPresetCatalog();
+			for (std::size_t i = 0; i < presets.size(); ++i)
+			{
+				const std::map<UiPresetId, UiThemeCustomization>::const_iterator theme = appearance.themes.find(presets[i]);
+				if (theme == appearance.themes.end() || !validateUiThemeCustomization(presets[i], theme->second)) return false;
+			}
+			return true;
+		}() &&
 		validAudio(audio) && validReconstructedAudio(reconstructedAudio) && [&]()
 		{
 			std::map<std::string, bool> knownFamilies;
@@ -842,15 +905,24 @@ UserPreferences SettingsStore::load() const
 	if (!parseInt(values, "version", version) || (version < 1 || version > CurrentVersion)) return defaults;
 	defaults.version = CurrentVersion;
 	std::map<std::string, std::string>::const_iterator found = values.find("palette");
-	if (found != values.end() && !parsePalette(found->second, defaults.visual.palette)) return UserPreferences();
+	if (found != values.end() && !parsePalette(found->second, defaults.visual.palette))
+	{
+		if (version < 7) return UserPreferences();
+		defaults.visual.palette = PaletteId::Cyan;
+	}
 	found = values.find("spacing");
-	if (found != values.end() && !parseSpacing(found->second, defaults.visual.spacing)) return UserPreferences();
+	if (found != values.end() && !parseSpacing(found->second, defaults.visual.spacing))
+	{
+		if (version < 7) return UserPreferences();
+		defaults.visual.spacing = BarSpacingMode::Compact;
+	}
+	readAppearance(values, version, defaults);
 	if (!optionalBool(values, "panel_expanded", defaults.visual.panelExpanded) ||
 		!optionalBool(values, "descending", defaults.simulation.descending) ||
 		!optionalBool(values, "merge_buffer_visualization", defaults.simulation.mergeBufferVisualizationEnabled) ||
 		!optionalBool(values, "completion_scan", defaults.simulation.completionScanEnabled) ||
 		!optionalInt(values, "item_count", defaults.simulation.itemCount) ||
-		!optionalInt(values, "duration_seconds", defaults.simulation.durationSeconds)) return UserPreferences();
+		!optionalFloat(values, "duration_seconds", defaults.simulation.durationSeconds)) return UserPreferences();
 	found = values.find("playback_timing");
 	if (found != values.end()) defaults.simulation.playbackTimingMode = parsePlaybackTimingMode(found->second);
 	if (version <= 3 && !optionalInt(values, "algorithm", defaults.simulation.algorithm)) return UserPreferences();
@@ -956,7 +1028,7 @@ UserPreferences SettingsStore::load() const
 		if (readReconstructedAudio(values, loaded) && validReconstructedAudio(loaded)) defaults.reconstructedAudio = loaded;
 		// Malformed reconstructed values fall back independently to the calibrated profile.
 	}
-	if (version < CurrentVersion)
+	if (version < 6)
 	{
 		// The reconstructed model starts with neutral algorithm gains. Preserve
 		// the old audio block for compatibility, but do not carry its timbre or
@@ -990,8 +1062,19 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 		<< "palette=" << paletteName(settings.visual.palette) << "\n"
 		<< "spacing=" << spacingName(settings.visual.spacing) << "\n"
 		<< "panel_expanded=" << (settings.visual.panelExpanded ? 1 : 0) << "\n"
+		<< "ui_active_preset=" << uiPresetStableId(settings.appearance.activePreset) << "\n";
+	for (std::map<UiPresetId, UiThemeCustomization>::const_iterator theme = settings.appearance.themes.begin();
+		theme != settings.appearance.themes.end(); ++theme)
+	{
+		const std::string prefix = "ui." + uiPresetStableId(theme->first);
+		contents << prefix << ".palette=" << paletteName(theme->second.palette) << "\n";
+		for (std::map<std::string, UiTokenValue>::const_iterator token = theme->second.overrides.begin();
+			token != theme->second.overrides.end(); ++token)
+			contents << prefix << ".override." << token->first << "=" << encodeUiTokenValue(token->second) << "\n";
+	}
+	contents
 		<< "item_count=" << settings.simulation.itemCount << "\n"
-		<< "duration_seconds=" << settings.simulation.durationSeconds << "\n"
+		<< std::setprecision(9) << "duration_seconds=" << settings.simulation.durationSeconds << "\n"
 		<< "playback_timing=" << playbackTimingModeName(settings.simulation.playbackTimingMode) << "\n"
 		<< "descending=" << (settings.simulation.descending ? 1 : 0) << "\n"
 		<< "merge_buffer_visualization=" << (settings.simulation.mergeBufferVisualizationEnabled ? 1 : 0) << "\n"
@@ -1045,7 +1128,7 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 	const DWORD existingAttributes = GetFileAttributesW(path_.c_str());
 	if (existingAttributes != INVALID_FILE_ATTRIBUTES)
 	{
-		const std::wstring backupPath = path_ + L".pre-v6.bak";
+		const std::wstring backupPath = path_ + L".pre-v8.bak";
 		if (GetFileAttributesW(backupPath.c_str()) == INVALID_FILE_ATTRIBUTES)
 		{
 			HANDLE oldFile = CreateFileW(path_.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -1063,7 +1146,7 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 			if (oldVersion > 0 && oldVersion < CurrentVersion && !CopyFileW(path_.c_str(), backupPath.c_str(), TRUE))
 			{
 				DeleteFileW(temporaryPath.c_str());
-				if (error) *error = "Could not preserve the previous settings file before its version-6 migration.";
+				if (error) *error = "Could not preserve the previous settings file before its version-8 migration.";
 				return false;
 			}
 		}

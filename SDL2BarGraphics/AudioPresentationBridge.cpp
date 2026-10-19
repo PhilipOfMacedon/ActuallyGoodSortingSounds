@@ -323,6 +323,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 				case sortinglogic::SemanticEventType::Swap:
 				case sortinglogic::SemanticEventType::WriteItem:
 				case sortinglogic::SemanticEventType::WriteRange: category = SoundEngine::AccentCategory::Movement; break;
+				case sortinglogic::SemanticEventType::CarryWrite: category = SoundEngine::AccentCategory::Movement; break;
 				case sortinglogic::SemanticEventType::AuxiliaryItemWrite:
 				case sortinglogic::SemanticEventType::CounterWrite:
 				case sortinglogic::SemanticEventType::ResizeAuxiliary:

@@ -57,6 +57,9 @@
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
     </ProjectReference>
   </ItemGroup>
+  <Target Name="CopyArrayVCatalogCoverageManifest" AfterTargets="Build">
+    <Copy SourceFiles="$(ProjectDir)..\agent-memory\arrayv-catalog-coverage.csv" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

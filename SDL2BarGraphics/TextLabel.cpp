@@ -5,6 +5,8 @@
 #include <iostream>
 #include <map>
 
+#include "WindowsFontCatalog.h"
+
 namespace
 {
 	std::map<std::string, TTF_Font*>& fontCache()
@@ -13,15 +15,17 @@ namespace
 		return cache;
 	}
 
-	TTF_Font* findFont(const std::string& fontFace, int size)
+	TTF_Font* findFont(const std::string& path, int index, int size, int dpiX, int dpiY)
 	{
-		const std::string key = fontFace + "#" + std::to_string(size);
+		const std::string key = path + "#" + std::to_string(index) + "#" + std::to_string(size) + "#" +
+			std::to_string(dpiX) + "x" + std::to_string(dpiY);
 		std::map<std::string, TTF_Font*>& cache = fontCache();
 		std::map<std::string, TTF_Font*>::iterator found = cache.find(key);
 		if (found != cache.end())
 			return found->second;
-		const std::string path = "Resources/" + fontFace + ".ttf";
-		TTF_Font* font = TTF_OpenFont(path.c_str(), size);
+		TTF_Font* font = dpiX > 0 && dpiY > 0
+			? TTF_OpenFontIndexDPI(path.c_str(), size, static_cast<long>(index), dpiX, dpiY)
+			: TTF_OpenFontIndex(path.c_str(), size, static_cast<long>(index));
 		if (!font)
 		{
 			std::cerr << "Could not open font '" << path << "': " << TTF_GetError() << '\n';
@@ -31,10 +35,12 @@ namespace
 		return font;
 	}
 
-	bool sameColor(const SDL_Color& left, const SDL_Color& right)
+	const WindowsFontCatalog& installedFonts()
 	{
-		return left.r == right.r && left.g == right.g && left.b == right.b && left.a == right.a;
+		static const WindowsFontCatalog catalog;
+		return catalog;
 	}
+
 }
 
 TextLabel::TextLabel(std::string text)
@@ -55,7 +61,14 @@ TextLabel::TextLabel(std::string text, std::string fontFace, int fontSize)
 TextLabel::TextLabel(std::string text, std::string fontFace, int fontSize, SDL_Color color)
 	: text_(),
 	fontFace_(),
+	fontPath_(),
+	requestedFontFamily_(),
+	requestedFontStyle_(),
 	fontSize_(0),
+	fontIndex_(0),
+	dpiX_(0),
+	dpiY_(0),
+	fontFallback_(false),
 	color_({ 0, 0, 0, 0 }),
 	dimensions_(0.0f),
 	textureId_(0),
@@ -88,14 +101,50 @@ void TextLabel::setText(std::string text, std::string fontFace, int fontSize)
 
 void TextLabel::setText(std::string text, std::string fontFace, int fontSize, SDL_Color color)
 {
-	if (hasContent_ && text_ == text && fontFace_ == fontFace && fontSize_ == fontSize && sameColor(color_, color))
-		return;
+	setResolvedText(text, fontFace, "Resources/" + fontFace + ".ttf", 0, fontSize, 0, 0, color, false);
+}
+
+void TextLabel::setText(std::string text, const UiFontReference& font, int fontSize, SDL_Color color, int dpi)
+{
+	std::string identity = font.family + "|" + font.style;
+	std::string path = "Resources/Courier New Bold.ttf";
+	int index = 0;
+	bool fallback = false;
+	const bool factoryFace = font.family == "Courier New" && font.style == "Bold";
+	const bool keepFallback = fontFallback_ && fontFace_ == identity;
+	if (!factoryFace && keepFallback)
+		fallback = true;
+	else if (!factoryFace)
+	{
+		WindowsFontFace face;
+		if (installedFonts().resolve(font.family, font.style, face))
+		{
+			path = face.pathUtf8;
+			index = face.collectionIndex;
+		}
+		else fallback = true;
+	}
+	requestedFontFamily_ = font.family;
+	requestedFontStyle_ = font.style;
+	setResolvedText(text, identity, path, index, fontSize, dpi, dpi, color, fallback);
+}
+
+void TextLabel::setResolvedText(std::string text, const std::string& identity, const std::string& path,
+	int index, int fontSize, int dpiX, int dpiY, SDL_Color color, bool fallback)
+{
+	const bool textureChanged = !hasContent_ || text_ != text || fontFace_ != identity || fontPath_ != path ||
+		fontIndex_ != index || fontSize_ != fontSize || dpiX_ != dpiX || dpiY_ != dpiY;
 	text_ = text;
-	fontFace_ = fontFace;
+	fontFace_ = identity;
+	fontPath_ = path;
 	fontSize_ = fontSize;
+	fontIndex_ = index;
+	dpiX_ = dpiX;
+	dpiY_ = dpiY;
 	color_ = color;
+	fontFallback_ = fallback;
 	hasContent_ = true;
-	createTextLabel();
+	if (textureChanged) createTextLabel();
 }
 
 void TextLabel::createTextLabel()
@@ -106,10 +155,26 @@ void TextLabel::createTextLabel()
 		textureId_ = 0;
 	}
 	dimensions_ = glm::vec2(0.0f);
-	TTF_Font* font = findFont(fontFace_, fontSize_);
-	if (!font)
-		return;
-	SDL_Surface* rendered = TTF_RenderUTF8_Blended(font, text_.empty() ? " " : text_.c_str(), color_);
+	const std::string bundledPath = "Resources/Courier New Bold.ttf";
+	TTF_Font* font = findFont(fontPath_, fontIndex_, fontSize_, dpiX_, dpiY_);
+	if (!font && fontPath_ != bundledPath)
+	{
+		fontPath_ = bundledPath;
+		fontIndex_ = 0;
+		fontFallback_ = true;
+		font = findFont(fontPath_, fontIndex_, fontSize_, dpiX_, dpiY_);
+	}
+	if (!font) return;
+	const SDL_Color white = { 255, 255, 255, 255 };
+	SDL_Surface* rendered = TTF_RenderUTF8_Blended(font, text_.empty() ? " " : text_.c_str(), white);
+	if (!rendered && fontPath_ != bundledPath)
+	{
+		fontPath_ = bundledPath;
+		fontIndex_ = 0;
+		fontFallback_ = true;
+		font = findFont(fontPath_, fontIndex_, fontSize_, dpiX_, dpiY_);
+		if (font) rendered = TTF_RenderUTF8_Blended(font, text_.empty() ? " " : text_.c_str(), white);
+	}
 	if (!rendered)
 	{
 		std::cerr << "Could not render label text: " << TTF_GetError() << '\n';
@@ -149,4 +214,33 @@ void TextLabel::clearFontCache()
 	for (std::map<std::string, TTF_Font*>::iterator font = cache.begin(); font != cache.end(); ++font)
 		TTF_CloseFont(font->second);
 	cache.clear();
+}
+
+glm::vec2 TextLabel::measureText(const std::string& text, const UiFontReference& requestedFont, int fontSize, int dpi)
+{
+	const std::string bundledPath = "Resources/Courier New Bold.ttf";
+	std::string path = bundledPath;
+	int index = 0;
+	if (!(requestedFont.family == "Courier New" && requestedFont.style == "Bold"))
+	{
+		WindowsFontFace face;
+		if (installedFonts().resolve(requestedFont.family, requestedFont.style, face))
+		{
+			path = face.pathUtf8;
+			index = face.collectionIndex;
+		}
+	}
+	TTF_Font* font = findFont(path, index, fontSize, dpi, dpi);
+	if (!font && path != bundledPath)
+		font = findFont(bundledPath, 0, fontSize, dpi, dpi);
+	if (!font) return glm::vec2(0.0f);
+	int width = 0;
+	int height = 0;
+	const char* content = text.empty() ? " " : text.c_str();
+	if (TTF_SizeUTF8(font, content, &width, &height) != 0 && path != bundledPath)
+	{
+		font = findFont(bundledPath, 0, fontSize, dpi, dpi);
+		if (!font || TTF_SizeUTF8(font, content, &width, &height) != 0) return glm::vec2(0.0f);
+	}
+	return glm::vec2(static_cast<float>(width), static_cast<float>(height));
 }

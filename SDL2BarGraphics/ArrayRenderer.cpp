@@ -4,6 +4,7 @@
 #include <map>
 
 #include "LayoutMetrics.h"
+#include "UiArchitecture.h"
 
 namespace
 {
@@ -33,30 +34,37 @@ bool ArrayRenderer::isReady() const
 void ArrayRenderer::render(
 	const sortinglogic::RenderSnapshot& snapshot,
 	const UserSettings& settings,
-	float chartTop)
+	const UiRect& chartViewport,
+	const ThemePalette& palette)
 {
-	if (!isReady() || snapshot.state.slots.empty())
+	if (!isReady() || snapshot.state.slots.empty() || chartViewport.width <= 0.0f || chartViewport.height <= 0.0f)
 		return;
 	const int width = renderer_.logicalWidth();
 	const int height = renderer_.logicalHeight();
 	if (width <= 0 || height <= 0)
 		return;
 
-	const ThemePalette& palette = paletteFor(settings.visual.palette);
-	const float left = 16.0f;
-	const float right = static_cast<float>(width) - 16.0f;
-	const float top = std::min(static_cast<float>(height - 12), std::max(40.0f, chartTop));
-	const float bottom = static_cast<float>(height) - 18.0f;
-	const float areaHeight = std::max(10.0f, bottom - top);
+	const float left = std::max(0.0f, chartViewport.x);
+	const float right = std::min(static_cast<float>(width), chartViewport.x + chartViewport.width);
+	const float top = std::max(0.0f, chartViewport.y);
+	const float bottom = std::min(static_cast<float>(height), chartViewport.y + chartViewport.height);
+	if (right <= left || bottom <= top) return;
+	const ClipBounds chartClip(left, top, right - left, bottom - top);
+	const float areaHeight = std::max(0.0f, bottom - top);
 	std::size_t laneCount = snapshot.state.integerWorkspaces.size() + (snapshot.state.discardedItems.empty() ? 0 : 1);
 	for (std::map<std::string, std::vector<sortinglogic::SortSlot> >::const_iterator lane = snapshot.state.auxiliaryItems.begin();
 		lane != snapshot.state.auxiliaryItems.end(); ++lane)
 		if (!hiddenMergeBuffer(snapshot, lane->first)) ++laneCount;
 	const float auxiliaryHeight = laneCount == 0 ? 0.0f : std::min(areaHeight * 0.30f, static_cast<float>(laneCount) * 38.0f);
 	const float mainBottom = bottom - auxiliaryHeight - (laneCount ? 6.0f : 0.0f);
-	const float mainHeight = std::max(8.0f, mainBottom - top);
+	const float mainHeight = std::max(0.0f, mainBottom - top);
 	const float columnWidth = std::max(0.0f, right - left) / static_cast<float>(snapshot.state.slots.size());
 	const BarSlotMetrics spacing = calculateBarSlotMetrics(columnWidth, settings.visual.spacing);
+	// When Merge Sort's auxiliary buffer is hidden, compare/write roles still
+	// refer to the logical "merge" lane. The items being compared are visible in
+	// the primary array, so resolve those roles there rather than losing their
+	// highlight because the buffer lane was omitted from the chart.
+	const std::vector<sortinglogic::ActiveRole> mainRoles = rolesVisibleOnMainArray(snapshot);
 	for (std::size_t i = 0; i < materialBuckets_.size(); ++i)
 		materialBuckets_[i].clear();
 	gapMarkers_.clear();
@@ -69,14 +77,14 @@ void ArrayRenderer::render(
 		{
 			gapMarkers_.push_back(QuadInstance(
 				glm::vec2(x, mainBottom - 4.0f), glm::vec2(spacing.barWidth, 4.0f),
-				RenderDescriptor(palette.gap, 0, MaterialId::GapMarker), RenderLayer::ChartGaps));
+				RenderDescriptor(palette.gap, 0, MaterialId::GapMarker), RenderLayer::ChartGaps, chartClip));
 			continue;
 		}
 		const sortinglogic::SortItem& item = snapshot.state.slots[index].item;
 		const float barHeight = std::max(1.0f, item.value * mainHeight);
-		const RenderDescriptor descriptor = descriptorForItem(item.stableId, snapshot.activeRoles, palette, "main");
+		const RenderDescriptor descriptor = descriptorForItem(item.stableId, mainRoles, palette, "main");
 		materialBuckets_[materialBucket(descriptor.materialId)].push_back(QuadInstance(
-			glm::vec2(x, mainBottom - barHeight), glm::vec2(spacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars));
+			glm::vec2(x, mainBottom - barHeight), glm::vec2(spacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars, chartClip));
 	}
 
 	// Auxiliary item lanes and integer counter lanes share the chart's remaining
@@ -105,7 +113,7 @@ void ArrayRenderer::render(
 				const RenderDescriptor descriptor = descriptorForItem(item.stableId, snapshot.activeRoles, palette, lane->first);
 				materialBuckets_[materialBucket(descriptor.materialId)].push_back(QuadInstance(
 					glm::vec2(left + static_cast<float>(i) * cellWidth + laneSpacing.sidePadding, laneBottom - barHeight),
-					glm::vec2(laneSpacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars));
+					glm::vec2(laneSpacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars, chartClip));
 			}
 			++laneNumber;
 		}
@@ -125,7 +133,7 @@ void ArrayRenderer::render(
 				materialBuckets_[materialBucket(MaterialId::Bar)].push_back(QuadInstance(
 					glm::vec2(left + static_cast<float>(i) * cellWidth + 1.0f, laneBottom - barHeight),
 					glm::vec2(std::max(1.0f, cellWidth - 2.0f), barHeight),
-					RenderDescriptor(palette.bar, 0, MaterialId::Bar), RenderLayer::ChartBars));
+					RenderDescriptor(palette.bar, 0, MaterialId::Bar), RenderLayer::ChartBars, chartClip));
 			}
 		}
 		if (!snapshot.state.discardedItems.empty())
@@ -143,7 +151,7 @@ void ArrayRenderer::render(
 				const RenderDescriptor descriptor = descriptorForItem(item.stableId, snapshot.activeRoles, palette, "discard");
 				materialBuckets_[materialBucket(descriptor.materialId)].push_back(QuadInstance(
 					glm::vec2(left + static_cast<float>(i) * cellWidth + laneSpacing.sidePadding, laneBottom - barHeight),
-					glm::vec2(laneSpacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars));
+					glm::vec2(laneSpacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars, chartClip));
 			}
 		}
 	}
@@ -161,7 +169,7 @@ void ArrayRenderer::render(
 		const std::map<std::string, glm::vec2>::const_iterator position = laneLabelPositions_.find(label->first);
 		if (position == laneLabelPositions_.end()) continue;
 		renderer_.submit(QuadInstance(glm::vec2(position->second.x + 110.0f - labelWidth, position->second.y), glm::vec2(labelWidth, labelHeight),
-			RenderDescriptor(palette.text, label->second->getTextureId(), MaterialId::Text), RenderLayer::ChartLabels));
+			RenderDescriptor(palette.text, label->second->getTextureId(), MaterialId::Text), RenderLayer::ChartLabels, chartClip));
 	}
 
 	if (snapshot.state.hasHeldItem && snapshot.state.gapIndex < snapshot.state.slots.size())
@@ -171,7 +179,7 @@ void ArrayRenderer::render(
 		const float lift = std::min(18.0f, mainHeight * 0.12f);
 		renderer_.submit(QuadInstance(
 			glm::vec2(x, mainBottom - barHeight - lift), glm::vec2(spacing.barWidth, barHeight),
-			descriptorForItem(snapshot.state.heldItem.stableId, snapshot.activeRoles, palette, "main"), RenderLayer::HeldItem));
+			descriptorForItem(snapshot.state.heldItem.stableId, mainRoles, palette, "main"), RenderLayer::HeldItem, chartClip));
 	}
 
 	for (std::size_t regionIndex = 0; regionIndex < snapshot.activeRegions.size(); ++regionIndex)
@@ -197,7 +205,7 @@ void ArrayRenderer::render(
 			for (std::size_t i = region.first; i < region.last && i < laneSize; i += std::max<std::size_t>(1, region.stride))
 				gapMarkers_.push_back(QuadInstance(glm::vec2(left + static_cast<float>(i) * column, laneTop),
 					glm::vec2(std::max(1.0f, column * 0.16f), std::max(2.0f, laneBottom - laneTop)),
-					RenderDescriptor(palette.accent, 0, MaterialId::GapMarker), RenderLayer::ChartGaps));
+					RenderDescriptor(palette.accent, 0, MaterialId::GapMarker), RenderLayer::ChartGaps, chartClip));
 		}
 		else
 		{
@@ -208,7 +216,7 @@ void ArrayRenderer::render(
 			const float x = left + static_cast<float>(std::min(first, laneSize)) * column;
 			const float width = std::max(1.0f, static_cast<float>(std::min(last, laneSize) - std::min(first, laneSize)) * column);
 			gapMarkers_.push_back(QuadInstance(glm::vec2(x, laneTop), glm::vec2(width, 2.0f),
-				RenderDescriptor(palette.accent, 0, MaterialId::GapMarker), RenderLayer::ChartGaps));
+				RenderDescriptor(palette.accent, 0, MaterialId::GapMarker), RenderLayer::ChartGaps, chartClip));
 		}
 	}
 	for (std::size_t i = 0; i < gapMarkers_.size(); ++i)
