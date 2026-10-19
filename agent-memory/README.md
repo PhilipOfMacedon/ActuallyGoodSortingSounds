@@ -7,6 +7,7 @@ This directory keeps project-local working context that should survive across im
 - [Audibilization](audibilization/README.md): reverse-engineering notes and the proposed deterministic sorting-audio playback architecture.
 - [Sorting roster progress](sorting-roster-progress.md): pinned ArrayV inventory, implementation evidence, and verification history.
 - [Structural architecture audit](structural-architecture-audit.md): current ownership and coupling review, concrete duplication, runtime optimization candidates, and a behavior-preserving refactoring sequence.
+- [Structural refactor progress](structural-refactor-progress.md): implementation slices, verification results, and the next open boundary from that audit.
 - [GUI scrolling](gui-scroll-refactor.md): shared viewport geometry, current adoption, and live-verification notes.
 
 ## Local owner guidance

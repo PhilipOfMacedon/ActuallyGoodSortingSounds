@@ -240,7 +240,7 @@ void ArrayRenderer::submitLaneLabel(const std::string& lane, float x, float y, c
 	std::map<std::string, std::unique_ptr<TextLabel> >::iterator found = laneLabels_.find(lane);
 	if (found == laneLabels_.end())
 		found = laneLabels_.insert(std::make_pair(lane, std::unique_ptr<TextLabel>(new TextLabel(caption, "Courier New Bold", 11, text)))).first;
-	else found->second->setText(caption, "Courier New Bold", 11, text);
+	else found->second->setContent(caption);
 	laneLabelPositions_[lane] = glm::vec2(x, y);
 }
 

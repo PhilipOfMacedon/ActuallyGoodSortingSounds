@@ -1051,7 +1051,7 @@ void ControlPanel::updateAlgorithmAudioControls(const sortinglogic::AlgorithmDes
 			<< std::showpos << inherited.decibels[index] << " dB)";
 		settingsCaptions_[id] = caption.str();
 		std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(id);
-		if (label != labels_.end()) label->second->setText(caption.str(), "Courier New Bold", 12, SDL_Color{ 238, 246, 249, 255 });
+		if (label != labels_.end()) label->second->setContent(caption.str());
 	}
 	settingsUi_.find("algorithm_audio_reset")->setAction(AppAction(AppActionKind::ResetVariantAudioLevels,
 		algorithm.familyId, algorithm.variantId));
@@ -1165,9 +1165,8 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	updateInlineEditLabel();
 }
 
-void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette)
+void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 {
-	const SDL_Color textColor = { 255, 255, 255, 255 };
 	for (std::map<std::string, std::unique_ptr<TextLabel> >::iterator i = labels_.begin(); i != labels_.end(); ++i)
 	{
 		const UiWidget* widget = mainUi_.find(i->first);
@@ -1185,13 +1184,12 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, cons
 				else value << widget->value();
 				text = value.str();
 			}
-			i->second->setText(text, "Courier New Bold", widget->kind() == UiWidgetKind::ComboBox ? 14 : 12, textColor);
+			i->second->setContent(text);
 		}
 	}
-	title_->setText(renderPreferences_.appearance.activePreset == UiPresetId::ClassicWindows95
-		? "Actually Good Sorting Sounds" : "Sorting Simulation | deterministic event trace", "Courier New Bold", 18, textColor);
+	title_->setContent(renderPreferences_.appearance.activePreset == UiPresetId::ClassicWindows95
+		? "Actually Good Sorting Sounds" : "Sorting Simulation | deterministic event trace");
 	mainUi_.find("next")->setLabel(renderPreferences_.appearance.activePreset == UiPresetId::ClassicWindows95 ? "Step" : "Event >");
-	settingsTitle_->setText(settingsTabTitle(session_.settingsPage, settings_), "Courier New Bold", 17, textColor);
 	std::ostringstream detailText;
 	const UiAlgorithmCapabilities& facts = screenModel_.algorithmCapabilities;
 	if (renderPreferences_.appearance.activePreset != UiPresetId::Current)
@@ -1227,7 +1225,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, cons
 	const bool allowLiveTextUpdate = !snapshot.playing || now - lastDetailUpdate_ >= 200;
 	if (nextDetail != displayedDetail_ && allowLiveTextUpdate)
 	{
-		detail_->setText(nextDetail, "Courier New Bold", 14, textColor);
+		detail_->setContent(nextDetail);
 		displayedDetail_ = nextDetail;
 		lastDetailUpdate_ = now;
 	}
@@ -1257,7 +1255,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, cons
 	const std::string nextStatus = statusValue.size() > 220 ? statusValue.substr(0, 217) + "..." : statusValue;
 	if (nextStatus != displayedStatus_ && allowLiveTextUpdate)
 	{
-		status_->setText(nextStatus, "Courier New Bold", 14, textColor);
+		status_->setContent(nextStatus);
 		displayedStatus_ = nextStatus;
 	}
 	std::ostringstream collapsedSummary;
@@ -1266,15 +1264,15 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot, cons
 	const std::string nextCollapsedSummary = collapsedSummary.str();
 	if (nextCollapsedSummary != displayedCollapsedSummary_ && allowLiveTextUpdate)
 	{
-		collapsedSummary_->setText(nextCollapsedSummary, "Courier New Bold", 20, textColor);
+		collapsedSummary_->setContent(nextCollapsedSummary);
 		displayedCollapsedSummary_ = nextCollapsedSummary;
 	}
-	settingsTitle_->setText(settingsTabTitle(session_.settingsPage, settings_), "Courier New Bold", 17, textColor);
+	settingsTitle_->setContent(settingsTabTitle(session_.settingsPage, settings_));
 	const UiTokenValue requestedFont = effectiveUiTokenValue(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_), "typeface.primary");
 	const std::string saveStatus = fontFallbackActive_ && requestedFont.type == UiTokenType::Font
 		? "Font " + requestedFont.font.family + " " + requestedFont.font.style + " unavailable; using bundled Courier New."
 		: displayedSaveStatus_.empty() ? "Preferences save automatically." : displayedSaveStatus_;
-	settingsSaveStatus_->setText(saveStatus, "Courier New Bold", 12, textColor);
+	settingsSaveStatus_->setContent(saveStatus);
 }
 
 bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
@@ -1652,13 +1650,11 @@ float ControlPanel::timelineFraction(float x) const
 	return std::max(0.0f, std::min(1.0f, (x - timelineBounds_.x) / timelineBounds_.width));
 }
 
-void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const std::string& persistenceStatus,
-	const std::string& audioStatus, bool playbackPending)
+void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const std::string& audioStatus)
 {
 	if (!isReady()) return;
-	prepareFrame(snapshot, persistenceStatus, playbackPending);
 	const ThemePalette palette = paletteForAppearance(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_));
-	syncLabels(snapshot, palette);
+	syncLabels(snapshot);
 	fontFallbackActive_ = false;
 	drawMainPanel(snapshot, palette);
 	if (settingsOpen_ && !appearanceEditorOpen_) drawSettingsPanel(palette, audioStatus);
@@ -1868,7 +1864,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 			{
 				const std::string labelId = "#rail_profile_complexity_" + std::to_string(lineIndex);
 				if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(complexityLines[lineIndex], "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 }));
-				else labels_[labelId]->setText(complexityLines[lineIndex], "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 });
+				else labels_[labelId]->setContent(complexityLines[lineIndex]);
 				drawText(*labels_[labelId], UiRect(card.x + 8.0f, card.y + 27.0f + lineIndex * complexityLineHeight, profileWidth, complexityLineHeight),
 					11.0f, palette.mutedText, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
 			}
@@ -1883,7 +1879,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 			{
 				if (cardHeight < factsY - card.y + (factIndex + 1) * factLineHeight + 8.0f) break;
 				if (!labels_[factIds[factIndex]]) labels_[factIds[factIndex]].reset(new TextLabel(factTexts[factIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
-				else labels_[factIds[factIndex]]->setText(factTexts[factIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 });
+				else labels_[factIds[factIndex]]->setContent(factTexts[factIndex]);
 				drawText(*labels_[factIds[factIndex]], UiRect(card.x + 8.0f, factsY + factIndex * factLineHeight, profileWidth, factLineHeight),
 					13.0f, palette.text, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
 			}
@@ -1914,7 +1910,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 				{
 					const std::string labelId = "#rail_profile_line_" + std::to_string(lineIndex);
 					if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
-					else labels_[labelId]->setText(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 });
+					else labels_[labelId]->setContent(algorithmProfileLines_[lineIndex]);
 					const float lineY = profileTextViewport.y + static_cast<float>(lineIndex) * algorithmProfileLineHeight_ - algorithmProfileScrollViewport_.offset();
 					drawText(*labels_[labelId], UiRect(profileTextViewport.x, lineY, profileTextViewport.width, algorithmProfileLineHeight_),
 						profileTextHeight, palette.text, TextLayer, profileClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
@@ -2087,7 +2083,7 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 				neutralAlgorithmGains = neutralAlgorithmGains && variant->second.decibels[i] == 0.0f;
 		const std::string profileStatus = std::string(referenceProfile && neutralAlgorithmGains
 			? "Reconstructed reference | " : "Customized | ") + audioStatus;
-		audioDeviceStatus_->setText(profileStatus, "Courier New Bold", 11, SDL_Color{ 238, 246, 249, 255 });
+		audioDeviceStatus_->setContent(profileStatus);
 		drawText(*audioDeviceStatus_, UiRect(settingsPanelBounds_.x + 16.0f,
 			settingsPanelBounds_.y + settingsPanelBounds_.height - 62.0f,
 			settingsPanelBounds_.width - 130.0f, 16.0f), 11.0f, palette.mutedText, SettingsTextLayer);
@@ -2134,7 +2130,7 @@ void ControlPanel::drawSliderControl(const UiWidget& widget, const ThemePalette&
 		{
 			std::ostringstream caption;
 			caption << widget.label() << "  " << std::fixed << std::setprecision(2) << widget.value();
-			label->second->setText(caption.str(), "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+			label->second->setContent(caption.str());
 		}
 		drawText(*label->second, UiRect(widget.bounds().x, widget.bounds().y + 1.0f, widget.bounds().width, 16.0f),
 			11.0f, palette.text, SettingsTextLayer, clip);
@@ -2190,7 +2186,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 				labels_[labelId].reset(new TextLabel(widget.options()[option], "Courier New Bold", 14, { 255, 255, 255, 255 }));
 				label = labels_.find(labelId);
 			}
-			label->second->setText(widget.options()[option], "Courier New Bold", 14, SDL_Color{ 255, 255, 255, 255 });
+			label->second->setContent(widget.options()[option]);
 			drawText(*label->second, UiRect(bounds.x + 2.0f, bounds.y, bounds.width - 4.0f, bounds.height), 13.0f,
 				widget.optionEnabled(option) ? palette.text : palette.mutedText, layerOffset(layer, 1), screenClip,
 				TextOverflowPolicy::Marquee);
@@ -2339,7 +2335,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		{
 			const std::string variantKey("#algorithm_variant_button");
 			if (!labels_[variantKey]) labels_[variantKey].reset(new TextLabel("", "Courier New Bold", 10, SDL_Color{ 238, 246, 249, 255 }));
-			labels_[variantKey]->setText(descriptor->displayName, "Courier New Bold", 10, SDL_Color{ 238, 246, 249, 255 });
+			labels_[variantKey]->setContent(descriptor->displayName);
 			drawText(*labels_[variantKey], widget.bounds(), 14.0f, palette.text, layerOffset(layer, 2), screenClip,
 				TextOverflowPolicy::Marquee);
 			return;
@@ -2685,7 +2681,7 @@ void ControlPanel::refreshAppearanceTokens()
 		{
 			const std::string labelId = selector->id() + "#option" + std::to_string(i);
 			if (labels_.find(labelId) == labels_.end()) labels_[labelId].reset(new TextLabel(options[i], "Courier New Bold", 12, { 255, 255, 255, 255 }));
-			else labels_[labelId]->setText(options[i], "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+			else labels_[labelId]->setContent(options[i]);
 		}
 	}
 	updateAppearanceEditorControls();
@@ -2726,10 +2722,10 @@ void ControlPanel::updateAppearanceEditorControls()
 		std::string description = appearanceTokenLabel(*descriptor);
 		if (descriptor->type == UiTokenType::Color)
 			description += " | Chart bars and marks use the same color tokens as the interface.";
-		appearanceTokenDescription_->setText(description, "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+		appearanceTokenDescription_->setContent(description);
 	}
 	else
-		appearanceTokenDescription_->setText("No appearance tokens match this search.", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+		appearanceTokenDescription_->setContent("No appearance tokens match this search.");
 
 	if (value.type == UiTokenType::Number)
 	{
@@ -2775,7 +2771,7 @@ void ControlPanel::updateAppearanceEditorControls()
 		const UiWidget& widget = *appearanceUi_.widgets()[i];
 		std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id());
 		if (label != labels_.end())
-			label->second->setText(widget.label(), "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+			label->second->setContent(widget.label());
 	}
 	layoutAppearanceEditor();
 }
@@ -2896,8 +2892,7 @@ void ControlPanel::drawAppearanceEditor()
 			widget->kind() == UiWidgetKind::ComboBox ? ValueMaterial : ButtonMaterial, RenderLayer::SettingsControls, clip);
 		drawWidget(*widget, readable, RenderLayer::SettingsControls);
 	}
-	appearanceStatus_->setText(appearanceError_.empty() ? "Changes preview behind this editor. Apply saves; Cancel discards." : appearanceError_,
-		"Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+	appearanceStatus_->setContent(appearanceError_.empty() ? "Changes preview behind this editor. Apply saves; Cancel discards." : appearanceError_);
 	const float bottomY = appearancePanelBounds_.y + appearancePanelBounds_.height - 40.0f * scale;
 	const float row = 30.0f * scale;
 	const float gap = 8.0f * scale;
@@ -3536,8 +3531,7 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	submitBox(algorithmSearchBounds_, algorithmSearchFocused_ ? palette.valueButton : palette.background, PopupMaterial, RenderLayer::SettingsDropdown, screen);
 	if (!labels_["#algorithm_search"]) labels_["#algorithm_search"].reset(new TextLabel("", "Courier New Bold", 14, { 238, 246, 249, 255 }));
 	TextLabel& searchLabel = *labels_["#algorithm_search"];
-	searchLabel.setText(std::string("Search algorithms: ") + session_.algorithmSearch + (algorithmSearchFocused_ ? "_" : ""),
-		"Courier New Bold", 14, SDL_Color{ 238, 246, 249, 255 });
+	searchLabel.setContent(std::string("Search algorithms: ") + session_.algorithmSearch + (algorithmSearchFocused_ ? "_" : ""));
 	drawText(searchLabel, algorithmSearchBounds_, 14.0f, palette.text, RenderLayer::SettingsDropdownText, screen);
 	submitBox(algorithmFamilyBounds_, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
 	submitBox(algorithmVariantBounds_, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
@@ -3554,7 +3548,7 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 		submitBox(bounds, selected ? palette.accent : palette.button, PopupMaterial, RenderLayer::SettingsDropdown, familyClip);
 		const std::string key = "#menu_family_" + family->id;
 		if (!labels_[key]) labels_[key].reset(new TextLabel(family->name, "Courier New Bold", 13, { 238, 246, 249, 255 }));
-		labels_[key]->setText(family->name, "Courier New Bold", 13, SDL_Color{ 238, 246, 249, 255 });
+		labels_[key]->setContent(family->name);
 			drawText(*labels_[key], UiRect(bounds.x + 6.0f, bounds.y, bounds.width - 18.0f, bounds.height), 12.0f,
 			palette.text, RenderLayer::SettingsDropdownText, familyClip);
 	}
@@ -3580,7 +3574,7 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 			submitBox(bounds, variantFill, PopupMaterial, RenderLayer::SettingsDropdown, variantClip);
 			const std::string key = "#menu_variant_" + selectedFamily->id + "_" + variant->variantId;
 			if (!labels_[key]) labels_[key].reset(new TextLabel(variant->displayName, "Courier New Bold", 13, { 238, 246, 249, 255 }));
-			labels_[key]->setText(variant->displayName, "Courier New Bold", 13, SDL_Color{ 238, 246, 249, 255 });
+			labels_[key]->setContent(variant->displayName);
 			drawText(*labels_[key], UiRect(bounds.x + 8.0f, bounds.y, bounds.width - 16.0f, bounds.height), 12.0f,
 				screenModel_.setupEnabled ? palette.text : palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
 		}
@@ -3601,7 +3595,7 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	{
 		if (!labels_["#algorithm_menu_status"])
 			labels_["#algorithm_menu_status"].reset(new TextLabel("", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 }));
-		labels_["#algorithm_menu_status"]->setText(menuStatus, "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 });
+		labels_["#algorithm_menu_status"]->setContent(menuStatus);
 		drawText(*labels_["#algorithm_menu_status"], UiRect(algorithmMenuBounds_.x + 12.0f,
 			algorithmMenuBounds_.y + algorithmMenuBounds_.height - 30.0f, algorithmMenuBounds_.width - 24.0f, 18.0f),
 			11.0f, palette.mutedText, RenderLayer::SettingsDropdownText, screen);

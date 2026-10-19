@@ -179,7 +179,7 @@ int main(int argc, char** argv)
 		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());
 		frameCoordinator.beginFrame(palette.background);
 		arrayRenderer.render(snapshot, app.preferences(), controlPanel.chartViewport(), palette);
-		controlPanel.render(snapshot, app.persistenceStatus(), audioStatus, app.playbackPending());
+		controlPanel.render(snapshot, audioStatus);
 		frameCoordinator.finishFrame();
 	}
 	TextLabel::clearFontCache();

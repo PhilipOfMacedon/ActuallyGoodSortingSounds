@@ -33,8 +33,9 @@ public:
 	void prepareFrame(const sortinglogic::RenderSnapshot& snapshot, const std::string& persistenceStatus,
 		bool playbackPending);
 	void completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result);
-	void render(const sortinglogic::RenderSnapshot& snapshot, const std::string& persistenceStatus,
-		const std::string& audioStatus = "Audio device is not initialized.", bool playbackPending = false);
+	// Paint the frame prepared before chart rendering without recalculating layout.
+	void render(const sortinglogic::RenderSnapshot& snapshot,
+		const std::string& audioStatus = "Audio device is not initialized.");
 	const UiRect& chartViewport() const { return chartViewport_; }
 	bool settingsOpen() const { return settingsOpen_; }
 	bool textEntryActive() const
@@ -133,7 +134,7 @@ private:
 	void createWidgets();
 	void updateLayout();
 	void updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending);
-	void syncLabels(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette);
+	void syncLabels(const sortinglogic::RenderSnapshot& snapshot);
 	void drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette);
 	void drawSettingsPanel(const ThemePalette& palette, const std::string& audioStatus);
 	void drawAppearanceEditor();

@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <map>
+#include <utility>
 
 #include "WindowsFontCatalog.h"
 
@@ -102,6 +103,16 @@ void TextLabel::setText(std::string text, std::string fontFace, int fontSize)
 void TextLabel::setText(std::string text, std::string fontFace, int fontSize, SDL_Color color)
 {
 	setResolvedText(text, fontFace, "Resources/" + fontFace + ".ttf", 0, fontSize, 0, 0, color, false);
+}
+
+void TextLabel::setContent(std::string text)
+{
+	if (text_ == text)
+		return;
+	text_ = std::move(text);
+	if (!hasContent_ || fontSize_ <= 0 || fontPath_.empty())
+		return;
+	createTextLabel();
 }
 
 void TextLabel::setText(std::string text, const UiFontReference& font, int fontSize, SDL_Color color, int dpi)

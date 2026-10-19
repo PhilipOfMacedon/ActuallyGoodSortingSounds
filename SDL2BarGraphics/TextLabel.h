@@ -27,6 +27,7 @@ public:
 	void setText(std::string text, std::string fontFace, int fontSize);
 	void setText(std::string text, std::string fontFace, int fontSize, SDL_Color color);
 	void setText(std::string text, const UiFontReference& font, int fontSize, SDL_Color color, int dpi = 96);
+	void setContent(std::string text);
 	glm::vec2 getTextureDimensions() const { return dimensions_; }
 	GLuint getTextureId() const { return textureId_; }
 	const std::string& text() const { return text_; }
