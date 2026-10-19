@@ -1850,57 +1850,80 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 				static_cast<int>(std::lround(96.0 * window_.getDrawableWidth() / logicalWidth)))) : 96;
 			const UiTokenValue profileFontValue = effectiveUiTokenValue(preset, activeTheme(renderPreferences_), "typeface.primary");
 			const UiFontReference profileFont = profileFontValue.type == UiTokenType::Font ? profileFontValue.font : UiFontReference();
-			const UiRect profileOuter(card.x + 6.0f, card.y + 30.0f, std::max(0.0f, card.width - 12.0f),
-				std::max(0.0f, card.height - 38.0f));
 			const bool showShortcuts = cardHeight >= 112.0f;
 			float shortcutY = card.y + 70.0f;
 			if (showShortcuts && cardHeight >= 150.0f) shortcutY = card.y + card.height - 58.0f;
 			const float profileBottom = showShortcuts ? shortcutY - 10.0f : card.y + card.height - 8.0f;
-			const float profileHeight = std::max(0.0f, profileBottom - profileOuter.y);
-			const UiRect profileFrame(profileOuter.x, profileOuter.y, profileOuter.width, profileHeight);
+			const float profileWidth = std::max(0.0f, card.width - 16.0f);
+			const std::string complexity = (capabilities.available ? capabilities.timeComplexity : "Unknown") +
+				std::string(" time  |  ") + (capabilities.available ? capabilities.spaceComplexity : "Unknown") + " space";
+			std::vector<std::string> complexityLines;
+			appendWrappedLines(complexityLines, complexity, profileWidth, profileFont, profileRasterSize, dpi);
+			const float complexityLineHeight = 13.0f;
+			const ClipBounds cardClip(card.x + 2.0f, card.y + 2.0f, std::max(0.0f, card.width - 4.0f),
+				std::max(0.0f, card.height - 4.0f));
+			drawText(*labels_["#rail_profile_title"], UiRect(card.x + 8.0f, card.y + 8.0f, profileWidth, 15.0f),
+				12.0f, palette.text, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
+			for (std::size_t lineIndex = 0; lineIndex < complexityLines.size(); ++lineIndex)
+			{
+				const std::string labelId = "#rail_profile_complexity_" + std::to_string(lineIndex);
+				if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(complexityLines[lineIndex], "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 }));
+				else labels_[labelId]->setText(complexityLines[lineIndex], "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 });
+				drawText(*labels_[labelId], UiRect(card.x + 8.0f, card.y + 27.0f + lineIndex * complexityLineHeight, profileWidth, complexityLineHeight),
+					11.0f, palette.mutedText, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
+			}
+
+			const float factsY = card.y + 30.0f + static_cast<float>(complexityLines.size()) * complexityLineHeight + 3.0f;
+			const std::string properties = std::string(capabilities.stable ? "STABLE" : "UNSTABLE") + "  |  " +
+				(capabilities.inPlace ? "IN-PLACE" : "AUXILIARY SPACE");
+			const std::string factTexts[] = { properties, inputTypes.str(), safeLimit.str() };
+			const char* factIds[] = { "#rail_profile_properties", "#rail_profile_input", "#rail_profile_limit" };
+			const float factLineHeight = 18.0f;
+			for (std::size_t factIndex = 0; factIndex < 3; ++factIndex)
+			{
+				if (cardHeight < factsY - card.y + (factIndex + 1) * factLineHeight + 8.0f) break;
+				if (!labels_[factIds[factIndex]]) labels_[factIds[factIndex]].reset(new TextLabel(factTexts[factIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
+				else labels_[factIds[factIndex]]->setText(factTexts[factIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 });
+				drawText(*labels_[factIds[factIndex]], UiRect(card.x + 8.0f, factsY + factIndex * factLineHeight, profileWidth, factLineHeight),
+					13.0f, palette.text, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
+			}
+
+			const float descriptionTop = factsY + 3.0f * factLineHeight + 3.0f;
+			const UiRect profileFrame(card.x + 6.0f, descriptionTop, std::max(0.0f, card.width - 12.0f),
+				std::max(0.0f, profileBottom - descriptionTop));
 			const UiRect profileTextViewport(profileFrame.x + 7.0f, profileFrame.y + 6.0f,
 				std::max(0.0f, profileFrame.width - 24.0f), std::max(0.0f, profileFrame.height - 12.0f));
-			submitBox(profileFrame, palette.panel, ButtonMaterial, UiLayer);
-			submitBox(UiRect(profileFrame.x, profileFrame.y, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-			submitBox(UiRect(profileFrame.x, profileFrame.y + profileFrame.height - 1.0f, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-			submitBox(UiRect(profileFrame.x, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-			submitBox(UiRect(profileFrame.x + profileFrame.width - 1.0f, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-
-			const std::string timeFact = std::string("Time complexity: ") + (capabilities.available ? capabilities.timeComplexity : "Unknown");
-			const std::string spaceFact = std::string("Space complexity: ") + (capabilities.available ? capabilities.spaceComplexity : "Unknown");
-			appendWrappedLines(algorithmProfileLines_, timeFact, profileTextViewport.width, profileFont, profileRasterSize, dpi);
-			appendWrappedLines(algorithmProfileLines_, spaceFact, profileTextViewport.width, profileFont, profileRasterSize, dpi);
-			appendWrappedLines(algorithmProfileLines_, std::string("Stability: ") + (capabilities.stable ? "Stable" : "Unstable"),
-				profileTextViewport.width, profileFont, profileRasterSize, dpi);
-			appendWrappedLines(algorithmProfileLines_, std::string("Memory: ") + (capabilities.inPlace ? "In-place" : "Auxiliary space"),
-				profileTextViewport.width, profileFont, profileRasterSize, dpi);
-			appendWrappedLines(algorithmProfileLines_, inputTypes.str(), profileTextViewport.width, profileFont, profileRasterSize, dpi);
-			appendWrappedLines(algorithmProfileLines_, safeLimit.str(), profileTextViewport.width, profileFont, profileRasterSize, dpi);
-			if (!capabilities.behavior.empty())
-				appendWrappedLines(algorithmProfileLines_, std::string("Method: ") + capabilities.behavior,
-					profileTextViewport.width, profileFont, profileRasterSize, dpi);
-			if (!capabilities.compatibilityMessage.empty())
-				appendWrappedLines(algorithmProfileLines_, std::string("Compatibility: ") + capabilities.compatibilityMessage,
-					profileTextViewport.width, profileFont, profileRasterSize, dpi);
-			algorithmProfileLineHeight_ = std::max(17.0f, profileTextHeight * profileFontScale * 1.42f);
-			algorithmProfileScrollViewport_.configure(profileTextViewport,
-				static_cast<float>(algorithmProfileLines_.size()) * algorithmProfileLineHeight_, algorithmProfileLineHeight_,
-				algorithmProfileScrollViewport_.offset());
-			drawText(*labels_["#rail_profile_title"], UiRect(card.x + 8.0f, card.y + 8.0f, card.width - 16.0f, 15.0f),
-				14.0f, palette.text, TextLayer, ClipBounds(), TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
-			const ClipBounds profileClip(profileTextViewport.x, profileTextViewport.y,
-				profileTextViewport.width, profileTextViewport.height);
-			const std::size_t firstLine = algorithmProfileScrollViewport_.firstVisibleItem(algorithmProfileLineHeight_);
-			const std::size_t visibleLines = algorithmProfileScrollViewport_.visibleItemCount(algorithmProfileLines_.size(), algorithmProfileLineHeight_);
-			const std::size_t endLine = std::min(algorithmProfileLines_.size(), firstLine + visibleLines);
-			for (std::size_t lineIndex = firstLine; lineIndex < endLine; ++lineIndex)
+			if (!capabilities.behavior.empty() && profileTextViewport.height > 0.0f)
 			{
-				const std::string labelId = "#rail_profile_line_" + std::to_string(lineIndex);
-				if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
-				else labels_[labelId]->setText(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 });
-				const float lineY = profileTextViewport.y + static_cast<float>(lineIndex) * algorithmProfileLineHeight_ - algorithmProfileScrollViewport_.offset();
-				drawText(*labels_[labelId], UiRect(profileTextViewport.x, lineY, profileTextViewport.width, algorithmProfileLineHeight_),
-					profileTextHeight, palette.text, TextLayer, profileClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
+				submitBox(profileFrame, palette.panel, ButtonMaterial, UiLayer);
+				submitBox(UiRect(profileFrame.x, profileFrame.y, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(profileFrame.x, profileFrame.y + profileFrame.height - 1.0f, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(profileFrame.x, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+				submitBox(UiRect(profileFrame.x + profileFrame.width - 1.0f, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
+				appendWrappedLines(algorithmProfileLines_, capabilities.behavior, profileTextViewport.width, profileFont, profileRasterSize, dpi);
+				algorithmProfileLineHeight_ = std::max(17.0f, profileTextHeight * profileFontScale * 1.42f);
+				algorithmProfileScrollViewport_.configure(profileTextViewport,
+					static_cast<float>(algorithmProfileLines_.size()) * algorithmProfileLineHeight_, algorithmProfileLineHeight_,
+					algorithmProfileScrollViewport_.offset());
+				const ClipBounds profileClip(profileTextViewport.x, profileTextViewport.y,
+					profileTextViewport.width, profileTextViewport.height);
+				const std::size_t firstLine = algorithmProfileScrollViewport_.firstVisibleItem(algorithmProfileLineHeight_);
+				const std::size_t visibleLines = algorithmProfileScrollViewport_.visibleItemCount(algorithmProfileLines_.size(), algorithmProfileLineHeight_);
+				const std::size_t endLine = std::min(algorithmProfileLines_.size(), firstLine + visibleLines);
+				for (std::size_t lineIndex = firstLine; lineIndex < endLine; ++lineIndex)
+				{
+					const std::string labelId = "#rail_profile_line_" + std::to_string(lineIndex);
+					if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
+					else labels_[labelId]->setText(algorithmProfileLines_[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 });
+					const float lineY = profileTextViewport.y + static_cast<float>(lineIndex) * algorithmProfileLineHeight_ - algorithmProfileScrollViewport_.offset();
+					drawText(*labels_[labelId], UiRect(profileTextViewport.x, lineY, profileTextViewport.width, algorithmProfileLineHeight_),
+						profileTextHeight, palette.text, TextLayer, profileClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
+				}
+			}
+			else
+			{
+				algorithmProfileLines_.clear();
+				algorithmProfileScrollViewport_.configure(UiRect(), 0.0f, profileTextHeight, 0.0f);
 			}
 			if (algorithmProfileScrollViewport_.maximumOffset() > 0.0f && profileFrame.height > 0.0f)
 			{

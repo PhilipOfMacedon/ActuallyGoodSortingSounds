@@ -7705,6 +7705,7 @@ namespace sortinglogic
 			};
 			const auto rightExponentialSearch = [&r](std::size_t first, std::size_t end, std::size_t keyIndex, const SortItem& key)
 			{
+				if (first >= end) return first;
 				std::size_t offset = 1;
 				while (offset <= end - first)
 				{
@@ -7713,12 +7714,17 @@ namespace sortinglogic
 					r.compare(key, candidate, keyIndex, probe, "main", "main", SemanticRole::HeldKey, SemanticRole::ProbedItem);
 					r.addMetric("lazierest_exponential_probes");
 					if (compareItems(key, candidate, r.trace.direction) >= ComparisonResult::Equal) break;
-					if (offset > end - first) break;
 					offset *= 2;
 				}
-				const std::size_t low = offset > end - first ? first : (std::max)(first, end - offset);
-				const std::size_t high = offset > end - first ? first : end - offset / 2;
-				std::size_t left = low, right = (std::min)(end, high + 1);
+				// Match the source's right exponential search bounds. When the
+				// stride runs past the beginning, the unprobed prefix still needs
+				// a binary search; returning `first` here loses that information.
+				const std::size_t range = end - first;
+				const std::size_t low = offset > range
+					? first
+					: (std::max)(first, end - offset + 1);
+				const std::size_t high = end - offset / 2;
+				std::size_t left = low, right = (std::max)(low, (std::min)(end, high));
 				while (left < right)
 				{
 					const std::size_t middle = left + (right - left) / 2;

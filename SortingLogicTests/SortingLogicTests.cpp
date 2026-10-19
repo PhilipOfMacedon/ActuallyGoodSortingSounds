@@ -2895,6 +2895,16 @@ namespace
 		check(descriptor && descriptor->familyId == "merge-hybrid" && descriptor->variantId == "lazierest" &&
 			descriptor->stable && descriptor->inPlace && descriptor->safeMaxItemCount == MaxItemCount,
 			"Lazierest Stable Sort advertises stable in-place cube-root runs and fragmented folds");
+		// Reproduce the reported application input: normalized values are created
+		// in order, then shuffled with the user's seed before trace generation.
+		std::vector<SortItem> reportedInput;
+		for (std::size_t i = 0; i < 400; ++i)
+			reportedInput.push_back(SortItem(i, static_cast<float>(i + 1) / 400.0f));
+		std::mt19937 reportedSeed(3879711141u);
+		std::shuffle(reportedInput.begin(), reportedInput.end(), reportedSeed);
+		verifyAlgorithmCase("Lazierest Stable Sort reported 400-item seed 3879711141",
+			reportedInput, InputProfile::NormalizedFloat, algorithm, SortDirection::Ascending);
+
 		std::mt19937 random(0x1A2E57A3u);
 		const std::size_t sizes[] = { 0, 1, 2, 3, 15, 16, 17, 18, 25, 26, 27, 28, 35, 36, 37, 63, 64, 65, 80, 127, 128 };
 		for (std::size_t sizeIndex = 0; sizeIndex < sizeof(sizes) / sizeof(sizes[0]); ++sizeIndex)
