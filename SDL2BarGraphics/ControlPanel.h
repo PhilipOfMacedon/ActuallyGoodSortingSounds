@@ -159,8 +159,6 @@ private:
 	void layoutAppearanceEditor();
 	bool handleAppearanceEditorEvent(const SDL_Event& event, AppAction& action);
 	void processAppearanceEditorAction(const UiAction& action, AppAction& output);
-	void resetAppearanceToken();
-	void adjustAppearanceNumber(float direction);
 	void chooseAppearanceColor();
 	void importAppearanceProfile();
 	void exportAppearanceProfile();

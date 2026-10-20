@@ -22,6 +22,25 @@ struct AppearanceEditorPalette
 typedef std::function<std::vector<std::string>()> AppearanceFontFamilyProvider;
 typedef std::function<std::vector<std::string>(const std::string&)> AppearanceFontStyleProvider;
 
+enum class AppearanceEditorEffect
+{
+	None,
+	BeginNumericEdit,
+	BeginAlphaEdit,
+	ChooseColor,
+	ImportProfile,
+	ExportProfile,
+	Cancel,
+	Apply
+};
+
+struct AppearanceEditorActionResult
+{
+	bool handled;
+	bool requiresSynchronization;
+	AppearanceEditorEffect effect;
+};
+
 // Owns the appearance editor's retained controls, transactional session, and
 // responsive layout. Native dialogs and GPU resource submission stay in the
 // platform-facing ControlPanel adapter.
@@ -36,6 +55,8 @@ public:
 	void restore();
 	void accept(const UiAppearancePreferences& committed);
 	void synchronizeControls(const AppearanceFontFamilyProvider& fontFamilies,
+		const AppearanceFontStyleProvider& fontStyles);
+	AppearanceEditorActionResult handleAction(const UiAction& action,
 		const AppearanceFontStyleProvider& fontStyles);
 	void updateLayout(int logicalWidth, int logicalHeight);
 	void setDescription(const std::string& value) { description_ = value; }

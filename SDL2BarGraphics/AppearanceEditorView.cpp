@@ -196,6 +196,154 @@ void AppearanceEditorView::synchronizeControls(const AppearanceFontFamilyProvide
 	}
 }
 
+AppearanceEditorActionResult AppearanceEditorView::handleAction(const UiAction& action,
+	const AppearanceFontStyleProvider& fontStyles)
+{
+	const std::string& id = action.event.controlId;
+	const UiPresetId preset = session_.model().preset();
+	const std::string& selectedToken = session_.model().selectedToken();
+	const AppearanceEditorActionResult unhandled = { false, false, AppearanceEditorEffect::None };
+	const AppearanceEditorActionResult handled = { true, false, AppearanceEditorEffect::None };
+	const AppearanceEditorActionResult changed = { true, true, AppearanceEditorEffect::None };
+
+	auto storeValue = [this, preset, &selectedToken](const UiTokenValue& value)
+	{
+		std::string error;
+		if (!setUiTokenValue(preset, session_.draft().themes[preset], selectedToken, value, &error))
+			session_.error() = error;
+		else session_.error().clear();
+	};
+	auto editNumber = [this, preset, &selectedToken, &storeValue, &handled, &changed](float direction)
+	{
+		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
+		if (!descriptor || descriptor->type != UiTokenType::Number) return handled;
+		const UiTokenValue current = effectiveUiTokenValue(preset, session_.draft().themes[preset], selectedToken);
+		const double increment = descriptor->maximum - descriptor->minimum > 100.0 ? 1.0 : 0.5;
+		const double next = (std::max)(descriptor->minimum,
+			(std::min)(descriptor->maximum, current.number + direction * increment));
+		storeValue(UiTokenValue::fromNumber(next));
+		return changed;
+	};
+
+	if (id == "appearance_preset")
+	{
+		const int lastPreset = static_cast<int>(uiPresetCatalog().size()) - 1;
+		session_.model().setPreset(static_cast<UiPresetId>((std::max)(0, (std::min)(action.event.selection, lastPreset))));
+		session_.draft().activePreset = session_.model().preset();
+		controls_.closeCombo();
+		session_.error().clear();
+		return changed;
+	}
+	if (id == "appearance_palette")
+	{
+		const UiWidget* palette = controls_.find(id);
+		if (!palette || palette->options().empty()) return handled;
+		const int lastPalette = static_cast<int>(palette->options().size()) - 1;
+		selectUiPalette(session_.draft().themes[preset],
+			static_cast<PaletteId>((std::max)(0, (std::min)(action.event.selection, lastPalette))));
+		session_.error().clear();
+		return changed;
+	}
+	if (id == "appearance_category")
+	{
+		session_.model().setCategoryFilter(action.event.selection);
+		controls_.closeCombo();
+		session_.error().clear();
+		return changed;
+	}
+	if (id == "appearance_token")
+	{
+		session_.model().selectOption(action.event.selection);
+		session_.error().clear();
+		return changed;
+	}
+	if (id == "appearance_search") return unhandled;
+	if (action.event.kind == UiEventKind::ValueChanged &&
+		(id == "appearance_value_slider" || id == "appearance_color_r" || id == "appearance_color_g" ||
+		 id == "appearance_color_b" || id == "appearance_color_a"))
+	{
+		UiTokenValue value = effectiveUiTokenValue(preset, session_.draft().themes[preset], selectedToken);
+		if (id == "appearance_value_slider" && value.type == UiTokenType::Number)
+			value.number = action.event.value;
+		else if (value.type == UiTokenType::Color)
+		{
+			if (id == "appearance_color_r") value.color.r = action.event.value;
+			else if (id == "appearance_color_g") value.color.g = action.event.value;
+			else if (id == "appearance_color_b") value.color.b = action.event.value;
+			else if (id == "appearance_color_a") value.color.a = action.event.value;
+		}
+		else return handled;
+		storeValue(value);
+		return changed;
+	}
+	if (id == "appearance_value")
+		return { true, false, AppearanceEditorEffect::BeginNumericEdit };
+	if (id == "appearance_color_alpha")
+		return { true, false, AppearanceEditorEffect::BeginAlphaEdit };
+	if (id == "appearance_value_down") return editNumber(-1.0f);
+	if (id == "appearance_value_up") return editNumber(1.0f);
+	if (id == "appearance_color")
+		return { true, false, AppearanceEditorEffect::ChooseColor };
+	if (id == "appearance_boolean")
+	{
+		const UiTokenValue before = effectiveUiTokenValue(preset, session_.draft().themes[preset], selectedToken);
+		if (before.type != UiTokenType::Boolean) return handled;
+		storeValue(UiTokenValue::fromBoolean(!before.boolean));
+		return changed;
+	}
+	if (id == "appearance_choice")
+	{
+		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
+		if (descriptor && descriptor->type == UiTokenType::Choice && action.event.selection >= 0 &&
+			static_cast<std::size_t>(action.event.selection) < descriptor->choices.size())
+			storeValue(UiTokenValue::fromChoice(descriptor->choices[static_cast<std::size_t>(action.event.selection)]));
+		return changed;
+	}
+	if (id == "appearance_font_family" || id == "appearance_font_style")
+	{
+		const UiTokenValue current = effectiveUiTokenValue(preset, session_.draft().themes[preset], selectedToken);
+		if (current.type == UiTokenType::Font)
+		{
+			UiFontReference font = current.font;
+			const UiWidget* widget = controls_.find(id);
+			if (widget && action.event.selection >= 0 && static_cast<std::size_t>(action.event.selection) < widget->options().size())
+			{
+				if (id == "appearance_font_family")
+				{
+					font.family = widget->options()[static_cast<std::size_t>(action.event.selection)];
+					const std::vector<std::string> styles = fontStyles ? fontStyles(font.family) : std::vector<std::string>();
+					if (!styles.empty()) font.style = styles[0];
+				}
+				else font.style = widget->options()[static_cast<std::size_t>(action.event.selection)];
+				storeValue(UiTokenValue::fromFont(font));
+			}
+		}
+		return changed;
+	}
+	if (id == "appearance_reset_token")
+	{
+		if (selectedToken.empty()) return handled;
+		session_.draft().themes[preset].overrides.erase(selectedToken);
+		session_.error().clear();
+		return changed;
+	}
+	if (id == "appearance_reset_theme")
+	{
+		session_.draft().themes[preset] = defaultUiThemeCustomization(preset);
+		session_.error().clear();
+		return changed;
+	}
+	if (id == "appearance_import") return { true, false, AppearanceEditorEffect::ImportProfile };
+	if (id == "appearance_export") return { true, false, AppearanceEditorEffect::ExportProfile };
+	if (id == "appearance_cancel") return { true, false, AppearanceEditorEffect::Cancel };
+	if (id == "appearance_apply")
+	{
+		session_.draft().activePreset = preset;
+		return { true, false, AppearanceEditorEffect::Apply };
+	}
+	return unhandled;
+}
+
 void AppearanceEditorView::updateLayout(int logicalWidth, int logicalHeight)
 {
 	if (logicalWidth <= 0 || logicalHeight <= 0) return;

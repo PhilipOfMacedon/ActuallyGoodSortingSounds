@@ -1574,6 +1574,168 @@ namespace
 			"appearance view reports an empty token search and hides its selector");
 	}
 
+	void testAppearanceEditorViewActions()
+	{
+		UiAppearancePreferences initial;
+		AppearanceEditorView view(std::vector<std::string>{ "Current", "Flat VGA DOS", "Classic Windows 95" },
+			std::vector<std::string>{ "Cyan", "Amber", "Monochrome", "Light", "VGA Classic", "Windows 95" }, initial, 0);
+		const AppearanceFontFamilyProvider fontFamilies = []()
+		{
+			return std::vector<std::string>{ "Courier New", "Consolas" };
+		};
+		const AppearanceFontStyleProvider fontStyles = [](const std::string&)
+		{
+			return std::vector<std::string>{ "Regular", "Bold", "Italic" };
+		};
+		const auto tokenOfType = [](UiPresetId preset, UiTokenType type) -> const UiTokenDescriptor*
+		{
+			const std::vector<UiTokenDescriptor>& tokens = uiPresetDefinition(preset).tokens;
+			for (std::size_t i = 0; i < tokens.size(); ++i)
+				if (tokens[i].type == type) return &tokens[i];
+			return nullptr;
+		};
+
+		UiAction action;
+		action.event.controlId = "appearance_preset";
+		action.event.selection = static_cast<int>(UiPresetId::FlatVgaDos);
+		AppearanceEditorActionResult result = view.handleAction(action, fontStyles);
+		check(result.handled && result.requiresSynchronization && view.session().model().preset() == UiPresetId::FlatVgaDos &&
+			view.session().draft().activePreset == UiPresetId::FlatVgaDos,
+			"appearance view handles preset selection and updates the draft's active preset");
+
+		action = UiAction();
+		action.event.controlId = "appearance_palette";
+		action.event.selection = 2;
+		result = view.handleAction(action, fontStyles);
+		check(result.handled && result.requiresSynchronization &&
+			view.session().draft().themes[UiPresetId::FlatVgaDos].palette == PaletteId::Monochrome,
+			"appearance view routes palette selection into its draft theme");
+
+		const UiTokenDescriptor* number = tokenOfType(UiPresetId::Current, UiTokenType::Number);
+		check(number != nullptr, "appearance catalog provides a numeric token for value-edit coverage");
+		if (number)
+		{
+			view.session().model().setPreset(UiPresetId::Current);
+			view.session().model().setCategoryFilter(0);
+			view.session().model().setSearch(number->stableId);
+			view.synchronizeControls(fontFamilies, fontStyles);
+			const UiTokenValue before = effectiveUiTokenValue(UiPresetId::Current,
+				view.session().draft().themes[UiPresetId::Current], number->stableId);
+			action = UiAction();
+			action.event.controlId = "appearance_value_up";
+			result = view.handleAction(action, fontStyles);
+			const UiTokenValue increased = effectiveUiTokenValue(UiPresetId::Current,
+				view.session().draft().themes[UiPresetId::Current], number->stableId);
+			const double step = number->maximum - number->minimum > 100.0 ? 1.0 : 0.5;
+			check(result.handled && result.requiresSynchronization &&
+				increased.number == (std::min)(number->maximum, before.number + step),
+				"appearance view applies the catalog-bounded numeric increment");
+
+			action = UiAction();
+			action.event.controlId = "appearance_reset_token";
+			result = view.handleAction(action, fontStyles);
+			check(result.handled && result.requiresSynchronization &&
+				view.session().draft().themes[UiPresetId::Current].overrides.count(number->stableId) == 0,
+				"appearance view resets the selected token override");
+
+			view.session().model().setSearch("no token can match this text");
+			view.session().error() = "keep existing feedback";
+			action = UiAction();
+			action.event.controlId = "appearance_reset_token";
+			result = view.handleAction(action, fontStyles);
+			check(result.handled && !result.requiresSynchronization &&
+				view.session().error() == "keep existing feedback",
+				"appearance reset remains a no-op when the current search has no selected token");
+
+			view.session().model().setSearch(number->stableId);
+			action = UiAction();
+			action.event.controlId = "appearance_value";
+			result = view.handleAction(action, fontStyles);
+			check(result.effect == AppearanceEditorEffect::BeginNumericEdit,
+				"appearance view asks the host to start numeric text entry");
+		}
+
+		const UiTokenDescriptor* color = tokenOfType(UiPresetId::Current, UiTokenType::Color);
+		if (color)
+		{
+			view.session().model().setPreset(UiPresetId::Current);
+			view.session().model().setSearch(color->stableId);
+			view.synchronizeControls(fontFamilies, fontStyles);
+			action = UiAction();
+			action.event.controlId = "appearance_color_g";
+			action.event.kind = UiEventKind::ValueChanged;
+			action.event.value = 0.73f;
+			result = view.handleAction(action, fontStyles);
+			const UiTokenValue updated = effectiveUiTokenValue(UiPresetId::Current,
+				view.session().draft().themes[UiPresetId::Current], color->stableId);
+			check(result.requiresSynchronization && updated.color.g == 0.73f,
+				"appearance view routes color-channel changes into the selected token");
+
+			action = UiAction();
+			action.event.controlId = "appearance_color_alpha";
+			result = view.handleAction(action, fontStyles);
+			check(result.effect == AppearanceEditorEffect::BeginAlphaEdit,
+				"appearance view asks the host to start alpha text entry");
+			action.event.controlId = "appearance_color";
+			result = view.handleAction(action, fontStyles);
+			check(result.effect == AppearanceEditorEffect::ChooseColor,
+				"appearance view returns color-picker work to the native-dialog adapter");
+		}
+
+		const UiTokenDescriptor* boolean = tokenOfType(UiPresetId::FlatVgaDos, UiTokenType::Boolean);
+		if (boolean)
+		{
+			view.session().model().setPreset(UiPresetId::FlatVgaDos);
+			view.session().model().setSearch(boolean->stableId);
+			view.synchronizeControls(fontFamilies, fontStyles);
+			const bool before = effectiveUiTokenValue(UiPresetId::FlatVgaDos,
+				view.session().draft().themes[UiPresetId::FlatVgaDos], boolean->stableId).boolean;
+			action = UiAction();
+			action.event.controlId = "appearance_boolean";
+			result = view.handleAction(action, fontStyles);
+			const bool after = effectiveUiTokenValue(UiPresetId::FlatVgaDos,
+				view.session().draft().themes[UiPresetId::FlatVgaDos], boolean->stableId).boolean;
+			check(result.requiresSynchronization && after != before,
+				"appearance view toggles boolean appearance tokens");
+		}
+
+		const UiTokenDescriptor* font = tokenOfType(UiPresetId::Current, UiTokenType::Font);
+		if (font)
+		{
+			view.session().model().setPreset(UiPresetId::Current);
+			view.session().model().setSearch(font->stableId);
+			view.synchronizeControls(fontFamilies, fontStyles);
+			const UiWidget* family = view.controls().find("appearance_font_family");
+			const std::vector<std::string>::const_iterator consolas = std::find(family->options().begin(), family->options().end(), "Consolas");
+			if (consolas != family->options().end())
+			{
+				action = UiAction();
+				action.event.controlId = "appearance_font_family";
+				action.event.selection = static_cast<int>(consolas - family->options().begin());
+				result = view.handleAction(action, fontStyles);
+				const UiTokenValue updated = effectiveUiTokenValue(UiPresetId::Current,
+					view.session().draft().themes[UiPresetId::Current], font->stableId);
+				check(result.requiresSynchronization && updated.font.family == "Consolas" && updated.font.style == "Regular",
+					"appearance view changes font family and selects the host-provided first face style");
+			}
+		}
+
+		action = UiAction();
+		action.event.controlId = "appearance_import";
+		check(view.handleAction(action, fontStyles).effect == AppearanceEditorEffect::ImportProfile,
+			"appearance view leaves profile file access to the host adapter");
+		action.event.controlId = "appearance_export";
+		check(view.handleAction(action, fontStyles).effect == AppearanceEditorEffect::ExportProfile,
+			"appearance view leaves profile export to the host adapter");
+		action.event.controlId = "appearance_cancel";
+		check(view.handleAction(action, fontStyles).effect == AppearanceEditorEffect::Cancel,
+			"appearance view returns Cancel as a host effect");
+		action.event.controlId = "appearance_apply";
+		check(view.handleAction(action, fontStyles).effect == AppearanceEditorEffect::Apply &&
+			view.session().draft().activePreset == view.session().model().preset(),
+			"appearance view prepares the active preset before returning Apply");
+	}
+
 	void testAlgorithmProfileView()
 	{
 		TextBlockLayout::MeasureTextWidth measure = [](const std::string& text, const ResolvedTextStyle& style)
@@ -3396,6 +3558,7 @@ int main(int argc, char* argv[])
 	testAppearanceEditorLayout();
 	testAppearanceEditorViewComposition();
 	testAppearanceEditorViewSynchronizesControls();
+	testAppearanceEditorViewActions();
 	testAlgorithmProfileView();
 	testAppearanceEditorModel();
 	testAppearanceEditorSession();

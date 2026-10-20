@@ -1413,3 +1413,16 @@ Verification:
 - `git diff --check` passed. No settings persistence, appearance-edit semantics, or renderer behavior was changed.
 
 Next: move pure appearance-token edit actions into the view and make its boundary return explicit host effects for inline text entry, color/profile dialogs, Apply, and Cancel. SDL event translation, native dialogs, and app-controller dispatch remain in the host adapter.
+
+## 2026-10-20 — move appearance edit actions into the view
+
+`AppearanceEditorView::handleAction` now owns preset, palette, category, token, scalar, color, boolean, choice, font, reset, import/export, and Apply/Cancel action semantics. It returns explicit synchronization requirements and host effects; `ControlPanel` handles only inline text entry, native color/profile dialogs, modal closing, and `AppAction` dispatch. Font enumeration remains supplied by the host. Empty-search token reset remains a no-op, matching the prior behavior.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x64/x86 Debug and Release. The x64/x86 Debug/Release configuration labels were used as defined by the solution.
+- `AppFrameworkTests` passed in all four configurations, including the new action-dispatch coverage and empty-search reset case.
+- `git diff --check` passed. No live-window screenshot review was run because the widget layout and painting are unchanged; the action semantics are exercised headlessly.
+- This is an ownership refactor. No performance improvement is claimed.
+
+Next: extract the remaining inline appearance editor input state/commit logic into a small platform-neutral model, or move to the audit's settings/configuration ownership boundary if the inline editor proves inseparable from SDL text input. Keep the host responsible for SDL event translation and native dialogs.
