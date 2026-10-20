@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "AppActions.h"
+#include "PlaybackCoordinator.h"
 #include "../SortingLogic/SortingLogic.h"
 #include "../SortingLogic/TraceBuildService.h"
 #include "UserSettings.h"
@@ -20,7 +21,8 @@ public:
 	void update(float deltaSeconds, bool audioClockAvailable = false);
 	void setAudioPreparationPending(bool pending);
 	bool applyAppearance(const UiAppearancePreferences& appearance, std::string* error = nullptr);
-	bool playbackPending() const { return playbackPending_; }
+	bool playbackPending() const { return playbackCoordinator_.playbackQueued(); }
+	PlaybackCoordinatorState playbackState() const;
 	void applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
 		std::uint64_t currentTimelineGeneration, std::uint64_t currentTransportRevision);
 	sortinglogic::RenderSnapshot snapshot() const;
@@ -35,12 +37,8 @@ private:
 	UserPreferences preferences_;
 	sortinglogic::Simulation simulation_;
 	sortinglogic::TraceBuildService traceBuildService_;
+	PlaybackCoordinator playbackCoordinator_;
 	std::string persistenceStatus_;
-	double hostReferenceElapsedSeconds_;
-	bool previousAudioClockAvailable_;
-	bool audioPreparationGateEnabled_;
-	bool audioPreparationPending_;
-	bool playbackPending_;
 
 	static UserPreferences loadPreferences(ISettingsPersistence& persistence);
 	sortinglogic::CommandResult requestTraceBuild(bool playWhenReady);

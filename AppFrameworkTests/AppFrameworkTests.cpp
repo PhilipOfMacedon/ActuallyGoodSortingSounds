@@ -20,6 +20,7 @@
 #include "../SDL2BarGraphics/AlgorithmBrowserView.h"
 #include "../SDL2BarGraphics/AppController.h"
 #include "../SDL2BarGraphics/AudioPresentationBridge.h"
+#include "../SDL2BarGraphics/PlaybackCoordinator.h"
 #include "../SDL2BarGraphics/PlaybackTimebase.h"
 #include "../SDL2BarGraphics/RenderPipeline.h"
 #include "../SDL2BarGraphics/RenderingTypes.h"
@@ -2665,6 +2666,58 @@ namespace
 			"audio playhead frames share the 44.1 kHz reference timeline");
 	}
 
+	void testPlaybackCoordinator()
+	{
+		PlaybackCoordinator coordinator;
+		check(coordinator.state(false, false, false, 0, 0) == PlaybackCoordinatorState::NoTrace,
+			"playback coordinator starts without a trace");
+		coordinator.traceBuildRequested(true);
+		check(coordinator.state(true, false, false, 0, 0) == PlaybackCoordinatorState::Queued &&
+			!coordinator.consumeQueuedPlayback(true, false),
+			"queued playback waits while a trace is building");
+		coordinator.traceBuildCompleted(true);
+		coordinator.setAudioPreparationPending(true);
+		check(coordinator.audioPreparationBlocksStart() &&
+			!coordinator.consumeQueuedPlayback(false, true) && coordinator.playbackQueued(),
+			"queued playback waits for the enabled audio preparation gate");
+		coordinator.setAudioPreparationPending(false);
+		check(coordinator.consumeQueuedPlayback(false, true) && !coordinator.playbackQueued(),
+			"queued playback is consumed exactly once when its prerequisites are ready");
+		check(coordinator.state(false, true, false, 0, 10) == PlaybackCoordinatorState::Ready &&
+			coordinator.state(false, true, true, 4, 10) == PlaybackCoordinatorState::Playing &&
+			coordinator.state(false, true, false, 4, 10) == PlaybackCoordinatorState::Paused &&
+			coordinator.state(false, true, false, 10, 10) == PlaybackCoordinatorState::Completed,
+			"playback coordinator reports ready, playing, paused, and completed states");
+		coordinator.setAudioPreparationPending(true);
+		check(coordinator.state(false, true, false, 0, 10) == PlaybackCoordinatorState::PreparingAudio,
+			"playback coordinator exposes audio preparation as a distinct state");
+		coordinator.setAudioPreparationPending(false);
+
+		coordinator.traceBuildRequested(true);
+		coordinator.traceBuildFailed();
+		check(!coordinator.playbackQueued() && !coordinator.consumeQueuedPlayback(false, false),
+			"failed trace generation discards queued playback");
+		coordinator.traceBuildRequested(true);
+		check(!coordinator.consumeQueuedPlayback(false, false) && !coordinator.playbackQueued(),
+			"a finished build without a trace discards queued playback");
+
+		check(!coordinator.observeAudioClockAvailability(false) &&
+			!coordinator.observeAudioClockAvailability(true) &&
+			coordinator.observeAudioClockAvailability(false),
+			"playback coordinator detects the transition from audio clock to host fallback");
+		coordinator.setReferenceElapsedSeconds(2.5);
+		coordinator.advanceReferenceClock(-1.0);
+		coordinator.advanceReferenceClock(0.25);
+		check(std::fabs(coordinator.referenceElapsedSeconds() - 2.75) < 1e-12,
+			"host fallback clock ignores negative deltas and advances by positive frame time");
+		check(coordinator.acceptsAudioPlayhead(true, 7, 11, 7, 11, 44100) &&
+			!coordinator.acceptsAudioPlayhead(false, 7, 11, 7, 11, 44100) &&
+			!coordinator.acceptsAudioPlayhead(true, 6, 11, 7, 11, 44100) &&
+			!coordinator.acceptsAudioPlayhead(true, 7, 10, 7, 11, 44100) &&
+			!coordinator.acceptsAudioPlayhead(true, 7, 11, 7, 11, 0),
+			"audio playhead acceptance requires the active timeline and transport fence");
+	}
+
 	void testPlaybackTimingActions()
 	{
 		MemorySettings persistence;
@@ -2689,6 +2742,8 @@ namespace
 		MemorySettings persistence;
 		AppController app(persistence);
 		check(app.dispatch(AppAction(AppActionKind::Run)).accepted, "run creates a trace for the audio-preparation gate");
+		check(app.playbackState() == PlaybackCoordinatorState::BuildingTrace,
+			"app controller exposes trace generation as a playback preparation state");
 		const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < deadline)
 		{
@@ -2696,11 +2751,17 @@ namespace
 			std::this_thread::yield();
 		}
 		check(app.snapshot().hasTrace, "audio-preparation gate fixture receives its trace");
+		check(app.playbackState() == PlaybackCoordinatorState::Ready,
+			"completed trace is ready when no audio preparation gate is active");
 		app.setAudioPreparationPending(true);
+		check(app.playbackState() == PlaybackCoordinatorState::PreparingAudio,
+			"app controller exposes pending timeline preparation");
 		check(!app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted && !app.snapshot().playing,
 			"Play is rejected with an actionable status while its immutable audio timeline is preparing");
 		app.setAudioPreparationPending(false);
-		check(app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted && app.snapshot().playing,
+		check(app.playbackState() == PlaybackCoordinatorState::Ready &&
+			app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted && app.snapshot().playing &&
+			app.playbackState() == PlaybackCoordinatorState::Playing,
 			"Play becomes available as soon as timeline preparation completes");
 		app.dispatch(AppAction(AppActionKind::TogglePlayback));
 	}
@@ -2786,6 +2847,7 @@ int main()
 	testDistributionAlgorithmsSelectableFromDefaultInput();
 	testMetadataAlgorithmOptions();
 	testPlaybackTimebase();
+	testPlaybackCoordinator();
 	testPlaybackTimingActions();
 	testAudioPreparationPlaybackGate();
 	testStaleAudioPlayheadCannotCancelPlayback();

@@ -776,3 +776,22 @@ Verification:
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
 Next: extract app-thread playback orchestration transitions into a coordinator while preserving the existing callback ownership and generation/revision fencing.
+
+## 2026-10-20 — extract app-thread playback coordination state
+
+Status: implementation and focused verification complete.
+
+- Added `PlaybackCoordinator` to own queued-play intent, the audio-preparation gate, audio-clock availability transitions, and the host reference-clock value. `AppController` no longer stores these related flags and timing fields independently.
+- Added explicit lifecycle states for no trace, trace building, audio preparation, queued, ready, playing, paused, and completed. The controller exposes the state and uses it to preserve the existing queued-status message.
+- Centralized stale audio-playhead acceptance in the coordinator using the existing timeline-generation and transport-revision checks. The controller still issues `Simulation` commands; the bridge still owns timeline construction, and the SDL callback still owns its existing fenced installation/acknowledgement protocol.
+- Kept device availability and timeline readiness as separate inputs, and preserved fallback-clock rebasing when the audio clock is lost.
+- Added direct transition tests and controller integration checks for preparation/readiness states.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Standalone `AudioDeviceTransportTests` Debug and Release builds and runs with SDL's dummy backend: passed, including pause/step/seek, reference/fixed timing, and 80/800-item cases.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+Next: narrow the main loop's playback wiring and introduce a named timeline-generation/transport-revision fence value while keeping timeline-worker and callback ownership in their current modules.

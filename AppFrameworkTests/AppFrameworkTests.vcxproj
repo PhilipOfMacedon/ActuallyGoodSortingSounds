@@ -39,6 +39,7 @@
     <ClCompile Include="..\SDL2BarGraphics\SettingsPanelControls.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\SettingsPanelLayout.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AudioPresentationBridge.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\PlaybackCoordinator.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\PlaybackTimebase.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AppController.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AudioSettingsActions.cpp" />

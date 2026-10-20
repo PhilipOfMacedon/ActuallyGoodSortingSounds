@@ -119,10 +119,7 @@ AppController::AppController(ISettingsPersistence& settingsPersistence)
 	preferences_(loadPreferences(settingsPersistence)),
 		simulation_(static_cast<std::size_t>(preferences_.simulation.itemCount), sortinglogic::Simulation::createFreshSeed(),
 			preferences_.simulation.domain, preferences_.simulation.pattern),
-	traceBuildService_(),
-	persistenceStatus_("Preferences loaded."), hostReferenceElapsedSeconds_(0.0), previousAudioClockAvailable_(false),
-	audioPreparationGateEnabled_(false),
-	audioPreparationPending_(false), playbackPending_(false)
+		traceBuildService_(), playbackCoordinator_(), persistenceStatus_("Preferences loaded.")
 {
 	simulation_.setDuration(static_cast<float>(preferences_.simulation.durationSeconds));
 	simulation_.setDirection(preferences_.simulation.descending
@@ -153,7 +150,7 @@ AppController::~AppController() = default;
 
 sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 {
-	playbackPending_ = false;
+	playbackCoordinator_.traceBuildRequested(false);
 	sortinglogic::TraceBuildRequest request;
 	sortinglogic::CommandResult result = simulation_.beginTraceBuild(request);
 	if (!result.accepted) return result;
@@ -172,14 +169,14 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 		}
 	}
 
-	playbackPending_ = playWhenReady;
+	playbackCoordinator_.traceBuildRequested(playWhenReady);
 	std::string error;
 	if (!traceBuildService_.submit(request, &error))
 	{
 		sortinglogic::TraceBuildResult failed;
 		failed.error = error.empty() ? "Trace worker is unavailable." : error;
 		simulation_.completeTraceBuild(failed);
-		playbackPending_ = false;
+		playbackCoordinator_.traceBuildFailed();
 		return sortinglogic::CommandResult(false, failed.error);
 	}
 	if (playWhenReady)
@@ -189,8 +186,7 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 
 void AppController::setAudioPreparationPending(bool pending)
 {
-	audioPreparationGateEnabled_ = true;
-	audioPreparationPending_ = pending;
+	playbackCoordinator_.setAudioPreparationPending(pending);
 	startPendingPlaybackIfReady();
 }
 
@@ -229,16 +225,7 @@ bool AppController::applyAppearance(const UiAppearancePreferences& appearance, s
 
 void AppController::startPendingPlaybackIfReady()
 {
-	if (!playbackPending_) return;
-	if (simulation_.isBuildingTrace()) return;
-	if (!simulation_.currentTrace())
-	{
-		playbackPending_ = false;
-		return;
-	}
-	if (audioPreparationGateEnabled_ && audioPreparationPending_) return;
-
-	playbackPending_ = false;
+	if (!playbackCoordinator_.consumeQueuedPlayback(simulation_.isBuildingTrace(), simulation_.hasTrace())) return;
 	const bool wasPlaying = simulation_.isPlaying();
 	const sortinglogic::CommandResult started = simulation_.togglePlayback();
 	if (started.accepted && preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
@@ -311,31 +298,31 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::GenerateAndPlay:
 		if (simulation_.isPlaying())
 		{
-			playbackPending_ = false;
+			playbackCoordinator_.cancelQueuedPlayback();
 			result = simulation_.togglePlayback();
 		}
-		else if (playbackPending_)
+		else if (playbackCoordinator_.playbackQueued())
 		{
-			playbackPending_ = false;
+			playbackCoordinator_.cancelQueuedPlayback();
 			result = sortinglogic::CommandResult(true, "Queued playback cancelled.");
 		}
 		else if (simulation_.isBuildingTrace())
 		{
-			playbackPending_ = true;
+			playbackCoordinator_.queuePlayback();
 			result = sortinglogic::CommandResult(true, "Playback queued; it will start when the trace and audio timeline are ready.");
 		}
 		else if (!simulation_.currentTrace())
 			result = requestTraceBuild(true);
-		else if (audioPreparationGateEnabled_ && audioPreparationPending_)
+		else if (playbackCoordinator_.audioPreparationBlocksStart())
 		{
-			playbackPending_ = true;
+			playbackCoordinator_.queuePlayback();
 			result = sortinglogic::CommandResult(true, "Playback queued until audio preparation finishes.");
 		}
 		else
 			result = simulation_.togglePlayback();
 		break;
 	case AppActionKind::TogglePlayback:
-		if (audioPreparationGateEnabled_ && audioPreparationPending_ && !simulation_.isPlaying())
+		if (playbackCoordinator_.audioPreparationBlocksStart() && !simulation_.isPlaying())
 			result = sortinglogic::CommandResult(false, "Preparing audio timeline. Playback will be available as soon as preparation finishes.");
 		else result = simulation_.togglePlayback();
 		break;
@@ -596,15 +583,15 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	if (result.accepted && simulation_.hasTrace() &&
 		(action.kind == AppActionKind::SetPlaybackTimingMode || action.kind == AppActionKind::DecreaseDuration ||
 		 action.kind == AppActionKind::IncreaseDuration || action.kind == AppActionKind::AdjustDuration || action.kind == AppActionKind::SetDuration))
-		audioPreparationPending_ = true;
+		playbackCoordinator_.markAudioPreparationPending(true);
 	if (result.accepted)
 		synchronizeSimulationPreferences();
 	if (result.accepted && previousTrace && simulation_.currentTrace() != previousTrace &&
 		action.kind != AppActionKind::BuildTrace && action.kind != AppActionKind::GenerateAndPlay)
-		playbackPending_ = false;
+		playbackCoordinator_.cancelQueuedPlayback();
 	if (result.accepted && (action.kind == AppActionKind::Reset || action.kind == AppActionKind::PreviousEvent ||
 		action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction))
-		playbackPending_ = false;
+		playbackCoordinator_.cancelQueuedPlayback();
 	if (previous.changed(preferences_))
 	{
 		persistPreferences();
@@ -620,20 +607,20 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 	if (traceBuildService_.poll(completed))
 	{
 		simulation_.completeTraceBuild(std::move(completed));
-		hostReferenceElapsedSeconds_ = 0.0;
-		audioPreparationPending_ = static_cast<bool>(simulation_.currentTrace());
-		if (!simulation_.currentTrace()) playbackPending_ = false;
+		playbackCoordinator_.traceBuildCompleted(simulation_.hasTrace());
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			synchronizeReferenceTransport(false);
 	}
 	startPendingPlaybackIfReady();
+	const bool audioClockWasLost = playbackCoordinator_.observeAudioClockAvailability(audioClockAvailable);
 	if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence && simulation_.isPlaying())
 	{
-		if (!audioClockAvailable && !(audioPreparationGateEnabled_ && audioPreparationPending_))
+		if (!audioClockAvailable && !playbackCoordinator_.audioPreparationBlocksStart())
 		{
-			if (previousAudioClockAvailable_)
-				hostReferenceElapsedSeconds_ = referenceElapsedAtCursor(simulation_.cursor());
-			hostReferenceElapsedSeconds_ += (std::max)(0.0f, deltaSeconds);
+			if (audioClockWasLost)
+				playbackCoordinator_.setReferenceElapsedSeconds(referenceElapsedAtCursor(simulation_.cursor()));
+			playbackCoordinator_.advanceReferenceClock(deltaSeconds);
+			const double elapsed = playbackCoordinator_.referenceElapsedSeconds();
 			const double duration = referenceDurationSeconds();
 			const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
 			std::size_t cursor = 0;
@@ -641,21 +628,20 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 			{
 				const std::vector<std::size_t>& eligible = trace->audioEventIndices;
 				cursor = playbacktimebase::cursorForReferenceElapsed(eligible, trace->events.size(),
-					hostReferenceElapsedSeconds_, duration);
+				elapsed, duration);
 			}
-			simulation_.synchronizePlaybackPosition(cursor, hostReferenceElapsedSeconds_, duration,
-				hostReferenceElapsedSeconds_ < duration);
+			simulation_.synchronizePlaybackPosition(cursor, elapsed, duration, elapsed < duration);
 		}
 	}
-	else if (!audioClockAvailable && !(audioPreparationGateEnabled_ && audioPreparationPending_))
+	else if (!audioClockAvailable && !playbackCoordinator_.audioPreparationBlocksStart())
 		simulation_.advance(deltaSeconds);
-	previousAudioClockAvailable_ = audioClockAvailable;
 }
 
 sortinglogic::RenderSnapshot AppController::snapshot() const
 {
 	sortinglogic::RenderSnapshot result = simulation_.snapshot();
-	if (playbackPending_)
+	if (playbackCoordinator_.state(result.buildingTrace, result.hasTrace, result.playing,
+		result.cursor, result.eventCount) == PlaybackCoordinatorState::Queued)
 		result.status = result.buildingTrace
 			? "Playback is queued and will start after trace generation."
 			: "Playback is queued and will start after preparation finishes.";
@@ -671,15 +657,22 @@ sortinglogic::RenderSnapshot AppController::snapshot() const
 void AppController::applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
 	std::uint64_t currentTimelineGeneration, std::uint64_t currentTransportRevision)
 {
-	if (!simulation_.isPlaying() || feedback.generation == 0 || feedback.generation != currentTimelineGeneration ||
-		feedback.transportRevision != currentTransportRevision || feedback.durationFrames == 0)
+	if (!playbackCoordinator_.acceptsAudioPlayhead(simulation_.isPlaying(), feedback.generation,
+		feedback.transportRevision, currentTimelineGeneration, currentTransportRevision, feedback.durationFrames))
 		return;
 	const double duration = preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
 		? playbacktimebase::secondsFromReferenceFrames(feedback.durationFrames)
 		: simulation_.durationSeconds();
 	const double elapsed = playbacktimebase::secondsFromReferenceFrames(feedback.timelineFrame);
 	simulation_.synchronizePlaybackPosition(feedback.sourceCursor, elapsed, duration, feedback.playing);
-	hostReferenceElapsedSeconds_ = elapsed;
+	playbackCoordinator_.setReferenceElapsedSeconds(elapsed);
+}
+
+PlaybackCoordinatorState AppController::playbackState() const
+{
+	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
+	return playbackCoordinator_.state(simulation_.isBuildingTrace(), static_cast<bool>(trace),
+		simulation_.isPlaying(), simulation_.cursor(), trace ? trace->events.size() : 0);
 }
 
 double AppController::referenceDurationSeconds() const
@@ -702,8 +695,9 @@ void AppController::synchronizeReferenceTransport(bool wasPlaying)
 	const std::size_t currentCursor = simulation_.cursor();
 	const double duration = referenceDurationSeconds();
 	if (!wasPlaying || !simulation_.isPlaying())
-		hostReferenceElapsedSeconds_ = referenceElapsedAtCursor(currentCursor);
-	simulation_.synchronizePlaybackPosition(currentCursor, hostReferenceElapsedSeconds_, duration, simulation_.isPlaying());
+		playbackCoordinator_.setReferenceElapsedSeconds(referenceElapsedAtCursor(currentCursor));
+	simulation_.synchronizePlaybackPosition(currentCursor, playbackCoordinator_.referenceElapsedSeconds(),
+		duration, simulation_.isPlaying());
 }
 
 SoundEngine::Parameters AppController::effectiveAudio() const
