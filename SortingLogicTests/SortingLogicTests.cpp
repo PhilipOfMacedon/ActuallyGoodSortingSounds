@@ -830,7 +830,8 @@ namespace
 		std::vector<int> values(11);
 		for (std::size_t i = 0; i < values.size(); ++i) values[i] = static_cast<int>(random() % 7);
 		const SortAlgorithm algorithms[] = {
-			SortAlgorithm::ArrayvOptimizedStoogeStudio, SortAlgorithm::ArrayvQuadStooge, SortAlgorithm::ArrayvSlow
+			SortAlgorithm::Stooge, SortAlgorithm::ArrayvCircloid, SortAlgorithm::ArrayvOptimizedStoogeStudio,
+			SortAlgorithm::ArrayvQuadStooge, SortAlgorithm::ArrayvSlow
 		};
 		for (std::size_t i = 0; i < sizeof(algorithms) / sizeof(algorithms[0]); ++i)
 			for (int direction = 0; direction < 2; ++direction)
@@ -5384,6 +5385,23 @@ int main(int argc, char* argv[])
 			stage = "testNestedBogoVariants";
 			testNestedBogoVariants();
 			std::cout << "Focused stochastic novelty tests: " << checks << " checks, " << failures << " failures.\n";
+			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+		if (argc > 1 && std::string(argv[1]) == "--recursive-novelty-only")
+		{
+			stage = "testIncompleteStoogeOutcome";
+			testIncompleteStoogeOutcome();
+			stage = "testStoogeFamilyVariants";
+			testStoogeFamilyVariants();
+			stage = "testRecursiveExchangeNoveltyVariants";
+			testRecursiveExchangeNoveltyVariants();
+			stage = "testFunSortBoundedOutcome";
+			testFunSortBoundedOutcome();
+			stage = "testBufferedStoogeSort";
+			testBufferedStoogeSort();
+			stage = "testSortingNetworkSchedules";
+			testSortingNetworkSchedules();
+			std::cout << "Focused recursive novelty tests: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 		if (argc > 1 && std::string(argv[1]) == "--dual-pivot-only")

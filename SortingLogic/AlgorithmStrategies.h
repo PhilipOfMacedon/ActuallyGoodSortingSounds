@@ -81,6 +81,17 @@ namespace sortinglogic
 		void selectionBogoSort(detail::Recorder& recorder);
 		void lessBogoSort(detail::Recorder& recorder);
 		void smartBogoBogoSort(detail::Recorder& recorder);
+		void stooge(detail::Recorder& recorder);
+		void bufferedStoogeSort(detail::Recorder& recorder);
+		void optimizedStooge(detail::Recorder& recorder);
+		void optimizedStoogeStudio(detail::Recorder& recorder);
+		void quadStooge(detail::Recorder& recorder);
+		void slowSort(detail::Recorder& recorder);
+		void sillySort(detail::Recorder& recorder);
+		void snuffleSort(detail::Recorder& recorder);
+		void circloidSort(detail::Recorder& recorder);
+		void completeGraphSort(detail::Recorder& recorder);
+		void funSort(detail::Recorder& recorder);
 		void aaTreeSort(detail::Recorder& recorder);
 		void avlTreeSort(detail::Recorder& recorder);
 		void splayTreeSort(detail::Recorder& recorder);

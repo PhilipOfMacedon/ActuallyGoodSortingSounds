@@ -1618,3 +1618,11 @@ Moved Bogo, Bozo, randomized exchange variants, Guess variants, and nested Bogo 
 The first strengthened test run caught that metric-name difference in both builds; the assertion was corrected without changing production behavior. x64 Debug and Release solution builds passed, followed by the focused stochastic suite in both configurations with 107,922 checks and zero failures. `git diff --check` passed.
 
 Next: continue removing remaining coordinator-owned implementations; then measure the residual dispatch/build-request structure and choose whether its cleanup is a separate low-risk slice.
+
+## 2026-10-20 — extract recursive novelty and bounded recursive methods
+
+Moved Stooge, Buffered/Optimized/Studio/Quad Stooge, Slow, Circloid, Silly, Snuffle, Complete Graph, and Fun Sort implementations into `RecursiveNoveltyStrategies.cpp`. Recursive helpers now have internal linkage; public strategy entry points are explicit. The buffered-Stooge outcome validation remains at trace-finalization, where it belongs to the shared build contract.
+
+Added plain Stooge and Circloid to the existing family cases and introduced a focused command covering the recursive novelty tests plus sorting-network schedules for Complete Graph. x64 Debug and Release solution builds passed; both focused suites passed with 33,979 checks and zero failures. `git diff --check` passed.
+
+Next: continue extracting coordinator-owned algorithms and then reassess the remaining implementation switch, catalog, and request builder boundaries.
