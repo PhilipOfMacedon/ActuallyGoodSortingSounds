@@ -46,6 +46,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AlgorithmProfileView.cpp" />
     <ClCompile Include="ActiveRoleLookup.cpp" />
     <ClCompile Include="AppearanceEditorLayout.cpp" />
     <ClCompile Include="AppearanceEditorModel.cpp" />

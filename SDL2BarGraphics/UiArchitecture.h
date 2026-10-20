@@ -156,8 +156,10 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 	const std::map<std::string, UiColor>& resolvedPalette);
 
 enum class UiPaintPrimitive { Rectangle, Border, Text, Icon };
-enum class UiPaintMaterial { Solid, Panel, Popup, Accent, ModalDim };
-enum class UiPaintLayer { Backdrop, Panel, Accent, Content, Text, SettingsText };
+enum class UiPaintMaterial { Solid, Panel, Button, Timeline, TimelineThumb, Popup, Accent, ModalDim };
+enum class UiPaintLayer { Backdrop, Panel, Accent, Content, Text, SettingsText, MainControls, MainControlsOverlay, MainText };
+enum class UiTextAlignment { Center, Left, Right };
+enum class UiTextOverflow { Fit, Clamp, Marquee };
 struct UiPaintCommand
 {
 	UiPaintPrimitive primitive;
@@ -170,15 +172,19 @@ struct UiPaintCommand
 	UiRect clip;
 	bool hasClip;
 	float textHeight;
+	UiTextAlignment textAlignment;
+	UiTextOverflow textOverflow;
 	UiPaintCommand(UiPaintPrimitive kind = UiPaintPrimitive::Rectangle, const UiRect& area = UiRect(),
 		const UiColor& tint = UiColor(), const std::string& label = std::string())
 		: primitive(kind), bounds(area), color(tint), text(label), elementId(), material(UiPaintMaterial::Solid),
-			layer(UiPaintLayer::Content), clip(), hasClip(false), textHeight(12.0f) {}
+			layer(UiPaintLayer::Content), clip(), hasClip(false), textHeight(12.0f),
+			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit) {}
 	UiPaintCommand(UiPaintPrimitive kind, const UiRect& area, const UiColor& tint, const std::string& label,
 		const std::string& stableElementId, UiPaintMaterial paintMaterial, UiPaintLayer paintLayer,
 		const UiRect& clipBounds, bool clipped, float targetTextHeight)
 		: primitive(kind), bounds(area), color(tint), text(label), elementId(stableElementId), material(paintMaterial),
-			layer(paintLayer), clip(clipBounds), hasClip(clipped), textHeight(targetTextHeight) {}
+			layer(paintLayer), clip(clipBounds), hasClip(clipped), textHeight(targetTextHeight),
+			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit) {}
 };
 
 class UiPaintContext

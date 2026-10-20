@@ -70,6 +70,9 @@ namespace
 		case UiPaintLayer::Content: return RenderLayer::SettingsDropdown;
 		case UiPaintLayer::Text: return RenderLayer::SettingsDropdownText;
 		case UiPaintLayer::SettingsText: return RenderLayer::SettingsText;
+		case UiPaintLayer::MainControls: return RenderLayer::MainControls;
+		case UiPaintLayer::MainControlsOverlay: return layerOffset(RenderLayer::MainControls, 1);
+		case UiPaintLayer::MainText: return RenderLayer::MainText;
 		}
 		return RenderLayer::SettingsDropdown;
 	}
@@ -79,6 +82,9 @@ namespace
 		switch (material)
 		{
 		case UiPaintMaterial::Panel: return PanelMaterial;
+		case UiPaintMaterial::Button: return ButtonMaterial;
+		case UiPaintMaterial::Timeline: return TimelineMaterial;
+		case UiPaintMaterial::TimelineThumb: return MaterialId::TimelineThumb;
 		case UiPaintMaterial::Popup: return PopupMaterial;
 		case UiPaintMaterial::Accent: return AccentMaterial;
 		case UiPaintMaterial::ModalDim: return MaterialId::ModalDim;
@@ -370,7 +376,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), settingsUi_(), appearanceUi_(), settingsPanelModel_(), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+	mainUi_(), settingsUi_(), appearanceUi_(), settingsPanelModel_(), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), algorithmProfileView_(measureLogicalTextWidth), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
@@ -383,11 +389,6 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	timelineBounds_(), timelineControlBounds_(), timelineLeftArrowBounds_(), timelineRightArrowBounds_(),
 	headerBounds_(), gearBounds_(), settingsPanelBounds_(), settingsContentBounds_(), draggingTimeline_(false),
 	appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
-	algorithmProfileScrollViewport_(), algorithmProfileComplexityLayout_(measureLogicalTextWidth),
-	algorithmProfileDescriptionLayout_(measureLogicalTextWidth),
-	algorithmProfileScrollTrack_(), algorithmProfileScrollThumb_(),
-	algorithmProfileAlgorithm_(), algorithmProfileLineHeight_(18.0f), algorithmProfileVisible_(false), draggingAlgorithmProfileScroll_(false),
-	algorithmProfileDragStartY_(0.0f), algorithmProfileDragStartOffset_(0.0f),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
 	inlineEditWidgetId_(), inlineEditBuffer_(), inlineEditReplaceOnNextDigit_(false), inlineEditAppearanceValue_(false),
 	appearanceDraft_(settings.appearance), appearanceEditorModel_(), appearanceError_(), appearanceLayout_(),
@@ -1175,47 +1176,29 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		}
 		return true;
 	}
-	if (!settingsOpen() && algorithmProfileVisible_ && event.type == SDL_MOUSEWHEEL)
+	if (!settingsOpen() && event.type == SDL_MOUSEWHEEL)
 	{
 		int mouseX = 0, mouseY = 0;
 		SDL_GetMouseState(&mouseX, &mouseY);
-		if (algorithmProfileScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+		if (algorithmProfileView_.handleWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
 			return true;
 	}
-	if (!settingsOpen() && algorithmProfileVisible_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
-		algorithmProfileScrollViewport_.maximumOffset() > 0.0f &&
-		algorithmProfileScrollTrack_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+	if (!settingsOpen() && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+		algorithmProfileView_.pointerDown(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
 	{
-		const float trackTravel = algorithmProfileScrollTrack_.height - algorithmProfileScrollThumb_.height;
-		if (trackTravel > 0.0f && !algorithmProfileScrollThumb_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
-		{
-			const float fraction = std::max(0.0f, std::min(1.0f,
-				(static_cast<float>(event.button.y) - algorithmProfileScrollTrack_.y - algorithmProfileScrollThumb_.height * 0.5f) / trackTravel));
-			algorithmProfileScrollViewport_.setOffset(fraction * algorithmProfileScrollViewport_.maximumOffset());
-		}
-		draggingAlgorithmProfileScroll_ = true;
-		algorithmProfileDragStartY_ = static_cast<float>(event.button.y);
-		algorithmProfileDragStartOffset_ = algorithmProfileScrollViewport_.offset();
 		return true;
 	}
-	if (!settingsOpen() && algorithmProfileVisible_ && event.type == SDL_MOUSEMOTION && draggingAlgorithmProfileScroll_)
+	if (!settingsOpen() && event.type == SDL_MOUSEMOTION &&
+		algorithmProfileView_.pointerMove(static_cast<float>(event.motion.y)))
 	{
-		const float trackTravel = algorithmProfileScrollTrack_.height - algorithmProfileScrollThumb_.height;
-		if (trackTravel > 0.0f)
-		{
-			const float ratio = algorithmProfileScrollViewport_.maximumOffset() / trackTravel;
-			algorithmProfileScrollViewport_.setOffset(algorithmProfileDragStartOffset_ +
-				(static_cast<float>(event.motion.y) - algorithmProfileDragStartY_) * ratio);
-		}
 		return true;
 	}
-	if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT && draggingAlgorithmProfileScroll_)
+	if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT && algorithmProfileView_.pointerUp())
 	{
-		draggingAlgorithmProfileScroll_ = false;
 		return true;
 	}
 	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
-		draggingAlgorithmProfileScroll_ = false;
+		algorithmProfileView_.pointerUp();
 	if (!settingsOpen() && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
 		settings_.visual.panelExpanded && timelineControlBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
 	{
@@ -1382,9 +1365,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	const UiPresetId preset = renderPreferences_.appearance.activePreset;
 	const bool classicVga = preset == UiPresetId::FlatVgaDos || preset == UiPresetId::ClassicWindows95;
 	const bool windows95 = preset == UiPresetId::ClassicWindows95;
-	algorithmProfileVisible_ = false;
-	algorithmProfileScrollTrack_ = UiRect();
-	algorithmProfileScrollThumb_ = UiRect();
+	algorithmProfileView_.beginFrame();
 	submitBox(headerBounds_, windows95 ? palette.accent : palette.panel, PanelMaterial, UiLayer);
 	if (layoutResult_.menuBar.height > 0.0f)
 	{
@@ -1503,150 +1484,20 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	}
 	if (classicVga && width_ >= 900 && layoutResult_.setupRail.height > 220.0f)
 	{
-		const UiRect rail = layoutResult_.setupRail;
+		AlgorithmProfilePalette profilePalette;
+		profilePalette.background = toUiColor(palette.background);
+		profilePalette.panel = toUiColor(palette.panel);
+		profilePalette.border = toUiColor(palette.border);
+		profilePalette.timelineRail = toUiColor(palette.timelineRail);
+		profilePalette.accent = toUiColor(palette.accent);
+		profilePalette.text = toUiColor(palette.text);
+		profilePalette.mutedText = toUiColor(palette.mutedText);
 		const UiRect seed = mainUi_.find("seed_readout")->bounds();
-		const float cardY = std::max(seed.y + seed.height + 12.0f, rail.y + 258.0f);
-		const float cardBottom = rail.y + rail.height - 10.0f;
-		const float cardHeight = std::max(0.0f, cardBottom - cardY);
-		if (cardHeight >= 78.0f)
-		{
-			algorithmProfileVisible_ = true;
-			const UiRect card(rail.x + 8.0f, cardY, std::max(0.0f, rail.width - 16.0f), cardHeight);
-			submitBox(card, palette.background, PanelMaterial, UiLayer);
-			const glm::vec4 edge(palette.border.r, palette.border.g, palette.border.b, palette.border.a);
-			const float border = 1.0f;
-			submitBox(UiRect(card.x, card.y, card.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-			submitBox(UiRect(card.x, card.y + card.height - border, card.width, border), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-			submitBox(UiRect(card.x, card.y, border, card.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-			submitBox(UiRect(card.x + card.width - border, card.y, border, card.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-			const UiAlgorithmCapabilities& capabilities = screenModel_.algorithmCapabilities;
-			std::ostringstream inputTypes;
-			inputTypes << "Supported input: ";
-			if (capabilities.supportsNormalizedFloat) inputTypes << "FLOAT";
-			if (capabilities.supportsNormalizedFloat && capabilities.supportsIntegerKeys) inputTypes << " / ";
-			if (capabilities.supportsIntegerKeys) inputTypes << "INTEGER";
-			if (!capabilities.supportsNormalizedFloat && !capabilities.supportsIntegerKeys) inputTypes << "NONE";
-			std::ostringstream safeLimit;
-			safeLimit << "Safe setup limit: " << capabilities.safeMaximumItemCount << " bars";
-			if (!labels_["#rail_profile_title"])
-			{
-				labels_["#rail_profile_title"].reset(new TextLabel("ALGORITHM PROFILE", "Courier New Bold", 14, SDL_Color{ 255, 255, 255, 255 }));
-				labels_["#rail_shortcuts_title"].reset(new TextLabel("KEYBOARD", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 }));
-				labels_["#rail_shortcuts"].reset(new TextLabel("SPACE Play  |  1 Build  |  D Order", "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 }));
-				labels_["#rail_fullscreen"].reset(new TextLabel("ALT+ENTER Fullscreen", "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 }));
-			}
-			if (algorithmProfileAlgorithm_ != screenModel_.algorithm)
-			{
-				algorithmProfileAlgorithm_ = screenModel_.algorithm;
-				algorithmProfileScrollViewport_.setOffset(0.0f);
-			}
-
-			const float profileTextHeight = 13.0f;
-			const ResolvedTextStyle profileTextStyle = resolveTextStyle(profileTextHeight);
-			const ResolvedTextStyle complexityTextStyle = resolveTextStyle(11.0f);
-			const bool showShortcuts = cardHeight >= 112.0f;
-			float shortcutY = card.y + 70.0f;
-			if (showShortcuts && cardHeight >= 150.0f) shortcutY = card.y + card.height - 58.0f;
-			const float profileBottom = showShortcuts ? shortcutY - 10.0f : card.y + card.height - 8.0f;
-			const float profileWidth = std::max(0.0f, card.width - 16.0f);
-			const std::string complexity = (capabilities.available ? capabilities.timeComplexity : "Unknown") +
-				std::string(" time  |  ") + (capabilities.available ? capabilities.spaceComplexity : "Unknown") + " space";
-			algorithmProfileComplexityLayout_.update(complexity, profileWidth, complexityTextStyle);
-			const std::vector<std::string>& complexityLines = algorithmProfileComplexityLayout_.lines();
-			const float complexityLineHeight = 13.0f;
-			const ClipBounds cardClip(card.x + 2.0f, card.y + 2.0f, std::max(0.0f, card.width - 4.0f),
-				std::max(0.0f, card.height - 4.0f));
-			drawText(*labels_["#rail_profile_title"], UiRect(card.x + 8.0f, card.y + 8.0f, profileWidth, 15.0f),
-				12.0f, palette.text, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
-			for (std::size_t lineIndex = 0; lineIndex < complexityLines.size(); ++lineIndex)
-			{
-				const std::string labelId = "#rail_profile_complexity_" + std::to_string(lineIndex);
-				if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(complexityLines[lineIndex], "Courier New Bold", 11, SDL_Color{ 255, 255, 255, 255 }));
-				else labels_[labelId]->setContent(complexityLines[lineIndex]);
-				drawText(*labels_[labelId], UiRect(card.x + 8.0f, card.y + 27.0f + lineIndex * complexityLineHeight, profileWidth, complexityLineHeight),
-					complexityTextStyle, palette.mutedText, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
-			}
-
-			const float factsY = card.y + 30.0f + static_cast<float>(complexityLines.size()) * complexityLineHeight + 3.0f;
-			const std::string properties = std::string(capabilities.stable ? "STABLE" : "UNSTABLE") + "  |  " +
-				(capabilities.inPlace ? "IN-PLACE" : "AUXILIARY SPACE");
-			const std::string factTexts[] = { properties, inputTypes.str(), safeLimit.str() };
-			const char* factIds[] = { "#rail_profile_properties", "#rail_profile_input", "#rail_profile_limit" };
-			const float factLineHeight = 18.0f;
-			for (std::size_t factIndex = 0; factIndex < 3; ++factIndex)
-			{
-				if (cardHeight < factsY - card.y + (factIndex + 1) * factLineHeight + 8.0f) break;
-				if (!labels_[factIds[factIndex]]) labels_[factIds[factIndex]].reset(new TextLabel(factTexts[factIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
-				else labels_[factIds[factIndex]]->setContent(factTexts[factIndex]);
-				drawText(*labels_[factIds[factIndex]], UiRect(card.x + 8.0f, factsY + factIndex * factLineHeight, profileWidth, factLineHeight),
-					13.0f, palette.text, TextLayer, cardClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Center);
-			}
-
-			const float descriptionTop = factsY + 3.0f * factLineHeight + 3.0f;
-			const UiRect profileFrame(card.x + 6.0f, descriptionTop, std::max(0.0f, card.width - 12.0f),
-				std::max(0.0f, profileBottom - descriptionTop));
-			const UiRect profileTextViewport(profileFrame.x + 7.0f, profileFrame.y + 6.0f,
-				std::max(0.0f, profileFrame.width - 24.0f), std::max(0.0f, profileFrame.height - 12.0f));
-			if (!capabilities.behavior.empty() && profileTextViewport.height > 0.0f)
-			{
-				submitBox(profileFrame, palette.panel, ButtonMaterial, UiLayer);
-				submitBox(UiRect(profileFrame.x, profileFrame.y, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-				submitBox(UiRect(profileFrame.x, profileFrame.y + profileFrame.height - 1.0f, profileFrame.width, 1.0f), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-				submitBox(UiRect(profileFrame.x, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-				submitBox(UiRect(profileFrame.x + profileFrame.width - 1.0f, profileFrame.y, 1.0f, profileFrame.height), edge, ButtonMaterial, layerOffset(UiLayer, 1));
-				algorithmProfileDescriptionLayout_.update(capabilities.behavior, profileTextViewport.width, profileTextStyle);
-				const std::vector<std::string>& descriptionLines = algorithmProfileDescriptionLayout_.lines();
-				algorithmProfileLineHeight_ = std::max(17.0f, profileTextStyle.logicalHeight * 1.42f);
-				algorithmProfileScrollViewport_.configure(profileTextViewport,
-					static_cast<float>(descriptionLines.size()) * algorithmProfileLineHeight_, algorithmProfileLineHeight_,
-					algorithmProfileScrollViewport_.offset());
-				const ClipBounds profileClip(profileTextViewport.x, profileTextViewport.y,
-					profileTextViewport.width, profileTextViewport.height);
-				const std::size_t firstLine = algorithmProfileScrollViewport_.firstVisibleItem(algorithmProfileLineHeight_);
-				const std::size_t visibleLines = algorithmProfileScrollViewport_.visibleItemCount(descriptionLines.size(), algorithmProfileLineHeight_);
-				const std::size_t endLine = std::min(descriptionLines.size(), firstLine + visibleLines);
-				for (std::size_t lineIndex = firstLine; lineIndex < endLine; ++lineIndex)
-				{
-					const std::string labelId = "#rail_profile_line_" + std::to_string(lineIndex);
-					if (!labels_[labelId]) labels_[labelId].reset(new TextLabel(descriptionLines[lineIndex], "Courier New Bold", 13, SDL_Color{ 255, 255, 255, 255 }));
-					else labels_[labelId]->setContent(descriptionLines[lineIndex]);
-					const float lineY = profileTextViewport.y + static_cast<float>(lineIndex) * algorithmProfileLineHeight_ - algorithmProfileScrollViewport_.offset();
-					drawText(*labels_[labelId], UiRect(profileTextViewport.x, lineY, profileTextViewport.width, algorithmProfileLineHeight_),
-						profileTextStyle, palette.text, TextLayer, profileClip, TextOverflowPolicy::Clamp, TextHorizontalAlignment::Left);
-				}
-			}
-			else
-			{
-				algorithmProfileScrollViewport_.configure(UiRect(), 0.0f, profileTextHeight, 0.0f);
-			}
-			if (algorithmProfileScrollViewport_.maximumOffset() > 0.0f && profileFrame.height > 0.0f)
-			{
-				algorithmProfileScrollTrack_ = UiRect(profileFrame.x + profileFrame.width - 11.0f,
-					profileTextViewport.y, 5.0f, profileTextViewport.height);
-				submitBox(algorithmProfileScrollTrack_, palette.timelineRail, TimelineMaterial, UiLayer);
-				const float thumbHeight = std::min(algorithmProfileScrollTrack_.height,
-					std::max(18.0f, algorithmProfileScrollTrack_.height * profileTextViewport.height /
-						std::max(1.0f, algorithmProfileScrollViewport_.contentExtent())));
-				const float thumbTravel = std::max(0.0f, algorithmProfileScrollTrack_.height - thumbHeight);
-				const float scrollFraction = algorithmProfileScrollViewport_.maximumOffset() > 0.0f
-					? algorithmProfileScrollViewport_.offset() / algorithmProfileScrollViewport_.maximumOffset() : 0.0f;
-				algorithmProfileScrollThumb_ = UiRect(algorithmProfileScrollTrack_.x,
-					algorithmProfileScrollTrack_.y + thumbTravel * scrollFraction, algorithmProfileScrollTrack_.width, thumbHeight);
-				submitBox(algorithmProfileScrollThumb_, palette.accent, MaterialId::TimelineThumb, layerOffset(UiLayer, 1));
-			}
-			if (showShortcuts)
-			{
-				const float separatorY = shortcutY - 8.0f;
-				submitBox(UiRect(card.x + 8.0f, separatorY, std::max(0.0f, card.width - 16.0f), 1.0f), edge,
-					ButtonMaterial, layerOffset(UiLayer, 1));
-				drawText(*labels_["#rail_shortcuts_title"], UiRect(card.x + 8.0f, shortcutY, card.width - 16.0f, 15.0f),
-					12.0f, palette.text, TextLayer);
-				drawText(*labels_["#rail_shortcuts"], UiRect(card.x + 8.0f, shortcutY + 18.0f, card.width - 16.0f, 15.0f),
-					11.0f, palette.mutedText, TextLayer);
-				drawText(*labels_["#rail_fullscreen"], UiRect(card.x + 8.0f, shortcutY + 34.0f, card.width - 16.0f, 15.0f),
-					11.0f, palette.mutedText, TextLayer);
-			}
-		}
+		auto renderProfileCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
+		DispatchingUiPaintContext<decltype(renderProfileCommand)> paintContext(renderProfileCommand);
+		algorithmProfileView_.compose(screenModel_.algorithm, screenModel_.algorithmCapabilities,
+			true, width_, layoutResult_.setupRail, seed, resolveTextStyle(13.0f), resolveTextStyle(11.0f),
+			profilePalette, paintContext);
 	}
 	if (snapshot.hasTrace || snapshot.buildingTrace || classicVga)
 	{
@@ -2955,7 +2806,11 @@ void ControlPanel::drawUiPaintCommand(const UiPaintCommand& command)
 	}
 	if (!label) return;
 	label->setContent(command.text);
-	drawText(*label, command.bounds, command.textHeight, color, layer, clip);
+	const TextHorizontalAlignment alignment = command.textAlignment == UiTextAlignment::Left ? TextHorizontalAlignment::Left :
+		(command.textAlignment == UiTextAlignment::Right ? TextHorizontalAlignment::Right : TextHorizontalAlignment::Center);
+	const TextOverflowPolicy overflow = command.textOverflow == UiTextOverflow::Clamp ? TextOverflowPolicy::Clamp :
+		(command.textOverflow == UiTextOverflow::Marquee ? TextOverflowPolicy::Marquee : TextOverflowPolicy::Fit);
+	drawText(*label, command.bounds, command.textHeight, color, layer, clip, overflow, alignment);
 }
 
 void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)

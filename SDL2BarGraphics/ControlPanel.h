@@ -14,13 +14,13 @@
 #include "SettingsPanelModel.h"
 #include "SettingsPanelControls.h"
 #include "SettingsPanelLayout.h"
+#include "AlgorithmProfileView.h"
 #include "TextLabel.h"
 #include "ThemePalette.h"
 #include "UiLayer.h"
 #include "UiArchitecture.h"
 #include "UserSettings.h"
 #include "LayoutMetrics.h"
-#include "TextBlockLayout.h"
 
 union SDL_Event;
 class Renderer2D;
@@ -73,6 +73,7 @@ private:
 	AlgorithmBrowserModel algorithmBrowser_;
 	AlgorithmBrowserView algorithmBrowserView_;
 	SettingsPanelView settingsPanelView_;
+	AlgorithmProfileView algorithmProfileView_;
 	UiScreenModel screenModel_;
 	UiLayoutResult layoutResult_;
 	UserPreferences renderPreferences_;
@@ -103,17 +104,6 @@ private:
 	bool draggingTimeline_;
 	bool appearanceSearchFocused_;
 	bool drawingAppearanceEditor_;
-	UiScrollViewport algorithmProfileScrollViewport_;
-	TextBlockLayout algorithmProfileComplexityLayout_;
-	TextBlockLayout algorithmProfileDescriptionLayout_;
-	UiRect algorithmProfileScrollTrack_;
-	UiRect algorithmProfileScrollThumb_;
-	std::string algorithmProfileAlgorithm_;
-	float algorithmProfileLineHeight_;
-	bool algorithmProfileVisible_;
-	bool draggingAlgorithmProfileScroll_;
-	float algorithmProfileDragStartY_;
-	float algorithmProfileDragStartOffset_;
 	UiRect chartViewport_;
 	int width_;
 	int height_;

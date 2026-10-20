@@ -1359,3 +1359,17 @@ Verification:
 - `git diff --check` passed.
 
 Next: continue with the remaining sorting-core concentration only where a cohesive ownership boundary exists; otherwise move to the audit's settings/configuration and UI ownership findings rather than splitting files mechanically.
+
+## 2026-10-20 — extract the algorithm profile view
+
+Moved the responsive algorithm profile card, wrapped text layout, viewport state, wheel handling, and scrollbar capture/drag into `SDL2BarGraphics/AlgorithmProfileView`. It consumes `UiAlgorithmCapabilities` and logical geometry, emits shared `UiPaintCommand`s, and has no SDL or SortingLogic dependency. `ControlPanel` now delegates profile composition and pointer/wheel behavior to the view.
+
+Extended the paint command contract with text alignment and overflow policy so the profile's left-aligned, clipped paragraphs retain their existing appearance. The shared command adapter maps the added main-control/text layers and timeline materials to the existing renderer pipeline; no new renderer or material state was introduced.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64 Debug/Release and x86 Debug/Release (`x86` is the solution platform label for Win32).
+- `AppFrameworkTests` passed in all four configurations. New headless checks cover responsive visibility, paint layers, clipped/left-aligned body text, wheel hit testing, scrollbar page/drag behavior, and resetting scroll on algorithm changes.
+- `git diff --check` passed. No live-window screenshot review was run for this slice.
+
+Next: continue extracting actual view/session ownership from `ControlPanel`, starting with the appearance editor, while preserving the current modal and draft/apply/cancel behavior.

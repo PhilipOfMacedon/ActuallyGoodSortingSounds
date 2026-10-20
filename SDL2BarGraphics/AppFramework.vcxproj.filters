@@ -4,6 +4,7 @@
     <Filter Include="Source Files"><UniqueIdentifier>{D91BDE11-6C53-45DC-A8A2-1690834B7937}</UniqueIdentifier><Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions></Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AlgorithmProfileView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ActiveRoleLookup.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AppearanceEditorLayout.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AppearanceEditorModel.cpp"><Filter>Source Files</Filter></ClCompile>

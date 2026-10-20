@@ -18,6 +18,7 @@
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
 #include "../SDL2BarGraphics/ActiveRoleLookup.h"
+#include "../SDL2BarGraphics/AlgorithmProfileView.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
 #include "../SDL2BarGraphics/AppearanceEditorModel.h"
 #include "../SDL2BarGraphics/AudioSettingsActions.h"
@@ -1453,6 +1454,76 @@ namespace
 		check(!calculateAppearanceEditorLayout(0.0f, 480.0f).valid &&
 			!calculateAppearanceEditorLayout(640.0f, 0.0f).valid,
 			"appearance layout stays invalid until the window has positive logical dimensions");
+	}
+
+	void testAlgorithmProfileView()
+	{
+		TextBlockLayout::MeasureTextWidth measure = [](const std::string& text, const ResolvedTextStyle& style)
+		{
+			return static_cast<float>(text.size()) * style.logicalHeight * 0.55f;
+		};
+		AlgorithmProfileView view(measure);
+		UiAlgorithmCapabilities capabilities;
+		capabilities.available = true;
+		capabilities.stable = true;
+		capabilities.inPlace = false;
+		capabilities.supportsNormalizedFloat = true;
+		capabilities.supportsIntegerKeys = true;
+		capabilities.safeMaximumItemCount = 1024;
+		capabilities.timeComplexity = "O(n log n)";
+		capabilities.spaceComplexity = "O(n)";
+		for (int i = 0; i < 80; ++i) capabilities.behavior += "Stable merge phases preserve item order and use a reversible auxiliary workspace. ";
+
+		AlgorithmProfilePalette palette;
+		palette.background = UiColor(0.05f, 0.06f, 0.07f, 1.0f);
+		palette.panel = UiColor(0.1f, 0.12f, 0.14f, 1.0f);
+		palette.border = UiColor(0.3f, 0.4f, 0.45f, 1.0f);
+		palette.timelineRail = UiColor(0.2f, 0.25f, 0.28f, 1.0f);
+		palette.accent = UiColor(0.1f, 0.8f, 0.7f, 1.0f);
+		palette.text = UiColor(0.9f, 0.95f, 1.0f, 1.0f);
+		palette.mutedText = UiColor(0.65f, 0.7f, 0.75f, 1.0f);
+		const ResolvedTextStyle profileStyle(UiFontReference(), 13, 96, 13.0f);
+		const ResolvedTextStyle complexityStyle(UiFontReference(), 11, 96, 11.0f);
+		const UiRect rail(0.0f, 30.0f, 360.0f, 1000.0f);
+		const UiRect seed(0.0f, 270.0f, 360.0f, 30.0f);
+		RecordingUiPaintContext paint;
+		view.compose("merge", capabilities, true, 1920, rail, seed, profileStyle, complexityStyle, palette, paint);
+		check(view.visible() && view.maximumScrollOffset() > 0.0f && view.scrollTrackBounds().width > 0.0f,
+			"algorithm profile composes a scroll track when descriptive text exceeds its clipped viewport");
+
+		bool hasLeftClippedText = false;
+		bool hasTitle = false;
+		for (std::size_t i = 0; i < paint.commands().size(); ++i)
+		{
+			const UiPaintCommand& command = paint.commands()[i];
+			if (command.elementId == "#rail_profile_title") hasTitle = command.layer == UiPaintLayer::MainText;
+			if (command.elementId.find("#rail_profile_line_") == 0)
+				hasLeftClippedText = hasLeftClippedText || (command.hasClip && command.textAlignment == UiTextAlignment::Left &&
+					command.textOverflow == UiTextOverflow::Clamp);
+		}
+		check(hasTitle && hasLeftClippedText, "algorithm profile paint commands retain title layering and left-clipped paragraph text");
+
+		const UiRect viewport = view.scrollViewportBounds();
+		const UiRect track = view.scrollTrackBounds();
+		const float initialOffset = view.scrollOffset();
+		check(!view.handleWheel(viewport.x - 1.0f, viewport.y + 1.0f, -1) && view.scrollOffset() == initialOffset,
+			"algorithm profile consumes wheel input only when the pointer is inside its text viewport");
+		check(view.handleWheel(viewport.x + 1.0f, viewport.y + 1.0f, -2) && view.scrollOffset() > initialOffset,
+			"algorithm profile wheel scrolling advances its own viewport");
+		check(view.pointerDown(track.x + 1.0f, track.y + track.height - 1.0f),
+			"algorithm profile scrollbar captures pointer input");
+		const float lowerOffset = view.scrollOffset();
+		check(view.pointerMove(track.y + 1.0f) && view.scrollOffset() < lowerOffset,
+			"algorithm profile scrollbar drag maps pointer motion back to the text offset");
+		check(view.pointerUp() && !view.pointerUp(), "algorithm profile releases scrollbar pointer capture exactly once");
+
+		paint.clear();
+		view.compose("other", capabilities, true, 1920, rail, seed, profileStyle, complexityStyle, palette, paint);
+		check(view.scrollOffset() == 0.0f, "changing the selected algorithm resets the profile description to its beginning");
+		view.beginFrame();
+		view.compose("other", capabilities, false, 800, rail, seed, profileStyle, complexityStyle, palette, paint);
+		check(!view.visible() && !view.handleWheel(viewport.x + 1.0f, viewport.y + 1.0f, -1),
+			"algorithm profile stays hidden and ignores scroll input when its responsive layout is unavailable");
 	}
 
 	void testAppearanceEditorModel()
@@ -3167,6 +3238,7 @@ int main(int argc, char* argv[])
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
 	testAppearanceEditorLayout();
+	testAlgorithmProfileView();
 	testAppearanceEditorModel();
 	testAlgorithmBrowserModel();
 	testUiOverlayState();
