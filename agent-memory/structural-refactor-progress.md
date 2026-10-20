@@ -977,6 +977,23 @@ Verification:
 
 Follow-up: the next section records the Release PDB warning fix and profile comparison.
 
+## 2026-10-20 — narrow ControlPanel facade dependencies
+
+Status: implementation and four-configuration build verification complete.
+
+- Removed direct SDL event, `Renderer2D`, `Window`, and full `SortingLogic` includes from the `ControlPanel` public header. Its API now forward-declares the referenced host and trace types; `ControlPanel.cpp` explicitly includes the concrete implementations it uses.
+- Kept `RenderingTypes.h` in the header because the facade's private renderer helper signatures use its value types. This is a narrow dependency cleanup, not a claim that the panel itself is now renderer-independent.
+- Reconciled two stale audit findings against the current tree: `AppAction` is already in `AppActions.h`, and `AlgorithmBrowserView`/`SettingsPanelView` already use the shared runtime/test `UiPaintContext`. The remaining UI debt is concentrated in `ControlPanel` ownership and in the interactive controls that still submit directly to `Renderer2D`.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64 Debug/Release and Win32 Debug/Release.
+- `AppFrameworkTests` passed in all four configurations.
+- x64 Debug and Release `SortingLogicTests --core-contracts-only` each passed 39,535 checks with 0 failures.
+- `git diff --check` passed; Git reported only its configured LF-to-CRLF notices.
+
+Next: continue the UI boundary work from the corrected current-tree audit. Prefer extracting one cohesive owner from `ControlPanel` (appearance editing or main profile composition) rather than moving rendering code without ownership changes.
+
 ## 2026-10-20 — remove Release framework PDB warnings
 
 Status: implementation and warning/performance verification complete.

@@ -5,13 +5,11 @@
 #include <string>
 #include <vector>
 
-#include <SDL.h>
-
 #include "AppearanceEditorLayout.h"
 #include "AppearanceEditorModel.h"
 #include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
-#include "Renderer2D.h"
+#include "RenderingTypes.h"
 #include "SettingsPanelView.h"
 #include "SettingsPanelModel.h"
 #include "SettingsPanelControls.h"
@@ -21,10 +19,19 @@
 #include "UiLayer.h"
 #include "UiArchitecture.h"
 #include "UserSettings.h"
-#include "Window.h"
 #include "LayoutMetrics.h"
 #include "TextBlockLayout.h"
-#include "../SortingLogic/SortingLogic.h"
+
+union SDL_Event;
+class Renderer2D;
+class Window;
+
+namespace sortinglogic
+{
+	struct AlgorithmDescriptor;
+	struct CommandResult;
+	struct RenderSnapshot;
+}
 
 class ControlPanel
 {

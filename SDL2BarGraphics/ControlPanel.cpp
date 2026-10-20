@@ -9,12 +9,17 @@
 #include <set>
 #include <sstream>
 
+#include <SDL.h>
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
 #include <commdlg.h>
 
 #include "LayoutMetrics.h"
+#include "Renderer2D.h"
+#include "Window.h"
+#include "../SortingLogic/SortingLogic.h"
 #include "UiActionRouting.h"
 #include "SdlUiEventAdapter.h"
 #include "SettingsScroll.h"
