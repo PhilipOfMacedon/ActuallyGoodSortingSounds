@@ -41,6 +41,12 @@ struct AppearanceEditorActionResult
 	AppearanceEditorEffect effect;
 };
 
+enum class AppearanceInlineEditField
+{
+	Number,
+	Alpha
+};
+
 // Owns the appearance editor's retained controls, transactional session, and
 // responsive layout. Native dialogs and GPU resource submission stay in the
 // platform-facing ControlPanel adapter.
@@ -54,6 +60,9 @@ public:
 	void begin(const UiAppearancePreferences& current);
 	void restore();
 	void accept(const UiAppearancePreferences& committed);
+	bool beginInlineValueEdit(AppearanceInlineEditField field, std::string& initialText);
+	void showInlineValueEdit(AppearanceInlineEditField field, const std::string& text);
+	bool commitInlineValueEdit(AppearanceInlineEditField field, bool parsedSuccessfully, double value);
 	void synchronizeControls(const AppearanceFontFamilyProvider& fontFamilies,
 		const AppearanceFontStyleProvider& fontStyles);
 	AppearanceEditorActionResult handleAction(const UiAction& action,

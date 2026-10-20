@@ -8,6 +8,7 @@
 #include <chrono>
 #include <algorithm>
 #include <iomanip>
+#include <sstream>
 #include <thread>
 #include <atomic>
 #include <limits>
@@ -1714,6 +1715,28 @@ namespace
 			result = view.handleAction(action, fontStyles);
 			check(result.effect == AppearanceEditorEffect::BeginNumericEdit,
 				"appearance view asks the host to start numeric text entry");
+			std::string initialText;
+			check(view.beginInlineValueEdit(AppearanceInlineEditField::Number, initialText),
+				"appearance view supplies the selected numeric token's inline edit value");
+			std::ostringstream expectedText;
+			expectedText << std::setprecision(9) << effectiveUiTokenValue(UiPresetId::Current,
+				view.session().draft().themes[UiPresetId::Current], number->stableId).number;
+			check(initialText == expectedText.str(),
+				"appearance view preserves the numeric token's full precision when editing begins");
+			view.showInlineValueEdit(AppearanceInlineEditField::Number, initialText);
+			check(view.controls().find("appearance_value")->label() == initialText + "|",
+				"appearance view owns inline numeric label presentation");
+			const double beforeInlineEdit = effectiveUiTokenValue(UiPresetId::Current,
+				view.session().draft().themes[UiPresetId::Current], number->stableId).number;
+			check(!view.commitInlineValueEdit(AppearanceInlineEditField::Number, true, number->maximum + 1.0) &&
+				!view.session().error().empty() &&
+				effectiveUiTokenValue(UiPresetId::Current, view.session().draft().themes[UiPresetId::Current], number->stableId).number == beforeInlineEdit,
+				"appearance view rejects out-of-range inline numbers without changing the draft");
+			const double inlineNumber = number->minimum + (number->maximum - number->minimum) * 0.37;
+			check(view.commitInlineValueEdit(AppearanceInlineEditField::Number, true, inlineNumber) &&
+				view.session().error().empty() &&
+				effectiveUiTokenValue(UiPresetId::Current, view.session().draft().themes[UiPresetId::Current], number->stableId).number == inlineNumber,
+				"appearance view applies an in-range inline number and clears prior validation feedback");
 		}
 
 		const UiTokenDescriptor* color = tokenOfType(UiPresetId::Current, UiTokenType::Color);
@@ -1737,6 +1760,20 @@ namespace
 			result = view.handleAction(action, fontStyles);
 			check(result.effect == AppearanceEditorEffect::BeginAlphaEdit,
 				"appearance view asks the host to start alpha text entry");
+			std::string initialAlpha;
+			check(view.beginInlineValueEdit(AppearanceInlineEditField::Alpha, initialAlpha),
+				"appearance view supplies the selected color alpha for inline editing");
+			const UiTokenValue beforeAlpha = effectiveUiTokenValue(UiPresetId::Current,
+				view.session().draft().themes[UiPresetId::Current], color->stableId);
+			check(!view.commitInlineValueEdit(AppearanceInlineEditField::Alpha, false, 0.0) &&
+				!view.session().error().empty() &&
+				effectiveUiTokenValue(UiPresetId::Current, view.session().draft().themes[UiPresetId::Current], color->stableId).color.a == beforeAlpha.color.a,
+				"appearance view reports invalid inline alpha text without changing the color draft");
+			const double inlineAlpha = color->minimum + (color->maximum - color->minimum) * 0.42;
+			check(view.commitInlineValueEdit(AppearanceInlineEditField::Alpha, true, inlineAlpha) &&
+				view.session().error().empty() &&
+				effectiveUiTokenValue(UiPresetId::Current, view.session().draft().themes[UiPresetId::Current], color->stableId).color.a == static_cast<float>(inlineAlpha),
+				"appearance view applies inline alpha while preserving the selected color token");
 			action.event.controlId = "appearance_color";
 			result = view.handleAction(action, fontStyles);
 			check(result.effect == AppearanceEditorEffect::ChooseColor,

@@ -1739,3 +1739,11 @@ Removed `Simulation`'s stored `InputProfile` mirror. `InputDomain` is now its on
 The x64 Debug and Release solution builds passed. `SortingLogicTests --core-contracts-only` passed in both configurations with 39,539 checks and zero failures; `AppFrameworkTests` passed in both configurations. Existing profile/domain compatibility and settings round-trip checks remain green. No behavior or performance change is claimed.
 
 Next: continue reducing the request's legacy profile/config mirrors at explicit adapters, then resume the remaining UI ownership boundaries. Do not remove serialized settings keys or public compatibility fields without a focused migration and call-site audit.
+
+## 2026-10-20 — move appearance inline-edit semantics into its view
+
+`AppearanceEditorView` now supplies precision-preserving initial values, owns token-type/range validation, applies valid numeric/alpha values to its transactional draft, and presents the active inline-edit label. `ControlPanel` keeps the shared text buffer, SDL text-input lifecycle, and keyboard translation, and delegates appearance-token semantics to the appearance view.
+
+Added headless checks for numeric and alpha editing, invalid input/range rejection, unchanged draft on failure, full-precision edit starts, successful draft updates, and label presentation. The x64 Debug and Release solution builds passed, as did `AppFrameworkTests` in both configurations. `git diff --check` passed. No appearance rendering or settings persistence behavior changed. The smoke window was not reopened for this view-ownership change.
+
+Next: extract the main item-count/duration edit semantics or keep them in the host if they remain tightly coupled to SDL text input, then continue reviewing the `ControlPanel` facade and remaining config compatibility edges.

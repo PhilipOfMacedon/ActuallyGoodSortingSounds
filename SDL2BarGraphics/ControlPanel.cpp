@@ -1385,14 +1385,11 @@ void ControlPanel::beginInlineEdit(const std::string& widgetId)
 	{
 		const InlineEditTarget target = widgetId == "appearance_value"
 			? InlineEditTarget::AppearanceNumber : InlineEditTarget::AppearanceAlpha;
-		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorView_.session().model().preset()), appearanceEditorView_.session().model().selectedToken());
-		if (!descriptor || (target == InlineEditTarget::AppearanceNumber && descriptor->type != UiTokenType::Number) ||
-			(target == InlineEditTarget::AppearanceAlpha && descriptor->type != UiTokenType::Color)) return;
-		const UiTokenValue value = effectiveUiTokenValue(appearanceEditorView_.session().model().preset(),
-			appearanceEditorView_.session().draft().themes[appearanceEditorView_.session().model().preset()], appearanceEditorView_.session().model().selectedToken());
-		std::ostringstream text;
-		text << std::setprecision(9) << (target == InlineEditTarget::AppearanceAlpha ? value.color.a : value.number);
-		inlineEdit_.begin(target, text.str());
+		const AppearanceInlineEditField field = target == InlineEditTarget::AppearanceAlpha
+			? AppearanceInlineEditField::Alpha : AppearanceInlineEditField::Number;
+		std::string initialText;
+		if (!appearanceEditorView_.beginInlineValueEdit(field, initialText)) return;
+		inlineEdit_.begin(target, initialText);
 		SDL_StartTextInput();
 		updateInlineEditLabel();
 		return;
@@ -1412,13 +1409,13 @@ void ControlPanel::updateInlineEditLabel()
 {
 	if (!inlineEdit_.active()) return;
 	const InlineEditTarget target = inlineEdit_.target();
-	const char* widgetId = inlineEditWidgetId(target);
 	if (inlineEdit_.isAppearanceEdit())
 	{
-		UiWidget* value = appearanceEditorView_.controls().find(widgetId);
-		if (value) value->setLabel(inlineEdit_.text() + "|");
+		appearanceEditorView_.showInlineValueEdit(target == InlineEditTarget::AppearanceAlpha
+			? AppearanceInlineEditField::Alpha : AppearanceInlineEditField::Number, inlineEdit_.text());
 		return;
 	}
+	const char* widgetId = inlineEditWidgetId(target);
 	UiWidget* widget = mainUi_.find(widgetId);
 	if (!widget) return;
 	widget->setLabel(inlineEdit_.text() + "|" + (target == InlineEditTarget::ItemCount ? " bars" : " sec"));
@@ -1439,33 +1436,12 @@ bool ControlPanel::commitInlineEdit(AppAction& action)
 	{
 		double parsed = 0.0;
 		const bool parsedSuccessfully = inlineEdit_.tryParseDouble(parsed);
-		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorView_.session().model().preset()), appearanceEditorView_.session().model().selectedToken());
-		if (!descriptor || !parsedSuccessfully ||
-			parsed < descriptor->minimum || parsed > descriptor->maximum)
-		{
-			appearanceEditorView_.session().error() = descriptor ? "Enter a value between " + std::to_string(descriptor->minimum) + " and " +
-				std::to_string(descriptor->maximum) + "." : "The selected appearance property is unavailable.";
-			return false;
-		}
-		std::string error;
-		UiTokenValue nextValue;
-		if (target == InlineEditTarget::AppearanceAlpha)
-		{
-			nextValue = effectiveUiTokenValue(appearanceEditorView_.session().model().preset(),
-				appearanceEditorView_.session().draft().themes[appearanceEditorView_.session().model().preset()], appearanceEditorView_.session().model().selectedToken());
-			if (nextValue.type != UiTokenType::Color) return false;
-			nextValue.color.a = static_cast<float>(parsed);
-		}
-		else nextValue = UiTokenValue::fromNumber(parsed);
-		if (!setUiTokenValue(appearanceEditorView_.session().model().preset(), appearanceEditorView_.session().draft().themes[appearanceEditorView_.session().model().preset()],
-			appearanceEditorView_.session().model().selectedToken(), nextValue, &error))
-		{
-			appearanceEditorView_.session().error() = error;
-			return false;
-		}
+		const AppearanceInlineEditField field = target == InlineEditTarget::AppearanceAlpha
+			? AppearanceInlineEditField::Alpha : AppearanceInlineEditField::Number;
+		if (!appearanceEditorView_.commitInlineValueEdit(field, parsedSuccessfully, parsed)) return false;
 		inlineEdit_.finish();
 		SDL_StopTextInput();
-		appearanceEditorView_.session().error().clear(); synchronizeAppearanceEditorControls();
+		synchronizeAppearanceEditorControls();
 		return true;
 	}
 	if (target == InlineEditTarget::ItemCount)

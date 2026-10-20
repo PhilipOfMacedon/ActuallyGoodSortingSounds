@@ -77,6 +77,65 @@ void AppearanceEditorView::accept(const UiAppearancePreferences& committed)
 	controls_.find("appearance_preset")->setSelectedIndex(static_cast<int>(session_.draft().activePreset));
 }
 
+bool AppearanceEditorView::beginInlineValueEdit(AppearanceInlineEditField field, std::string& initialText)
+{
+	const UiPresetId preset = session_.model().preset();
+	const std::string& selectedToken = session_.model().selectedToken();
+	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
+	if (!descriptor || (field == AppearanceInlineEditField::Number && descriptor->type != UiTokenType::Number) ||
+		(field == AppearanceInlineEditField::Alpha && descriptor->type != UiTokenType::Color))
+		return false;
+
+	const UiTokenValue value = effectiveUiTokenValue(preset, session_.draft().themes[preset], selectedToken);
+	std::ostringstream text;
+	text << std::setprecision(9) << (field == AppearanceInlineEditField::Alpha ? value.color.a : value.number);
+	initialText = text.str();
+	return true;
+}
+
+void AppearanceEditorView::showInlineValueEdit(AppearanceInlineEditField field, const std::string& text)
+{
+	const char* controlId = field == AppearanceInlineEditField::Alpha ? "appearance_color_alpha" : "appearance_value";
+	UiWidget* control = controls_.find(controlId);
+	if (control) control->setLabel(text + "|");
+}
+
+bool AppearanceEditorView::commitInlineValueEdit(AppearanceInlineEditField field, bool parsedSuccessfully, double value)
+{
+	const UiPresetId preset = session_.model().preset();
+	const std::string& selectedToken = session_.model().selectedToken();
+	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
+	const UiTokenType expectedType = field == AppearanceInlineEditField::Alpha ? UiTokenType::Color : UiTokenType::Number;
+	if (!descriptor || descriptor->type != expectedType)
+	{
+		session_.error() = "The selected appearance property is unavailable.";
+		return false;
+	}
+	if (!parsedSuccessfully || value < descriptor->minimum || value > descriptor->maximum)
+	{
+		session_.error() = "Enter a value between " + std::to_string(descriptor->minimum) + " and " +
+			std::to_string(descriptor->maximum) + ".";
+		return false;
+	}
+
+	UiTokenValue nextValue;
+	if (field == AppearanceInlineEditField::Alpha)
+	{
+		nextValue = effectiveUiTokenValue(preset, session_.draft().themes[preset], selectedToken);
+		nextValue.color.a = static_cast<float>(value);
+	}
+	else nextValue = UiTokenValue::fromNumber(value);
+
+	std::string error;
+	if (!setUiTokenValue(preset, session_.draft().themes[preset], selectedToken, nextValue, &error))
+	{
+		session_.error() = error;
+		return false;
+	}
+	session_.error().clear();
+	return true;
+}
+
 void AppearanceEditorView::synchronizeControls(const AppearanceFontFamilyProvider& fontFamilies,
 	const AppearanceFontStyleProvider& fontStyles)
 {
