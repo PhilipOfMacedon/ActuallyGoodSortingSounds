@@ -19,6 +19,7 @@
 #include "../SDL2BarGraphics/AudioPresentationBridge.h"
 #include "../SDL2BarGraphics/RenderPipeline.h"
 #include "../SDL2BarGraphics/RenderingTypes.h"
+#include "../SDL2BarGraphics/SettingsPanelView.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
 #include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
@@ -1062,6 +1063,49 @@ namespace
 		}
 		check(hasEmptyFamilyMessage && hasBusyStatus,
 			"browser composition includes empty-search and busy-state feedback in the shared command stream");
+	}
+
+	void testSettingsPanelPaintComposition()
+	{
+		SettingsPanelChrome chrome;
+		chrome.screenWidth = 1280;
+		chrome.screenHeight = 720;
+		chrome.panelBounds = UiRect(760.0f, 40.0f, 500.0f, 620.0f);
+		chrome.contentBounds = UiRect(776.0f, 112.0f, 468.0f, 500.0f);
+		chrome.footerBounds = UiRect(776.0f, 598.0f, 370.0f, 16.0f);
+		chrome.title = "Settings | Appearance";
+		chrome.footer = "Preferences saved.";
+		SettingsPanelPalette palette;
+		palette.panel = UiColor(0.1f, 0.1f, 0.1f, 1.0f);
+		palette.accent = UiColor(0.2f, 0.6f, 0.8f, 1.0f);
+		palette.text = UiColor(0.9f, 0.9f, 0.9f, 1.0f);
+		palette.mutedText = UiColor(0.6f, 0.6f, 0.6f, 1.0f);
+		palette.background = UiColor(0.05f, 0.05f, 0.05f, 1.0f);
+		palette.overlayDim = UiColor(0.0f, 0.0f, 0.0f, 0.5f);
+
+		SettingsPanelView view;
+		RecordingUiPaintContext recorder;
+		view.compose(chrome, palette, recorder);
+		const std::vector<UiPaintCommand>& commands = recorder.commands();
+		check(commands.size() == 6 && commands[0].layer == UiPaintLayer::Backdrop &&
+			commands[0].material == UiPaintMaterial::ModalDim &&
+			commands[0].bounds.width == 1280.0f && commands[0].bounds.height == 720.0f,
+			"settings chrome starts with a full-window dim command");
+		check(commands.size() > 4 && commands[1].bounds.x == chrome.panelBounds.x &&
+			commands[1].layer == UiPaintLayer::Panel && commands[2].layer == UiPaintLayer::Accent &&
+			commands[2].bounds.height == 2.0f && commands[4].bounds.y == chrome.contentBounds.y,
+			"settings chrome keeps panel, accent strip, and content surface in painter order");
+		check(commands.size() == 6 && commands[3].elementId == "#settings_title" &&
+			commands[3].text == chrome.title && commands[3].layer == UiPaintLayer::SettingsText &&
+			commands[5].elementId == "#settings_footer" && commands[5].text == chrome.footer &&
+			commands[5].color.r == palette.mutedText.r,
+			"settings title and muted footer are emitted through the shared text contract");
+
+		chrome.footer.clear();
+		recorder.clear();
+		view.compose(chrome, palette, recorder);
+		check(recorder.commands().size() == 5,
+			"settings chrome omits an empty footer instead of emitting an invisible label");
 	}
 
 	void testSettingsStore()
@@ -2268,6 +2312,7 @@ int main()
 	testAlgorithmBrowserModel();
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();
+	testSettingsPanelPaintComposition();
 	testSettingsStore();
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();

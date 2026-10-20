@@ -63,6 +63,7 @@ namespace
 		case UiPaintLayer::Accent: return RenderLayer::SettingsAccent;
 		case UiPaintLayer::Content: return RenderLayer::SettingsDropdown;
 		case UiPaintLayer::Text: return RenderLayer::SettingsDropdownText;
+		case UiPaintLayer::SettingsText: return RenderLayer::SettingsText;
 		}
 		return RenderLayer::SettingsDropdown;
 	}
@@ -450,7 +451,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), settingsUi_(), appearanceUi_(), session_(), algorithmBrowser_(), algorithmBrowserView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+	mainUi_(), settingsUi_(), appearanceUi_(), session_(), algorithmBrowser_(), algorithmBrowserView_(), settingsPanelView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
@@ -2012,43 +2013,19 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 
 void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::string& audioStatus)
 {
-	submitBox(UiRect(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_)), palette.overlayDim, MaterialId::ModalDim, DimLayer);
-	submitBox(settingsPanelBounds_, palette.panel, PanelMaterial, SettingsLayer);
-	submitBox(UiRect(settingsPanelBounds_.x, settingsPanelBounds_.y, settingsPanelBounds_.width, 2.0f), palette.accent, AccentMaterial, RenderLayer::SettingsAccent);
-	drawText(*settingsTitle_, UiRect(settingsPanelBounds_.x + 16.0f, settingsPanelBounds_.y + 13.0f, settingsPanelBounds_.width - 32.0f, 28.0f), 17.0f, palette.text, SettingsTextLayer);
-	const UiWidget& appearanceTab = *settingsUi_.find("appearance_tab");
-	const UiWidget& algorithmTab = *settingsUi_.find("algorithm_tab");
-	const UiWidget& audioTab = *settingsUi_.find("audio_tab");
-	const RenderLayer controlLayer = RenderLayer::SettingsControls;
-	const UiWidget* tabs[] = { &appearanceTab, &algorithmTab, &audioTab };
-	for (int tab = 0; tab < 3; ++tab)
-	{
-		submitBox(tabs[tab]->bounds(), tab == session_.settingsPage ? palette.accent : palette.button, ButtonMaterial, controlLayer);
-		drawWidget(*tabs[tab], palette, controlLayer);
-	}
-	const UiRect activeTab = tabs[session_.settingsPage]->bounds();
-	submitBox(UiRect(activeTab.x, activeTab.y + activeTab.height - 2.0f, activeTab.width, 2.0f),
-		palette.accent, AccentMaterial, layerOffset(controlLayer, 1));
-	submitBox(settingsContentBounds_, palette.background, PanelMaterial, SettingsLayer);
-	if (session_.settingsPage == 2)
-	{
-		const UiWidget* audioGroups[] = { settingsUi_.find("audio_basic_tab"), settingsUi_.find("audio_advanced_tab") };
-		for (int i = 0; i < 2; ++i)
-		{
-			submitBox(audioGroups[i]->bounds(), (session_.audioAdvanced == (i == 1)) ? palette.accent : palette.button,
-				ButtonMaterial, controlLayer);
-			drawWidget(*audioGroups[i], palette, controlLayer);
-		}
-	}
-	for (std::size_t i = 0; i < settingsUi_.widgets().size(); ++i)
-	{
-		const UiWidget& widget = *settingsUi_.widgets()[i];
-		if (!widget.visible() || widget.id() == "appearance_tab" || widget.id() == "algorithm_tab" ||
-			widget.id() == "audio_tab" || widget.id() == "audio_basic_tab" || widget.id() == "audio_advanced_tab" ||
-			widget.id() == "settings_close" || widget.id() == "audio_retry") continue;
-		drawSettingsControl(widget, palette);
-	}
-	drawWidget(*settingsUi_.find("settings_close"), palette, RenderLayer::SettingsControls);
+	SettingsPanelChrome chrome;
+	chrome.screenWidth = width_;
+	chrome.screenHeight = height_;
+	chrome.panelBounds = settingsPanelBounds_;
+	chrome.contentBounds = settingsContentBounds_;
+	chrome.title = settingsTitle_->text();
+	SettingsPanelPalette chromePalette;
+	chromePalette.panel = toUiColor(palette.panel);
+	chromePalette.accent = toUiColor(palette.accent);
+	chromePalette.text = toUiColor(palette.text);
+	chromePalette.mutedText = toUiColor(palette.mutedText);
+	chromePalette.background = toUiColor(palette.background);
+	chromePalette.overlayDim = toUiColor(palette.overlayDim);
 	if (session_.settingsPage == 2)
 	{
 		const SoundEngine::ReconstructedParameters& p = settings_.reconstructedAudio;
@@ -2071,15 +2048,57 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 		const std::string profileStatus = std::string(referenceProfile && neutralAlgorithmGains
 			? "Reconstructed reference | " : "Customized | ") + audioStatus;
 		audioDeviceStatus_->setContent(profileStatus);
-		drawText(*audioDeviceStatus_, UiRect(settingsPanelBounds_.x + 16.0f,
+		chrome.footer = profileStatus;
+		chrome.footerBounds = UiRect(settingsPanelBounds_.x + 16.0f,
 			settingsPanelBounds_.y + settingsPanelBounds_.height - 62.0f,
-			settingsPanelBounds_.width - 130.0f, 16.0f), 11.0f, palette.mutedText, SettingsTextLayer);
-		drawWidget(*settingsUi_.find("audio_retry"), palette, RenderLayer::SettingsControls);
+			settingsPanelBounds_.width - 130.0f, 16.0f);
 	}
 	else
-		drawText(*settingsSaveStatus_, UiRect(settingsPanelBounds_.x + 16.0f,
+	{
+		chrome.footer = settingsSaveStatus_->text();
+		chrome.footerBounds = UiRect(settingsPanelBounds_.x + 16.0f,
 			settingsPanelBounds_.y + settingsPanelBounds_.height - 58.0f,
-			settingsPanelBounds_.width - 120.0f, 16.0f), 11.0f, palette.mutedText, SettingsTextLayer);
+			settingsPanelBounds_.width - 120.0f, 16.0f);
+	}
+	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
+	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
+	settingsPanelView_.compose(chrome, chromePalette, paintContext);
+	const UiWidget& appearanceTab = *settingsUi_.find("appearance_tab");
+	const UiWidget& algorithmTab = *settingsUi_.find("algorithm_tab");
+	const UiWidget& audioTab = *settingsUi_.find("audio_tab");
+	const RenderLayer controlLayer = RenderLayer::SettingsControls;
+	const UiWidget* tabs[] = { &appearanceTab, &algorithmTab, &audioTab };
+	for (int tab = 0; tab < 3; ++tab)
+	{
+		submitBox(tabs[tab]->bounds(), tab == session_.settingsPage ? palette.accent : palette.button, ButtonMaterial, controlLayer);
+		drawWidget(*tabs[tab], palette, controlLayer);
+	}
+	const UiRect activeTab = tabs[session_.settingsPage]->bounds();
+	submitBox(UiRect(activeTab.x, activeTab.y + activeTab.height - 2.0f, activeTab.width, 2.0f),
+		palette.accent, AccentMaterial, layerOffset(controlLayer, 1));
+	if (session_.settingsPage == 2)
+	{
+		const UiWidget* audioGroups[] = { settingsUi_.find("audio_basic_tab"), settingsUi_.find("audio_advanced_tab") };
+		for (int i = 0; i < 2; ++i)
+		{
+			submitBox(audioGroups[i]->bounds(), (session_.audioAdvanced == (i == 1)) ? palette.accent : palette.button,
+				ButtonMaterial, controlLayer);
+			drawWidget(*audioGroups[i], palette, controlLayer);
+		}
+	}
+	for (std::size_t i = 0; i < settingsUi_.widgets().size(); ++i)
+	{
+		const UiWidget& widget = *settingsUi_.widgets()[i];
+		if (!widget.visible() || widget.id() == "appearance_tab" || widget.id() == "algorithm_tab" ||
+			widget.id() == "audio_tab" || widget.id() == "audio_basic_tab" || widget.id() == "audio_advanced_tab" ||
+			widget.id() == "settings_close" || widget.id() == "audio_retry") continue;
+		drawSettingsControl(widget, palette);
+	}
+	drawWidget(*settingsUi_.find("settings_close"), palette, RenderLayer::SettingsControls);
+	if (session_.settingsPage == 2)
+	{
+		drawWidget(*settingsUi_.find("audio_retry"), palette, RenderLayer::SettingsControls);
+	}
 	for (std::size_t i = 0; i < settingsUi_.widgets().size(); ++i)
 		if (settingsUi_.widgets()[i]->visible() && settingsUi_.widgets()[i]->expanded())
 			drawWidget(*settingsUi_.widgets()[i], palette, RenderLayer::SettingsDropdown, true);
@@ -3260,6 +3279,33 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 	return true;
 }
 
+void ControlPanel::drawUiPaintCommand(const UiPaintCommand& command)
+{
+	const glm::vec4 color = toGlmColor(command.color);
+	const ClipBounds clip = renderClip(command);
+	const RenderLayer layer = renderLayerForUiPaint(command.layer);
+	if (command.primitive == UiPaintPrimitive::Rectangle)
+	{
+		submitBox(command.bounds, color, materialForUiPaint(command.material), layer, clip);
+		return;
+	}
+	if (command.primitive != UiPaintPrimitive::Text || command.elementId.empty()) return;
+	TextLabel* label = nullptr;
+	if (command.elementId == "#settings_title") label = settingsTitle_.get();
+	else if (command.elementId == "#settings_footer")
+		label = session_.settingsPage == 2 ? audioDeviceStatus_.get() : settingsSaveStatus_.get();
+	else
+	{
+		if (!labels_[command.elementId])
+			labels_[command.elementId].reset(new TextLabel(command.text, "Courier New Bold",
+				std::max(8, static_cast<int>(std::lround(command.textHeight))), SDL_Color{ 255, 255, 255, 255 }));
+		label = labels_[command.elementId].get();
+	}
+	if (!label) return;
+	label->setContent(command.text);
+	drawText(*label, command.bounds, command.textHeight, color, layer, clip);
+}
+
 void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 {
 	algorithmBrowser_.configureViewports();
@@ -3274,24 +3320,7 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	viewPalette.mutedText = toUiColor(palette.mutedText);
 	viewPalette.overlayDim = toUiColor(palette.overlayDim);
 
-	auto renderCommand = [this](const UiPaintCommand& command)
-	{
-		const glm::vec4 color = toGlmColor(command.color);
-		const ClipBounds clip = renderClip(command);
-		const RenderLayer layer = renderLayerForUiPaint(command.layer);
-		if (command.primitive == UiPaintPrimitive::Rectangle)
-		{
-			submitBox(command.bounds, color, materialForUiPaint(command.material), layer, clip);
-			return;
-		}
-		if (command.primitive != UiPaintPrimitive::Text || command.elementId.empty()) return;
-		if (!labels_[command.elementId])
-			labels_[command.elementId].reset(new TextLabel(command.text, "Courier New Bold",
-				std::max(8, static_cast<int>(std::lround(command.textHeight))), SDL_Color{ 255, 255, 255, 255 }));
-		TextLabel& label = *labels_[command.elementId];
-		label.setContent(command.text);
-		drawText(label, command.bounds, command.textHeight, color, layer, clip);
-	};
+	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
 	algorithmBrowserView_.compose(algorithmBrowser_, viewPalette, screenModel_.setupEnabled,
 		settings_.simulation.algorithm, width_, height_, paintContext);

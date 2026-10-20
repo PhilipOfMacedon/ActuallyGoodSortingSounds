@@ -453,4 +453,20 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - `git diff --check`: passed; Git emitted only configured LF-to-CRLF working-tree notices.
 
-Next: extract the settings-panel composition into a view that emits the same shared paint commands used by the algorithm browser, then separate its retained interaction state from `ControlPanel`.
+## 2026-10-19 — route settings chrome through shared UI paint commands
+
+Status: implementation and focused verification complete.
+
+- Added `SettingsPanelView` to compose the dimmed backdrop, panel, top accent, title, content surface, and context-sensitive footer through the same `UiPaintContext` contract used by the algorithm browser.
+- Routed both browser and settings paint commands through one `ControlPanel::drawUiPaintCommand` adapter, preserving renderer materials, layer mapping, clipping, cached label ownership, and painter order. Settings widgets remain on their existing widget-specific path, preserving hover, focus, slider, and popup behavior.
+- Kept the existing footer content and bounds for Appearance/Algorithm versus General Audio. The view receives already-resolved text and colors; it does not own settings data or update the application.
+- Added headless checks for command order, full-window dim bounds, panel/accent/content geometry, title/footer text layers, muted footer color, and omitted empty footer. Visually inspected the runtime settings overlay in the Debug build; the frame, tabs, controls, and footer render in the expected order and positions.
+- No interaction, settings persistence, sorting, trace, or audio behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
+
+Next: move settings-page/session selection and scroll interaction state behind a small settings panel model. Keep SDL event translation, audio-device retry, and `AppAction` dispatch in `ControlPanel` until that state boundary is stable.

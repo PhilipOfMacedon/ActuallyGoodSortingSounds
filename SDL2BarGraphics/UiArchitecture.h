@@ -153,7 +153,7 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 
 enum class UiPaintPrimitive { Rectangle, Border, Text, Icon };
 enum class UiPaintMaterial { Solid, Panel, Popup, Accent, ModalDim };
-enum class UiPaintLayer { Backdrop, Panel, Accent, Content, Text };
+enum class UiPaintLayer { Backdrop, Panel, Accent, Content, Text, SettingsText };
 struct UiPaintCommand
 {
 	UiPaintPrimitive primitive;

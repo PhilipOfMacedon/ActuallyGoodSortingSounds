@@ -12,6 +12,7 @@
 #include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
 #include "Renderer2D.h"
+#include "SettingsPanelView.h"
 #include "TextLabel.h"
 #include "ThemePalette.h"
 #include "UiLayer.h"
@@ -60,6 +61,7 @@ private:
 	UiSessionState session_;
 	AlgorithmBrowserModel algorithmBrowser_;
 	AlgorithmBrowserView algorithmBrowserView_;
+	SettingsPanelView settingsPanelView_;
 	UiScreenModel screenModel_;
 	UiLayoutResult layoutResult_;
 	UserPreferences renderPreferences_;
@@ -149,6 +151,7 @@ private:
 	void closeSettings();
 	void layoutAlgorithmMenu();
 	void layoutMainComboPopups();
+	void drawUiPaintCommand(const UiPaintCommand& command);
 	void drawAlgorithmMenu(const ThemePalette& palette);
 	bool handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action);
 	void openAlgorithmMenu();
