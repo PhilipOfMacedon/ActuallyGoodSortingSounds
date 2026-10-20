@@ -391,6 +391,10 @@ namespace sortinglogic
 		std::map<std::size_t, SortState> snapshots;
 		std::size_t operationCount;
 		std::size_t workSteps;
+		// Admission-budget estimate for initial/checkpoint states, event objects and
+		// selected nested payloads. This is not a process-memory ceiling: top-level
+		// vector slack, annotation/index payloads, and allocator/map-node overhead
+		// are not included.
 		std::size_t accountedBytes;
 		bool complete;
 		AlgorithmOutcome outcome;
@@ -421,6 +425,7 @@ namespace sortinglogic
 		std::uint32_t inputSeed;
 		std::size_t maxOperations;
 		std::size_t maxWorkSteps;
+		// Approximate accounted trace-payload budget, not a hard resident-memory limit.
 		std::size_t maxTraceBytes;
 		int radixBase;
 		int bucketCount;

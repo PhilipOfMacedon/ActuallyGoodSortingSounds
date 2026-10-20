@@ -5278,6 +5278,95 @@ namespace
 		check(supportsAudioControlCategory(*algorithmDescriptor(SortAlgorithm::CanonicalStalinFilter), AudioControlCategory::Discard),
 			"catalog behavior labels declare discard audio controls");
 	}
+
+	std::size_t dynamicStringStorageBytes(const std::string& value)
+	{
+		return value.capacity() > 15 ? value.capacity() + 1 : 0;
+	}
+
+	std::size_t stateRetainedPayloadLowerBound(const sortinglogic::SortState& state)
+	{
+		using namespace sortinglogic;
+		std::size_t bytes = state.slots.capacity() * sizeof(SortSlot) +
+			state.discardedItems.capacity() * sizeof(SortItem);
+		for (std::map<std::string, std::vector<SortSlot> >::const_iterator i = state.auxiliaryItems.begin();
+			i != state.auxiliaryItems.end(); ++i)
+			bytes += sizeof(std::pair<const std::string, std::vector<SortSlot> >) +
+				dynamicStringStorageBytes(i->first) + i->second.capacity() * sizeof(SortSlot);
+		for (std::map<std::string, std::vector<int> >::const_iterator i = state.integerWorkspaces.begin();
+			i != state.integerWorkspaces.end(); ++i)
+			bytes += sizeof(std::pair<const std::string, std::vector<int> >) +
+				dynamicStringStorageBytes(i->first) + i->second.capacity() * sizeof(int);
+		for (std::map<std::string, std::uint64_t>::const_iterator i = state.metrics.algorithm.begin();
+			i != state.metrics.algorithm.end(); ++i)
+			bytes += sizeof(std::pair<const std::string, std::uint64_t>) + dynamicStringStorageBytes(i->first);
+		return bytes;
+	}
+
+	std::size_t traceRetainedPayloadLowerBound(const sortinglogic::SortTrace& trace)
+	{
+		using namespace sortinglogic;
+		std::size_t bytes = sizeof(SortTrace) + trace.input.capacity() * sizeof(SortItem) +
+			trace.events.capacity() * sizeof(SemanticEvent) +
+			(trace.comparisonEventIndices.capacity() + trace.probeEventIndices.capacity() +
+			trace.audioEventIndices.capacity()) * sizeof(std::size_t) +
+			trace.annotations.capacity() * sizeof(RegionAnnotation) +
+			stateRetainedPayloadLowerBound(trace.initialState) + dynamicStringStorageBytes(trace.familyId) +
+			dynamicStringStorageBytes(trace.variantId) + dynamicStringStorageBytes(trace.completionReason);
+		for (std::size_t i = 0; i < trace.events.size(); ++i)
+		{
+			const SemanticEvent& event = trace.events[i];
+			bytes += dynamicStringStorageBytes(event.firstLane) + dynamicStringStorageBytes(event.secondLane) +
+				dynamicStringStorageBytes(event.workspaceName) + dynamicStringStorageBytes(event.metricName) +
+				(event.beforeSlots.capacity() + event.afterSlots.capacity()) * sizeof(SortSlot) +
+				event.beforeCounters.capacity() * sizeof(int);
+		}
+		for (std::size_t i = 0; i < trace.annotations.size(); ++i)
+			bytes += dynamicStringStorageBytes(trace.annotations[i].lane) + dynamicStringStorageBytes(trace.annotations[i].label);
+		for (std::map<std::size_t, SortState>::const_iterator i = trace.snapshots.begin(); i != trace.snapshots.end(); ++i)
+			bytes += sizeof(std::pair<const std::size_t, SortState>) + stateRetainedPayloadLowerBound(i->second);
+		return bytes;
+	}
+
+	void printTraceMemoryProfileRow(const char* name, const sortinglogic::SortTrace& trace)
+	{
+		const std::size_t lowerBound = traceRetainedPayloadLowerBound(trace);
+		std::cout << name << " items=" << trace.input.size() << " events=" << trace.events.size()
+			<< " event_capacity=" << trace.events.capacity() << " snapshots=" << trace.snapshots.size()
+			<< " accounted_KiB=" << trace.accountedBytes / 1024
+			<< " retained_payload_lower_bound_KiB=" << lowerBound / 1024
+			<< " complete=" << (trace.complete ? "yes" : "no") << '\n';
+	}
+
+	void runTraceMemoryProfile()
+	{
+		using namespace sortinglogic;
+		std::cout << "SemanticEvent object bytes=" << sizeof(SemanticEvent)
+			<< " (lower-bound estimate excludes allocator and tree-node overhead)\n";
+
+		std::vector<float> floatValues;
+		for (std::size_t i = 0; i < 256; ++i) floatValues.push_back(static_cast<float>((i * 47u) % 251u) / 250.0f);
+		TraceBuildRequest insertionRequest;
+		insertionRequest.algorithm = SortAlgorithm::Insertion;
+		insertionRequest.input = floats(floatValues);
+		printTraceMemoryProfileRow("Insertion-256", SortTraceBuilder::build(insertionRequest));
+
+		floatValues.clear();
+		for (std::size_t i = 0; i < 800; ++i) floatValues.push_back(static_cast<float>((i * 47u) % 797u) / 796.0f);
+		TraceBuildRequest mergeRequest;
+		mergeRequest.algorithm = SortAlgorithm::Merge;
+		mergeRequest.input = floats(floatValues);
+		printTraceMemoryProfileRow("Merge-800", SortTraceBuilder::build(mergeRequest));
+
+		std::vector<int> integerValues;
+		for (std::size_t i = 0; i < 800; ++i) integerValues.push_back(static_cast<int>((i * 61u) % 800u));
+		TraceBuildRequest countingRequest;
+		countingRequest.algorithm = SortAlgorithm::Counting;
+		countingRequest.profile = InputProfile::IntegerKeys;
+		countingRequest.domain = InputDomain::NonnegativeIntegerKeys;
+		countingRequest.input = integers(integerValues);
+		printTraceMemoryProfileRow("Counting-800", SortTraceBuilder::build(countingRequest));
+	}
 }
 
 int main(int argc, char* argv[])
@@ -5291,6 +5380,11 @@ int main(int argc, char* argv[])
 		{
 			std::cout << "Pinned ArrayV catalog coverage: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+		if (argc > 1 && std::string(argv[1]) == "--trace-memory-profile")
+		{
+			runTraceMemoryProfile();
+			return EXIT_SUCCESS;
 		}
 		if (argc > 1 && std::string(argv[1]) == "--binary-insertion-only")
 		{

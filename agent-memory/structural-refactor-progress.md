@@ -1821,3 +1821,13 @@ Removed the recorder's algorithm-ID branches that assigned `IncompleteDemonstrat
 Full x64 and Win32 Debug and Release solution builds passed. In all four configurations, recursive-novelty tests passed 33,979 checks, Stalin tests passed 3,277 checks, and SortingLogic core contracts passed 39,541 checks. `git diff --check` passed. No event, state mutation, replay order, or audio behavior changed; no smoke window was opened.
 
 Next: continue the sorting-core ownership audit and make the event-memory accounting scope explicit before considering any storage-format change.
+
+## 2026-10-20 — define and profile trace memory accounting
+
+Documented `SortTrace::accountedBytes` and `TraceBuildRequest::maxTraceBytes` as an admission estimate, not a resident-memory ceiling. Added `SortingLogicTests --trace-memory-profile`, which reports the configured estimate beside a retained-payload lower bound containing top-level vector capacities, snapshot/event payload, and annotations; map-node and allocator overhead remain excluded by design. No budget threshold or trace representation changed.
+
+The x64 Debug profile measured `sizeof(SemanticEvent)` at 440 bytes. Insertion 256 used 15,052 KiB accounted versus a 15,327 KiB retained-payload lower bound; Merge 800 used 7,299/7,561 KiB; Counting 800 used 2,249/2,365 KiB. In x64 Release, `SemanticEvent` was 384 bytes and the corresponding pairs were 13,147/13,422 KiB, 6,467/6,717 KiB, and 1,986/2,089 KiB. This is a lower-bound comparison, not a process high-water measurement; the observed 1.8–4.9% gap and omitted allocator/node overhead warrant preserving the estimate label, but do not alone justify changing admission behavior.
+
+All x64/Win32 Debug/Release solution builds passed. SortingLogic core contracts passed 39,541 checks in all four configurations, and both x64 profile runs completed for all three representative traces. `git diff --check` passed. The profiler does not alter the running application path, trace events, replay, or audio.
+
+Next: use the updated storage evidence to decide whether a narrowly scoped budget-accounting correction is worth its changed partial-trace boundary; keep compact event-format work separate until per-cursor replay equivalence and process allocation measurements can be compared.
