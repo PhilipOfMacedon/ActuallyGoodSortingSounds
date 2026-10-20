@@ -839,6 +839,38 @@ namespace
 			"appearance editing entered outside settings returns to the main view");
 	}
 
+	void testMainMenuSelectionActions()
+	{
+		const UiAction build = mainMenuSelectionAction("menu_file", 1);
+		const UiAction generate = mainMenuSelectionAction("menu_file", 2);
+		const UiAction reset = mainMenuSelectionAction("menu_file", 3);
+		check(build.appAction.kind == AppActionKind::BuildTrace &&
+			generate.appAction.kind == AppActionKind::GenerateAndPlay && reset.appAction.kind == AppActionKind::Reset,
+			"File menu selections map to the existing trace, generate-play, and reset commands");
+
+		const UiAction collapse = mainMenuSelectionAction("menu_view", 1);
+		const UiAction fullscreen = mainMenuSelectionAction("menu_view", 2);
+		check(collapse.appAction.kind == AppActionKind::TogglePanelExpanded &&
+			fullscreen.appAction.kind == AppActionKind::ToggleBorderlessFullscreen,
+			"View menu selections map to the existing panel and fullscreen commands");
+
+		const UiAction browser = mainMenuSelectionAction("menu_tools", 1);
+		const UiAction settings = mainMenuSelectionAction("menu_tools", 2);
+		const UiAction appearance = mainMenuSelectionAction("menu_tools", 3);
+		check(browser.viewCommand == UiAction::ViewCommand::OpenAlgorithmMenu &&
+			settings.viewCommand == UiAction::ViewCommand::OpenSettings &&
+			appearance.viewCommand == UiAction::ViewCommand::OpenAppearanceEditor,
+			"Tools menu selections map to typed view commands rather than string-dispatched actions");
+
+		const UiAction invalidSelection = mainMenuSelectionAction("menu_file", 99);
+		const UiAction unknownMenu = mainMenuSelectionAction("menu_other", 1);
+		check(invalidSelection.appAction.kind == AppActionKind::None &&
+			invalidSelection.viewCommand == UiAction::ViewCommand::None &&
+			unknownMenu.appAction.kind == AppActionKind::None &&
+			unknownMenu.viewCommand == UiAction::ViewCommand::None,
+			"unknown menu IDs and invalid selection indices produce an empty command");
+	}
+
 	void testSdlUiEventAdapter()
 	{
 		SDL_Event event = {};
@@ -2543,6 +2575,7 @@ int main()
 	testAppearanceEditorModel();
 	testAlgorithmBrowserModel();
 	testUiOverlayState();
+	testMainMenuSelectionActions();
 	testSdlUiEventAdapter();
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();

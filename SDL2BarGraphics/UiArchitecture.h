@@ -96,6 +96,10 @@ struct UiScreenModel
 	UiScreenModel();
 };
 
+// Converts the retained menu widget's stable control ID and selected option
+// into the typed command consumed by the application/view coordinator.
+UiAction mainMenuSelectionAction(const std::string& menuId, int selection);
+
 UiScreenModel buildUiScreenModel(const sortinglogic::RenderSnapshot& snapshot,
 	const UserPreferences& preferences, bool playbackPending, const std::string& applicationStatus = std::string());
 

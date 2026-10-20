@@ -136,6 +136,28 @@ bool UiOverlayState::closeAppearanceEditor()
 	return true;
 }
 
+UiAction mainMenuSelectionAction(const std::string& menuId, int selection)
+{
+	if (menuId == "menu_file")
+	{
+		if (selection == 1) return UiAction(AppAction(AppActionKind::BuildTrace));
+		if (selection == 2) return UiAction(AppAction(AppActionKind::GenerateAndPlay));
+		if (selection == 3) return UiAction(AppAction(AppActionKind::Reset));
+	}
+	else if (menuId == "menu_view")
+	{
+		if (selection == 1) return UiAction(AppAction(AppActionKind::TogglePanelExpanded));
+		if (selection == 2) return UiAction(AppAction(AppActionKind::ToggleBorderlessFullscreen));
+	}
+	else if (menuId == "menu_tools")
+	{
+		if (selection == 1) return UiAction(AppAction(), UiAction::ViewCommand::OpenAlgorithmMenu);
+		if (selection == 2) return UiAction(AppAction(), UiAction::ViewCommand::OpenSettings);
+		if (selection == 3) return UiAction(AppAction(), UiAction::ViewCommand::OpenAppearanceEditor);
+	}
+	return UiAction();
+}
+
 UiScreenModel::UiScreenModel()
 	: preset(UiPresetId::Current), transport(UiTransportState::NoTrace), setupEnabled(true), runEnabled(false), playEnabled(false),
 		countEditable(true), durationEditable(true), descending(false), hasTrace(false), buildingTrace(false), playing(false), completed(false),

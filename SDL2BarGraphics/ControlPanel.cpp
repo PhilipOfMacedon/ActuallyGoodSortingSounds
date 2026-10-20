@@ -1315,25 +1315,12 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		(action.event.controlId == "menu_file" || action.event.controlId == "menu_view" || action.event.controlId == "menu_tools"))
 	{
 		UiWidget* menu = mainUi_.find(action.event.controlId);
-		const int selected = action.event.selection;
 		if (menu) menu->setSelectedIndex(0);
-		if (action.event.controlId == "menu_file")
-		{
-			if (selected == 1) output = AppAction(AppActionKind::BuildTrace);
-			else if (selected == 2) output = AppAction(AppActionKind::GenerateAndPlay);
-			else if (selected == 3) output = AppAction(AppActionKind::Reset);
-		}
-		else if (action.event.controlId == "menu_view")
-		{
-			if (selected == 1) output = AppAction(AppActionKind::TogglePanelExpanded);
-			else if (selected == 2) output = AppAction(AppActionKind::ToggleBorderlessFullscreen);
-		}
-		else if (action.event.controlId == "menu_tools")
-		{
-			if (selected == 1) openAlgorithmMenu();
-			else if (selected == 2) processAction(UiAction(AppAction(), UiAction::ViewCommand::OpenSettings), output);
-			else if (selected == 3) openAppearanceEditor();
-		}
+		const UiAction command = mainMenuSelectionAction(action.event.controlId, action.event.selection);
+		if (command.viewCommand != UiAction::ViewCommand::None)
+			processAction(command, output);
+		else
+			output = command.appAction;
 		return;
 	}
 	if (action.viewCommand == UiAction::ViewCommand::OpenAppearanceEditor)

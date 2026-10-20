@@ -554,3 +554,20 @@ Verification:
 - `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
 
 Next: extract the main-menu and widget-event to typed-command mapping from `ControlPanel::processAction`, preserving the existing `AppAction` payloads and menu selection behavior.
+
+## 2026-10-19 — extract main-menu action mapping
+
+Status: implementation and focused verification complete.
+
+- Added `mainMenuSelectionAction`, a pure mapping from the existing stable menu control IDs and option indices to typed `AppAction` values or view commands.
+- `ControlPanel` still resets the selected menu option and applies the mapped action, but no longer embeds File/View/Tools selection policy or recursively handles one Tools-menu case by hand.
+- Added checks for every current menu entry, invalid indices, and unknown menu IDs. The mapped actions match the existing menu behavior.
+- No menu labels, indices, shortcuts, simulation commands, settings, or persistence behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
+
+Next: extract catalog-backed AppAction normalization for algorithm selection, option selection, and Shell sequence values from `ControlPanel::processAction`, then continue separating settings/audio dispatch from widget interpretation.
