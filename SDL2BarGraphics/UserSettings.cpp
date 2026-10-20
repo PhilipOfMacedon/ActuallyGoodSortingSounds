@@ -1,7 +1,5 @@
 #include "UserSettings.h"
-
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#include "SettingsFileStorage.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -12,26 +10,7 @@
 namespace
 {
 	const int CurrentVersion = 8;
-	const wchar_t* SettingsDirectory = L"\\ActuallyGoodSortingSounds";
-	const wchar_t* SettingsFile = L"\\settings.ini";
 	const char* audioChannelId(AlgorithmAudioChannel channel);
-
-	std::wstring settingsPath()
-	{
-		DWORD size = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
-		if (size == 0) return std::wstring();
-		std::wstring base(size, L'\0');
-		const DWORD copied = GetEnvironmentVariableW(L"LOCALAPPDATA", &base[0], size);
-		if (copied == 0 || copied >= size) return std::wstring();
-		base.resize(copied);
-		return base + SettingsDirectory + SettingsFile;
-	}
-
-	std::wstring directoryOf(const std::wstring& path)
-	{
-		const std::wstring::size_type split = path.find_last_of(L"\\/");
-		return split == std::wstring::npos ? std::wstring() : path.substr(0, split);
-	}
 
 	std::string paletteName(PaletteId id)
 	{
@@ -776,26 +755,14 @@ bool UserPreferences::isValid() const
 		}();
 }
 
-SettingsStore::SettingsStore() : path_(settingsPath()) {}
+SettingsStore::SettingsStore() : path_(settingsfile::defaultPath()) {}
 SettingsStore::SettingsStore(const std::wstring& path) : path_(path) {}
 
 UserPreferences SettingsStore::load() const
 {
 	UserPreferences defaults;
-	if (path_.empty()) return defaults;
-	HANDLE file = CreateFileW(path_.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (file == INVALID_HANDLE_VALUE) return defaults;
-	LARGE_INTEGER fileSize;
-	if (!GetFileSizeEx(file, &fileSize) || fileSize.QuadPart < 0 || fileSize.QuadPart > 1024 * 1024)
-	{
-		CloseHandle(file);
-		return defaults;
-	}
-	std::string content(static_cast<std::size_t>(fileSize.QuadPart), '\0');
-	DWORD read = 0;
-	const BOOL readOk = content.empty() || ReadFile(file, &content[0], static_cast<DWORD>(content.size()), &read, nullptr);
-	CloseHandle(file);
-	if (!readOk || read != content.size()) return defaults;
+	std::string content;
+	if (!settingsfile::readAll(path_, content)) return defaults;
 	std::map<std::string, std::string> values;
 	std::istringstream input(content);
 	std::string line;
@@ -982,13 +949,6 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 		if (error) *error = "Settings are invalid or the LocalAppData path is unavailable.";
 		return false;
 	}
-	const std::wstring directory = directoryOf(path_);
-	if (directory.empty() || (!CreateDirectoryW(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS))
-	{
-		if (error) *error = "Could not create the settings directory.";
-		return false;
-	}
-	const std::wstring temporaryPath = path_ + L".tmp";
 	const sortinglogic::AlgorithmDescriptor* shellDescriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
 	const sortinglogic::AlgorithmDescriptor* mergeDescriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
 	const sortinglogic::ShellGapSequence shellGap = shellDescriptor
@@ -1050,54 +1010,5 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 	writeReconstructedAudio(contents, settings.reconstructedAudio);
 	writeAlgorithmAudio(contents, settings);
 	const std::string data = contents.str();
-	HANDLE file = CreateFileW(temporaryPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (file == INVALID_HANDLE_VALUE)
-	{
-		if (error) *error = "Could not open the temporary settings file.";
-		return false;
-	}
-	DWORD written = 0;
-	const BOOL wrote = WriteFile(file, data.data(), static_cast<DWORD>(data.size()), &written, nullptr);
-	const BOOL flushed = wrote && written == data.size() ? FlushFileBuffers(file) : FALSE;
-	CloseHandle(file);
-	if (!flushed)
-	{
-		DeleteFileW(temporaryPath.c_str());
-		if (error) *error = "Could not flush the temporary settings file.";
-		return false;
-	}
-	const DWORD existingAttributes = GetFileAttributesW(path_.c_str());
-	if (existingAttributes != INVALID_FILE_ATTRIBUTES)
-	{
-		const std::wstring backupPath = path_ + L".pre-v8.bak";
-		if (GetFileAttributesW(backupPath.c_str()) == INVALID_FILE_ATTRIBUTES)
-		{
-			HANDLE oldFile = CreateFileW(path_.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-				nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-			char header[128] = {};
-			DWORD headerBytes = 0;
-			if (oldFile != INVALID_HANDLE_VALUE)
-			{
-				ReadFile(oldFile, header, sizeof(header) - 1, &headerBytes, nullptr);
-				CloseHandle(oldFile);
-			}
-			const std::string headerText(header, headerBytes);
-			const std::string::size_type versionAt = headerText.find("version=");
-			const int oldVersion = versionAt == std::string::npos ? CurrentVersion : std::atoi(headerText.c_str() + versionAt + 8);
-			if (oldVersion > 0 && oldVersion < CurrentVersion && !CopyFileW(path_.c_str(), backupPath.c_str(), TRUE))
-			{
-				DeleteFileW(temporaryPath.c_str());
-				if (error) *error = "Could not preserve the previous settings file before its version-8 migration.";
-				return false;
-			}
-		}
-	}
-	if (!MoveFileExW(temporaryPath.c_str(), path_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-	{
-		DeleteFileW(temporaryPath.c_str());
-		if (error) *error = "Could not atomically replace the settings file.";
-		return false;
-	}
-	if (error) error->clear();
-	return true;
+	return settingsfile::replaceAtomically(path_, data, CurrentVersion, error);
 }

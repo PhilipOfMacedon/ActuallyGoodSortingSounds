@@ -27,6 +27,7 @@
     <ClCompile Include="..\SDL2BarGraphics\AppController.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\UiAppearance.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AlgorithmAudioPreferences.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\SettingsFileStorage.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\UserSettings.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\SdlAudioOutput.cpp" />
   </ItemGroup>

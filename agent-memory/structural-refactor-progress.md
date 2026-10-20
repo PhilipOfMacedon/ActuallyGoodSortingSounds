@@ -645,7 +645,25 @@ Verification:
 - Release `SoundEngineTests`: passed (417,376 assertions).
 - `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
 
-Next: separate INI schema/migration logic from atomic platform storage. Keep the current settings version and immediate save behavior.
+Next: classify actions that can change saved values and reduce full preference copies for transport-only commands.
+
+## 2026-10-19 — narrow dispatch preference snapshots
+
+Status: implementation and focused verification complete.
+
+- Added value equality for `VisualPreferences` and `SimulationPreferences`, and made `UserPreferences` equality compose those value contracts.
+- `AppController::dispatch` now snapshots simulation configuration for every action because accepted commands can reconcile saved input, but only actions that can change non-simulation preferences take a full `UserPreferences` snapshot. Play, pause, step, seek, reset, fullscreen, audio-band selection, and device retry avoid copying appearance/audio/options maps.
+- Unknown future action kinds conservatively use the full snapshot until explicitly classified. All current `AppActionKind` values are listed.
+- Actual preference changes still save immediately; unchanged values and transport-only actions still produce no writes.
+- Added direct tests for preference value equality. Existing controller persistence tests continue to cover no-op edits, transport actions, and one-save-per-change behavior.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+Next: isolate family/variant gain inheritance and effective SoundEngine parameter mapping from the settings schema and storage.
 
 ## 2026-10-19 — isolate algorithm audio preference policy
 
@@ -664,18 +682,23 @@ Verification:
 - Standalone transport integration tests passed in both configurations with the SDL dummy backend, including 80- and 800-item scenarios.
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
-## 2026-10-19 — narrow dispatch preference snapshots
+Next: separate INI schema/migrations from Win32 storage while keeping the saved format stable.
+
+## 2026-10-20 — isolate settings file storage
 
 Status: implementation and focused verification complete.
 
-- Added value equality for `VisualPreferences` and `SimulationPreferences`, and made `UserPreferences` equality compose those value contracts.
-- `AppController::dispatch` now snapshots simulation configuration for every action because accepted commands can reconcile saved input, but only actions that can change non-simulation preferences take a full `UserPreferences` snapshot. Play, pause, step, seek, reset, fullscreen, audio-band selection, and device retry avoid copying appearance/audio/options maps.
-- Unknown future action kinds conservatively use the full snapshot until explicitly classified. All current `AppActionKind` values are listed.
-- Actual preference changes still save immediately; unchanged values and transport-only actions still produce no writes.
-- Added direct tests for preference value equality. Existing controller persistence tests continue to cover no-op edits, transport actions, and one-save-per-change behavior.
+- Moved LocalAppData path resolution, the 1 MiB bounded read, temporary-file creation and flush, pre-migration backup, and atomic replacement into `SettingsFileStorage.cpp`.
+- `UserSettings.cpp` no longer includes Win32 headers or performs file I/O; it retains the current INI schema, migrations, preference validation, and serialization decisions.
+- Preserved the existing settings path, error messages, backup suffix, read limit, write-through replacement, and fallback behavior.
+- Added the storage source to the app, framework tests, and standalone audio transport test project.
+- No settings version, key, migration, value, or save-on-change behavior changed.
 
 Verification:
 
 - x64 Debug and Release solution builds: passed.
-- Debug and Release `AppFrameworkTests`: passed.
+- Debug and Release `AppFrameworkTests`: passed, including settings round-trip, migration, malformed-file, and backup checks.
+- Standalone `AudioDeviceTransportTests` x64 Debug and Release builds: passed.
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+Next: move INI encoding, decoding, and migrations behind a pure codec boundary. Keep the current settings version and immediate save behavior.
