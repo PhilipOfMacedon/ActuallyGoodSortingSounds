@@ -514,6 +514,6 @@ Verification:
 
 - x64 Debug and Release solution builds: passed.
 - Debug and Release `AppFrameworkTests`: passed.
-- `git diff --check`: pending before commit.
+- `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
 
 Next: replace the independent overlay booleans with explicit overlay ownership and transitions, then centralize view event-to-action routing.
