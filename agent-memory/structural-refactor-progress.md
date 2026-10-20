@@ -1299,3 +1299,19 @@ Verification:
 - `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
 
 Next: inspect and extract the rotation-based merge strategies as a cohesive module, then resume the configuration and view-ownership items in the audit.
+
+## 2026-10-20 — extract rotation-based Merge strategies
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved the shared Rotate Merge implementation into `SortingLogic/RotationMergeStrategies.cpp`. The ordinary and deterministic-parallel catalog entries now use separate direct strategy wrappers over the same body.
+- Preserved binary-search comparisons, block-swap rotation, work accounting, phase schedules, metrics, annotations, stable IDs, and event order. No change was made to simulation threading or run behavior.
+- Added the module to the existing Visual Studio static library project; the central fallback switch no longer dispatches either variant.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- In each configuration: Rotate Merge passed 478,954 checks; Parallel Rotate Merge passed 151,845; core contracts passed 39,535; pinned catalog coverage passed 1,741. All reported 0 failures.
+- `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
+
+Next: extract Stackless Rotate Merge with its dedicated suite, then review remaining merge modules and return to the UI/configuration ownership findings.

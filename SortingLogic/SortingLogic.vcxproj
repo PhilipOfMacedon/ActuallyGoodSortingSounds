@@ -57,6 +57,7 @@
     <ClCompile Include="PartitionTraceUtilities.cpp" />
     <ClCompile Include="MergeStrategies.cpp" />
     <ClCompile Include="MergeTraceUtilities.cpp" />
+    <ClCompile Include="RotationMergeStrategies.cpp" />
     <ClCompile Include="PermutationTraceUtilities.cpp" />
     <ClCompile Include="SelectionStrategies.cpp" />
     <ClCompile Include="PancakeStrategies.cpp" />
