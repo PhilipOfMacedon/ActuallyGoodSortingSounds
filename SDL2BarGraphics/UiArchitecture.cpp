@@ -194,9 +194,7 @@ int traceProgressPercent(bool hasTrace, bool complete, std::size_t cursor, std::
 }
 
 UiSessionState::UiSessionState()
-	: settingsPage(0), audioAdvanced(false), algorithmSearch(), algorithmFamily(), algorithmVariant(),
-		algorithmFamilySelection(0), algorithmVariantSelection(0), settingsScroll(0.0f),
-		algorithmFamilyScroll(0), algorithmVariantScroll(0), selectedAudioBand(3)
+	: settingsPage(0), audioAdvanced(false), settingsScroll(0.0f), selectedAudioBand(3)
 {
 }
 

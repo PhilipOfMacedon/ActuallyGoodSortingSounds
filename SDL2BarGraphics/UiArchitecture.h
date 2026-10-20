@@ -88,14 +88,7 @@ struct UiSessionState
 {
 	int settingsPage;
 	bool audioAdvanced;
-	std::string algorithmSearch;
-	std::string algorithmFamily;
-	std::string algorithmVariant;
-	int algorithmFamilySelection;
-	int algorithmVariantSelection;
 	float settingsScroll;
-	int algorithmFamilyScroll;
-	int algorithmVariantScroll;
 	int selectedAudioBand;
 	UiSessionState();
 	void onPresetChanged();

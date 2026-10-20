@@ -7,6 +7,7 @@
 
 #include <SDL.h>
 
+#include "AlgorithmBrowserModel.h"
 #include "Renderer2D.h"
 #include "TextLabel.h"
 #include "ThemePalette.h"
@@ -41,9 +42,10 @@ public:
 	bool settingsOpen() const { return settingsOpen_; }
 	bool textEntryActive() const
 	{
-		return !inlineEditWidgetId_.empty() || appearanceSearchFocused_ || (algorithmMenuOpen_ && algorithmSearchFocused_);
+		return !inlineEditWidgetId_.empty() || appearanceSearchFocused_ ||
+			(algorithmBrowser_.open && algorithmBrowser_.searchFocused);
 	}
-	bool modalUiOpen() const { return settingsOpen_ || appearanceEditorOpen_ || algorithmMenuOpen_; }
+	bool modalUiOpen() const { return settingsOpen_ || appearanceEditorOpen_ || algorithmBrowser_.open; }
 
 private:
 	Window& window_;
@@ -53,6 +55,7 @@ private:
 	UIRoot settingsUi_;
 	UIRoot appearanceUi_;
 	UiSessionState session_;
+	AlgorithmBrowserModel algorithmBrowser_;
 	UiScreenModel screenModel_;
 	UiLayoutResult layoutResult_;
 	UserPreferences renderPreferences_;
@@ -86,18 +89,7 @@ private:
 	bool appearanceWasSettingsOpen_;
 	bool appearanceSearchFocused_;
 	bool drawingAppearanceEditor_;
-	bool algorithmMenuOpen_;
-	bool algorithmMenuVariantPane_;
-	bool algorithmSearchFocused_;
-	bool pendingAlgorithmSelection_;
-	std::string algorithmMenuStatus_;
-	UiRect algorithmMenuBounds_;
-	UiRect algorithmSearchBounds_;
-	UiRect algorithmFamilyBounds_;
-	UiRect algorithmVariantBounds_;
 	UiScrollViewport settingsScrollViewport_;
-	UiScrollViewport algorithmFamilyScrollViewport_;
-	UiScrollViewport algorithmVariantScrollViewport_;
 	UiScrollViewport algorithmProfileScrollViewport_;
 	TextBlockLayout algorithmProfileComplexityLayout_;
 	TextBlockLayout algorithmProfileDescriptionLayout_;

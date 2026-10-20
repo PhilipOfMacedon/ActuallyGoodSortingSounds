@@ -11,6 +11,7 @@
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
 #include "../SDL2BarGraphics/BarCountSteps.h"
+#include "../SDL2BarGraphics/AlgorithmBrowserModel.h"
 #include "../SDL2BarGraphics/AppController.h"
 #include "../SDL2BarGraphics/AudioPresentationBridge.h"
 #include "../SDL2BarGraphics/RenderPipeline.h"
@@ -716,6 +717,88 @@ namespace
 		textRoot.handleEvent(UiInputEvent(UiInputType::FocusLost), action);
 		check(!textRoot.find("search")->pressed() && action.event.kind == UiEventKind::FocusLost,
 			"focus loss releases pointer capture and emits a lifecycle event");
+	}
+
+	void testAlgorithmBrowserModel()
+	{
+		AlgorithmBrowserModel browser;
+		const std::vector<AlgorithmFamilyEntry>& catalog = browser.families();
+		check(!catalog.empty(), "algorithm browser model exposes the registered family catalog");
+		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
+		check(insertion != nullptr, "algorithm browser fixture resolves the registered insertion method");
+		if (!insertion) return;
+
+		browser.begin(insertion->familyId);
+		check(browser.open && browser.searchFocused && browser.selectedFamily == insertion->familyId,
+			"opening the browser resets its search state and focuses the query field");
+		check(browser.visibleFamilies().size() == catalog.size(),
+			"an empty search displays every family in catalog order");
+		const std::vector<const AlgorithmFamilyEntry*> matches = browser.visibleFamilies();
+		const AlgorithmFamilyEntry* insertionFamily = nullptr;
+		for (std::size_t i = 0; i < matches.size(); ++i)
+			if (matches[i]->id == insertion->familyId) insertionFamily = matches[i];
+		if (!insertionFamily)
+		{
+			check(false, "the insertion family is present in the browser catalog");
+			return;
+		}
+		const std::vector<const sortinglogic::AlgorithmDescriptor*> insertionVariants = browser.visibleVariants(insertionFamily);
+		check(insertionFamily && !insertionVariants.empty() && insertionVariants[0] == insertion,
+			"the selected family exposes its registered variants in catalog order");
+
+		browser.search = "insertion sort";
+		const std::vector<const AlgorithmFamilyEntry*> lowercaseFamilies = browser.visibleFamilies();
+		const std::vector<const sortinglogic::AlgorithmDescriptor*> lowercaseVariants = browser.visibleVariants(insertionFamily);
+		browser.search = "INSERTION SORT";
+		const std::vector<const AlgorithmFamilyEntry*> filteredFamilies = browser.visibleFamilies();
+		const AlgorithmFamilyEntry* filteredFamily = nullptr;
+		for (std::size_t i = 0; i < filteredFamilies.size(); ++i)
+			if (filteredFamilies[i]->id == insertion->familyId) filteredFamily = filteredFamilies[i];
+		const std::vector<const sortinglogic::AlgorithmDescriptor*> filteredVariants = browser.visibleVariants(filteredFamily);
+		bool insertionFound = false;
+		bool variantsRemainInCatalogOrder = true;
+		std::size_t previousCatalogIndex = 0;
+		for (std::size_t i = 0; i < filteredVariants.size(); ++i)
+		{
+			if (filteredVariants[i] == insertion) insertionFound = true;
+			std::size_t catalogIndex = 0;
+			while (catalogIndex < insertionFamily->variants.size() && insertionFamily->variants[catalogIndex] != filteredVariants[i])
+				++catalogIndex;
+			if (catalogIndex == insertionFamily->variants.size() || (i > 0 && catalogIndex <= previousCatalogIndex))
+				variantsRemainInCatalogOrder = false;
+			previousCatalogIndex = catalogIndex;
+		}
+		bool equivalentCaseResults = lowercaseFamilies.size() == filteredFamilies.size() &&
+			lowercaseVariants.size() == filteredVariants.size();
+		for (std::size_t i = 0; equivalentCaseResults && i < filteredFamilies.size(); ++i)
+			equivalentCaseResults = lowercaseFamilies[i] == filteredFamilies[i];
+		for (std::size_t i = 0; equivalentCaseResults && i < filteredVariants.size(); ++i)
+			equivalentCaseResults = lowercaseVariants[i] == filteredVariants[i];
+		check(filteredFamily && insertionFound && variantsRemainInCatalogOrder && equivalentCaseResults,
+			"search filters matching families and variants case-insensitively while preserving catalog order");
+
+		browser.familyScroll = 4;
+		browser.variantScroll = 3;
+		browser.familySelection = 4;
+		browser.variantSelection = 2;
+		browser.appendSearch(" sort");
+		check(browser.search == "INSERTION SORT sort" && browser.familyScroll == 0 && browser.variantScroll == 0 &&
+			browser.familySelection == 0 && browser.variantSelection == 0,
+			"typing into algorithm search resets filtered selection and scroll positions");
+		browser.familySelection = 3;
+		browser.variantSelection = 2;
+		browser.familyScroll = 4;
+		browser.variantScroll = 5;
+		browser.eraseSearchCharacter();
+		check(browser.search == "INSERTION SORT sor" && browser.familySelection == 3 && browser.variantSelection == 2 &&
+			browser.familyScroll == 0 && browser.variantScroll == 0,
+			"backspace resets filtered scroll positions while preserving the current selection");
+		browser.begin(insertion->familyId);
+		check(browser.search.empty() && browser.familyScroll == 0 && browser.variantScroll == 0 && !browser.variantPane,
+			"reopening the browser starts a clean selection session");
+		browser.close();
+		check(!browser.open && !browser.searchFocused && !browser.pendingSelection,
+			"closing the browser releases its modal search and pending-selection state");
 	}
 
 	void testSettingsStore()
@@ -1917,6 +2000,7 @@ int main()
 	testTextBlockLayoutCache();
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
+	testAlgorithmBrowserModel();
 	testSettingsStore();
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();

@@ -30,6 +30,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AppFrameworkTests.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\AlgorithmBrowserModel.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AudioPresentationBridge.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AppController.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\LayoutMetrics.cpp" />

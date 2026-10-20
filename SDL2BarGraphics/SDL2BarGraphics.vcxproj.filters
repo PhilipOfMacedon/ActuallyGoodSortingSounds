@@ -15,6 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AlgorithmBrowserModel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -54,6 +55,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AlgorithmBrowserModel.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppActions.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppController.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AudioPresentationBridge.h"><Filter>Header Files</Filter></ClInclude>
@@ -94,6 +96,7 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TextBlockLayout.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TextSearch.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>

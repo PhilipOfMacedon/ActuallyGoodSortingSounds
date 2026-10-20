@@ -16,6 +16,7 @@
 
 #include "LayoutMetrics.h"
 #include "SettingsScroll.h"
+#include "TextSearch.h"
 #include "WindowsFontCatalog.h"
 
 namespace
@@ -33,68 +34,6 @@ namespace
 	const RenderLayer DimLayer = RenderLayer::ModalDim;
 	const RenderLayer SettingsLayer = RenderLayer::SettingsPanel;
 	const RenderLayer SettingsTextLayer = RenderLayer::SettingsText;
-
-	struct AlgorithmFamilyEntry
-	{
-		sortinglogic::FamilyId id;
-		std::string name;
-		std::vector<const sortinglogic::AlgorithmDescriptor*> variants;
-	};
-
-	std::vector<AlgorithmFamilyEntry> algorithmFamilies()
-	{
-		std::vector<AlgorithmFamilyEntry> families;
-		const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
-		for (std::size_t i = 0; i < catalog.size(); ++i)
-		{
-			std::size_t familyIndex = 0;
-			for (; familyIndex < families.size(); ++familyIndex)
-				if (families[familyIndex].id == catalog[i].familyId) break;
-			if (familyIndex == families.size())
-			{
-				AlgorithmFamilyEntry entry;
-				entry.id = catalog[i].familyId;
-				entry.name = catalog[i].familyDisplayName;
-				families.push_back(entry);
-			}
-			families[familyIndex].variants.push_back(&catalog[i]);
-		}
-		return families;
-	}
-
-	std::string lowerAscii(std::string value)
-	{
-		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		return value;
-	}
-
-	bool containsText(const std::string& value, const std::string& query)
-	{
-		return query.empty() || lowerAscii(value).find(lowerAscii(query)) != std::string::npos;
-	}
-
-	std::vector<const AlgorithmFamilyEntry*> visibleFamilies(const std::vector<AlgorithmFamilyEntry>& families, const std::string& query)
-	{
-		std::vector<const AlgorithmFamilyEntry*> visible;
-		for (std::size_t i = 0; i < families.size(); ++i)
-		{
-			bool match = containsText(families[i].name, query);
-			for (std::size_t j = 0; !match && j < families[i].variants.size(); ++j)
-				match = containsText(families[i].variants[j]->displayName, query);
-			if (match) visible.push_back(&families[i]);
-		}
-		return visible;
-	}
-
-	std::vector<const sortinglogic::AlgorithmDescriptor*> visibleVariants(const AlgorithmFamilyEntry* family, const std::string& query)
-	{
-		std::vector<const sortinglogic::AlgorithmDescriptor*> visible;
-		if (!family) return visible;
-		for (std::size_t i = 0; i < family->variants.size(); ++i)
-			if (query.empty() || containsText(family->variants[i]->displayName, query) || containsText(family->name, query))
-				visible.push_back(family->variants[i]);
-		return visible;
-	}
 
 	std::vector<std::string> paletteNames()
 	{
@@ -426,7 +365,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), settingsUi_(), appearanceUi_(), session_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+	mainUi_(), settingsUi_(), appearanceUi_(), session_(), algorithmBrowser_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
@@ -439,9 +378,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	timelineBounds_(), timelineControlBounds_(), timelineLeftArrowBounds_(), timelineRightArrowBounds_(),
 	headerBounds_(), gearBounds_(), settingsPanelBounds_(), settingsContentBounds_(), draggingTimeline_(false),
 	settingsOpen_(false), appearanceEditorOpen_(false), appearanceWasSettingsOpen_(false), appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
-	algorithmMenuOpen_(false), algorithmMenuVariantPane_(false), algorithmSearchFocused_(false), pendingAlgorithmSelection_(false), algorithmMenuStatus_(),
-	algorithmMenuBounds_(), algorithmSearchBounds_(), algorithmFamilyBounds_(), algorithmVariantBounds_(),
-	settingsScrollViewport_(), algorithmFamilyScrollViewport_(), algorithmVariantScrollViewport_(),
+	settingsScrollViewport_(),
 	algorithmProfileScrollViewport_(), algorithmProfileComplexityLayout_(measureLogicalTextWidth),
 	algorithmProfileDescriptionLayout_(measureLogicalTextWidth),
 	algorithmProfileScrollTrack_(), algorithmProfileScrollThumb_(),
@@ -461,7 +398,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 
 ControlPanel::~ControlPanel()
 {
-	if (!inlineEditWidgetId_.empty() || algorithmMenuOpen_ || appearanceSearchFocused_) SDL_StopTextInput();
+	if (!inlineEditWidgetId_.empty() || algorithmBrowser_.open || appearanceSearchFocused_) SDL_StopTextInput();
 }
 
 bool ControlPanel::isReady() const
@@ -1248,7 +1185,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 
 bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 {
-	if (!appearanceEditorOpen_ && !algorithmMenuOpen_ && !appearanceSearchFocused_ && inlineEditWidgetId_.empty() &&
+	if (!appearanceEditorOpen_ && !algorithmBrowser_.open && !appearanceSearchFocused_ && inlineEditWidgetId_.empty() &&
 		event.type == SDL_KEYDOWN && !event.key.repeat &&
 		event.key.keysym.sym == SDLK_F12 && (event.key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT)) == (KMOD_CTRL | KMOD_SHIFT))
 	{
@@ -1260,7 +1197,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	updateLayout();
 	if (appearanceEditorOpen_)
 		return handleAppearanceEditorEvent(event, action);
-	if (algorithmMenuOpen_)
+	if (algorithmBrowser_.open)
 		return handleAlgorithmMenuEvent(event, action);
 	if (!settingsOpen_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 	{
@@ -1629,7 +1566,7 @@ void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const st
 	fontFallbackActive_ = false;
 	drawMainPanel(snapshot, palette);
 	if (settingsOpen_ && !appearanceEditorOpen_) drawSettingsPanel(palette, audioStatus);
-	if (algorithmMenuOpen_) drawAlgorithmMenu(palette);
+	if (algorithmBrowser_.open) drawAlgorithmMenu(palette);
 	if (appearanceEditorOpen_) drawAppearanceEditor();
 }
 
@@ -2421,17 +2358,7 @@ void ControlPanel::openAlgorithmMenu()
 	if (settingsOpen_) return;
 	const sortinglogic::AlgorithmDescriptor* current = sortinglogic::algorithmDescriptor(
 		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
-	algorithmMenuOpen_ = true;
-	pendingAlgorithmSelection_ = false;
-	algorithmMenuStatus_.clear();
-	algorithmMenuVariantPane_ = false;
-	algorithmSearchFocused_ = true;
-	session_.algorithmSearch.clear();
-	session_.algorithmFamily = current ? current->familyId : sortinglogic::FamilyId();
-	session_.algorithmFamilySelection = 0;
-	session_.algorithmVariantSelection = 0;
-	session_.algorithmFamilyScroll = 0;
-	session_.algorithmVariantScroll = 0;
+	algorithmBrowser_.begin(current ? current->familyId : sortinglogic::FamilyId());
 	mainUi_.closeCombo();
 	SDL_StartTextInput();
 	layoutAlgorithmMenu();
@@ -2439,11 +2366,7 @@ void ControlPanel::openAlgorithmMenu()
 
 void ControlPanel::closeAlgorithmMenu()
 {
-	algorithmMenuOpen_ = false;
-	pendingAlgorithmSelection_ = false;
-	algorithmMenuStatus_.clear();
-	algorithmMenuVariantPane_ = false;
-	algorithmSearchFocused_ = false;
+	algorithmBrowser_.close();
 	SDL_StopTextInput();
 }
 
@@ -2640,7 +2563,7 @@ void ControlPanel::refreshAppearanceTokens()
 		if (appearanceCategoryFilter_ > 0 &&
 			static_cast<int>(descriptor.category) != appearanceCategoryFilter_ - 1) continue;
 		const std::string searchable = std::string(uiTokenCategoryName(descriptor.category)) + " " + descriptor.description + " " + descriptor.stableId;
-		if (!containsText(searchable, appearanceSearch_)) continue;
+		if (!containsTextInsensitive(searchable, appearanceSearch_)) continue;
 		filteredAppearanceTokens_.push_back(descriptor.stableId);
 		options.push_back(appearanceTokenLabel(descriptor));
 	}
@@ -3263,11 +3186,11 @@ void ControlPanel::exportAppearanceProfile()
 
 void ControlPanel::completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result)
 {
-	if (action.kind == AppActionKind::SelectAlgorithm && algorithmMenuOpen_ && pendingAlgorithmSelection_)
+	if (action.kind == AppActionKind::SelectAlgorithm && algorithmBrowser_.open && algorithmBrowser_.pendingSelection)
 	{
-		pendingAlgorithmSelection_ = false;
+		algorithmBrowser_.pendingSelection = false;
 		if (result.accepted) closeAlgorithmMenu();
-		else algorithmMenuStatus_ = result.message.empty() ? "Pause playback before changing algorithms." : result.message;
+		else algorithmBrowser_.status = result.message.empty() ? "Pause playback before changing algorithms." : result.message;
 		return;
 	}
 	if (action.kind != AppActionKind::ApplyAppearance || !appearanceEditorOpen_) return;
@@ -3282,7 +3205,7 @@ void ControlPanel::completeActionResult(const AppAction& action, const sortinglo
 
 void ControlPanel::layoutAlgorithmMenu()
 {
-	if (!algorithmMenuOpen_ || width_ <= 0 || height_ <= 0) return;
+	if (!algorithmBrowser_.open || width_ <= 0 || height_ <= 0) return;
 	const float menuWidth = std::min(700.0f, std::max(1.0f, static_cast<float>(width_) - 24.0f));
 	const float menuHeight = std::min(520.0f, std::max(180.0f, static_cast<float>(height_) - 24.0f));
 	const UiRect anchor = mainUi_.find("algorithm")->bounds();
@@ -3290,144 +3213,140 @@ void ControlPanel::layoutAlgorithmMenu()
 	float top = anchor.y + anchor.height + 6.0f;
 	if (top + menuHeight > static_cast<float>(height_) - 12.0f)
 		top = std::max(12.0f, anchor.y - menuHeight - 6.0f);
-	algorithmMenuBounds_ = UiRect(left, top, menuWidth, menuHeight);
-	algorithmSearchBounds_ = UiRect(left + 12.0f, top + 12.0f, menuWidth - 24.0f, 30.0f);
+	algorithmBrowser_.bounds = UiRect(left, top, menuWidth, menuHeight);
+	algorithmBrowser_.searchBounds = UiRect(left + 12.0f, top + 12.0f, menuWidth - 24.0f, 30.0f);
 	const float paneTop = top + 52.0f;
 	const float paneHeight = std::max(64.0f, menuHeight - 96.0f);
 	const float familyWidth = (menuWidth - 36.0f) * 0.46f;
-	algorithmFamilyBounds_ = UiRect(left + 12.0f, paneTop, familyWidth, paneHeight);
-	algorithmVariantBounds_ = UiRect(algorithmFamilyBounds_.x + familyWidth + 12.0f, paneTop,
+	algorithmBrowser_.familyBounds = UiRect(left + 12.0f, paneTop, familyWidth, paneHeight);
+	algorithmBrowser_.variantBounds = UiRect(algorithmBrowser_.familyBounds.x + familyWidth + 12.0f, paneTop,
 		menuWidth - familyWidth - 36.0f, paneHeight);
 }
 
 void ControlPanel::selectAlgorithmMenuVariant(const sortinglogic::AlgorithmDescriptor& algorithm, AppAction& action)
 {
 	action = AppAction(AppActionKind::SelectAlgorithm, algorithm.familyId, algorithm.variantId);
-	pendingAlgorithmSelection_ = true;
-	algorithmMenuStatus_.clear();
+	algorithmBrowser_.pendingSelection = true;
+	algorithmBrowser_.status.clear();
 }
 
 bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action)
 {
 	layoutAlgorithmMenu();
-	const std::vector<AlgorithmFamilyEntry> families = algorithmFamilies();
-	std::vector<const AlgorithmFamilyEntry*> matches = visibleFamilies(families, session_.algorithmSearch);
+	const std::vector<const AlgorithmFamilyEntry*> matches = algorithmBrowser_.visibleFamilies();
 	const AlgorithmFamilyEntry* selectedFamily = nullptr;
 	for (std::size_t i = 0; i < matches.size(); ++i)
-		if (matches[i]->id == session_.algorithmFamily) { selectedFamily = matches[i]; session_.algorithmFamilySelection = static_cast<int>(i); break; }
+		if (matches[i]->id == algorithmBrowser_.selectedFamily) { selectedFamily = matches[i]; algorithmBrowser_.familySelection = static_cast<int>(i); break; }
 	if (!selectedFamily && !matches.empty())
 	{
-		session_.algorithmFamilySelection = std::max(0, std::min(session_.algorithmFamilySelection, static_cast<int>(matches.size()) - 1));
-		selectedFamily = matches[static_cast<std::size_t>(session_.algorithmFamilySelection)];
-		session_.algorithmFamily = selectedFamily->id;
-		session_.algorithmVariantSelection = 0;
+		algorithmBrowser_.familySelection = std::max(0, std::min(algorithmBrowser_.familySelection, static_cast<int>(matches.size()) - 1));
+		selectedFamily = matches[static_cast<std::size_t>(algorithmBrowser_.familySelection)];
+		algorithmBrowser_.selectedFamily = selectedFamily->id;
+		algorithmBrowser_.variantSelection = 0;
 	}
-	std::vector<const sortinglogic::AlgorithmDescriptor*> variants = visibleVariants(selectedFamily, session_.algorithmSearch);
-	const int familyVisible = std::max(1, static_cast<int>(algorithmFamilyBounds_.height / 30.0f));
-	const int variantVisible = std::max(1, static_cast<int>(algorithmVariantBounds_.height / 30.0f));
-	algorithmFamilyScrollViewport_.configure(algorithmFamilyBounds_, static_cast<float>(matches.size()) * 30.0f, 30.0f,
-		static_cast<float>(session_.algorithmFamilyScroll) * 30.0f);
-	algorithmVariantScrollViewport_.configure(algorithmVariantBounds_, static_cast<float>(variants.size()) * 30.0f, 30.0f,
-		static_cast<float>(session_.algorithmVariantScroll) * 30.0f);
-	session_.algorithmFamilyScroll = static_cast<int>(algorithmFamilyScrollViewport_.offset() / 30.0f + 0.5f);
-	session_.algorithmVariantScroll = static_cast<int>(algorithmVariantScrollViewport_.offset() / 30.0f + 0.5f);
+	std::vector<const sortinglogic::AlgorithmDescriptor*> variants = algorithmBrowser_.visibleVariants(selectedFamily);
+	const int familyVisible = std::max(1, static_cast<int>(algorithmBrowser_.familyBounds.height / 30.0f));
+	const int variantVisible = std::max(1, static_cast<int>(algorithmBrowser_.variantBounds.height / 30.0f));
+	algorithmBrowser_.familyViewport.configure(algorithmBrowser_.familyBounds, static_cast<float>(matches.size()) * 30.0f, 30.0f,
+		static_cast<float>(algorithmBrowser_.familyScroll) * 30.0f);
+	algorithmBrowser_.variantViewport.configure(algorithmBrowser_.variantBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f,
+		static_cast<float>(algorithmBrowser_.variantScroll) * 30.0f);
+	algorithmBrowser_.familyScroll = static_cast<int>(algorithmBrowser_.familyViewport.offset() / 30.0f + 0.5f);
+	algorithmBrowser_.variantScroll = static_cast<int>(algorithmBrowser_.variantViewport.offset() / 30.0f + 0.5f);
 	auto keepSelectionVisible = [](int selection, int visible, int count, int& scroll)
 	{
 		if (selection < scroll) scroll = selection;
 		else if (selection >= scroll + visible) scroll = selection - visible + 1;
 		scroll = std::max(0, std::min(scroll, std::max(0, count - visible)));
 	};
-	if (event.type == SDL_TEXTINPUT && algorithmSearchFocused_)
+	if (event.type == SDL_TEXTINPUT && algorithmBrowser_.searchFocused)
 	{
-		if (session_.algorithmSearch.size() < 64) session_.algorithmSearch += event.text.text;
-		session_.algorithmFamilyScroll = session_.algorithmVariantScroll = 0;
-		session_.algorithmFamilySelection = session_.algorithmVariantSelection = 0;
+		algorithmBrowser_.appendSearch(event.text.text);
 		return true;
 	}
 	if (event.type == SDL_MOUSEWHEEL)
 	{
 		int mouseX = 0, mouseY = 0;
 		SDL_GetMouseState(&mouseX, &mouseY);
-		if (algorithmFamilyScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
-			session_.algorithmFamilyScroll = static_cast<int>(algorithmFamilyScrollViewport_.offset() / 30.0f + 0.5f);
-		else if (algorithmVariantScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
-			session_.algorithmVariantScroll = static_cast<int>(algorithmVariantScrollViewport_.offset() / 30.0f + 0.5f);
+		if (algorithmBrowser_.familyViewport.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+			algorithmBrowser_.familyScroll = static_cast<int>(algorithmBrowser_.familyViewport.offset() / 30.0f + 0.5f);
+		else if (algorithmBrowser_.variantViewport.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+			algorithmBrowser_.variantScroll = static_cast<int>(algorithmBrowser_.variantViewport.offset() / 30.0f + 0.5f);
 		return true;
 	}
 	if (event.type == SDL_KEYDOWN)
 	{
-		if (pendingAlgorithmSelection_) return true;
+		if (algorithmBrowser_.pendingSelection) return true;
 		const SDL_Keycode key = event.key.keysym.sym;
 		if (key == SDLK_ESCAPE)
 		{
-			if (algorithmMenuVariantPane_) { algorithmMenuVariantPane_ = false; algorithmSearchFocused_ = false; }
+			if (algorithmBrowser_.variantPane) { algorithmBrowser_.variantPane = false; algorithmBrowser_.searchFocused = false; }
 			else closeAlgorithmMenu();
 			return true;
 		}
-		if (key == SDLK_BACKSPACE && algorithmSearchFocused_)
+		if (key == SDLK_BACKSPACE && algorithmBrowser_.searchFocused)
 		{
-			if (!session_.algorithmSearch.empty()) session_.algorithmSearch.erase(session_.algorithmSearch.size() - 1);
-			session_.algorithmFamilyScroll = session_.algorithmVariantScroll = 0;
+			algorithmBrowser_.eraseSearchCharacter();
 			return true;
 		}
 		if (key == SDLK_TAB)
 		{
-			algorithmSearchFocused_ = !algorithmSearchFocused_;
+			algorithmBrowser_.searchFocused = !algorithmBrowser_.searchFocused;
 			return true;
 		}
 		if (key == SDLK_UP || key == SDLK_DOWN)
 		{
-			algorithmSearchFocused_ = false;
-			int& selection = algorithmMenuVariantPane_ ? session_.algorithmVariantSelection : session_.algorithmFamilySelection;
-			const int count = algorithmMenuVariantPane_ ? static_cast<int>(variants.size()) : static_cast<int>(matches.size());
+			algorithmBrowser_.searchFocused = false;
+			int& selection = algorithmBrowser_.variantPane ? algorithmBrowser_.variantSelection : algorithmBrowser_.familySelection;
+			const int count = algorithmBrowser_.variantPane ? static_cast<int>(variants.size()) : static_cast<int>(matches.size());
 			if (count > 0)
 				selection = std::max(0, std::min(count - 1, selection + (key == SDLK_DOWN ? 1 : -1)));
-			if (algorithmMenuVariantPane_)
+			if (algorithmBrowser_.variantPane)
 			{
-				algorithmVariantScrollViewport_.ensureItemVisible(static_cast<std::size_t>(selection), 30.0f);
-				session_.algorithmVariantScroll = static_cast<int>(algorithmVariantScrollViewport_.offset() / 30.0f + 0.5f);
-				keepSelectionVisible(selection, variantVisible, count, session_.algorithmVariantScroll);
+				algorithmBrowser_.variantViewport.ensureItemVisible(static_cast<std::size_t>(selection), 30.0f);
+				algorithmBrowser_.variantScroll = static_cast<int>(algorithmBrowser_.variantViewport.offset() / 30.0f + 0.5f);
+				keepSelectionVisible(selection, variantVisible, count, algorithmBrowser_.variantScroll);
 			}
 			else
 			{
-				algorithmFamilyScrollViewport_.ensureItemVisible(static_cast<std::size_t>(selection), 30.0f);
-				session_.algorithmFamilyScroll = static_cast<int>(algorithmFamilyScrollViewport_.offset() / 30.0f + 0.5f);
-				keepSelectionVisible(selection, familyVisible, count, session_.algorithmFamilyScroll);
-				if (count > 0) session_.algorithmFamily = matches[static_cast<std::size_t>(selection)]->id;
+				algorithmBrowser_.familyViewport.ensureItemVisible(static_cast<std::size_t>(selection), 30.0f);
+				algorithmBrowser_.familyScroll = static_cast<int>(algorithmBrowser_.familyViewport.offset() / 30.0f + 0.5f);
+				keepSelectionVisible(selection, familyVisible, count, algorithmBrowser_.familyScroll);
+				if (count > 0) algorithmBrowser_.selectedFamily = matches[static_cast<std::size_t>(selection)]->id;
 			}
 			return true;
 		}
-		if ((key == SDLK_RIGHT || key == SDLK_RETURN || key == SDLK_KP_ENTER) && !algorithmMenuVariantPane_)
+		if ((key == SDLK_RIGHT || key == SDLK_RETURN || key == SDLK_KP_ENTER) && !algorithmBrowser_.variantPane)
 		{
-			algorithmSearchFocused_ = false;
+			algorithmBrowser_.searchFocused = false;
 			if (!matches.empty())
 			{
-				session_.algorithmFamily = matches[static_cast<std::size_t>(session_.algorithmFamilySelection)]->id;
-				selectedFamily = matches[static_cast<std::size_t>(session_.algorithmFamilySelection)];
-				variants = visibleVariants(selectedFamily, session_.algorithmSearch);
-				session_.algorithmVariantSelection = 0;
+				algorithmBrowser_.selectedFamily = matches[static_cast<std::size_t>(algorithmBrowser_.familySelection)]->id;
+				selectedFamily = matches[static_cast<std::size_t>(algorithmBrowser_.familySelection)];
+				variants = algorithmBrowser_.visibleVariants(selectedFamily);
+				algorithmBrowser_.variantSelection = 0;
 				for (std::size_t i = 0; i < variants.size(); ++i)
-					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) session_.algorithmVariantSelection = static_cast<int>(i);
-				algorithmMenuVariantPane_ = true;
-				session_.algorithmVariantScroll = 0;
+					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) algorithmBrowser_.variantSelection = static_cast<int>(i);
+				algorithmBrowser_.variantPane = true;
+				algorithmBrowser_.variantScroll = 0;
 			}
 			return true;
 		}
 		if (key == SDLK_LEFT)
 		{
-			algorithmMenuVariantPane_ = false;
-			algorithmSearchFocused_ = false;
+			algorithmBrowser_.variantPane = false;
+			algorithmBrowser_.searchFocused = false;
 			return true;
 		}
-		if ((key == SDLK_RETURN || key == SDLK_KP_ENTER) && algorithmMenuVariantPane_ &&
-			!variants.empty() && session_.algorithmVariantSelection >= 0 && static_cast<std::size_t>(session_.algorithmVariantSelection) < variants.size())
+		if ((key == SDLK_RETURN || key == SDLK_KP_ENTER) && algorithmBrowser_.variantPane &&
+			!variants.empty() && algorithmBrowser_.variantSelection >= 0 && static_cast<std::size_t>(algorithmBrowser_.variantSelection) < variants.size())
 		{
 			if (!screenModel_.setupEnabled)
 			{
-				algorithmMenuStatus_ = "Pause playback and wait for trace preparation before changing algorithms.";
+				algorithmBrowser_.status = "Pause playback and wait for trace preparation before changing algorithms.";
 				return true;
 			}
-			selectAlgorithmMenuVariant(*variants[static_cast<std::size_t>(session_.algorithmVariantSelection)], action);
+			selectAlgorithmMenuVariant(*variants[static_cast<std::size_t>(algorithmBrowser_.variantSelection)], action);
 			return true;
 		}
 		return true;
@@ -3436,45 +3355,45 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 		return true;
 	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 	{
-		if (pendingAlgorithmSelection_) return true;
+		if (algorithmBrowser_.pendingSelection) return true;
 		const float px = static_cast<float>(event.button.x), py = static_cast<float>(event.button.y);
-		if (!algorithmMenuBounds_.contains(px, py))
+		if (!algorithmBrowser_.bounds.contains(px, py))
 		{
 			closeAlgorithmMenu();
 			return true;
 		}
-		if (algorithmSearchBounds_.contains(px, py))
+		if (algorithmBrowser_.searchBounds.contains(px, py))
 		{
-			algorithmSearchFocused_ = true;
+			algorithmBrowser_.searchFocused = true;
 			return true;
 		}
-		algorithmSearchFocused_ = false;
-		if (algorithmFamilyBounds_.contains(px, py) && !matches.empty())
+		algorithmBrowser_.searchFocused = false;
+		if (algorithmBrowser_.familyBounds.contains(px, py) && !matches.empty())
 		{
-			const int row = algorithmFamilyScrollViewport_.itemAt(px, py, matches.size(), 30.0f);
+			const int row = algorithmBrowser_.familyViewport.itemAt(px, py, matches.size(), 30.0f);
 			if (row >= 0 && static_cast<std::size_t>(row) < matches.size())
 			{
-				session_.algorithmFamilySelection = row;
-				session_.algorithmFamily = matches[static_cast<std::size_t>(row)]->id;
+				algorithmBrowser_.familySelection = row;
+				algorithmBrowser_.selectedFamily = matches[static_cast<std::size_t>(row)]->id;
 				selectedFamily = matches[static_cast<std::size_t>(row)];
-				variants = visibleVariants(selectedFamily, session_.algorithmSearch);
-				session_.algorithmVariantSelection = 0;
+				variants = algorithmBrowser_.visibleVariants(selectedFamily);
+				algorithmBrowser_.variantSelection = 0;
 				for (std::size_t i = 0; i < variants.size(); ++i)
-					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) session_.algorithmVariantSelection = static_cast<int>(i);
-				algorithmMenuVariantPane_ = true;
-				session_.algorithmVariantScroll = 0;
+					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) algorithmBrowser_.variantSelection = static_cast<int>(i);
+				algorithmBrowser_.variantPane = true;
+				algorithmBrowser_.variantScroll = 0;
 			}
 			return true;
 		}
-		if (algorithmVariantBounds_.contains(px, py) && !variants.empty())
+		if (algorithmBrowser_.variantBounds.contains(px, py) && !variants.empty())
 		{
-			const int row = algorithmVariantScrollViewport_.itemAt(px, py, variants.size(), 30.0f);
+			const int row = algorithmBrowser_.variantViewport.itemAt(px, py, variants.size(), 30.0f);
 			if (row >= 0 && static_cast<std::size_t>(row) < variants.size())
 			{
-				session_.algorithmVariantSelection = row;
+				algorithmBrowser_.variantSelection = row;
 				if (!screenModel_.setupEnabled)
 				{
-					algorithmMenuStatus_ = "Pause playback and wait for trace preparation before changing algorithms.";
+					algorithmBrowser_.status = "Pause playback and wait for trace preparation before changing algorithms.";
 					return true;
 				}
 				selectAlgorithmMenuVariant(*variants[static_cast<std::size_t>(row)], action);
@@ -3488,39 +3407,38 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 
 void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 {
-	const std::vector<AlgorithmFamilyEntry> families = algorithmFamilies();
-	const std::vector<const AlgorithmFamilyEntry*> matches = visibleFamilies(families, session_.algorithmSearch);
+	const std::vector<const AlgorithmFamilyEntry*> matches = algorithmBrowser_.visibleFamilies();
 	const AlgorithmFamilyEntry* selectedFamily = nullptr;
 	for (std::size_t i = 0; i < matches.size(); ++i)
-		if (matches[i]->id == session_.algorithmFamily) { selectedFamily = matches[i]; break; }
-	const std::vector<const sortinglogic::AlgorithmDescriptor*> variants = visibleVariants(selectedFamily, session_.algorithmSearch);
-	algorithmFamilyScrollViewport_.configure(algorithmFamilyBounds_, static_cast<float>(matches.size()) * 30.0f, 30.0f,
-		static_cast<float>(session_.algorithmFamilyScroll) * 30.0f);
-	algorithmVariantScrollViewport_.configure(algorithmVariantBounds_, static_cast<float>(variants.size()) * 30.0f, 30.0f,
-		static_cast<float>(session_.algorithmVariantScroll) * 30.0f);
+		if (matches[i]->id == algorithmBrowser_.selectedFamily) { selectedFamily = matches[i]; break; }
+	const std::vector<const sortinglogic::AlgorithmDescriptor*> variants = algorithmBrowser_.visibleVariants(selectedFamily);
+	algorithmBrowser_.familyViewport.configure(algorithmBrowser_.familyBounds, static_cast<float>(matches.size()) * 30.0f, 30.0f,
+		static_cast<float>(algorithmBrowser_.familyScroll) * 30.0f);
+	algorithmBrowser_.variantViewport.configure(algorithmBrowser_.variantBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f,
+		static_cast<float>(algorithmBrowser_.variantScroll) * 30.0f);
 	const ClipBounds screen(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
-	const ClipBounds familyClip(algorithmFamilyBounds_.x, algorithmFamilyBounds_.y, algorithmFamilyBounds_.width, algorithmFamilyBounds_.height);
-	const ClipBounds variantClip(algorithmVariantBounds_.x, algorithmVariantBounds_.y, algorithmVariantBounds_.width, algorithmVariantBounds_.height);
+	const ClipBounds familyClip(algorithmBrowser_.familyBounds.x, algorithmBrowser_.familyBounds.y, algorithmBrowser_.familyBounds.width, algorithmBrowser_.familyBounds.height);
+	const ClipBounds variantClip(algorithmBrowser_.variantBounds.x, algorithmBrowser_.variantBounds.y, algorithmBrowser_.variantBounds.width, algorithmBrowser_.variantBounds.height);
 	submitBox(UiRect(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_)), palette.overlayDim, MaterialId::ModalDim, RenderLayer::ModalDim);
-	submitBox(algorithmMenuBounds_, palette.panel, PanelMaterial, RenderLayer::SettingsPanel, screen);
-	submitBox(UiRect(algorithmMenuBounds_.x, algorithmMenuBounds_.y, algorithmMenuBounds_.width, 2.0f), palette.accent, AccentMaterial, RenderLayer::SettingsAccent, screen);
-	submitBox(algorithmSearchBounds_, algorithmSearchFocused_ ? palette.valueButton : palette.background, PopupMaterial, RenderLayer::SettingsDropdown, screen);
+	submitBox(algorithmBrowser_.bounds, palette.panel, PanelMaterial, RenderLayer::SettingsPanel, screen);
+	submitBox(UiRect(algorithmBrowser_.bounds.x, algorithmBrowser_.bounds.y, algorithmBrowser_.bounds.width, 2.0f), palette.accent, AccentMaterial, RenderLayer::SettingsAccent, screen);
+	submitBox(algorithmBrowser_.searchBounds, algorithmBrowser_.searchFocused ? palette.valueButton : palette.background, PopupMaterial, RenderLayer::SettingsDropdown, screen);
 	if (!labels_["#algorithm_search"]) labels_["#algorithm_search"].reset(new TextLabel("", "Courier New Bold", 14, { 238, 246, 249, 255 }));
 	TextLabel& searchLabel = *labels_["#algorithm_search"];
-	searchLabel.setContent(std::string("Search algorithms: ") + session_.algorithmSearch + (algorithmSearchFocused_ ? "_" : ""));
-	drawText(searchLabel, algorithmSearchBounds_, 14.0f, palette.text, RenderLayer::SettingsDropdownText, screen);
-	submitBox(algorithmFamilyBounds_, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
-	submitBox(algorithmVariantBounds_, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
+	searchLabel.setContent(std::string("Search algorithms: ") + algorithmBrowser_.search + (algorithmBrowser_.searchFocused ? "_" : ""));
+	drawText(searchLabel, algorithmBrowser_.searchBounds, 14.0f, palette.text, RenderLayer::SettingsDropdownText, screen);
+	submitBox(algorithmBrowser_.familyBounds, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
+	submitBox(algorithmBrowser_.variantBounds, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
 	const float rowHeight = 30.0f;
-	const std::size_t familyFirst = algorithmFamilyScrollViewport_.firstVisibleItem(rowHeight);
-	const std::size_t familyRows = algorithmFamilyScrollViewport_.visibleItemCount(matches.size(), rowHeight);
+	const std::size_t familyFirst = algorithmBrowser_.familyViewport.firstVisibleItem(rowHeight);
+	const std::size_t familyRows = algorithmBrowser_.familyViewport.visibleItemCount(matches.size(), rowHeight);
 	for (std::size_t row = 0; row < familyRows; ++row)
 	{
 		const std::size_t familyIndex = familyFirst + row;
 		if (familyIndex >= matches.size()) break;
 		const AlgorithmFamilyEntry* family = matches[familyIndex];
-		const UiRect bounds = algorithmFamilyScrollViewport_.itemBounds(familyIndex, rowHeight);
-		const bool selected = family->id == session_.algorithmFamily;
+		const UiRect bounds = algorithmBrowser_.familyViewport.itemBounds(familyIndex, rowHeight);
+		const bool selected = family->id == algorithmBrowser_.selectedFamily;
 		submitBox(bounds, selected ? palette.accent : palette.button, PopupMaterial, RenderLayer::SettingsDropdown, familyClip);
 		const std::string key = "#menu_family_" + family->id;
 		if (!labels_[key]) labels_[key].reset(new TextLabel(family->name, "Courier New Bold", 13, { 238, 246, 249, 255 }));
@@ -3531,20 +3449,20 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	if (matches.empty())
 	{
 		if (!labels_["#algorithm_no_family"]) labels_["#algorithm_no_family"].reset(new TextLabel("No matching families", "Courier New Bold", 13, { 238, 246, 249, 255 }));
-		drawText(*labels_["#algorithm_no_family"], algorithmFamilyBounds_, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, familyClip);
+		drawText(*labels_["#algorithm_no_family"], algorithmBrowser_.familyBounds, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, familyClip);
 	}
 	if (selectedFamily)
 	{
-		const std::size_t variantFirst = algorithmVariantScrollViewport_.firstVisibleItem(rowHeight);
-		const std::size_t variantRows = algorithmVariantScrollViewport_.visibleItemCount(variants.size(), rowHeight);
+		const std::size_t variantFirst = algorithmBrowser_.variantViewport.firstVisibleItem(rowHeight);
+		const std::size_t variantRows = algorithmBrowser_.variantViewport.visibleItemCount(variants.size(), rowHeight);
 		for (std::size_t row = 0; row < variantRows; ++row)
 		{
 			const std::size_t variantIndex = variantFirst + row;
 			if (variantIndex >= variants.size()) break;
 			const sortinglogic::AlgorithmDescriptor* variant = variants[variantIndex];
-			const UiRect bounds = algorithmVariantScrollViewport_.itemBounds(variantIndex, rowHeight);
+			const UiRect bounds = algorithmBrowser_.variantViewport.itemBounds(variantIndex, rowHeight);
 			const bool selected = static_cast<int>(variant->id) == settings_.simulation.algorithm;
-			const bool keyboardSelected = algorithmMenuVariantPane_ && static_cast<int>(variantIndex) == session_.algorithmVariantSelection;
+			const bool keyboardSelected = algorithmBrowser_.variantPane && static_cast<int>(variantIndex) == algorithmBrowser_.variantSelection;
 			const glm::vec4 variantFill = screenModel_.setupEnabled
 				? (keyboardSelected || selected ? palette.accent : palette.button) : palette.disabledButton;
 			submitBox(bounds, variantFill, PopupMaterial, RenderLayer::SettingsDropdown, variantClip);
@@ -3557,23 +3475,23 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 		if (variants.empty())
 		{
 			if (!labels_["#algorithm_no_variant"]) labels_["#algorithm_no_variant"].reset(new TextLabel("No matching variants", "Courier New Bold", 13, { 238, 246, 249, 255 }));
-			drawText(*labels_["#algorithm_no_variant"], algorithmVariantBounds_, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
+			drawText(*labels_["#algorithm_no_variant"], algorithmBrowser_.variantBounds, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
 		}
 	}
 	else
 	{
 		if (!labels_["#algorithm_choose_family"]) labels_["#algorithm_choose_family"].reset(new TextLabel("Choose a family to see its variants", "Courier New Bold", 13, { 238, 246, 249, 255 }));
-		drawText(*labels_["#algorithm_choose_family"], algorithmVariantBounds_, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
+		drawText(*labels_["#algorithm_choose_family"], algorithmBrowser_.variantBounds, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
 	}
-	const std::string menuStatus = !algorithmMenuStatus_.empty() ? algorithmMenuStatus_ :
+	const std::string menuStatus = !algorithmBrowser_.status.empty() ? algorithmBrowser_.status :
 		!screenModel_.setupEnabled ? "Pause playback before changing algorithms." : std::string();
 	if (!menuStatus.empty())
 	{
 		if (!labels_["#algorithm_menu_status"])
 			labels_["#algorithm_menu_status"].reset(new TextLabel("", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 }));
 		labels_["#algorithm_menu_status"]->setContent(menuStatus);
-		drawText(*labels_["#algorithm_menu_status"], UiRect(algorithmMenuBounds_.x + 12.0f,
-			algorithmMenuBounds_.y + algorithmMenuBounds_.height - 30.0f, algorithmMenuBounds_.width - 24.0f, 18.0f),
+		drawText(*labels_["#algorithm_menu_status"], UiRect(algorithmBrowser_.bounds.x + 12.0f,
+			algorithmBrowser_.bounds.y + algorithmBrowser_.bounds.height - 30.0f, algorithmBrowser_.bounds.width - 24.0f, 18.0f),
 			11.0f, palette.mutedText, RenderLayer::SettingsDropdownText, screen);
 	}
 }

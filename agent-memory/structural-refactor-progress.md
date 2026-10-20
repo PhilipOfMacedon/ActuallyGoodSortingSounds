@@ -362,3 +362,22 @@ Verification:
 - `git diff --check`: passed.
 
 Next: extract one view's composition and state from `ControlPanel`, keeping event-to-action binding at the facade boundary and preserving the shared painting path.
+
+## 2026-10-19 — extract algorithm browser state and catalog queries
+
+Status: implementation and focused verification complete.
+
+- Added `AlgorithmBrowserModel` to own the algorithm picker’s modal state, selected family and variant indices, search text, scroll positions, bounds, and scroll viewports.
+- Moved family grouping and case-insensitive family/variant filtering out of `ControlPanel`. The model preserves catalog ordering and matches the former filtering rules; SDL event translation and painter submission remain in `ControlPanel` for now.
+- Extracted shared ASCII case-insensitive text matching into `TextSearch.h`, used by both the browser and appearance-token search.
+- Removed algorithm-menu fields from the general `UiSessionState`; browser state now has one owner. Added model tests for search equivalence, catalog order, open/close state, typing, and backspace behavior.
+- No simulation, trace, audio, settings format, or rendering command behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git only reported the repository’s normal LF-to-CRLF working-tree notices.
+- The first model test run exposed an overly narrow test expectation: “insertion sort” also matches other insertion-family variants. The test now checks case-insensitive result equivalence and preserved catalog order instead of assuming one result.
+
+Next: separate the browser’s layout and event-to-action policy from `ControlPanel` behind a view-facing interface, keeping the common paint queue and validating scroll, keyboard, and modal behavior through the same production path.
