@@ -55,6 +55,7 @@
     <ClCompile Include="TournamentStrategies.cpp" />
     <ClCompile Include="SmoothHeapStrategies.cpp" />
     <ClCompile Include="HanoiStrategy.cpp" />
+    <ClCompile Include="LibraryStrategies.cpp" />
     <ClCompile Include="PartitionStrategies.cpp" />
     <ClCompile Include="StacklessPartitionStrategies.cpp" />
     <ClCompile Include="PartitionTraceUtilities.cpp" />

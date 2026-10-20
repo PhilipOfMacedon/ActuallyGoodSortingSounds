@@ -1586,3 +1586,11 @@ Moved Hanoi Sort's three-peg workspace and reversible transfer strategy into `Ha
 The x64 Debug and Release solution builds passed. The focused Hanoi suite passed in both configurations with 361,811 checks and no failures. `git diff --check` passed. No animation, sound, or runtime-performance change is claimed.
 
 Next: continue migrating remaining self-contained fallback implementations into family modules, then review coordinator responsibilities separately from algorithm ownership.
+
+## 2026-10-20 — group Library Sort variants in their family module
+
+Moved Library Sort and Simplified Library Sort into `LibraryStrategies.cpp`. Their shared binary-insertion helper remains part of the existing insertion strategy boundary. Both catalog builders now bind directly to the strategies, and both fallback cases were removed.
+
+The x64 Debug and Release solution builds passed. Focused tests passed in both configurations: 231,499 checks for Simplified Library Sort and 92,932 for Library Sort, with no failures. `git diff --check` passed. No operation-order, audio, or performance change is claimed.
+
+Next: continue extracting remaining coordinator-owned families and inspect the catalog/build-request boundary once fewer legacy fallback implementations remain.
