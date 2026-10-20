@@ -22,8 +22,7 @@ namespace sortinglogic
 		: preparedInput_(), currentState_(), trace_(), itemCount_(initialItemCount), cursor_(0), inputSeed_(startupSeed),
 		durationSeconds_(10.0f), elapsedSeconds_(0.0f), direction_(SortDirection::Ascending), algorithm_(SortAlgorithm::Insertion),
 		profile_(profile), domain_(profile == InputProfile::NormalizedFloat ? InputDomain::NormalizedFloats : InputDomain::NonnegativeIntegerKeys),
-		pattern_(InputPattern::Random), shellGapSequence_(ShellGapSequence::Halving),
-		mergeWritebackMode_(MergeWritebackMode::AtomicRangeWrite), mergeExecutionMode_(MergeExecutionMode::BottomUp),
+		pattern_(InputPattern::Random), algorithmConfiguration_(),
 		mergeBufferVisualizationEnabled_(true),
 		completionScanEnabled_(false),
 		baselineKind_(BaselineKind::Shuffle),
@@ -316,8 +315,9 @@ namespace sortinglogic
 	{
 		const CommandResult allowed = checkPreparationAllowed(); if (!allowed.accepted) { status_ = allowed.message; return allowed; }
 		if (sequence < ShellGapSequence::Halving || sequence > ShellGapSequence::Tokuda) return CommandResult(false, "Invalid Shell gap sequence.");
-		if (shellGapSequence_ == sequence) return CommandResult(true, "Shell gap sequence is unchanged.");
-		shellGapSequence_ = sequence; replaceTraceWithBaseline(); status_ = std::string("Shell gap sequence set to ") + shellGapSequenceName(sequence) + "."; return CommandResult(true, status_);
+		if (algorithmConfiguration_.shellGapSequence == sequence) return CommandResult(true, "Shell gap sequence is unchanged.");
+		algorithmConfiguration_.shellGapSequence = sequence;
+		replaceTraceWithBaseline(); status_ = std::string("Shell gap sequence set to ") + shellGapSequenceName(sequence) + "."; return CommandResult(true, status_);
 	}
 
 	CommandResult Simulation::setMergeWritebackMode(MergeWritebackMode mode)
@@ -326,8 +326,8 @@ namespace sortinglogic
 		if (!allowed.accepted) { status_ = allowed.message; return allowed; }
 		if (mode != MergeWritebackMode::AnimatedWrites && mode != MergeWritebackMode::AtomicRangeWrite)
 			return CommandResult(false, "Invalid Merge Sort writeback mode.");
-		if (mergeWritebackMode_ == mode) return CommandResult(true, "Merge Sort writeback mode is unchanged.");
-		mergeWritebackMode_ = mode;
+		if (algorithmConfiguration_.mergeWritebackMode == mode) return CommandResult(true, "Merge Sort writeback mode is unchanged.");
+		algorithmConfiguration_.mergeWritebackMode = mode;
 		replaceTraceWithBaseline();
 		status_ = std::string("Merge Sort writeback set to ") +
 			(mode == MergeWritebackMode::AtomicRangeWrite ? "comparison phase then atomic range write." : "animated item writes.");
@@ -340,8 +340,8 @@ namespace sortinglogic
 		if (!allowed.accepted) { status_ = allowed.message; return allowed; }
 		if (mode != MergeExecutionMode::BottomUp && mode != MergeExecutionMode::TopDown)
 			return CommandResult(false, "Invalid Merge Sort execution mode.");
-		if (mergeExecutionMode_ == mode) return CommandResult(true, "Merge Sort execution mode is unchanged.");
-		mergeExecutionMode_ = mode;
+		if (algorithmConfiguration_.mergeExecutionMode == mode) return CommandResult(true, "Merge Sort execution mode is unchanged.");
+		algorithmConfiguration_.mergeExecutionMode = mode;
 		replaceTraceWithBaseline();
 		status_ = std::string("Merge Sort execution set to ") +
 			(mode == MergeExecutionMode::BottomUp ? "bottom-up." : "top-down.");
@@ -387,9 +387,10 @@ namespace sortinglogic
 		const AlgorithmDescriptor* selected = algorithmDescriptor(algorithm_);
 		request.familyId = selected ? selected->familyId : FamilyId();
 		request.variantId = selected ? selected->variantId : VariantId();
-		request.profile = profile_; request.domain = domain_; request.pattern = pattern_; request.shellGapSequence = shellGapSequence_;
-		request.mergeWritebackMode = mergeWritebackMode_;
-		request.mergeExecutionMode = mergeExecutionMode_;
+		request.profile = profile_; request.domain = domain_; request.pattern = pattern_;
+		request.shellGapSequence = algorithmConfiguration_.shellGapSequence;
+		request.mergeWritebackMode = algorithmConfiguration_.mergeWritebackMode;
+		request.mergeExecutionMode = algorithmConfiguration_.mergeExecutionMode;
 		request.completionScanEnabled = completionScanEnabled_;
 		request.mergeBufferVisualizationEnabled = mergeBufferVisualizationEnabled_;
 		trace_.reset(); currentState_ = makeInitialState(request.input); cursor_ = 0; elapsedSeconds_ = 0.0f; playing_ = false;
@@ -562,8 +563,9 @@ namespace sortinglogic
 		const AlgorithmDescriptor* selected = algorithmDescriptor(algorithm_);
 		result.familyId = selected ? selected->familyId : FamilyId();
 		result.variantId = selected ? selected->variantId : VariantId();
-		result.shellGapSequence = shellGapSequence_; result.mergeWritebackMode = mergeWritebackMode_;
-		result.mergeExecutionMode = mergeExecutionMode_;
+		result.shellGapSequence = algorithmConfiguration_.shellGapSequence;
+		result.mergeWritebackMode = algorithmConfiguration_.mergeWritebackMode;
+		result.mergeExecutionMode = algorithmConfiguration_.mergeExecutionMode;
 		result.mergeBufferVisualizationEnabled = mergeBufferVisualizationEnabled_;
 		result.cursor = cursor_; result.eventCount = trace_ ? trace_->events.size() : 0; result.itemCount = itemCount_; result.inputSeed = inputSeed_;
 		result.audioEligibleEventCount = trace_ ? trace_->audioEventIndices.size() : 0;

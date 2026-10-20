@@ -520,9 +520,9 @@ namespace sortinglogic
 		InputProfile profile() const { return profile_; }
 		InputDomain domain() const { return domain_; }
 		InputPattern pattern() const { return pattern_; }
-		ShellGapSequence shellGapSequence() const { return shellGapSequence_; }
-		MergeWritebackMode mergeWritebackMode() const { return mergeWritebackMode_; }
-		MergeExecutionMode mergeExecutionMode() const { return mergeExecutionMode_; }
+		ShellGapSequence shellGapSequence() const { return algorithmConfiguration_.shellGapSequence; }
+		MergeWritebackMode mergeWritebackMode() const { return algorithmConfiguration_.mergeWritebackMode; }
+		MergeExecutionMode mergeExecutionMode() const { return algorithmConfiguration_.mergeExecutionMode; }
 		bool mergeBufferVisualizationEnabled() const { return mergeBufferVisualizationEnabled_; }
 		bool completionScanEnabled() const { return completionScanEnabled_; }
 		bool isBuildingTrace() const { return buildingTrace_; }
@@ -543,9 +543,7 @@ namespace sortinglogic
 		InputProfile profile_;
 		InputDomain domain_;
 		InputPattern pattern_;
-		ShellGapSequence shellGapSequence_;
-		MergeWritebackMode mergeWritebackMode_;
-		MergeExecutionMode mergeExecutionMode_;
+		AlgorithmConfiguration algorithmConfiguration_;
 		bool mergeBufferVisualizationEnabled_;
 		bool completionScanEnabled_;
 		BaselineKind baselineKind_;

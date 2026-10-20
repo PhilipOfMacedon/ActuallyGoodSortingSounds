@@ -270,7 +270,7 @@ Next: completed in the following entry.
 
 ## 2026-10-19 — add a resolved algorithm configuration value
 
-Status: implementation and focused verification complete.
+Status: committed and pushed as `b0e24f5`.
 
 - Added `AlgorithmConfiguration` to trace requests and immutable traces. Stable catalog options resolve into named fields, and strategies now read that configuration for Shell, Merge, Grail, Base-N heap, Rotate Merge, radix, distribution bucket counts, and Time Sort.
 - Added explicit choice targets for heap arity and Grail buffer mode so they no longer travel internally as overloaded bucket counts. Existing scalar request and trace fields remain compatibility projections.
@@ -287,3 +287,21 @@ Verification:
 - Debug and Release `SoundEngineTests`: passed 417,371 assertions each during this slice; no sound-engine code changed.
 
 Next: move simulation and app request construction toward the resolved configuration value, keeping the old scalar fields at the public compatibility edge until their consumers are migrated.
+
+## 2026-10-19 — consolidate Simulation's stored algorithm choices
+
+Status: implementation and focused verification complete.
+
+- Replaced Simulation's three independent Shell/Merge option members with one `AlgorithmConfiguration` value. Existing accessors and snapshot fields remain stable views of that value.
+- Trace request construction still projects those choices through the legacy scalar adapter while other external request fields are being migrated. The builder resolves that adapter into the immutable typed trace configuration.
+- Added integration checks showing the Simulation-owned Shell sequence and independent Merge execution/writeback choices reach both the built trace configuration and the existing compatibility fields.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 39,520 checks with 0 failures.
+- Debug and Release pinned catalog-coverage runs: each passed 1,741 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- SoundEngine was untouched in this slice; its 417,371-assertion Debug and Release runs passed in the preceding typed-configuration slice.
+
+Next: define one app-to-sorting request path that carries stable option IDs plus the prepared simulation configuration, then retire duplicated named settings values only after their migration adapters are proven.

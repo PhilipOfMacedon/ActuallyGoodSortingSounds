@@ -4680,6 +4680,34 @@ namespace
 			"over-limit Run explains the stochastic algorithm safety ceiling");
 		check(novelty.setItemCount(8).accepted && novelty.snapshot().runCompatible,
 			"reducing the input to the catalogued ceiling re-enables the novelty algorithm");
+		Simulation configured(12, 0xC0A1u);
+		check(configured.selectAlgorithm(SortAlgorithm::Shell).accepted &&
+			configured.setShellGapSequence(ShellGapSequence::Ciura).accepted,
+			"simulation accepts a Shell option through its configuration owner");
+		TraceBuildRequest shellRequest;
+		check(configured.beginTraceBuild(shellRequest).accepted, "configured Shell run starts from simulation state");
+		TraceBuildResult shellResult;
+		try { shellResult.trace = SortTraceBuilder::build(shellRequest); shellResult.succeeded = true; }
+		catch (const std::exception& e) { check(false, std::string("configured Shell trace builds: ") + e.what()); }
+		configured.completeTraceBuild(shellResult);
+		const std::shared_ptr<const SortTrace> configuredShellTrace = configured.currentTrace();
+		check(configuredShellTrace && configuredShellTrace->configuration.shellGapSequence == ShellGapSequence::Ciura &&
+			configuredShellTrace->shellGapSequence == ShellGapSequence::Ciura,
+			"simulation's named algorithm configuration reaches both typed trace state and its compatibility field");
+		check(configured.selectAlgorithm(SortAlgorithm::Merge).accepted &&
+			configured.setMergeExecutionMode(MergeExecutionMode::TopDown).accepted &&
+			configured.setMergeWritebackMode(MergeWritebackMode::AnimatedWrites).accepted,
+			"simulation accepts independent Merge choices through the same configuration owner");
+		TraceBuildRequest mergeRequest;
+		check(configured.beginTraceBuild(mergeRequest).accepted, "configured Merge run starts from simulation state");
+		TraceBuildResult mergeResult;
+		try { mergeResult.trace = SortTraceBuilder::build(mergeRequest); mergeResult.succeeded = true; }
+		catch (const std::exception& e) { check(false, std::string("configured Merge trace builds: ") + e.what()); }
+		configured.completeTraceBuild(mergeResult);
+		const std::shared_ptr<const SortTrace> configuredMergeTrace = configured.currentTrace();
+		check(configuredMergeTrace && configuredMergeTrace->configuration.mergeExecutionMode == MergeExecutionMode::TopDown &&
+			configuredMergeTrace->configuration.mergeWritebackMode == MergeWritebackMode::AnimatedWrites,
+			"simulation configuration preserves independent typed Merge choices in the built trace");
 		for (ShellGapSequence sequence = ShellGapSequence::Halving; sequence <= ShellGapSequence::Tokuda;
 			sequence = static_cast<ShellGapSequence>(static_cast<int>(sequence) + 1))
 		{
