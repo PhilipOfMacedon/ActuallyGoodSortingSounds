@@ -963,14 +963,24 @@ namespace sortinglogic_tests
 		return bytes;
 	}
 
-	void printTraceMemoryProfileRow(const char* name, const sortinglogic::SortTrace& trace)
+	void printTraceMemoryProfileRow(const char* name, const sortinglogic::SortTrace& trace, double buildMilliseconds)
 	{
 		const std::size_t lowerBound = traceRetainedPayloadLowerBound(trace);
 		std::cout << name << " items=" << trace.input.size() << " events=" << trace.events.size()
 			<< " event_capacity=" << trace.events.capacity() << " snapshots=" << trace.snapshots.size()
 			<< " accounted_KiB=" << trace.accountedBytes / 1024
 			<< " retained_payload_lower_bound_KiB=" << lowerBound / 1024
+			<< " build_ms=" << buildMilliseconds
 			<< " complete=" << (trace.complete ? "yes" : "no") << '\n';
+	}
+
+	void buildAndPrintTraceMemoryProfileRow(const char* name, const sortinglogic::TraceBuildRequest& request)
+	{
+		const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+		const sortinglogic::SortTrace trace = sortinglogic::SortTraceBuilder::build(request);
+		const double buildMilliseconds = std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() - started).count();
+		printTraceMemoryProfileRow(name, trace, buildMilliseconds);
 	}
 
 	void runTraceMemoryProfile()
@@ -984,14 +994,21 @@ namespace sortinglogic_tests
 		TraceBuildRequest insertionRequest;
 		insertionRequest.algorithm = SortAlgorithm::Insertion;
 		insertionRequest.input = floats(floatValues);
-		printTraceMemoryProfileRow("Insertion-256", SortTraceBuilder::build(insertionRequest));
+		buildAndPrintTraceMemoryProfileRow("Insertion-256", insertionRequest);
+
+		floatValues.clear();
+		for (std::size_t i = 0; i < 1024; ++i) floatValues.push_back(static_cast<float>((i * 479u) % 1021u) / 1020.0f);
+		TraceBuildRequest budgetedInsertionRequest;
+		budgetedInsertionRequest.algorithm = SortAlgorithm::Insertion;
+		budgetedInsertionRequest.input = floats(floatValues);
+		buildAndPrintTraceMemoryProfileRow("Insertion-1024-budgeted", budgetedInsertionRequest);
 
 		floatValues.clear();
 		for (std::size_t i = 0; i < 800; ++i) floatValues.push_back(static_cast<float>((i * 47u) % 797u) / 796.0f);
 		TraceBuildRequest mergeRequest;
 		mergeRequest.algorithm = SortAlgorithm::Merge;
 		mergeRequest.input = floats(floatValues);
-		printTraceMemoryProfileRow("Merge-800", SortTraceBuilder::build(mergeRequest));
+		buildAndPrintTraceMemoryProfileRow("Merge-800", mergeRequest);
 
 		std::vector<int> integerValues;
 		for (std::size_t i = 0; i < 800; ++i) integerValues.push_back(static_cast<int>((i * 61u) % 800u));
@@ -1000,7 +1017,7 @@ namespace sortinglogic_tests
 		countingRequest.profile = InputProfile::IntegerKeys;
 		countingRequest.domain = InputDomain::NonnegativeIntegerKeys;
 		countingRequest.input = integers(integerValues);
-		printTraceMemoryProfileRow("Counting-800", SortTraceBuilder::build(countingRequest));
+		buildAndPrintTraceMemoryProfileRow("Counting-800", countingRequest);
 	}
 	enum class TestCommandKind { Focused, CatalogCoverage, TraceMemoryProfile };
 	struct RegisteredTest { const char* id; const char* stage; void (*run)(); bool inFullSuite; };

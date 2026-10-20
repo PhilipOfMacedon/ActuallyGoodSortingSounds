@@ -54,7 +54,10 @@ namespace sortinglogic
 			sortinglogic::populateAudioEventIndices(recorder.trace);
 			std::string reason;
 			if (!validateState(recorder.state, request.input.size(), &reason)) throw std::logic_error(reason.c_str());
-			return recorder.trace;
+			// Recorder owns the mutable trace until construction is complete. Move the
+			// finished buffers into the result so a large trace is not deep-copied while
+			// its builder-owned event buffer is still resident.
+			return std::move(recorder.trace);
 		}
 
 	}
