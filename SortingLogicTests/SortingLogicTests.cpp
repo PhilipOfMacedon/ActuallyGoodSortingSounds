@@ -4904,6 +4904,15 @@ int main(int argc, char* argv[])
 		}
 		if (argc > 1 && std::string(argv[1]) == "--core-contracts-only")
 		{
+			using namespace sortinglogic;
+			stage = "Insertion strategy extraction";
+			const std::vector<SortItem> insertionInput = floats({ 0.7f, 0.2f, 0.7f, 0.1f, 0.2f });
+			verifyAlgorithmCase("Extracted Insertion strategy ascending", insertionInput, InputProfile::NormalizedFloat,
+				SortAlgorithm::Insertion, SortDirection::Ascending);
+			verifyAlgorithmCase("Extracted Insertion strategy descending", insertionInput, InputProfile::NormalizedFloat,
+				SortAlgorithm::Insertion, SortDirection::Descending);
+			verifyAlgorithmCase("Intro Sort small-range Insertion fallback", insertionInput, InputProfile::NormalizedFloat,
+				SortAlgorithm::ArrayvIntroSort, SortDirection::Ascending);
 			stage = "testDistributionAudioBaselines";
 			testDistributionAudioBaselines();
 			stage = "testBurntPancakeOrientation";

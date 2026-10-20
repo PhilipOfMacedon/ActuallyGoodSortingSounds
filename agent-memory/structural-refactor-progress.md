@@ -22,7 +22,7 @@ Verification:
 - Sorting tests were not run because no sorting implementation or trace contract changed. No runtime texture-allocation counter or benchmark has been added, so the improvement is based on the corrected call path rather than a measured performance claim.
 - No screenshot-based GUI review was performed for this slice.
 
-Next: freeze the behavioral baselines described in the audit before starting the mechanical `SortingLogic` extraction behind the stable facade.
+Next: resolve text styling and cache wrapped descriptions before the SortingLogic extraction.
 
 ## 2026-10-19 — resolved styles and cached wrapped text
 
@@ -79,11 +79,11 @@ Verification:
 - Release LNK4020 PDB type-record warnings appeared again while linking `AppFrameworkTests`; linking and tests succeeded.
 - No sound, settings, algorithms, event payloads, or trace order were changed.
 
-Next: create the private recorder boundary needed to move algorithm families without turning internal mutation helpers into public API.
+Next: extract trace request validation, then establish the recorder boundary for family modules.
 
 ## 2026-10-19 — isolate trace request validation
 
-Status: request-validation extraction implemented; pending commit.
+Status: request-validation extraction committed and pushed as `6109fa2`.
 
 - Moved both `SortTraceBuilder::build` entry points and request validation into `TraceBuilder.cpp`.
 - Moved the legacy-profile-to-domain compatibility rule into the private `SortingLogicInternal.h`; the public header and request shape remain unchanged.
@@ -96,11 +96,11 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - Release LNK4020 PDB type-record warnings remain present during `AppFrameworkTests` linking.
 
-Next: move one family strategy behind the private recorder contract without altering the event sequence.
+Next: establish the private recorder boundary, then extract the first family strategy.
 
 ## 2026-10-19 — define the private recorder boundary
 
-Status: recorder boundary implemented; pending commit.
+Status: recorder boundary committed and pushed as `458fa02`.
 
 - Moved `Recorder` into the non-public `TraceRecorder.h`, under `sortinglogic::detail`, so future family modules can record semantic operations without adding recorder internals to `SortingLogic.h`.
 - Moved operation/workspace budget exceptions and the accounted-state/event byte helpers into `SortingLogicInternal.h`, shared by recording and failure handling.
@@ -113,4 +113,22 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - Release `AppFrameworkTests` linking again emitted LNK4020 PDB type-record warnings; linking and execution succeeded.
 
-Next: move a small, isolated algorithm strategy into a family module, then expand the private strategy interface only as the actual family dependencies require.
+Next: extract the first family strategy through the private recorder contract.
+
+## 2026-10-19 — extract the first algorithm strategy
+
+Status: Insertion Sort strategy extraction implemented; pending commit.
+
+- Moved the shift-based Insertion Sort builder into `InsertionStrategy.cpp` and declared it through the private `AlgorithmStrategies.h` contract.
+- Routed both the catalog dispatcher and Intro Sort's small-range fallback through that same strategy function. The strategy receives only the private recorder contract and uses the existing comparator and event operations.
+- Added ascending and descending duplicate-key insertion cases plus an Intro Sort small-range fallback case to `--core-contracts-only`; each uses the shared exhaustive cursor, stability, and inverse-replay verifier.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 8,550 checks with 0 failures. These runs include the pinned catalog coverage check.
+- Debug and Release `AppFrameworkTests`: passed.
+- Release `AppFrameworkTests` linking emitted the same LNK4020 PDB type-record warnings; link and execution succeeded.
+- No algorithm event definitions changed; the extracted function body was moved without algorithm edits.
+
+Next: extract the remaining insertion/exchange strategies in coherent batches, then move the static builder registrations away from the large switch without changing their stable IDs or trace signatures.

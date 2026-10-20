@@ -1,4 +1,5 @@
 #include "SortingLogic.h"
+#include "AlgorithmStrategies.h"
 #include "SortingLogicInternal.h"
 #include "TraceRecorder.h"
 
@@ -26,25 +27,6 @@ namespace sortinglogic
 		bool precedes(const SortItem& a, const SortItem& b, SortDirection direction)
 		{
 			return compareItems(a, b, direction) == ComparisonResult::Less;
-		}
-
-		void insertion(Recorder& r)
-		{
-			for (std::size_t i = 1; i < r.state.slots.size(); ++i)
-			{
-				const SortItem key = r.at(i);
-				r.hold(i);
-				std::size_t position = i;
-				while (position > 0)
-				{
-					const SortItem previous = r.at(position - 1);
-					r.compare(previous, key, position - 1, position, "main", "main", SemanticRole::ComparedItem, SemanticRole::HeldKey);
-					if (compareItems(previous, key, r.trace.direction) != ComparisonResult::Greater) break;
-					r.shift(position - 1, position);
-					--position;
-				}
-				r.place(position, key);
-			}
 		}
 
 		void bubble(Recorder& r)
@@ -2890,7 +2872,7 @@ namespace sortinglogic
 				if (static_cast<double>(gap) <= insertionThreshold)
 				{
 					r.addMetric("insertion_fallbacks");
-					insertion(r);
+					strategies::insertion(r);
 					r.annotate("main", RegionKind::Contiguous, 0, count, 1, -1, "Hybrid comb insertion fallback", begin);
 					break;
 				}
@@ -11641,7 +11623,7 @@ namespace sortinglogic
 			{
 				switch (algorithm)
 				{
-				case SortAlgorithm::Insertion: insertion(recorder); break;
+				case SortAlgorithm::Insertion: strategies::insertion(recorder); break;
 				case SortAlgorithm::Bubble: bubble(recorder); break;
 				case SortAlgorithm::Selection: selection(recorder); break;
 				case SortAlgorithm::ArrayvBingo: bingo(recorder); break;
