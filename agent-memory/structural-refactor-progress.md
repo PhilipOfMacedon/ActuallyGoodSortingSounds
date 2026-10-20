@@ -1562,3 +1562,11 @@ Moved Classic Tournament Sort and Tournament Sort (Loser Tree) into `TournamentS
 The x64 Debug and Release solution builds passed. The focused tournament suite passed in both configurations with 229,775 checks and no failures. `git diff --check` passed. No runtime-performance claim is made; this is a source ownership and compile-time organization change.
 
 Next: inspect the remaining sorting coordinator for another cohesive boundary to extract, then update this log and verify the affected contract before each checkpoint.
+
+## 2026-10-20 — extract smooth-heap strategies
+
+Moved Smooth Sort and Binomial Smooth Sort into `SmoothHeapStrategies.cpp` and routed their existing builders through the static strategy interface. Their metric, comparison, mutation, and phase recording bodies were transferred intact; the fallback switch no longer owns these strategies.
+
+The x64 Debug and Release solution builds passed. The focused Smooth Sort suite passed in both configurations with 284,563 checks and no failures. `git diff --check` passed. No behavior or runtime-performance change is claimed.
+
+Next: continue with another cohesive algorithm family or move an adjacent piece of catalog/configuration ownership out of the coordinator, guided by the audit and existing focused tests.
