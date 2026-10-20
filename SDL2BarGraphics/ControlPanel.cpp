@@ -161,13 +161,6 @@ namespace
 		return "";
 	}
 
-std::string formatDuration(float seconds)
-{
-	std::ostringstream value;
-	value << std::setprecision(6) << seconds << " sec";
-	return value.str();
-}
-
 	int paletteIndex(PaletteId id) { return static_cast<int>(id); }
 	const UiThemeCustomization& activeTheme(const UserPreferences& settings)
 	{
@@ -1397,9 +1390,9 @@ void ControlPanel::beginInlineEdit(const std::string& widgetId)
 	if (widgetId != "bars_value" && widgetId != "time_value") return;
 	const InlineEditTarget target = widgetId == "bars_value"
 		? InlineEditTarget::ItemCount : InlineEditTarget::Duration;
-	const std::string initialText = target == InlineEditTarget::ItemCount
-		? std::to_string(settings_.simulation.itemCount)
-		: ([this]() { std::ostringstream value; value << std::setprecision(6) << settings_.simulation.durationSeconds; return value.str(); })();
+	std::string initialText;
+	if (!mainControlsView_.beginInlineValueEdit(target, settings_.simulation.itemCount,
+		settings_.simulation.durationSeconds, initialText)) return;
 	inlineEdit_.begin(target, initialText);
 	SDL_StartTextInput();
 	updateInlineEditLabel();
@@ -1415,10 +1408,7 @@ void ControlPanel::updateInlineEditLabel()
 			? AppearanceInlineEditField::Alpha : AppearanceInlineEditField::Number, inlineEdit_.text());
 		return;
 	}
-	const char* widgetId = inlineEditWidgetId(target);
-	UiWidget* widget = mainUi_.find(widgetId);
-	if (!widget) return;
-	widget->setLabel(inlineEdit_.text() + "|" + (target == InlineEditTarget::ItemCount ? " bars" : " sec"));
+	mainControlsView_.showInlineValueEdit(target, inlineEdit_.text());
 }
 
 bool ControlPanel::appendInlineEditText(const char* text)
@@ -1444,19 +1434,7 @@ bool ControlPanel::commitInlineEdit(AppAction& action)
 		synchronizeAppearanceEditorControls();
 		return true;
 	}
-	if (target == InlineEditTarget::ItemCount)
-	{
-		int value = 0;
-		if (!inlineEdit_.tryParseInteger(value)) return false;
-		action = AppAction(AppActionKind::SetItemCount, 0.0f, value);
-	}
-	else if (target == InlineEditTarget::Duration)
-	{
-		float value = 0.0f;
-		if (!inlineEdit_.tryParseFloat(value)) return false;
-		action = AppAction(AppActionKind::SetDuration, value);
-	}
-	else return false;
+	if (!mainControlsView_.commitInlineValueEdit(target, inlineEdit_, action)) return false;
 	inlineEdit_.finish();
 	SDL_StopTextInput();
 	return true;
@@ -1473,14 +1451,9 @@ void ControlPanel::cancelInlineEdit()
 		synchronizeAppearanceEditorControls();
 		return;
 	}
-	const bool editingBarCount = target == InlineEditTarget::ItemCount;
 	inlineEdit_.finish();
 	SDL_StopTextInput();
-	UiWidget* widget = mainUi_.find(editingBarCount ? "bars_value" : "time_value");
-	if (widget)
-		widget->setLabel(editingBarCount
-			? std::to_string(settings_.simulation.itemCount) + " bars"
-			: formatDuration(settings_.simulation.durationSeconds));
+	mainControlsView_.restoreInlineValueEdit(target, settings_.simulation.itemCount, settings_.simulation.durationSeconds);
 }
 
 void ControlPanel::openAppearanceEditor()

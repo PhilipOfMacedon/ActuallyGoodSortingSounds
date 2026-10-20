@@ -6,6 +6,9 @@
 #include "UiArchitecture.h"
 
 struct UserPreferences;
+struct AppAction;
+class InlineEditModel;
+enum class InlineEditTarget;
 namespace sortinglogic
 {
 	struct RenderSnapshot;
@@ -38,6 +41,11 @@ public:
 	void synchronizeText(const UserPreferences& preferences, UiPresetId activePreset,
 		const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel, std::uint32_t nowMs);
 	void compose(MainControlsPaintSection section, const UiRect& screen, UiPaintContext& paintContext) const;
+	bool beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds,
+		std::string& initialText) const;
+	void showInlineValueEdit(InlineEditTarget target, const std::string& text);
+	void restoreInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds);
+	bool commitInlineValueEdit(InlineEditTarget target, const InlineEditModel& editor, AppAction& action) const;
 
 	UIRoot& controls() { return controls_; }
 	const UIRoot& controls() const { return controls_; }

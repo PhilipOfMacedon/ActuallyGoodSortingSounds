@@ -2479,6 +2479,51 @@ namespace
 			"main controls view keeps action routing, semantic roles, and menu heading behavior in its tree");
 	}
 
+	void testMainControlsViewOwnsInlineValueSemantics()
+	{
+		UserPreferences preferences;
+		MainControlsView view;
+		view.initializeControls(preferences, "Fixture Sort");
+
+		std::string initialText;
+		check(view.beginInlineValueEdit(InlineEditTarget::ItemCount, 80, 10.0f, initialText) && initialText == "80",
+			"main controls view starts item-count editing from the displayed value");
+		view.showInlineValueEdit(InlineEditTarget::ItemCount, initialText);
+		check(view.controls().find("bars_value")->label() == "80| bars",
+			"main controls view owns the item-count edit label and unit");
+		view.restoreInlineValueEdit(InlineEditTarget::ItemCount, 81, 10.0f);
+		check(view.controls().find("bars_value")->label() == "81 bars",
+			"main controls view restores the item-count label after cancellation");
+
+		check(view.beginInlineValueEdit(InlineEditTarget::Duration, 80, 10.0f, initialText) && initialText == "10",
+			"main controls view initializes duration text using its display precision");
+		view.showInlineValueEdit(InlineEditTarget::Duration, "2.5");
+		check(view.controls().find("time_value")->label() == "2.5| sec",
+			"main controls view owns the duration edit label and unit");
+		view.restoreInlineValueEdit(InlineEditTarget::Duration, 80, 1.25f);
+		check(view.controls().find("time_value")->label() == "1.25 sec",
+			"main controls view restores the duration label after cancellation");
+
+		InlineEditModel countEditor;
+		countEditor.begin(InlineEditTarget::ItemCount, "123");
+		AppAction action;
+		check(view.commitInlineValueEdit(InlineEditTarget::ItemCount, countEditor, action) &&
+			action.kind == AppActionKind::SetItemCount && action.selection == 123,
+			"main controls view converts a valid item count to its typed app action");
+		countEditor.begin(InlineEditTarget::ItemCount, "2147483648");
+		check(!view.commitInlineValueEdit(InlineEditTarget::ItemCount, countEditor, action),
+			"main controls view rejects overflowing item-count text");
+
+		InlineEditModel durationEditor;
+		durationEditor.begin(InlineEditTarget::Duration, "2.5");
+		check(view.commitInlineValueEdit(InlineEditTarget::Duration, durationEditor, action) &&
+			action.kind == AppActionKind::SetDuration && action.value == 2.5f,
+			"main controls view converts a valid duration to its typed app action");
+		durationEditor.begin(InlineEditTarget::Duration, "2.5x");
+		check(!view.commitInlineValueEdit(InlineEditTarget::Duration, durationEditor, action),
+			"main controls view rejects malformed duration text");
+	}
+
 	void testMainControlsViewSynchronizesTextPresentation()
 	{
 		UserPreferences preferences;
@@ -4230,6 +4275,7 @@ int main(int argc, char* argv[])
 	testSettingsPanelViewOwnsNavigationAndScrolling();
 	testSettingsPanelViewInitializesItsControls();
 	testMainControlsViewInitializesTypedControls();
+	testMainControlsViewOwnsInlineValueSemantics();
 	testMainControlsViewSynchronizesTextPresentation();
 	testMainControlsViewAppliesLayoutAndVisibility();
 	testTimelineViewOwnsSeekInputAndPaintComposition();

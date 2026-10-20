@@ -1747,3 +1747,11 @@ Next: continue reducing the request's legacy profile/config mirrors at explicit 
 Added headless checks for numeric and alpha editing, invalid input/range rejection, unchanged draft on failure, full-precision edit starts, successful draft updates, and label presentation. The x64 Debug and Release solution builds passed, as did `AppFrameworkTests` in both configurations. `git diff --check` passed. No appearance rendering or settings persistence behavior changed. The smoke window was not reopened for this view-ownership change.
 
 Next: extract the main item-count/duration edit semantics or keep them in the host if they remain tightly coupled to SDL text input, then continue reviewing the `ControlPanel` facade and remaining config compatibility edges.
+
+## 2026-10-20 — move main value edit semantics into the main controls view
+
+`MainControlsView` now owns item-count and duration edit initialization, value/unit formatting, cancellation restoration, input parsing, and creation of typed `SetItemCount`/`SetDuration` actions. `ControlPanel` continues to own the shared draft buffer, SDL text-input lifecycle, and keyboard event routing, then dispatches the view-created action through the existing controller path. Added headless checks for displayed values, cancellation restoration, valid action payloads, integer overflow, and malformed duration input.
+
+The x64 Debug and Release solution builds passed. `AppFrameworkTests` passed in both configurations. `SortingLogicTests --core-contracts-only` passed in both configurations with 39,539 checks and zero failures; `SoundEngineTests` passed in both configurations with 417,376 assertions. The full SortingLogic catalog suite was started but remained CPU-bound for several minutes and was stopped because this UI-only slice does not change sorting behavior. `git diff --check` passed. The user closed the smoke window; it was not reopened for this headless UI change.
+
+Next: continue reducing `ControlPanel` ownership at a view boundary with headless tests, then proceed through the audit's remaining settings, renderer, and application/configuration seams. Keep the structural refactor goal active.

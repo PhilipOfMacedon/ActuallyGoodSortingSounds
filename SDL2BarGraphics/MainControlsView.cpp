@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "AppActions.h"
+#include "InlineEditModel.h"
 #include "PlaybackTimebase.h"
 #include "SettingsPanelCatalog.h"
 #include "UiActionRouting.h"
@@ -33,6 +34,64 @@ MainControlsText::MainControlsText()
 MainControlsView::MainControlsView()
 	: controls_(), text_(), lastLiveTextUpdateMs_(0)
 {
+}
+
+bool MainControlsView::beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds,
+	std::string& initialText) const
+{
+	if (target == InlineEditTarget::ItemCount)
+		initialText = std::to_string(itemCount);
+	else if (target == InlineEditTarget::Duration)
+	{
+		std::ostringstream value;
+		value << std::setprecision(6) << durationSeconds;
+		initialText = value.str();
+	}
+	else return false;
+	return true;
+}
+
+void MainControlsView::showInlineValueEdit(InlineEditTarget target, const std::string& text)
+{
+	const char* controlId = target == InlineEditTarget::ItemCount ? "bars_value" :
+		target == InlineEditTarget::Duration ? "time_value" : "";
+	UiWidget* control = controls_.find(controlId);
+	if (control) control->setLabel(text + "|" + (target == InlineEditTarget::ItemCount ? " bars" : " sec"));
+}
+
+void MainControlsView::restoreInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds)
+{
+	const char* controlId = target == InlineEditTarget::ItemCount ? "bars_value" :
+		target == InlineEditTarget::Duration ? "time_value" : "";
+	UiWidget* control = controls_.find(controlId);
+	if (!control) return;
+	if (target == InlineEditTarget::ItemCount) control->setLabel(std::to_string(itemCount) + " bars");
+	else
+	{
+		std::ostringstream value;
+		value << std::setprecision(6) << durationSeconds << " sec";
+		control->setLabel(value.str());
+	}
+}
+
+bool MainControlsView::commitInlineValueEdit(InlineEditTarget target, const InlineEditModel& editor,
+	AppAction& action) const
+{
+	if (target == InlineEditTarget::ItemCount)
+	{
+		int value = 0;
+		if (!editor.tryParseInteger(value)) return false;
+		action = AppAction(AppActionKind::SetItemCount, 0.0f, value);
+		return true;
+	}
+	if (target == InlineEditTarget::Duration)
+	{
+		float value = 0.0f;
+		if (!editor.tryParseFloat(value)) return false;
+		action = AppAction(AppActionKind::SetDuration, value);
+		return true;
+	}
+	return false;
 }
 
 void MainControlsView::initializeControls(const UserPreferences& preferences, const std::string& algorithmLabel)
