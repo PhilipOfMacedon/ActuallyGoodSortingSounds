@@ -35,6 +35,57 @@ namespace
 	const RenderLayer SettingsLayer = RenderLayer::SettingsPanel;
 	const RenderLayer SettingsTextLayer = RenderLayer::SettingsText;
 
+	template <typename Consumer>
+	class DispatchingUiPaintContext : public UiPaintContext
+	{
+	public:
+		explicit DispatchingUiPaintContext(Consumer& consumer) : consumer_(consumer) {}
+		void submit(const UiPaintCommand& command) override { consumer_(command); }
+	private:
+		Consumer& consumer_;
+	};
+
+	glm::vec4 toGlmColor(const UiColor& color)
+	{
+		return glm::vec4(color.r, color.g, color.b, color.a);
+	}
+
+	UiColor toUiColor(const glm::vec4& color)
+	{
+		return UiColor(color.r, color.g, color.b, color.a);
+	}
+
+	RenderLayer renderLayerForUiPaint(UiPaintLayer layer)
+	{
+		switch (layer)
+		{
+		case UiPaintLayer::Backdrop: return RenderLayer::ModalDim;
+		case UiPaintLayer::Panel: return RenderLayer::SettingsPanel;
+		case UiPaintLayer::Accent: return RenderLayer::SettingsAccent;
+		case UiPaintLayer::Content: return RenderLayer::SettingsDropdown;
+		case UiPaintLayer::Text: return RenderLayer::SettingsDropdownText;
+		}
+		return RenderLayer::SettingsDropdown;
+	}
+
+	MaterialId materialForUiPaint(UiPaintMaterial material)
+	{
+		switch (material)
+		{
+		case UiPaintMaterial::Panel: return PanelMaterial;
+		case UiPaintMaterial::Popup: return PopupMaterial;
+		case UiPaintMaterial::Accent: return AccentMaterial;
+		case UiPaintMaterial::ModalDim: return MaterialId::ModalDim;
+		case UiPaintMaterial::Solid: return PopupMaterial;
+		}
+		return PopupMaterial;
+	}
+
+	ClipBounds renderClip(const UiPaintCommand& command)
+	{
+		return command.hasClip ? ClipBounds(command.clip.x, command.clip.y, command.clip.width, command.clip.height) : ClipBounds();
+	}
+
 	bool translateAlgorithmBrowserEvent(const SDL_Event& event, UiInputEvent& input)
 	{
 		if (event.type == SDL_MOUSEMOTION)
@@ -405,7 +456,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), settingsUi_(), appearanceUi_(), session_(), algorithmBrowser_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+	mainUi_(), settingsUi_(), appearanceUi_(), session_(), algorithmBrowser_(), algorithmBrowserView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
@@ -3265,87 +3316,36 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 {
 	algorithmBrowser_.configureViewports();
-	const std::vector<const AlgorithmFamilyEntry*> matches = algorithmBrowser_.visibleFamilies();
-	const AlgorithmFamilyEntry* selectedFamily = nullptr;
-	for (std::size_t i = 0; i < matches.size(); ++i)
-		if (matches[i]->id == algorithmBrowser_.selectedFamily) { selectedFamily = matches[i]; break; }
-	const std::vector<const sortinglogic::AlgorithmDescriptor*> variants = algorithmBrowser_.visibleVariants(selectedFamily);
-	const ClipBounds screen(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
-	const ClipBounds familyClip(algorithmBrowser_.familyBounds.x, algorithmBrowser_.familyBounds.y, algorithmBrowser_.familyBounds.width, algorithmBrowser_.familyBounds.height);
-	const ClipBounds variantClip(algorithmBrowser_.variantBounds.x, algorithmBrowser_.variantBounds.y, algorithmBrowser_.variantBounds.width, algorithmBrowser_.variantBounds.height);
-	submitBox(UiRect(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_)), palette.overlayDim, MaterialId::ModalDim, RenderLayer::ModalDim);
-	submitBox(algorithmBrowser_.bounds, palette.panel, PanelMaterial, RenderLayer::SettingsPanel, screen);
-	submitBox(UiRect(algorithmBrowser_.bounds.x, algorithmBrowser_.bounds.y, algorithmBrowser_.bounds.width, 2.0f), palette.accent, AccentMaterial, RenderLayer::SettingsAccent, screen);
-	submitBox(algorithmBrowser_.searchBounds, algorithmBrowser_.searchFocused ? palette.valueButton : palette.background, PopupMaterial, RenderLayer::SettingsDropdown, screen);
-	if (!labels_["#algorithm_search"]) labels_["#algorithm_search"].reset(new TextLabel("", "Courier New Bold", 14, { 238, 246, 249, 255 }));
-	TextLabel& searchLabel = *labels_["#algorithm_search"];
-	searchLabel.setContent(std::string("Search algorithms: ") + algorithmBrowser_.search + (algorithmBrowser_.searchFocused ? "_" : ""));
-	drawText(searchLabel, algorithmBrowser_.searchBounds, 14.0f, palette.text, RenderLayer::SettingsDropdownText, screen);
-	submitBox(algorithmBrowser_.familyBounds, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
-	submitBox(algorithmBrowser_.variantBounds, palette.background, PanelMaterial, RenderLayer::SettingsDropdown, screen);
-	const float rowHeight = 30.0f;
-	const std::size_t familyFirst = algorithmBrowser_.familyViewport.firstVisibleItem(rowHeight);
-	const std::size_t familyRows = algorithmBrowser_.familyViewport.visibleItemCount(matches.size(), rowHeight);
-	for (std::size_t row = 0; row < familyRows; ++row)
+	AlgorithmBrowserPalette viewPalette;
+	viewPalette.background = toUiColor(palette.background);
+	viewPalette.panel = toUiColor(palette.panel);
+	viewPalette.button = toUiColor(palette.button);
+	viewPalette.disabledButton = toUiColor(palette.disabledButton);
+	viewPalette.valueButton = toUiColor(palette.valueButton);
+	viewPalette.accent = toUiColor(palette.accent);
+	viewPalette.text = toUiColor(palette.text);
+	viewPalette.mutedText = toUiColor(palette.mutedText);
+	viewPalette.overlayDim = toUiColor(palette.overlayDim);
+
+	auto renderCommand = [this](const UiPaintCommand& command)
 	{
-		const std::size_t familyIndex = familyFirst + row;
-		if (familyIndex >= matches.size()) break;
-		const AlgorithmFamilyEntry* family = matches[familyIndex];
-		const UiRect bounds = algorithmBrowser_.familyViewport.itemBounds(familyIndex, rowHeight);
-		const bool selected = family->id == algorithmBrowser_.selectedFamily;
-		submitBox(bounds, selected ? palette.accent : palette.button, PopupMaterial, RenderLayer::SettingsDropdown, familyClip);
-		const std::string key = "#menu_family_" + family->id;
-		if (!labels_[key]) labels_[key].reset(new TextLabel(family->name, "Courier New Bold", 13, { 238, 246, 249, 255 }));
-		labels_[key]->setContent(family->name);
-			drawText(*labels_[key], UiRect(bounds.x + 6.0f, bounds.y, bounds.width - 18.0f, bounds.height), 12.0f,
-			palette.text, RenderLayer::SettingsDropdownText, familyClip);
-	}
-	if (matches.empty())
-	{
-		if (!labels_["#algorithm_no_family"]) labels_["#algorithm_no_family"].reset(new TextLabel("No matching families", "Courier New Bold", 13, { 238, 246, 249, 255 }));
-		drawText(*labels_["#algorithm_no_family"], algorithmBrowser_.familyBounds, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, familyClip);
-	}
-	if (selectedFamily)
-	{
-		const std::size_t variantFirst = algorithmBrowser_.variantViewport.firstVisibleItem(rowHeight);
-		const std::size_t variantRows = algorithmBrowser_.variantViewport.visibleItemCount(variants.size(), rowHeight);
-		for (std::size_t row = 0; row < variantRows; ++row)
+		const glm::vec4 color = toGlmColor(command.color);
+		const ClipBounds clip = renderClip(command);
+		const RenderLayer layer = renderLayerForUiPaint(command.layer);
+		if (command.primitive == UiPaintPrimitive::Rectangle)
 		{
-			const std::size_t variantIndex = variantFirst + row;
-			if (variantIndex >= variants.size()) break;
-			const sortinglogic::AlgorithmDescriptor* variant = variants[variantIndex];
-			const UiRect bounds = algorithmBrowser_.variantViewport.itemBounds(variantIndex, rowHeight);
-			const bool selected = static_cast<int>(variant->id) == settings_.simulation.algorithm;
-			const bool keyboardSelected = algorithmBrowser_.variantPane && static_cast<int>(variantIndex) == algorithmBrowser_.variantSelection;
-			const glm::vec4 variantFill = screenModel_.setupEnabled
-				? (keyboardSelected || selected ? palette.accent : palette.button) : palette.disabledButton;
-			submitBox(bounds, variantFill, PopupMaterial, RenderLayer::SettingsDropdown, variantClip);
-			const std::string key = "#menu_variant_" + selectedFamily->id + "_" + variant->variantId;
-			if (!labels_[key]) labels_[key].reset(new TextLabel(variant->displayName, "Courier New Bold", 13, { 238, 246, 249, 255 }));
-			labels_[key]->setContent(variant->displayName);
-			drawText(*labels_[key], UiRect(bounds.x + 8.0f, bounds.y, bounds.width - 16.0f, bounds.height), 12.0f,
-				screenModel_.setupEnabled ? palette.text : palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
+			submitBox(command.bounds, color, materialForUiPaint(command.material), layer, clip);
+			return;
 		}
-		if (variants.empty())
-		{
-			if (!labels_["#algorithm_no_variant"]) labels_["#algorithm_no_variant"].reset(new TextLabel("No matching variants", "Courier New Bold", 13, { 238, 246, 249, 255 }));
-			drawText(*labels_["#algorithm_no_variant"], algorithmBrowser_.variantBounds, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
-		}
-	}
-	else
-	{
-		if (!labels_["#algorithm_choose_family"]) labels_["#algorithm_choose_family"].reset(new TextLabel("Choose a family to see its variants", "Courier New Bold", 13, { 238, 246, 249, 255 }));
-		drawText(*labels_["#algorithm_choose_family"], algorithmBrowser_.variantBounds, 13.0f, palette.mutedText, RenderLayer::SettingsDropdownText, variantClip);
-	}
-	const std::string menuStatus = !algorithmBrowser_.status.empty() ? algorithmBrowser_.status :
-		!screenModel_.setupEnabled ? "Pause playback before changing algorithms." : std::string();
-	if (!menuStatus.empty())
-	{
-		if (!labels_["#algorithm_menu_status"])
-			labels_["#algorithm_menu_status"].reset(new TextLabel("", "Courier New Bold", 12, SDL_Color{ 255, 255, 255, 255 }));
-		labels_["#algorithm_menu_status"]->setContent(menuStatus);
-		drawText(*labels_["#algorithm_menu_status"], UiRect(algorithmBrowser_.bounds.x + 12.0f,
-			algorithmBrowser_.bounds.y + algorithmBrowser_.bounds.height - 30.0f, algorithmBrowser_.bounds.width - 24.0f, 18.0f),
-			11.0f, palette.mutedText, RenderLayer::SettingsDropdownText, screen);
-	}
+		if (command.primitive != UiPaintPrimitive::Text || command.elementId.empty()) return;
+		if (!labels_[command.elementId])
+			labels_[command.elementId].reset(new TextLabel(command.text, "Courier New Bold",
+				std::max(8, static_cast<int>(std::lround(command.textHeight))), SDL_Color{ 255, 255, 255, 255 }));
+		TextLabel& label = *labels_[command.elementId];
+		label.setContent(command.text);
+		drawText(label, command.bounds, command.textHeight, color, layer, clip);
+	};
+	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
+	algorithmBrowserView_.compose(algorithmBrowser_, viewPalette, screenModel_.setupEnabled,
+		settings_.simulation.algorithm, width_, height_, paintContext);
 }

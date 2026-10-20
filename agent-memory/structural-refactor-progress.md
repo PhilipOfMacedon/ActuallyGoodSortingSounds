@@ -401,3 +401,21 @@ Verification:
 - A focused test run initially used the Insertion family as an overflow fixture, but it did not exceed the default visible row count. The test now derives the largest registered family and uses a shorter viewport, verifying actual overflow rather than assuming it.
 
 Next: connect the browser’s real paint composition to the shared paint-command contract (or remove that unused parallel abstraction), so the same browser layout can be exercised by headless composition tests and consumed by the production renderer without duplicating widget geometry.
+
+## 2026-10-19 — route algorithm browser through shared UI paint
+
+Status: implementation and focused verification complete.
+
+- Added `AlgorithmBrowserView`, a stateless composer that emits the browser's ordered rectangles and text through `UiPaintContext`. It consumes the existing browser model, catalog entries, viewport bounds, selection state, and theme palette.
+- Connected the live `ControlPanel` renderer adapter to those same commands. The adapter retains the prior renderer materials, clip rectangles, paint layers, stable text-label cache IDs, and submission order, so runtime and headless tests now share actual browser composition rather than merely testing the recorder.
+- Expanded paint-contract checks for dim/panel order, search labels, clipped family rows, variant labels, empty search results, and busy feedback. The fixture explicitly reports a missing catalog entry instead of silently skipping the checks.
+- Visually inspected the running x64 Debug application and opened the algorithm browser. Its overlay, search field, family/variant panes, selected rows, and background dimming render as expected.
+- No sorting, trace, audio, settings, or SDL input behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git emitted only configured LF-to-CRLF working-tree notices.
+
+Next: extract the Appearance settings composition as the next sizeable view boundary, keeping setting edits as typed actions and using the same production/test paint-command path.

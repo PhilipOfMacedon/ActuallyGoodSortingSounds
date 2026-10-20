@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AlgorithmBrowserModel.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="AlgorithmBrowserView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -56,6 +57,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AlgorithmBrowserModel.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="AlgorithmBrowserView.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppActions.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppController.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AudioPresentationBridge.h"><Filter>Header Files</Filter></ClInclude>

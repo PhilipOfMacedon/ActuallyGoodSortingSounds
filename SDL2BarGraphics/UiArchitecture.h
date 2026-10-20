@@ -152,15 +152,29 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 	const std::map<std::string, UiColor>& resolvedPalette);
 
 enum class UiPaintPrimitive { Rectangle, Border, Text, Icon };
+enum class UiPaintMaterial { Solid, Panel, Popup, Accent, ModalDim };
+enum class UiPaintLayer { Backdrop, Panel, Accent, Content, Text };
 struct UiPaintCommand
 {
 	UiPaintPrimitive primitive;
 	UiRect bounds;
 	UiColor color;
 	std::string text;
+	std::string elementId;
+	UiPaintMaterial material;
+	UiPaintLayer layer;
+	UiRect clip;
+	bool hasClip;
+	float textHeight;
 	UiPaintCommand(UiPaintPrimitive kind = UiPaintPrimitive::Rectangle, const UiRect& area = UiRect(),
 		const UiColor& tint = UiColor(), const std::string& label = std::string())
-		: primitive(kind), bounds(area), color(tint), text(label) {}
+		: primitive(kind), bounds(area), color(tint), text(label), elementId(), material(UiPaintMaterial::Solid),
+			layer(UiPaintLayer::Content), clip(), hasClip(false), textHeight(12.0f) {}
+	UiPaintCommand(UiPaintPrimitive kind, const UiRect& area, const UiColor& tint, const std::string& label,
+		const std::string& stableElementId, UiPaintMaterial paintMaterial, UiPaintLayer paintLayer,
+		const UiRect& clipBounds, bool clipped, float targetTextHeight)
+		: primitive(kind), bounds(area), color(tint), text(label), elementId(stableElementId), material(paintMaterial),
+			layer(paintLayer), clip(clipBounds), hasClip(clipped), textHeight(targetTextHeight) {}
 };
 
 class UiPaintContext

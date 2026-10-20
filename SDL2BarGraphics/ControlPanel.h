@@ -7,6 +7,7 @@
 
 #include <SDL.h>
 
+#include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
 #include "Renderer2D.h"
 #include "TextLabel.h"
@@ -56,6 +57,7 @@ private:
 	UIRoot appearanceUi_;
 	UiSessionState session_;
 	AlgorithmBrowserModel algorithmBrowser_;
+	AlgorithmBrowserView algorithmBrowserView_;
 	UiScreenModel screenModel_;
 	UiLayoutResult layoutResult_;
 	UserPreferences renderPreferences_;

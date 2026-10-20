@@ -12,6 +12,7 @@
 #include "../SDL2BarGraphics/LayoutMetrics.h"
 #include "../SDL2BarGraphics/BarCountSteps.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserModel.h"
+#include "../SDL2BarGraphics/AlgorithmBrowserView.h"
 #include "../SDL2BarGraphics/AppController.h"
 #include "../SDL2BarGraphics/AudioPresentationBridge.h"
 #include "../SDL2BarGraphics/RenderPipeline.h"
@@ -925,6 +926,65 @@ namespace
 			UiInputEvent(UiInputType::PointerDown, 799.0f, 599.0f), true, static_cast<int>(insertion->id));
 		check(dismissed.closeRequested,
 			"outside pointer input requests modal dismissal");
+	}
+
+	void testAlgorithmBrowserPaintComposition()
+	{
+		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
+		check(insertion != nullptr, "browser paint fixture uses a registered algorithm");
+		if (!insertion) return;
+		AlgorithmBrowserModel browser;
+		browser.begin(insertion->familyId);
+		browser.layout(UiRect(20.0f, 20.0f, 120.0f, 30.0f), 800, 600);
+		browser.prepare();
+		AlgorithmBrowserPalette palette;
+		palette.background = UiColor(0.1f, 0.1f, 0.1f, 1.0f);
+		palette.panel = UiColor(0.2f, 0.2f, 0.2f, 1.0f);
+		palette.button = UiColor(0.3f, 0.3f, 0.3f, 1.0f);
+		palette.disabledButton = UiColor(0.25f, 0.25f, 0.25f, 1.0f);
+		palette.valueButton = UiColor(0.35f, 0.35f, 0.35f, 1.0f);
+		palette.accent = UiColor(0.4f, 0.4f, 0.4f, 1.0f);
+		palette.text = UiColor(0.9f, 0.9f, 0.9f, 1.0f);
+		palette.mutedText = UiColor(0.6f, 0.6f, 0.6f, 1.0f);
+		palette.overlayDim = UiColor(0.0f, 0.0f, 0.0f, 0.5f);
+
+		AlgorithmBrowserView view;
+		RecordingUiPaintContext recorder;
+		view.compose(browser, palette, true, static_cast<int>(insertion->id), 800, 600, recorder);
+		const std::vector<UiPaintCommand>& commands = recorder.commands();
+		check(commands.size() > 8 && commands[0].primitive == UiPaintPrimitive::Rectangle &&
+			commands[0].material == UiPaintMaterial::ModalDim && commands[0].layer == UiPaintLayer::Backdrop,
+			"browser composition begins with the dimmed backdrop in painter order");
+		bool hasSearchText = false;
+		bool hasFamilyClip = false;
+		bool hasVariantText = false;
+		for (std::size_t i = 0; i < commands.size(); ++i)
+		{
+			if (commands[i].elementId == "#algorithm_search" && commands[i].text.find("Search algorithms:") == 0)
+				hasSearchText = true;
+			if (commands[i].primitive == UiPaintPrimitive::Rectangle && commands[i].material == UiPaintMaterial::Popup &&
+				commands[i].hasClip && commands[i].clip.width == browser.familyBounds.width)
+				hasFamilyClip = true;
+			if (commands[i].primitive == UiPaintPrimitive::Text && commands[i].elementId.find("#menu_variant_") == 0)
+				hasVariantText = true;
+		}
+		check(hasSearchText && hasFamilyClip && hasVariantText,
+			"browser composition emits searchable text, clipped family rows, and registered variant labels");
+
+		browser.search = "no-such-algorithm";
+		browser.configureViewports();
+		recorder.clear();
+		view.compose(browser, palette, false, static_cast<int>(insertion->id), 800, 600, recorder);
+		bool hasEmptyFamilyMessage = false;
+		bool hasBusyStatus = false;
+		for (std::size_t i = 0; i < recorder.commands().size(); ++i)
+		{
+			const UiPaintCommand& command = recorder.commands()[i];
+			hasEmptyFamilyMessage = hasEmptyFamilyMessage || command.text == "No matching families";
+			hasBusyStatus = hasBusyStatus || command.text == "Pause playback before changing algorithms.";
+		}
+		check(hasEmptyFamilyMessage && hasBusyStatus,
+			"browser composition includes empty-search and busy-state feedback in the shared command stream");
 	}
 
 	void testSettingsStore()
@@ -2128,6 +2188,7 @@ int main()
 	testLayoutAndWidgets();
 	testAlgorithmBrowserModel();
 	testAlgorithmBrowserInputAndLayout();
+	testAlgorithmBrowserPaintComposition();
 	testSettingsStore();
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();
