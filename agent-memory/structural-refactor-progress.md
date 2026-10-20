@@ -65,7 +65,7 @@ Next: extract Simulation and input-generation ownership behind the existing faca
 
 ## 2026-10-19 — isolate simulation and prepared input
 
-Status: Simulation/input extraction implemented; pending commit.
+Status: Simulation/input extraction committed and pushed as `8d5368f`.
 
 - Moved seed creation, prepared input generation, baseline presets, configuration commands, trace build lifecycle, playback/seek, active-role projection, and snapshots into `Simulation.cpp`.
 - Kept the `Simulation` type and public API in `SortingLogic.h`. The move uses existing public `SortingLogic` contracts for replay, compatibility, and catalog metadata; no new cross-module public API was introduced.
@@ -79,4 +79,21 @@ Verification:
 - Release LNK4020 PDB type-record warnings appeared again while linking `AppFrameworkTests`; linking and tests succeeded.
 - No sound, settings, algorithms, event payloads, or trace order were changed.
 
-Next: separate trace request validation/dispatch from recording, then create the private recorder boundary needed to move algorithm families without turning internal mutation helpers into public API.
+Next: create the private recorder boundary needed to move algorithm families without turning internal mutation helpers into public API.
+
+## 2026-10-19 — isolate trace request validation
+
+Status: request-validation extraction implemented; pending commit.
+
+- Moved both `SortTraceBuilder::build` entry points and request validation into `TraceBuilder.cpp`.
+- Moved the legacy-profile-to-domain compatibility rule into the private `SortingLogicInternal.h`; the public header and request shape remain unchanged.
+- The extracted validation block matches its prior implementation aside from whitespace-only lines.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 8,218 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- Release LNK4020 PDB type-record warnings remain present during `AppFrameworkTests` linking.
+
+Next: make the recorder a private shared implementation contract, then move one family strategy and its registration without altering the event sequence.

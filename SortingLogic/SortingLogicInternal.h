@@ -12,6 +12,14 @@ namespace sortinglogic
 {
 	namespace detail
 	{
+		inline InputDomain effectiveDomain(const TraceBuildRequest& request)
+		{
+			// Preserve source compatibility for existing callers that set only the old profile field.
+			if (request.domain == InputDomain::NormalizedFloats && request.profile == InputProfile::IntegerKeys)
+				return InputDomain::NonnegativeIntegerKeys;
+			return request.domain;
+		}
+
 		inline void require(bool condition, const char* message)
 		{
 			if (!condition) throw std::logic_error(message);
