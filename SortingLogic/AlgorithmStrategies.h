@@ -51,6 +51,17 @@ namespace sortinglogic
 		void avlTreeSort(detail::Recorder& recorder);
 		void splayTreeSort(detail::Recorder& recorder);
 		void redBlackTreeSort(detail::Recorder& recorder);
+		void quick(detail::Recorder& recorder);
+		void leftLeftQuick(detail::Recorder& recorder);
+		void leftRightQuick(detail::Recorder& recorder);
+		void leftRightQuickParallel(detail::Recorder& recorder);
+		void dualPivotQuick(detail::Recorder& recorder);
+		void optimizedDualPivotQuick(detail::Recorder& recorder);
+		void stableQuick(detail::Recorder& recorder);
+		void stableQuickParallel(detail::Recorder& recorder);
+		void forcedStableQuick(detail::Recorder& recorder);
+		void ternaryLeftLeftQuick(detail::Recorder& recorder);
+		void ternaryLeftRightQuick(detail::Recorder& recorder);
 		void optimizedBubble(detail::Recorder& recorder);
 		void optimizedCocktail(detail::Recorder& recorder);
 		void selection(detail::Recorder& recorder);

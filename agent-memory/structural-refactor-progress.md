@@ -1191,3 +1191,19 @@ Verification:
 - `git diff --check` passed.
 
 Next: continue with partition and merge ownership boundaries; keep the generic recorder helper surface narrow and split the strategy declarations by family if the shared header begins to obscure dependencies.
+
+## 2026-10-20 — extract Quick partition strategies
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved the standard midpoint Quick, left-left, left-right, dual-pivot, stable, forced-stable, and ternary Quick variants into `PartitionStrategies.cpp`.
+- Added thin unary strategy entry points for configuration choices that were previously represented by boolean parameters. Eleven stable algorithm IDs now dispatch directly to their extracted strategy builders; their catalog descriptors, options, seeds, traces, and fallback behavior are unchanged.
+- Added `--partition-quick-only` to compose the existing pointer, dual-pivot, stable, and ternary Quick regressions.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- Focused Quick-family tests passed 106,359 checks; pinned catalog coverage passed 1,741 checks; SortingLogic core contracts passed 39,535 checks in both Debug and Release. All reported 0 failures.
+- `git diff --check` passed. `SortingLogic.cpp` is now 8,694 physical lines, down 502 lines from the tree extraction checkpoint. This records source relocation, not runtime speed.
+
+Next: continue with the remaining partition hybrids and merge strategies. Keep shared insertion/heap kernels explicit, and extract merge helpers only with the strategies that own their trace conventions.
