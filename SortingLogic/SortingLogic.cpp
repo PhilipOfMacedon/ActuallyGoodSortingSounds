@@ -101,124 +101,6 @@ namespace sortinglogic
 			r.resizeCounters(consumedLane, 0);
 		}
 
-		void flanSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			for (const char* key : { "flan_partitions", "flan_pivot_comparisons", "flan_comparisons", "flan_equal_items",
-				"flan_insertion_fallbacks", "flan_maximum_depth" }) r.declareMetric(key);
-			if (count < 2) return;
-			struct Range { std::size_t first, last, depth; Range(std::size_t a, std::size_t b, std::size_t d) : first(a), last(b), depth(d) {} };
-			std::vector<Range> pending(1, Range(0, count, 0));
-			while (!pending.empty())
-			{
-				const Range range = pending.back(); pending.pop_back();
-				if (range.last - range.first < 2) continue;
-				r.setMetric("flan_maximum_depth", (std::max)(r.state.metrics.algorithm["flan_maximum_depth"], static_cast<std::uint64_t>(range.depth)));
-				if (range.last - range.first <= 24)
-				{
-					strategies::binaryInsertionRange(r, range.first, range.last); r.addMetric("flan_insertion_fallbacks"); continue;
-				}
-				const std::size_t n = range.last - range.first;
-				std::vector<std::size_t> positions;
-				for (std::size_t i = 0; i < 9; ++i) positions.push_back(range.first + ((n - 1) * i) / 8);
-				const SortItem pivot = detail::sampledMedian(r, positions, "flan").first;
-				std::size_t less = range.first, scan = range.first, greater = range.last;
-				const std::size_t pivotIndex = positions[4];
-				const std::size_t partitionBegin = r.trace.events.size();
-				const int phase = r.beginPhase("Flan three-way ninther partition");
-				while (scan < greater)
-				{
-					r.chargeWork();
-					const SortItem item = r.at(scan);
-					r.compare(item, pivot, scan, pivotIndex, "main", "main", SemanticRole::ComparedItem, SemanticRole::Pivot);
-					r.addMetric("flan_comparisons");
-					const ComparisonResult order = compareItems(item, pivot, r.trace.direction);
-					if (order == ComparisonResult::Less) { r.swap(less++, scan++, SemanticRole::WriteTarget); }
-					else if (order == ComparisonResult::Greater) { r.swap(scan, --greater, SemanticRole::WriteTarget); }
-					else { ++scan; r.addMetric("flan_equal_items"); }
-				}
-				r.addMetric("flan_partitions");
-				r.annotate("main", RegionKind::Contiguous, range.first, less, 1, phase, "Less than pivot", partitionBegin);
-				r.annotate("main", RegionKind::Contiguous, less, greater, 1, phase, "Pivot equals", partitionBegin);
-				r.annotate("main", RegionKind::Contiguous, greater, range.last, 1, phase, "Greater than pivot", partitionBegin);
-				r.endPhase(phase, "Flan partition complete");
-				const Range left(range.first, less, range.depth + 1), right(greater, range.last, range.depth + 1);
-				if (left.last - left.first > right.last - right.first) { pending.push_back(left); pending.push_back(right); }
-				else { pending.push_back(right); pending.push_back(left); }
-			}
-		}
-
-		void fluxSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			for (const char* key : { "flux_analyzed_transitions", "flux_descending_transitions", "flux_sorted_fast_paths",
-				"flux_reversed_fast_paths", "flux_near_ordered_fallbacks", "flux_partitions", "flux_pivot_comparisons",
-				"flux_comparisons", "flux_equal_items", "flux_insertion_fallbacks", "flux_maximum_depth" }) r.declareMetric(key);
-			if (count < 2) return;
-			std::size_t descents = 0;
-			for (std::size_t i = 1; i < count; ++i)
-			{
-				r.chargeWork();
-				const SortItem a = r.at(i - 1), b = r.at(i);
-				r.compare(a, b, i - 1, i, "main", "main", SemanticRole::ComparedItem, SemanticRole::ProbedItem);
-				r.addMetric("flux_analyzed_transitions");
-				if (compareItems(a, b, r.trace.direction) == ComparisonResult::Greater)
-				{
-					++descents;
-					r.addMetric("flux_descending_transitions");
-				}
-			}
-			if (descents == 0) { r.addMetric("flux_sorted_fast_paths"); return; }
-			if (descents == count - 1)
-			{
-				for (std::size_t left = 0, right = count - 1; left < right; ++left, --right) r.swap(left, right, SemanticRole::WriteTarget);
-				r.addMetric("flux_reversed_fast_paths"); return;
-			}
-			if (descents <= count / 6 || descents >= (count * 5) / 6)
-			{
-				strategies::binaryInsertionRange(r, 0, count); r.addMetric("flux_near_ordered_fallbacks"); return;
-			}
-			struct Range { std::size_t first, last, depth; Range(std::size_t a, std::size_t b, std::size_t d) : first(a), last(b), depth(d) {} };
-			std::vector<Range> pending(1, Range(0, count, 0));
-			while (!pending.empty())
-			{
-				const Range range = pending.back(); pending.pop_back();
-				if (range.last - range.first < 2) continue;
-				r.setMetric("flux_maximum_depth", (std::max)(r.state.metrics.algorithm["flux_maximum_depth"], static_cast<std::uint64_t>(range.depth)));
-				if (range.last - range.first <= 20)
-				{
-					strategies::binaryInsertionRange(r, range.first, range.last); r.addMetric("flux_insertion_fallbacks"); continue;
-				}
-				const std::size_t n = range.last - range.first;
-				const std::vector<std::size_t> positions = { range.first, range.first + n / 4, range.first + n / 2,
-					range.first + (3 * n) / 4, range.last - 1 };
-				const SortItem pivot = detail::sampledMedian(r, positions, "flux").first;
-				const std::size_t pivotIndex = positions[2];
-				std::size_t less = range.first, scan = range.first, greater = range.last;
-				const std::size_t partitionBegin = r.trace.events.size();
-				const int phase = r.beginPhase("Flux median-of-five partition");
-				while (scan < greater)
-				{
-					r.chargeWork();
-					const SortItem item = r.at(scan);
-					r.compare(item, pivot, scan, pivotIndex, "main", "main", SemanticRole::ComparedItem, SemanticRole::Pivot);
-					r.addMetric("flux_comparisons");
-					const ComparisonResult order = compareItems(item, pivot, r.trace.direction);
-					if (order == ComparisonResult::Less) r.swap(less++, scan++, SemanticRole::WriteTarget);
-					else if (order == ComparisonResult::Greater) r.swap(scan, --greater, SemanticRole::WriteTarget);
-					else { ++scan; r.addMetric("flux_equal_items"); }
-				}
-				r.addMetric("flux_partitions");
-				r.annotate("main", RegionKind::Contiguous, range.first, less, 1, phase, "Flux lower partition", partitionBegin);
-				r.annotate("main", RegionKind::Contiguous, less, greater, 1, phase, "Flux pivot band", partitionBegin);
-				r.annotate("main", RegionKind::Contiguous, greater, range.last, 1, phase, "Flux upper partition", partitionBegin);
-				r.endPhase(phase, "Flux partition complete");
-				const Range left(range.first, less, range.depth + 1), right(greater, range.last, range.depth + 1);
-				if (left.last - left.first > right.last - right.first) { pending.push_back(left); pending.push_back(right); }
-				else { pending.push_back(right); pending.push_back(left); }
-			}
-		}
-
 		void quadMergeSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -1949,8 +1831,8 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvMedianMerge: medianMergeSort(recorder); break;
 
 
-				case SortAlgorithm::ArrayvFlan: flanSort(recorder); break;
-				case SortAlgorithm::ArrayvFlux: fluxSort(recorder); break;
+
+
 
 
 
@@ -2045,8 +1927,8 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvMedianMergeRequest, ArrayvMedianMerge)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvRemiRequest, ArrayvRemi, &strategies::remiSortStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvChaliceRequest, ArrayvChalice, &strategies::chaliceSortStrategy)
-		SORT_REQUEST_BUILDER(buildArrayvFlanRequest, ArrayvFlan)
-		SORT_REQUEST_BUILDER(buildArrayvFluxRequest, ArrayvFlux)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvFlanRequest, ArrayvFlan, &strategies::flanSortStrategy)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvFluxRequest, ArrayvFlux, &strategies::fluxSortStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvKotaRequest, ArrayvKota, &strategies::kotaMergeStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOptimizedWeaveMergeRequest, ArrayvOptimizedWeaveMerge, &strategies::optimizedWeaveMergeStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvWikiRequest, ArrayvWiki, &strategies::wikiMergeStrategy)

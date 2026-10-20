@@ -101,6 +101,8 @@ namespace sortinglogic
 		void avlTreeSort(detail::Recorder& recorder);
 		void splayTreeSort(detail::Recorder& recorder);
 		void redBlackTreeSort(detail::Recorder& recorder);
+		void flanSortStrategy(detail::Recorder& recorder);
+		void fluxSortStrategy(detail::Recorder& recorder);
 		void quick(detail::Recorder& recorder);
 		void leftLeftQuick(detail::Recorder& recorder);
 		void leftRightQuick(detail::Recorder& recorder);

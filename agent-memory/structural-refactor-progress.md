@@ -1669,3 +1669,10 @@ Moved Optimized Weave, Wiki, Andrey, New Shuffle, Yuji Buffered Merge, and Kota 
 The x64 Debug and Release solution builds passed. The focused merge-roster suite passed in both configurations with 17,048 checks; New Shuffle's dedicated suite passed with 3,165 checks. All reported zero failures. git diff --check passed. SortingLogic.cpp is now 3389 lines. No runtime-performance change is claimed.
 
 Next: continue extracting remaining merge/hybrid methods and their shared kernels, then move insertion/workspace algorithms and reduce the coordinator dispatch further.
+## 2026-10-20 — move Flan and Flux into partition strategies
+
+Moved Flan and Flux implementations from the coordinator into PartitionStrategies.cpp. They now bind as registered partition strategies and use the shared sampled-pivot helper from PartitionTraceUtilities; the old fallback cases are removed.
+
+The x64 Debug and Release solution builds passed. The focused merge-roster batch covering Flan and Flux passed in both configurations with 17,048 checks and zero failures. git diff --check passed. SortingLogic.cpp is now 3271 lines. No behavior or runtime-performance change is claimed.
+
+Next: continue extracting block, in-place, adaptive, and workspace merge methods, then move the remaining insertion and lookup families.
