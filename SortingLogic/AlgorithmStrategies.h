@@ -129,6 +129,12 @@ namespace sortinglogic
 		void newShuffleMergeStrategy(detail::Recorder& recorder);
 		void yujiBufferedMergeStrategy(detail::Recorder& recorder);
 		void kotaMergeStrategy(detail::Recorder& recorder);
+		void quadMergeStrategy(detail::Recorder& recorder);
+		void blockSwapMergeStrategy(detail::Recorder& recorder);
+		void weavedMergeStrategy(detail::Recorder& recorder);
+		void twinMergeStrategy(detail::Recorder& recorder);
+		void timMergeStrategy(detail::Recorder& recorder);
+		void cocktailMergeStrategy(detail::Recorder& recorder);
 		void remiSortStrategy(detail::Recorder& recorder);
 		void chaliceSortStrategy(detail::Recorder& recorder);
 		void fifthMergeSortStrategy(detail::Recorder& recorder);

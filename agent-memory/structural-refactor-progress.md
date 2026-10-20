@@ -1676,3 +1676,10 @@ Moved Flan and Flux implementations from the coordinator into PartitionStrategie
 The x64 Debug and Release solution builds passed. The focused merge-roster batch covering Flan and Flux passed in both configurations with 17,048 checks and zero failures. git diff --check passed. SortingLogic.cpp is now 3271 lines. No behavior or runtime-performance change is claimed.
 
 Next: continue extracting block, in-place, adaptive, and workspace merge methods, then move the remaining insertion and lookup families.
+## 2026-10-20 — extract block, weave, twin, and Tim merge variants
+
+Moved Quad Merge, Block-Swap Merge, Weaved Merge, Twin Sort, and the shared Tim/Cocktail Merge family into MergeStrategies.cpp. The Tim min-run helper is file-local; both public catalog entries use distinct strategy wrappers. Their fallback cases were removed.
+
+The x64 Debug and Release solution builds passed. Focused suites passed in both configurations: Fifth/Quad (189,394 checks), Block-Swap (397,286), Weaved (420,409), Twin (581,675), and Tim/Cocktail Merge (886,727), all with zero failures. git diff --check passed. SortingLogic.cpp is now 2745 lines. No behavior or runtime-performance change is claimed.
+
+Next: extract the remaining adaptive, in-place, and workspace merge strategies, then the remaining insertion and lookup methods.
