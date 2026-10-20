@@ -117,7 +117,7 @@ Next: extract the first family strategy through the private recorder contract.
 
 ## 2026-10-19 — extract the first algorithm strategy
 
-Status: Insertion Sort strategy extraction implemented; pending commit.
+Status: Insertion Sort strategy extraction committed and pushed as `8babfe9`.
 
 - Moved the shift-based Insertion Sort builder into `InsertionStrategy.cpp` and declared it through the private `AlgorithmStrategies.h` contract.
 - Routed both the catalog dispatcher and Intro Sort's small-range fallback through that same strategy function. The strategy receives only the private recorder contract and uses the existing comparator and event operations.
@@ -132,3 +132,23 @@ Verification:
 - No algorithm event definitions changed; the extracted function body was moved without algorithm edits.
 
 Next: extract the remaining insertion/exchange strategies in coherent batches, then move the static builder registrations away from the large switch without changing their stable IDs or trace signatures.
+
+## 2026-10-19 — extract elementary exchange and selection strategies
+
+Status: implementation and focused verification complete; pending commit.
+
+- Moved Bubble, Selection, Bingo, Double Selection, Stable Selection, Gnome, Cocktail, Comb, Odd-Even, optimized/unoptimized Bubble and Cocktail, and Swapless Bubble into `ElementaryStrategies.cpp` behind the private `AlgorithmStrategies.h` interface.
+- Kept catalog IDs and the central dispatch behavior unchanged; each dispatch now calls the extracted strategy. Intro Sort's existing Insertion fallback continues to call the shared Insertion strategy.
+- Added ascending and descending duplicate-key cases for all 14 extracted methods to the focused core-contract runner. The cases also exercise final state, stability metadata, and exhaustive cursor replay/inversion through the shared verifier.
+- Removed whitespace-only remnants left at former function boundaries.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 11,410 checks with 0 failures.
+- Release catalog-coverage run: passed 1,678 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- Release `AppFrameworkTests` linking emitted the existing LNK4020 PDB type-record warnings; link and execution succeeded.
+- No sound, settings, workspace contracts, stable IDs, or intended operation sequences were changed.
+
+Next: extract additional compact strategy groups, then replace the growing algorithm dispatch switch with static private registrations while preserving compatibility adapters and trace signatures.

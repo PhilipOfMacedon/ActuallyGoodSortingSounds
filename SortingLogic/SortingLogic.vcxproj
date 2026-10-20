@@ -48,6 +48,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ElementaryStrategies.cpp" />
     <ClCompile Include="InsertionStrategy.cpp" />
     <ClCompile Include="SortingLogic.cpp" />
     <ClCompile Include="Simulation.cpp" />

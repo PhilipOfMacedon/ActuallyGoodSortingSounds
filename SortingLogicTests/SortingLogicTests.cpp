@@ -4913,6 +4913,50 @@ int main(int argc, char* argv[])
 				SortAlgorithm::Insertion, SortDirection::Descending);
 			verifyAlgorithmCase("Intro Sort small-range Insertion fallback", insertionInput, InputProfile::NormalizedFloat,
 				SortAlgorithm::ArrayvIntroSort, SortDirection::Ascending);
+			const SortAlgorithm elementaryAlgorithms[] = {
+				SortAlgorithm::Bubble, SortAlgorithm::Selection, SortAlgorithm::ArrayvBingo,
+				SortAlgorithm::ArrayvDoubleSelection, SortAlgorithm::ArrayvStableSelection,
+				SortAlgorithm::Gnome, SortAlgorithm::Cocktail, SortAlgorithm::Comb, SortAlgorithm::OddEven,
+				SortAlgorithm::ArrayvOptimizedBubble, SortAlgorithm::ArrayvUnoptimizedBubble,
+				SortAlgorithm::ArrayvSwaplessBubble, SortAlgorithm::ArrayvOptimizedCocktail,
+				SortAlgorithm::ArrayvUnoptimizedCocktail
+			};
+			const InputDomain candidateDomains[] = { InputDomain::NormalizedFloats, InputDomain::NonnegativeIntegerKeys,
+				InputDomain::SignedIntegerKeys, InputDomain::IntegerPermutation };
+			for (std::size_t algorithmIndex = 0; algorithmIndex < sizeof(elementaryAlgorithms) / sizeof(elementaryAlgorithms[0]); ++algorithmIndex)
+			{
+				const SortAlgorithm algorithm = elementaryAlgorithms[algorithmIndex];
+				InputDomain domain = InputDomain::NormalizedFloats;
+				for (std::size_t domainIndex = 0; domainIndex < sizeof(candidateDomains) / sizeof(candidateDomains[0]); ++domainIndex)
+					if (algorithmSupports(algorithm, candidateDomains[domainIndex]))
+					{
+						domain = candidateDomains[domainIndex];
+						break;
+					}
+				std::vector<SortItem> input;
+				if (domain == InputDomain::NormalizedFloats) input = floats({ 0.6f, 0.2f, 0.6f, 0.1f, 0.2f });
+				else
+				{
+					const int keys[] = { 3, 1, 3, 0, 1 };
+					for (std::size_t itemIndex = 0; itemIndex < 5; ++itemIndex)
+					{
+						const int key = domain == InputDomain::SignedIntegerKeys ? keys[itemIndex] - 2 : keys[itemIndex];
+						const float value = domain == InputDomain::SignedIntegerKeys
+							? static_cast<float>(key + 5) / 10.0f : static_cast<float>(key + 1) / 5.0f;
+						input.push_back(SortItem(itemIndex, key, value));
+					}
+					if (domain == InputDomain::IntegerPermutation)
+					{
+						const int permutationKeys[] = { 3, 1, 4, 0, 2 };
+						for (std::size_t itemIndex = 0; itemIndex < 5; ++itemIndex)
+							input[itemIndex] = SortItem(itemIndex, permutationKeys[itemIndex], static_cast<float>(permutationKeys[itemIndex] + 1) / 5.0f);
+					}
+				}
+				const InputProfile profile = inputProfileForDomain(domain);
+				const std::string label = algorithmDisplayName(algorithm);
+				verifyAlgorithmCase("Elementary " + label + " ascending", input, profile, algorithm, SortDirection::Ascending, domain);
+				verifyAlgorithmCase("Elementary " + label + " descending", input, profile, algorithm, SortDirection::Descending, domain);
+			}
 			stage = "testDistributionAudioBaselines";
 			testDistributionAudioBaselines();
 			stage = "testBurntPancakeOrientation";
