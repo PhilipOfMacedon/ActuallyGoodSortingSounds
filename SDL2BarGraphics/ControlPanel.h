@@ -7,7 +7,7 @@
 
 #include "AppearanceEditorView.h"
 #include "MainControlsView.h"
-#include "InlineEditModel.h"
+#include "InlineEditView.h"
 #include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
 #include "RenderingTypes.h"
@@ -56,7 +56,7 @@ public:
 	bool settingsOpen() const { return overlayState_.settingsSurfaceOpen(); }
 	bool textEntryActive() const
 	{
-		return inlineEdit_.active() || appearanceEditorView_.searchFocused() ||
+		return inlineEditView_.active() || appearanceEditorView_.searchFocused() ||
 			(overlayState_.is(UiOverlayId::AlgorithmBrowser) && algorithmBrowser_.searchFocused);
 	}
 	bool modalUiOpen() const { return overlayState_.modalOpen(); }
@@ -65,6 +65,7 @@ private:
 	Window& window_;
 	Renderer2D& renderer_;
 	const UserPreferences& settings_;
+	InlineEditView inlineEditView_;
 	MainControlsView mainControlsView_;
 	UIRoot& mainUi_; // Temporary access alias while input, layout, and paint move behind the view boundary.
 	TimelineView timelineView_;
@@ -98,7 +99,6 @@ private:
 	bool layoutCacheValid_;
 	UiPresetId laidOutPreset_;
 	bool fontFallbackActive_;
-	InlineEditModel inlineEdit_;
 
 	void createWidgets();
 	void updateLayout();
@@ -135,8 +135,6 @@ private:
 	void openAlgorithmMenu();
 	void closeAlgorithmMenu();
 	void beginInlineEdit(const std::string& widgetId);
-	void updateInlineEditLabel();
-	bool appendInlineEditText(const char* text);
 	bool commitInlineEdit(AppAction& action);
 	void cancelInlineEdit();
 	void openAppearanceEditor();

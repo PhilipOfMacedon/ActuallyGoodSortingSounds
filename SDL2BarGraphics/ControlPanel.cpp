@@ -148,19 +148,6 @@ namespace
 		return rect.contains(static_cast<float>(x), static_cast<float>(y));
 	}
 
-	const char* inlineEditWidgetId(InlineEditTarget target)
-	{
-		switch (target)
-		{
-		case InlineEditTarget::ItemCount: return "bars_value";
-		case InlineEditTarget::Duration: return "time_value";
-		case InlineEditTarget::AppearanceNumber: return "appearance_value";
-		case InlineEditTarget::AppearanceAlpha: return "appearance_color_alpha";
-		case InlineEditTarget::None: return "";
-		}
-		return "";
-	}
-
 	int paletteIndex(PaletteId id) { return static_cast<int>(id); }
 	const UiThemeCustomization& activeTheme(const UserPreferences& settings)
 	{
@@ -273,7 +260,7 @@ namespace
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainControlsView_(), mainUi_(mainControlsView_.controls()), timelineView_(), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
+	inlineEditView_(), mainControlsView_(), mainUi_(mainControlsView_.controls()), timelineView_(), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
 		paletteIndex(activeTheme(settings).palette)), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), algorithmProfileView_(measureLogicalTextWidth), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
@@ -286,8 +273,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	displayedSaveStatus_(),
 	headerBounds_(), gearBounds_(),
 	drawingAppearanceEditor_(false),
-	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
-	inlineEdit_()
+	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false)
 {
 	createWidgets();
 	updateLayout();
@@ -296,7 +282,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 
 ControlPanel::~ControlPanel()
 {
-	if (inlineEdit_.active() || algorithmBrowserOpen() || appearanceEditorView_.searchFocused()) SDL_StopTextInput();
+	if (inlineEditView_.active() || algorithmBrowserOpen() || appearanceEditorView_.searchFocused()) SDL_StopTextInput();
 }
 
 bool ControlPanel::isReady() const
@@ -472,7 +458,7 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	mainControlsView_.synchronize(settings_, renderPreferences_.appearance.activePreset, snapshot,
 		screenModel_, algorithmLabel(snapshot.algorithm));
 	settingsPanelView_.synchronizeControls(settings_, renderPreferences_, snapshot, busy);
-	updateInlineEditLabel();
+	inlineEditView_.synchronizePresentation(mainControlsView_, appearanceEditorView_);
 }
 
 void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
@@ -514,7 +500,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 
 bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 {
-	if (!appearanceEditorOpen() && !algorithmBrowserOpen() && !appearanceEditorView_.searchFocused() && !inlineEdit_.active() &&
+	if (!appearanceEditorOpen() && !algorithmBrowserOpen() && !appearanceEditorView_.searchFocused() && !inlineEditView_.active() &&
 		event.type == SDL_KEYDOWN && !event.key.repeat &&
 		event.key.keysym.sym == SDLK_F12 && (event.key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT)) == (KMOD_CTRL | KMOD_SHIFT))
 	{
@@ -540,21 +526,21 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 			targetWidgetId = "time_value";
 		if (!targetWidgetId.empty())
 		{
-			if (inlineEdit_.active() && targetWidgetId == inlineEditWidgetId(inlineEdit_.target())) return true;
-			if (inlineEdit_.active() && !commitInlineEdit(action)) return true;
+			if (inlineEditView_.editsControl(targetWidgetId)) return true;
+			if (inlineEditView_.active() && !commitInlineEdit(action)) return true;
 			beginInlineEdit(targetWidgetId);
 			return true;
 		}
-		if (inlineEdit_.active())
+		if (inlineEditView_.active())
 		{
 			if (!commitInlineEdit(action)) return true;
 			return true;
 		}
 	}
-	if (inlineEdit_.active())
+	if (inlineEditView_.active())
 	{
 		if (event.type == SDL_TEXTINPUT)
-			return appendInlineEditText(event.text.text);
+			return inlineEditView_.appendText(event.text.text, mainControlsView_, appearanceEditorView_);
 		if (event.type == SDL_KEYDOWN)
 		{
 			const SDL_Keycode key = event.key.keysym.sym;
@@ -564,17 +550,15 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 				return true;
 			}
 			if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
-				return commitInlineEdit(action) || inlineEdit_.active();
+				return commitInlineEdit(action) || inlineEditView_.active();
 			if (key == SDLK_BACKSPACE)
 			{
-				inlineEdit_.backspace();
-				updateInlineEditLabel();
+				inlineEditView_.backspace(mainControlsView_, appearanceEditorView_);
 				return true;
 			}
 			if (key == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
 			{
-				inlineEdit_.clear();
-				updateInlineEditLabel();
+				inlineEditView_.clear(mainControlsView_, appearanceEditorView_);
 				return true;
 			}
 			return true;
@@ -1374,86 +1358,30 @@ void ControlPanel::closeAlgorithmMenu()
 
 void ControlPanel::beginInlineEdit(const std::string& widgetId)
 {
-	if ((widgetId == "appearance_value" || widgetId == "appearance_color_alpha") && appearanceEditorOpen())
-	{
-		const InlineEditTarget target = widgetId == "appearance_value"
-			? InlineEditTarget::AppearanceNumber : InlineEditTarget::AppearanceAlpha;
-		const AppearanceInlineEditField field = target == InlineEditTarget::AppearanceAlpha
-			? AppearanceInlineEditField::Alpha : AppearanceInlineEditField::Number;
-		std::string initialText;
-		if (!appearanceEditorView_.beginInlineValueEdit(field, initialText)) return;
-		inlineEdit_.begin(target, initialText);
-		SDL_StartTextInput();
-		updateInlineEditLabel();
-		return;
-	}
-	if (widgetId != "bars_value" && widgetId != "time_value") return;
-	const InlineEditTarget target = widgetId == "bars_value"
-		? InlineEditTarget::ItemCount : InlineEditTarget::Duration;
-	std::string initialText;
-	if (!mainControlsView_.beginInlineValueEdit(target, settings_.simulation.itemCount,
-		settings_.simulation.durationSeconds, initialText)) return;
-	inlineEdit_.begin(target, initialText);
+	const bool appearanceControl = widgetId == "appearance_value" || widgetId == "appearance_color_alpha";
+	if (appearanceControl && !appearanceEditorOpen()) return;
+	if (!inlineEditView_.beginForControl(widgetId, settings_.simulation.itemCount,
+		settings_.simulation.durationSeconds, mainControlsView_, appearanceEditorView_)) return;
 	SDL_StartTextInput();
-	updateInlineEditLabel();
-}
-
-void ControlPanel::updateInlineEditLabel()
-{
-	if (!inlineEdit_.active()) return;
-	const InlineEditTarget target = inlineEdit_.target();
-	if (inlineEdit_.isAppearanceEdit())
-	{
-		appearanceEditorView_.showInlineValueEdit(target == InlineEditTarget::AppearanceAlpha
-			? AppearanceInlineEditField::Alpha : AppearanceInlineEditField::Number, inlineEdit_.text());
-		return;
-	}
-	mainControlsView_.showInlineValueEdit(target, inlineEdit_.text());
-}
-
-bool ControlPanel::appendInlineEditText(const char* text)
-{
-	if (!inlineEdit_.appendText(text)) return false;
-	updateInlineEditLabel();
-	return true;
 }
 
 bool ControlPanel::commitInlineEdit(AppAction& action)
 {
-	if (!inlineEdit_.active()) return false;
-	const InlineEditTarget target = inlineEdit_.target();
-	if (inlineEdit_.isAppearanceEdit())
-	{
-		double parsed = 0.0;
-		const bool parsedSuccessfully = inlineEdit_.tryParseDouble(parsed);
-		const AppearanceInlineEditField field = target == InlineEditTarget::AppearanceAlpha
-			? AppearanceInlineEditField::Alpha : AppearanceInlineEditField::Number;
-		if (!appearanceEditorView_.commitInlineValueEdit(field, parsedSuccessfully, parsed)) return false;
-		inlineEdit_.finish();
-		SDL_StopTextInput();
-		synchronizeAppearanceEditorControls();
-		return true;
-	}
-	if (!mainControlsView_.commitInlineValueEdit(target, inlineEdit_, action)) return false;
-	inlineEdit_.finish();
+	bool appearanceNeedsSynchronization = false;
+	if (!inlineEditView_.commit(mainControlsView_, appearanceEditorView_, action, appearanceNeedsSynchronization)) return false;
 	SDL_StopTextInput();
+	if (appearanceNeedsSynchronization) synchronizeAppearanceEditorControls();
 	return true;
 }
 
 void ControlPanel::cancelInlineEdit()
 {
-	if (!inlineEdit_.active()) return;
-	const InlineEditTarget target = inlineEdit_.target();
-	if (inlineEdit_.isAppearanceEdit())
-	{
-		inlineEdit_.finish();
-		SDL_StopTextInput();
-		synchronizeAppearanceEditorControls();
-		return;
-	}
-	inlineEdit_.finish();
+	const InlineEditTarget cancelledTarget = inlineEditView_.cancel(mainControlsView_,
+		settings_.simulation.itemCount, settings_.simulation.durationSeconds);
+	if (cancelledTarget == InlineEditTarget::None) return;
 	SDL_StopTextInput();
-	mainControlsView_.restoreInlineValueEdit(target, settings_.simulation.itemCount, settings_.simulation.durationSeconds);
+	if (cancelledTarget == InlineEditTarget::AppearanceNumber || cancelledTarget == InlineEditTarget::AppearanceAlpha)
+		synchronizeAppearanceEditorControls();
 }
 
 void ControlPanel::openAppearanceEditor()
@@ -1473,7 +1401,7 @@ void ControlPanel::openAppearanceEditor()
 void ControlPanel::closeAppearanceEditor(bool restore)
 {
 	if (!appearanceEditorOpen()) return;
-	if (inlineEdit_.active()) cancelInlineEdit();
+	if (inlineEditView_.active()) cancelInlineEdit();
 	if (appearanceEditorView_.searchFocused())
 	{
 		appearanceEditorView_.blurSearch();
@@ -1585,9 +1513,10 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 		appearanceEditorView_.controls().handleEvent(UiInputEvent(UiInputType::FocusLost), lost);
 		return true;
 	}
-	if (inlineEdit_.active() && inlineEdit_.isAppearanceEdit())
+	if (inlineEditView_.active() && inlineEditView_.isAppearanceEdit())
 	{
-		if (event.type == SDL_TEXTINPUT) return appendInlineEditText(event.text.text);
+		if (event.type == SDL_TEXTINPUT)
+			return inlineEditView_.appendText(event.text.text, mainControlsView_, appearanceEditorView_);
 		if (event.type == SDL_KEYDOWN)
 		{
 			const SDL_Keycode key = event.key.keysym.sym;
@@ -1603,13 +1532,12 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 			if (key == SDLK_RETURN || key == SDLK_KP_ENTER) { commitInlineEdit(action); return true; }
 			if (key == SDLK_BACKSPACE)
 			{
-				inlineEdit_.backspace();
-				updateInlineEditLabel();
+				inlineEditView_.backspace(mainControlsView_, appearanceEditorView_);
 				return true;
 			}
 			if (key == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
 			{
-				inlineEdit_.clear(); updateInlineEditLabel(); return true;
+				inlineEditView_.clear(mainControlsView_, appearanceEditorView_); return true;
 			}
 			return true;
 		}
@@ -1659,7 +1587,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 		appearanceEditorView_.blurSearch();
 		SDL_StopTextInput();
 	}
-	if (inlineEdit_.active() && inlineEdit_.isAppearanceEdit() && event.type == SDL_MOUSEBUTTONDOWN &&
+	if (inlineEditView_.active() && inlineEditView_.isAppearanceEdit() && event.type == SDL_MOUSEBUTTONDOWN &&
 		!commitInlineEdit(action)) return true;
 	if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE && !appearanceEditorView_.controls().hasOpenCombo())
 	{

@@ -22,6 +22,7 @@
 #include "../SDL2BarGraphics/MainControlsView.h"
 #include "../SDL2BarGraphics/TimelineView.h"
 #include "../SDL2BarGraphics/InlineEditModel.h"
+#include "../SDL2BarGraphics/InlineEditView.h"
 #include "../SDL2BarGraphics/ActiveRoleLookup.h"
 #include "../SDL2BarGraphics/AlgorithmProfileView.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
@@ -166,6 +167,72 @@ namespace
 		editor.finish();
 		check(!editor.active() && editor.text().empty() && !editor.tryParseDouble(doubleValue),
 			"finishing an inline edit clears its target and input buffer");
+	}
+
+	void testInlineEditViewOwnsSharedEditingFlow()
+	{
+		UserPreferences preferences;
+		MainControlsView mainControls;
+		mainControls.initializeControls(preferences, "Fixture Sort");
+		AppearanceEditorView appearanceEditor(settingsUiPresetOptions(), settingsPaletteOptions(),
+			preferences.appearance, 0);
+		InlineEditView view;
+		AppAction action;
+		bool appearanceNeedsSynchronization = false;
+
+		check(view.beginForControl("bars_value", 80, 10.0f, mainControls, appearanceEditor) &&
+			mainControls.controls().find("bars_value")->label() == "80| bars",
+			"inline edit view starts and presents a main item-count session through its owning control view");
+		check(!view.beginForControl("time_value", 80, 10.0f, mainControls, appearanceEditor) &&
+			view.target() == InlineEditTarget::ItemCount,
+			"inline edit view preserves its active session instead of replacing it with a second edit");
+		view.appendText("4", mainControls, appearanceEditor);
+		view.appendText("2", mainControls, appearanceEditor);
+		check(mainControls.controls().find("bars_value")->label() == "42| bars" &&
+			view.commit(mainControls, appearanceEditor, action, appearanceNeedsSynchronization) &&
+			action.kind == AppActionKind::SetItemCount && action.selection == 42 && !appearanceNeedsSynchronization,
+			"inline edit view presents text and commits a typed item-count action");
+
+		check(view.beginForControl("time_value", 80, 10.0f, mainControls, appearanceEditor),
+			"inline edit view begins a duration session from the main controls view");
+		view.clear(mainControls, appearanceEditor);
+		view.appendText("2.5", mainControls, appearanceEditor);
+		check(view.commit(mainControls, appearanceEditor, action, appearanceNeedsSynchronization) &&
+			action.kind == AppActionKind::SetDuration && std::fabs(action.value - 2.5f) < 0.0001f,
+			"inline edit view commits a finite duration value through the typed action boundary");
+
+		check(view.beginForControl("bars_value", 80, 10.0f, mainControls, appearanceEditor),
+			"inline edit view can start a fresh session after commit");
+		view.clear(mainControls, appearanceEditor);
+		view.appendText("2147483648", mainControls, appearanceEditor);
+		check(!view.commit(mainControls, appearanceEditor, action, appearanceNeedsSynchronization) && view.active(),
+			"inline edit view keeps an overflowing value active for correction");
+		check(view.cancel(mainControls, 80, 10.0f) == InlineEditTarget::ItemCount &&
+			mainControls.controls().find("bars_value")->label() == "80 bars",
+			"inline edit view restores main-control text and reports its cancelled target");
+
+		const std::vector<UiTokenDescriptor>& tokens = uiPresetDefinition(UiPresetId::Current).tokens;
+		const UiTokenDescriptor* colorToken = nullptr;
+		for (std::size_t i = 0; i < tokens.size(); ++i)
+			if (tokens[i].type == UiTokenType::Color) { colorToken = &tokens[i]; break; }
+		check(colorToken != nullptr, "inline edit view fixture resolves a color token");
+		if (colorToken)
+		{
+			appearanceEditor.session().model().setSearch(colorToken->stableId);
+			check(!view.beginForControl("appearance_value", 80, 10.0f, mainControls, appearanceEditor) &&
+				!view.active(), "inline edit view rejects a number edit for a color token");
+			check(view.beginForControl("appearance_color_alpha", 80, 10.0f, mainControls, appearanceEditor) &&
+				view.isAppearanceEdit(), "inline edit view routes alpha editing to the appearance editor");
+			view.clear(mainControls, appearanceEditor);
+			view.appendText("0.5", mainControls, appearanceEditor);
+			check(view.commit(mainControls, appearanceEditor, action, appearanceNeedsSynchronization) &&
+				appearanceNeedsSynchronization &&
+				std::fabs(effectiveUiTokenValue(UiPresetId::Current,
+					appearanceEditor.session().draft().themes[UiPresetId::Current], colorToken->stableId).color.a - 0.5f) < 0.001f,
+				"inline edit view commits alpha into the appearance draft and requests view synchronization");
+		}
+		check(!view.beginForControl("unknown_control", 80, 10.0f, mainControls, appearanceEditor),
+			"inline edit view rejects controls outside its declared target set");
 	}
 
 	void testSimulationPlaybackState()
@@ -4359,6 +4426,7 @@ int main(int argc, char* argv[])
 	}
 	testActiveRoleLookup();
 	testInlineEditModel();
+	testInlineEditViewOwnsSharedEditingFlow();
 	testSimulationPlaybackState();
 	testSpacing();
 	testPreferenceValueEquality();

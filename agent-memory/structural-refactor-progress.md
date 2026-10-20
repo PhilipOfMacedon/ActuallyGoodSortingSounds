@@ -1773,3 +1773,11 @@ Next: continue extracting cohesive `ControlPanel` responsibilities and evaluate 
 Added headless checks for initial focus, search text updates, deletion, clearing, blur, and session reset. The full x64 Debug and Release solution builds passed, as did `AppFrameworkTests` in both configurations. `git diff --check` passed. This does not change search behavior, settings data, renderer output, sorting, or audio. No GUI smoke run was needed for this ownership-only change.
 
 Next: continue the UI boundary audit at the shared inline editor and remaining `ControlPanel` composition responsibilities, then continue the settings/playback and measured renderer boundaries. Keep the structural refactor goal active.
+
+## 2026-10-20 — extract shared inline editing into a headless view
+
+Added `InlineEditView` to own the single inline-edit session shared by main controls and Appearance. It selects the target, obtains the initial value from the owning view, routes text presentation and draft operations, commits to either a typed app action or the Appearance draft, and restores the correct presentation on cancel. The owning views retain their field-specific validation and mutation semantics. `ControlPanel` now translates SDL text/key events and starts/stops SDL text input; it no longer owns the edit model or target routing. The view rejects a second begin request while an edit is active.
+
+Added headless coverage for main count and duration edits, action payloads, overflow correction, cancellation restoration, invalid appearance field selection, alpha draft commits, and preservation of an active session when a second target is requested. x64 Debug and Release solution builds passed. `AppFrameworkTests` passed in both configurations. `git diff --check` passed with only configured LF-to-CRLF notices. The smoke window remained closed; this was an ownership-only change.
+
+Next: inspect the remaining `ControlPanel` composition and presentation ownership, then take the next measured settings, renderer, or application boundary from the audit. Keep the structural refactor goal active.
