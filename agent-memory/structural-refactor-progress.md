@@ -1683,3 +1683,11 @@ Moved Quad Merge, Block-Swap Merge, Weaved Merge, Twin Sort, and the shared Tim/
 The x64 Debug and Release solution builds passed. Focused suites passed in both configurations: Fifth/Quad (189,394 checks), Block-Swap (397,286), Weaved (420,409), Twin (581,675), and Tim/Cocktail Merge (886,727), all with zero failures. git diff --check passed. SortingLogic.cpp is now 2745 lines. No behavior or runtime-performance change is claimed.
 
 Next: extract the remaining adaptive, in-place, and workspace merge strategies, then the remaining insertion and lookup methods.
+
+## 2026-10-20 — extract adaptive, in-place, and block merge strategies
+
+Moved Improved In-Place Merge, Drop Merge, Median Merge, Buffer Partition Merge, Parallel Block Merge, and Optimized Rotate Merge into `MergeStrategies.cpp`. Their catalog request builders now bind directly to named strategies, and the corresponding coordinator fallback cases are removed. Added an explicit partition-trace utility dependency for the moved strategies' pivot and heap helpers. The coordinator is now 2,179 lines.
+
+The x64 Debug and Release solution builds passed. All six focused suites passed in both configurations: Improved In-Place Merge (294,414 checks), Drop Merge (3,341), Median Merge (2,873), Buffer Partition Merge (114,897), Parallel Block Merge (78,265), and Optimized Rotate Merge (301,382), with zero failures. `git diff --check` passed. No behavior or runtime-performance change is claimed.
+
+Next: extract the remaining insertion and workspace strategies, then reassess the residual coordinator switch and duplicated request-builder plumbing.

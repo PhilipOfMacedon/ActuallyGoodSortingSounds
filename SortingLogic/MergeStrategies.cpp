@@ -2,6 +2,7 @@
 #include "TraceRecorder.h"
 #include "MergeTraceUtilities.h"
 #include "GrailTraceUtilities.h"
+#include "PartitionTraceUtilities.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1365,6 +1366,571 @@ namespace sortinglogic
 		}
 
 
+		static void improvedInPlaceMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			r.declareMetric("inplace_merge_ranges");
+			r.declareMetric("inplace_merge_comparisons");
+			r.declareMetric("inplace_merge_rotations");
+			r.declareMetric("inplace_merge_rotation_swaps");
+			r.declareMetric("inplace_merge_insertion_runs");
+			const auto compareAt = [&r](std::size_t first, std::size_t second) -> ComparisonResult
+			{
+				const SortItem a = r.at(first), b = r.at(second);
+				r.compare(a, b, first, second);
+				r.addMetric("inplace_merge_comparisons");
+				return compareItems(a, b, r.trace.direction);
+			};
+			const auto rotate = [&r](std::size_t first, std::size_t middle, std::size_t last, int group)
+			{
+				if (first == middle || middle == last) return;
+				const std::size_t begin = r.trace.events.size();
+				const auto reverse = [&r](std::size_t left, std::size_t right)
+				{
+					while (left < right)
+					{
+						r.chargeWork();
+						r.swap(left++, --right, SemanticRole::WriteTarget);
+						r.addMetric("inplace_merge_rotation_swaps");
+					}
+				};
+				reverse(first, middle);
+				reverse(middle, last);
+				reverse(first, last);
+				r.addMetric("inplace_merge_rotations");
+				r.annotate("main", RegionKind::Contiguous, first, last, 1, group, "Stable block rotation", begin);
+			};
+
+			std::function<void(std::size_t, std::size_t, std::size_t, std::size_t)> merge;
+			merge = [&r, &compareAt, &rotate, &merge, count](std::size_t first, std::size_t middle,
+				std::size_t last, std::size_t depth)
+			{
+				r.chargeWork();
+				if (first >= middle || middle >= last) return;
+				if (depth > count * 2 + 2) throw std::logic_error("Improved In-Place Merge recursion exceeded its bounded depth.");
+				if (compareAt(middle - 1, middle) != ComparisonResult::Greater) return;
+
+				const std::size_t total = last - first;
+				if (total == 2)
+				{
+					r.swap(first, middle, SemanticRole::WriteTarget);
+					return;
+				}
+
+				const int phase = r.beginPhase("Symmetric in-place merge " + std::to_string(first) + "–" + std::to_string(last));
+				r.addMetric("inplace_merge_ranges");
+				std::size_t firstCut = first, secondCut = middle;
+				if (middle - first > last - middle)
+				{
+					firstCut = first + (middle - first) / 2;
+					const SortItem pivot = r.at(firstCut);
+					std::size_t low = middle, high = last;
+					while (low < high)
+					{
+						r.chargeWork();
+						const std::size_t probe = low + (high - low) / 2;
+						const SortItem candidate = r.at(probe);
+						r.compare(candidate, pivot, probe, firstCut);
+						r.addMetric("inplace_merge_comparisons");
+						if (compareItems(candidate, pivot, r.trace.direction) == ComparisonResult::Less) low = probe + 1;
+						else high = probe;
+					}
+					secondCut = low;
+				}
+				else
+				{
+					secondCut = middle + (last - middle) / 2;
+					const SortItem pivot = r.at(secondCut);
+					std::size_t low = first, high = middle;
+					while (low < high)
+					{
+						r.chargeWork();
+						const std::size_t probe = low + (high - low) / 2;
+						const SortItem candidate = r.at(probe);
+						r.compare(candidate, pivot, probe, secondCut);
+						r.addMetric("inplace_merge_comparisons");
+						if (compareItems(candidate, pivot, r.trace.direction) != ComparisonResult::Greater) low = probe + 1;
+						else high = probe;
+					}
+					firstCut = low;
+				}
+
+				const std::size_t newMiddle = firstCut + (secondCut - middle);
+				rotate(firstCut, middle, secondCut, phase);
+				merge(first, firstCut, newMiddle, depth + 1);
+				merge(newMiddle, secondCut, last, depth + 1);
+				r.annotate("main", RegionKind::Contiguous, first, last, 1, phase,
+					"Symmetric in-place merge range", r.trace.events.size() > 0 ? r.trace.events.size() - 1 : 0);
+				r.endPhase(phase, "Symmetric in-place merge " + std::to_string(first) + "–" + std::to_string(last));
+			};
+
+			std::function<void(std::size_t, std::size_t, std::size_t)> sort;
+			sort = [&r, &sort, &merge](std::size_t first, std::size_t last, std::size_t depth)
+			{
+				r.chargeWork();
+				const std::size_t length = last - first;
+				if (length < 2) return;
+				if (length <= 16)
+				{
+					strategies::binaryInsertionRange(r, first, last);
+					r.addMetric("inplace_merge_insertion_runs");
+					return;
+				}
+				const std::size_t middle = first + length / 2;
+				sort(first, middle, depth + 1);
+				sort(middle, last, depth + 1);
+				merge(first, middle, last, depth);
+			};
+			sort(0, count, 0);
+		}
+
+
+		static void dropMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "drop_merge_kept", "drop_merge_dropped", "drop_merge_scan_comparisons",
+				"drop_merge_early_fallbacks", "drop_merge_suffix_heap_sorts", "drop_merge_final_merges" })
+				r.declareMetric(key);
+			if (count < 2) return;
+
+			r.resizeAuxiliary("drop_merge_kept", count);
+			r.resizeAuxiliary("drop_merge_dropped", count);
+			r.resizeAuxiliary("drop_merge_output", count);
+			std::size_t kept = 0, dropped = 0;
+			const std::size_t scanBegin = r.trace.events.size();
+			bool fellBack = false;
+			for (std::size_t index = 0; index < count; ++index)
+			{
+				const SortItem candidate = r.at(index);
+				bool belongsToRun = kept == 0;
+				if (kept != 0)
+				{
+					const SortItem tail = r.auxiliaryAt("drop_merge_kept", kept - 1);
+					r.compare(tail, candidate, kept - 1, index, "drop_merge_kept", "main",
+						SemanticRole::ComparedItem, SemanticRole::ProbedItem);
+					r.addMetric("drop_merge_scan_comparisons");
+					belongsToRun = compareItems(tail, candidate, r.trace.direction) != ComparisonResult::Greater;
+				}
+				if (belongsToRun)
+				{
+					r.writeAuxiliary("drop_merge_kept", kept++, candidate);
+					r.addMetric("drop_merge_kept");
+				}
+				else
+				{
+					r.writeAuxiliary("drop_merge_dropped", dropped++, candidate);
+					r.addMetric("drop_merge_dropped");
+				}
+
+				const std::size_t processed = index + 1;
+				if (processed >= (count + 3) / 4 && dropped * 5 > processed * 3)
+				{
+					// The source algorithm abandons its monotone subsequence when the
+					// drop buffer grows too quickly. The original main array is still
+					// untouched here, so the deterministic introspective fallback can
+					// take over without reconstructing a partially compacted range.
+					r.addMetric("drop_merge_early_fallbacks");
+					r.annotate("main", RegionKind::Contiguous, 0, count, 1, -1,
+						"Drop Merge early fallback", scanBegin);
+					detail::traceHeapSortRange(r, 0, count);
+					fellBack = true;
+					break;
+				}
+			}
+			if (!fellBack)
+			{
+				r.annotate("drop_merge_kept", RegionKind::Contiguous, 0, kept, 1, -1,
+					"Drop Merge monotone subsequence", scanBegin);
+				r.annotate("drop_merge_dropped", RegionKind::Contiguous, 0, dropped, 1, -1,
+					"Drop Merge buffered items", scanBegin);
+				if (dropped > 1)
+				{
+					for (std::size_t i = 0; i < dropped; ++i)
+						r.writeMain(i, r.auxiliaryAt("drop_merge_dropped", i));
+					detail::traceHeapSortRange(r, 0, dropped);
+					r.addMetric("drop_merge_suffix_heap_sorts");
+				}
+				std::size_t left = 0, right = 0;
+				const std::size_t mergeBegin = r.trace.events.size();
+				for (std::size_t output = 0; output < count; ++output)
+				{
+					SortItem chosen;
+					if (left >= kept) chosen = r.at(right++);
+					else if (right >= dropped) chosen = r.auxiliaryAt("drop_merge_kept", left++);
+					else
+					{
+						const SortItem a = r.auxiliaryAt("drop_merge_kept", left);
+						const SortItem b = r.at(right);
+						r.compare(a, b, left, right, "drop_merge_kept", "main",
+							SemanticRole::ComparedItem, SemanticRole::ComparedItem);
+						r.addMetric("drop_merge_scan_comparisons");
+						if (compareItems(a, b, r.trace.direction) != ComparisonResult::Greater)
+							chosen = r.auxiliaryAt("drop_merge_kept", left++);
+						else chosen = r.at(right++);
+					}
+					r.writeAuxiliary("drop_merge_output", output, chosen);
+				}
+				r.addMetric("drop_merge_final_merges");
+				r.annotate("main", RegionKind::Contiguous, 0, count, 1, -1,
+					"Drop Merge final merge", mergeBegin);
+				for (std::size_t i = 0; i < count; ++i)
+					r.writeMain(i, r.auxiliaryAt("drop_merge_output", i));
+			}
+			r.resizeAuxiliary("drop_merge_kept", 0);
+			r.resizeAuxiliary("drop_merge_dropped", 0);
+			r.resizeAuxiliary("drop_merge_output", 0);
+		}
+
+		std::size_t medianOfMediansIndex(Recorder& r, std::size_t first, std::size_t end)
+		{
+			while (end - first > 5)
+			{
+				std::size_t medianWrite = first;
+				for (std::size_t group = first; group < end; group += 5)
+				{
+					const std::size_t groupEnd = (std::min)(end, group + 5);
+					strategies::binaryInsertionRange(r, group, groupEnd);
+					const std::size_t median = group + (groupEnd - group - 1) / 2;
+					if (medianWrite != median) r.swap(medianWrite, median, SemanticRole::Pivot);
+					++medianWrite;
+				}
+				end = medianWrite;
+			}
+			strategies::binaryInsertionRange(r, first, end);
+			return first + (end - first) / 2;
+		}
+
+
+		static void medianMergeRange(Recorder& r, std::size_t first, std::size_t end)
+		{
+			if (end - first < 2) return;
+			const std::size_t runSize = 16;
+			for (std::size_t run = first; run < end; run += runSize)
+			{
+				strategies::binaryInsertionRange(r, run, (std::min)(end, run + runSize));
+				r.addMetric("median_merge_initial_runs");
+			}
+			for (std::size_t width = runSize; width < end - first;)
+			{
+				const int phase = r.beginPhase("Median Merge partition merge width " + std::to_string(width));
+				for (std::size_t left = first; left < end; left += width * 2)
+				{
+					const std::size_t middle = (std::min)(end, left + width);
+					const std::size_t right = (std::min)(end, middle + width);
+					if (middle < right)
+					{
+						const std::size_t begin = r.trace.events.size();
+						detail::traceMergeRange(r, left, middle, right);
+						r.annotate("main", RegionKind::Contiguous, left, right, 1, phase,
+							"Median Merge partition range", begin);
+						r.addMetric("median_merge_merge_ranges");
+					}
+				}
+				r.endPhase(phase, "Median Merge partition merge width");
+				r.addMetric("median_merge_merge_passes");
+				if (width > (end - first) / 2) break;
+				width *= 2;
+			}
+		}
+
+		static void medianMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "median_merge_partitions", "median_merge_comparisons", "median_merge_bad_partitions",
+				"median_merge_median_of_medians_pivots", "median_merge_initial_runs", "median_merge_merge_ranges",
+				"median_merge_merge_passes", "median_merge_maximum_depth", "median_merge_partition_fallbacks" })
+				r.declareMetric(key);
+			if (count < 2) return;
+			r.resizeAuxiliary("merge", count);
+
+			struct Range { std::size_t first, end, depth; Range(std::size_t a, std::size_t b, std::size_t d) : first(a), end(b), depth(d) {} };
+			std::vector<Range> pending;
+			pending.push_back(Range(0, count, 0));
+			while (!pending.empty())
+			{
+				Range range = pending.back();
+				pending.pop_back();
+				std::size_t first = range.first, end = range.end, depth = range.depth;
+				bool useMedianOfMedians = false;
+				while (end - first > 16)
+				{
+					r.setMetric("median_merge_maximum_depth", (std::max)(r.state.metrics.algorithm["median_merge_maximum_depth"],
+						static_cast<std::uint64_t>(depth)));
+					const std::size_t middle = first + (end - first) / 2;
+					const std::size_t pivotIndex = useMedianOfMedians
+						? medianOfMediansIndex(r, first, end)
+						: detail::traceMedianOfThree(r, first, middle, end - 1);
+					if (useMedianOfMedians) r.addMetric("median_merge_median_of_medians_pivots");
+					const std::uint64_t comparisonsBefore = r.state.metrics.comparisons;
+					const std::size_t split = detail::traceHoarePartition(r, first, end, pivotIndex);
+					r.addMetric("median_merge_partitions");
+					r.addMetric("median_merge_comparisons", r.state.metrics.comparisons - comparisonsBefore);
+					if (split <= first || split >= end)
+					{
+						r.addMetric("median_merge_partition_fallbacks");
+						medianMergeRange(r, first, end);
+						break;
+					}
+					const std::size_t leftLength = split - first, rightLength = end - split;
+					const bool badlyBalanced = (std::min)(leftLength, rightLength) * 16 < (std::max)(leftLength, rightLength);
+					if (badlyBalanced)
+						r.addMetric("median_merge_bad_partitions");
+					useMedianOfMedians = badlyBalanced;
+					++depth;
+					if (leftLength <= rightLength)
+					{
+						medianMergeRange(r, first, split);
+						first = split;
+					}
+					else
+					{
+						medianMergeRange(r, split, end);
+						end = split;
+					}
+				}
+				if (end > first && end - first <= 16)
+					strategies::binaryInsertionRange(r, first, end);
+			}
+			r.resizeAuxiliary("merge", 0);
+		}
+
+
+		static void bufferPartitionMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "buffer_partition_selections", "buffer_partition_select_passes", "buffer_partition_fallbacks",
+				"buffer_partition_merges", "buffer_partition_comparisons" }) r.declareMetric(key);
+			if (count < 2) return;
+			r.resizeAuxiliary("merge", count);
+			const auto selectRank = [&r](std::size_t first, std::size_t end, std::size_t target) -> std::size_t
+			{
+				std::size_t low = first, high = end;
+				std::size_t depthLimit = 0;
+				for (std::size_t size = end - first; size > 1; size >>= 1) ++depthLimit;
+				depthLimit = depthLimit * 2 + 1;
+				while (high - low > 1)
+				{
+					r.chargeWork();
+					if (depthLimit == 0 || high - low <= 3)
+					{
+						if (depthLimit == 0) r.addMetric("buffer_partition_fallbacks");
+						strategies::binaryInsertionRange(r, low, high);
+						return target;
+					}
+					--depthLimit;
+					const std::size_t middle = low + (high - low) / 2;
+					const std::uint64_t comparisonsBefore = r.state.metrics.comparisons;
+					const std::size_t pivot = detail::traceMedianOfThree(r, low, middle, high - 1);
+					const std::size_t split = detail::traceHoarePartition(r, low, high, pivot);
+					r.addMetric("buffer_partition_comparisons", r.state.metrics.comparisons - comparisonsBefore);
+					r.addMetric("buffer_partition_select_passes");
+					if (split == target) return target;
+					if (split <= low || split >= high)
+					{
+						r.addMetric("buffer_partition_fallbacks");
+						detail::traceHeapSortRange(r, low, high);
+						return target;
+					}
+					if (split < target) low = split;
+					else high = split;
+				}
+				return target;
+			};
+
+			std::function<void(std::size_t, std::size_t)> sortRange;
+			sortRange = [&r, &sortRange, &selectRank](std::size_t first, std::size_t end)
+			{
+				r.chargeWork();
+				if (end - first <= 16)
+				{
+					strategies::binaryInsertionRange(r, first, end);
+					return;
+				}
+				const std::size_t middle = first + (end - first) / 2;
+				r.addMetric("buffer_partition_selections");
+				const std::size_t split = selectRank(first, end, middle);
+				const std::size_t annotationBegin = r.trace.events.size();
+				sortRange(first, split);
+				sortRange(split, end);
+				const int phase = r.beginPhase("Buffer-partitioned merge");
+				detail::traceMergeRange(r, first, split, end);
+				r.endPhase(phase, "Buffer-partitioned merge");
+				r.annotate("main", RegionKind::Contiguous, first, end, 1, -1, "Median-selected merge range", annotationBegin);
+				r.addMetric("buffer_partition_merges");
+			};
+			sortRange(0, count);
+			r.resizeAuxiliary("merge", 0);
+		}
+
+		static void parallelBlockMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "parallel_block_runs", "parallel_block_tasks", "parallel_block_layers", "parallel_block_comparisons" })
+				r.declareMetric(key);
+			if (count < 2) return;
+			r.resizeAuxiliary("merge", count);
+			const std::size_t runSize = 16;
+			for (std::size_t first = 0; first < count; first += runSize)
+			{
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + runSize));
+				r.addMetric("parallel_block_runs");
+			}
+			for (std::size_t width = runSize; width < count;)
+			{
+				const int phase = r.beginPhase("Parallel block merge layer width " + std::to_string(width));
+				for (std::size_t first = 0; first < count; first += width * 2)
+				{
+					const std::size_t middle = (std::min)(count, first + width);
+					const std::size_t last = (std::min)(count, middle + width);
+					if (middle < last)
+					{
+						const std::size_t begin = r.trace.events.size();
+						const std::uint64_t comparisonsBefore = r.state.metrics.comparisons;
+						detail::traceMergeRange(r, first, middle, last);
+						r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "Independent merge block", begin);
+						r.addMetric("parallel_block_tasks");
+						r.addMetric("parallel_block_comparisons", r.state.metrics.comparisons - comparisonsBefore);
+					}
+				}
+				r.endPhase(phase, "Parallel block merge layer");
+				r.addMetric("parallel_block_layers");
+				if (width > count / 2) break;
+				width *= 2;
+			}
+			r.resizeAuxiliary("merge", 0);
+		}
+
+		static void optimizedRotateMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "optimized_rotate_runs", "optimized_rotate_merges", "optimized_rotate_buffer_merges",
+				"optimized_rotate_in_place_merges", "optimized_rotate_buffer_writes", "optimized_rotate_comparisons",
+				"optimized_rotate_trimmed_items" }) r.declareMetric(key);
+			if (count < 2) return;
+			const std::size_t bufferCapacity = static_cast<std::size_t>((std::max)(1, (std::min)(256, r.trace.configuration.rotateMergeBufferSize)));
+			r.resizeAuxiliary("rotate_merge_buffer", bufferCapacity);
+
+			const auto bufferedMerge = [&r, bufferCapacity](std::size_t first, std::size_t middle, std::size_t last)
+			{
+				if (first >= middle || middle >= last) return;
+				const SortItem firstRight = r.at(middle);
+				const SortItem lastLeft = r.at(middle - 1);
+				r.compare(lastLeft, firstRight, middle - 1, middle, "main", "main");
+				r.addMetric("optimized_rotate_comparisons");
+				if (compareItems(lastLeft, firstRight, r.trace.direction) != ComparisonResult::Greater) return;
+
+				// Trim the already ordered prefix and suffix around the merge. Equal left
+				// items stay before equal right items, preserving stability.
+				std::size_t low = first, high = middle;
+				while (low < high)
+				{
+					const std::size_t probe = low + (high - low) / 2;
+					const SortItem candidate = r.at(probe);
+					r.probeItem("main", probe, candidate, SemanticRole::ProbedItem);
+					r.compare(candidate, firstRight, probe, middle, "main", "main");
+					r.addMetric("optimized_rotate_comparisons");
+					if (compareItems(candidate, firstRight, r.trace.direction) != ComparisonResult::Greater) low = probe + 1;
+					else high = probe;
+				}
+				const std::size_t mergeFirst = low;
+				low = middle; high = last;
+				while (low < high)
+				{
+					const std::size_t probe = low + (high - low) / 2;
+					const SortItem candidate = r.at(probe);
+					r.probeItem("main", probe, candidate, SemanticRole::ProbedItem);
+					r.compare(candidate, lastLeft, probe, middle - 1, "main", "main");
+					r.addMetric("optimized_rotate_comparisons");
+					if (compareItems(candidate, lastLeft, r.trace.direction) == ComparisonResult::Less) low = probe + 1;
+					else high = probe;
+				}
+				const std::size_t mergeLast = low;
+				r.addMetric("optimized_rotate_trimmed_items", (mergeFirst - first) + (last - mergeLast));
+				const std::size_t leftCount = middle - mergeFirst;
+				const std::size_t rightCount = mergeLast - middle;
+				if (leftCount == 0 || rightCount == 0) return;
+				if ((std::min)(leftCount, rightCount) > bufferCapacity)
+				{
+					// The source falls back to recursive binary splitting and rotations
+					// when neither run fits its configured temporary array.
+					grailMergeWithoutBuffer(r, mergeFirst, leftCount, rightCount, "optimized_rotate");
+					r.addMetric("optimized_rotate_in_place_merges");
+					return;
+				}
+
+				if (leftCount <= rightCount)
+				{
+					for (std::size_t offset = 0; offset < leftCount; ++offset)
+					{
+						r.writeAuxiliary("rotate_merge_buffer", offset, r.at(mergeFirst + offset));
+						r.addMetric("optimized_rotate_buffer_writes");
+					}
+					std::size_t left = 0, right = middle, output = mergeFirst;
+					while (left < leftCount && right < mergeLast)
+					{
+						const SortItem a = r.auxiliaryAt("rotate_merge_buffer", left);
+						const SortItem b = r.at(right);
+						r.compare(a, b, left, right, "rotate_merge_buffer", "main", SemanticRole::AuxiliaryCopy, SemanticRole::ComparedItem);
+						r.addMetric("optimized_rotate_comparisons");
+						if (compareItems(a, b, r.trace.direction) != ComparisonResult::Greater)
+							r.writeMain(output++, r.auxiliaryAt("rotate_merge_buffer", left++));
+						else r.writeMain(output++, r.at(right++));
+					}
+					while (left < leftCount) r.writeMain(output++, r.auxiliaryAt("rotate_merge_buffer", left++));
+				}
+				else
+				{
+					for (std::size_t offset = 0; offset < rightCount; ++offset)
+					{
+						r.writeAuxiliary("rotate_merge_buffer", offset, r.at(middle + offset));
+						r.addMetric("optimized_rotate_buffer_writes");
+					}
+					std::size_t left = middle, right = rightCount, output = mergeLast;
+					while (left > mergeFirst && right > 0)
+					{
+						const SortItem a = r.at(left - 1);
+						const SortItem b = r.auxiliaryAt("rotate_merge_buffer", right - 1);
+						r.compare(a, b, left - 1, right - 1, "main", "rotate_merge_buffer", SemanticRole::ComparedItem, SemanticRole::AuxiliaryCopy);
+						r.addMetric("optimized_rotate_comparisons");
+						if (compareItems(a, b, r.trace.direction) == ComparisonResult::Greater)
+							r.writeMain(--output, r.at(--left));
+						else r.writeMain(--output, r.auxiliaryAt("rotate_merge_buffer", --right));
+					}
+					while (right > 0) r.writeMain(--output, r.auxiliaryAt("rotate_merge_buffer", --right));
+				}
+				r.addMetric("optimized_rotate_buffer_merges");
+			};
+
+			const std::size_t run = 32;
+			for (std::size_t first = 0; first < count; first += run)
+			{
+				const std::size_t last = (std::min)(count, first + run);
+				strategies::binaryInsertionRange(r, first, last);
+				r.addMetric("optimized_rotate_runs");
+			}
+		for (std::size_t width = run; width < count;)
+			{
+				const int phase = r.beginPhase("Optimized rotate-merge pass");
+				for (std::size_t first = 0; first < count; first += width * 2)
+				{
+					const std::size_t middle = (std::min)(count, first + width);
+					const std::size_t last = (std::min)(count, middle + width);
+					if (middle < last)
+					{
+						const std::size_t begin = r.trace.events.size();
+						bufferedMerge(first, middle, last);
+						r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "Buffered or rotated merge", begin);
+						r.addMetric("optimized_rotate_merges");
+					}
+				}
+				r.endPhase(phase, "Optimized rotate-merge pass");
+				if (width > count / 2) break;
+				width *= 2;
+			}
+			r.resizeAuxiliary("rotate_merge_buffer", 0);
+		}
+
+
 		static void laziestStableSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -1872,6 +2438,12 @@ namespace sortinglogic
 		void twinMergeStrategy(Recorder& r) { twinMergeSort(r); }
 		void timMergeStrategy(Recorder& r) { timFamilySort(r, false); }
 		void cocktailMergeStrategy(Recorder& r) { timFamilySort(r, true); }
+		void improvedInPlaceMergeStrategy(Recorder& r) { improvedInPlaceMergeSort(r); }
+		void dropMergeStrategy(Recorder& r) { dropMergeSort(r); }
+		void medianMergeStrategy(Recorder& r) { medianMergeSort(r); }
+		void bufferPartitionMergeStrategy(Recorder& r) { bufferPartitionMergeSort(r); }
+		void parallelBlockMergeStrategy(Recorder& r) { parallelBlockMergeSort(r); }
+		void optimizedRotateMergeStrategy(Recorder& r) { optimizedRotateMergeSort(r); }
 		void remiSortStrategy(Recorder& r) { remiSort(r); }
 		void chaliceSortStrategy(Recorder& r) { chaliceSort(r); }
 		void fifthMergeSortStrategy(Recorder& r) { fifthMergeSort(r); }
