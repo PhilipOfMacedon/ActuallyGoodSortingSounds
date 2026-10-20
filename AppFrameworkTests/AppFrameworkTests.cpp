@@ -1505,6 +1505,75 @@ namespace
 			"appearance view retains modal pointer capture and outside-click dismissal");
 	}
 
+	void testAppearanceEditorViewSynchronizesControls()
+	{
+		UiAppearancePreferences initial;
+		AppearanceEditorView view(std::vector<std::string>{ "Current", "Flat VGA DOS", "Classic Windows 95" },
+			std::vector<std::string>{ "Cyan", "Amber", "Monochrome", "Light" }, initial, 0);
+		const AppearanceFontFamilyProvider fontFamilies = []()
+		{
+			return std::vector<std::string>{ "Courier New", "Consolas" };
+		};
+		const AppearanceFontStyleProvider fontStyles = [](const std::string& family)
+		{
+			return family == "Consolas" ? std::vector<std::string>{ "Regular", "Bold" } : std::vector<std::string>{ "Regular", "Bold", "Italic" };
+		};
+		view.updateLayout(1000, 700);
+		view.synchronizeControls(fontFamilies, fontStyles);
+
+		const UiWidget* search = view.controls().find("appearance_search");
+		const UiWidget* tokens = view.controls().find("appearance_token");
+		check(search && search->label() == "Search tokens" && tokens && !tokens->options().empty() &&
+			tokens->selectedIndex() == view.session().model().selectedIndex(),
+			"appearance view synchronizes search and filtered token choices from its model");
+		check(view.layoutResult().valid && view.controls().find("appearance_preset")->bounds().x ==
+			view.layoutResult().control("appearance_preset").x,
+			"appearance control synchronization retains the view's responsive layout contract");
+
+		const std::vector<UiPresetId>& presets = uiPresetCatalog();
+		for (std::size_t presetIndex = 0; presetIndex < presets.size(); ++presetIndex)
+		{
+			const UiPresetId preset = presets[presetIndex];
+			view.session().model().setPreset(preset);
+			const UiPresetDefinition& definition = uiPresetDefinition(preset);
+			for (int rawType = static_cast<int>(UiTokenType::Color); rawType <= static_cast<int>(UiTokenType::Font); ++rawType)
+			{
+				const UiTokenType type = static_cast<UiTokenType>(rawType);
+				const UiTokenDescriptor* example = nullptr;
+				for (std::size_t i = 0; i < definition.tokens.size(); ++i)
+					if (definition.tokens[i].type == type) { example = &definition.tokens[i]; break; }
+				if (!example) continue;
+
+				view.session().model().setSearch(example->stableId);
+				view.synchronizeControls(fontFamilies, fontStyles);
+				check(view.session().model().selectedToken() == example->stableId &&
+					view.description().find(example->stableId) != std::string::npos,
+					"appearance view selects and describes the token matching its search");
+				check(view.controls().find("appearance_value_slider")->visible() == (type == UiTokenType::Number) &&
+					view.controls().find("appearance_color_r")->visible() == (type == UiTokenType::Color) &&
+					view.controls().find("appearance_boolean")->visible() == (type == UiTokenType::Boolean) &&
+					view.controls().find("appearance_choice")->visible() == (type == UiTokenType::Choice) &&
+					view.controls().find("appearance_font_family")->visible() == (type == UiTokenType::Font),
+					"appearance view shows only controls for the selected token's value type");
+
+				if (type == UiTokenType::Font)
+				{
+					const UiWidget* family = view.controls().find("appearance_font_family");
+					const UiWidget* style = view.controls().find("appearance_font_style");
+					check(family && std::find(family->options().begin(), family->options().end(), "Courier New") != family->options().end() &&
+						style && !style->options().empty() && style->selectedIndex() >= 0,
+						"font choices are supplied by the host adapter and selected value is preserved");
+				}
+			}
+		}
+
+		view.session().model().setSearch("no matching token");
+		view.synchronizeControls(fontFamilies, fontStyles);
+		check(view.description() == "No appearance tokens match this search." &&
+			!view.controls().find("appearance_token")->visible(),
+			"appearance view reports an empty token search and hides its selector");
+	}
+
 	void testAlgorithmProfileView()
 	{
 		TextBlockLayout::MeasureTextWidth measure = [](const std::string& text, const ResolvedTextStyle& style)
@@ -3326,6 +3395,7 @@ int main(int argc, char* argv[])
 	testLayoutAndWidgets();
 	testAppearanceEditorLayout();
 	testAppearanceEditorViewComposition();
+	testAppearanceEditorViewSynchronizesControls();
 	testAlgorithmProfileView();
 	testAppearanceEditorModel();
 	testAppearanceEditorSession();

@@ -155,8 +155,7 @@ private:
 	void cancelInlineEdit();
 	void openAppearanceEditor();
 	void closeAppearanceEditor(bool restore);
-	void refreshAppearanceTokens();
-	void updateAppearanceEditorControls();
+	void synchronizeAppearanceEditorControls();
 	void layoutAppearanceEditor();
 	bool handleAppearanceEditorEvent(const SDL_Event& event, AppAction& action);
 	void processAppearanceEditorAction(const UiAction& action, AppAction& output);

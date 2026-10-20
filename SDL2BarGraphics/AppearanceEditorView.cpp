@@ -1,6 +1,28 @@
 #include "AppearanceEditorView.h"
 
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
+
+namespace
+{
+	std::string tokenDisplayValue(const UiTokenValue& value)
+	{
+		std::ostringstream text;
+		text << std::fixed << std::setprecision(3);
+		switch (value.type)
+		{
+		case UiTokenType::Color:
+			text << "R " << value.color.r << "  G " << value.color.g << "  B " << value.color.b << "  A " << value.color.a;
+			break;
+		case UiTokenType::Number: text << value.number; break;
+		case UiTokenType::Boolean: text << (value.boolean ? "ON" : "OFF"); break;
+		case UiTokenType::Choice: text << value.text; break;
+		case UiTokenType::Font: text << value.font.family << " | " << value.font.style; break;
+		}
+		return text.str();
+	}
+}
 
 AppearanceEditorView::AppearanceEditorView(const std::vector<std::string>& presetNames,
 	const std::vector<std::string>& paletteNames, const UiAppearancePreferences& initial,
@@ -53,6 +75,125 @@ void AppearanceEditorView::accept(const UiAppearancePreferences& committed)
 {
 	session_.accept(committed);
 	controls_.find("appearance_preset")->setSelectedIndex(static_cast<int>(session_.draft().activePreset));
+}
+
+void AppearanceEditorView::synchronizeControls(const AppearanceFontFamilyProvider& fontFamilies,
+	const AppearanceFontStyleProvider& fontStyles)
+{
+	const UiPresetId preset = session_.model().preset();
+	const std::string& selectedToken = session_.model().selectedToken();
+	const std::vector<AppearanceTokenOption>& tokenOptions = session_.model().options();
+	std::vector<std::string> tokenLabels;
+	tokenLabels.reserve(tokenOptions.size());
+	for (std::size_t i = 0; i < tokenOptions.size(); ++i) tokenLabels.push_back(tokenOptions[i].label);
+
+	UiWidget* presetControl = controls_.find("appearance_preset");
+	UiWidget* paletteControl = controls_.find("appearance_palette");
+	UiWidget* categoryControl = controls_.find("appearance_category");
+	UiWidget* searchControl = controls_.find("appearance_search");
+	UiWidget* tokenControl = controls_.find("appearance_token");
+	if (presetControl) presetControl->setSelectedIndex(static_cast<int>(preset));
+	if (paletteControl) paletteControl->setSelectedIndex(static_cast<int>(session_.draft().themes[preset].palette));
+	if (categoryControl) categoryControl->setSelectedIndex(session_.model().categoryFilter());
+	if (searchControl) searchControl->setLabel(session_.model().search().empty()
+		? "Search tokens" : "Search: " + session_.model().search());
+	if (tokenControl)
+	{
+		if (tokenControl->options() != tokenLabels) tokenControl->setOptions(tokenLabels);
+		tokenControl->setSelectedIndex((std::max)(0, session_.model().selectedIndex()));
+	}
+
+	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
+	const bool hasToken = descriptor != nullptr;
+	const UiTokenValue value = hasToken
+		? effectiveUiTokenValue(preset, session_.draft().themes[preset], selectedToken)
+		: UiTokenValue();
+	const bool hasTokenOptions = !tokenOptions.empty();
+	controls_.setWidgetVisible("appearance_token", hasTokenOptions);
+	controls_.setWidgetVisible("appearance_value_down", hasToken && descriptor->type == UiTokenType::Number);
+	controls_.setWidgetVisible("appearance_value", hasToken && descriptor->type == UiTokenType::Number);
+	controls_.setWidgetVisible("appearance_value_up", hasToken && descriptor->type == UiTokenType::Number);
+	controls_.setWidgetVisible("appearance_value_slider", hasToken && descriptor->type == UiTokenType::Number);
+	controls_.setWidgetVisible("appearance_color", hasToken && descriptor->type == UiTokenType::Color);
+	controls_.setWidgetVisible("appearance_color_alpha", hasToken && descriptor->type == UiTokenType::Color);
+	controls_.setWidgetVisible("appearance_color_r", hasToken && descriptor->type == UiTokenType::Color);
+	controls_.setWidgetVisible("appearance_color_g", hasToken && descriptor->type == UiTokenType::Color);
+	controls_.setWidgetVisible("appearance_color_b", hasToken && descriptor->type == UiTokenType::Color);
+	controls_.setWidgetVisible("appearance_color_a", hasToken && descriptor->type == UiTokenType::Color);
+	controls_.setWidgetVisible("appearance_boolean", hasToken && descriptor->type == UiTokenType::Boolean);
+	controls_.setWidgetVisible("appearance_choice", hasToken && descriptor->type == UiTokenType::Choice);
+	controls_.setWidgetVisible("appearance_font_family", hasToken && descriptor->type == UiTokenType::Font);
+	controls_.setWidgetVisible("appearance_font_style", hasToken && descriptor->type == UiTokenType::Font);
+
+	if (hasToken)
+	{
+		std::string description = appearanceTokenLabel(*descriptor);
+		if (descriptor->type == UiTokenType::Color)
+			description += " | Chart bars and marks use the same color tokens as the interface.";
+		setDescription(description);
+	}
+	else
+		setDescription("No appearance tokens match this search.");
+
+	if (hasToken && value.type == UiTokenType::Number)
+	{
+		UiWidget* valueControl = controls_.find("appearance_value");
+		UiWidget* slider = controls_.find("appearance_value_slider");
+		if (valueControl) valueControl->setLabel(tokenDisplayValue(value));
+		if (slider)
+		{
+			const float minimum = static_cast<float>(descriptor->minimum);
+			const float maximum = static_cast<float>(descriptor->maximum);
+			const float step = maximum - minimum <= 1.0f ? 0.01f : 1.0f;
+			slider->setSliderRange(minimum, maximum, step, static_cast<float>(value.number));
+		}
+	}
+	else if (hasToken && value.type == UiTokenType::Color)
+	{
+		UiWidget* color = controls_.find("appearance_color");
+		UiWidget* alpha = controls_.find("appearance_color_alpha");
+		if (color) color->setLabel("Pick RGB | " + tokenDisplayValue(value));
+		if (alpha) alpha->setLabel("Alpha " + tokenDisplayValue(UiTokenValue::fromNumber(value.color.a)));
+		if (controls_.find("appearance_color_r")) controls_.find("appearance_color_r")->setSliderValue(value.color.r);
+		if (controls_.find("appearance_color_g")) controls_.find("appearance_color_g")->setSliderValue(value.color.g);
+		if (controls_.find("appearance_color_b")) controls_.find("appearance_color_b")->setSliderValue(value.color.b);
+		if (controls_.find("appearance_color_a")) controls_.find("appearance_color_a")->setSliderValue(value.color.a);
+	}
+	else if (hasToken && value.type == UiTokenType::Boolean)
+	{
+		UiWidget* boolean = controls_.find("appearance_boolean");
+		if (boolean) boolean->setLabel(value.boolean ? "Checked" : "Unchecked");
+	}
+	else if (hasToken && value.type == UiTokenType::Choice)
+	{
+		UiWidget* choice = controls_.find("appearance_choice");
+		if (choice)
+		{
+			choice->setOptions(descriptor->choices);
+			const std::vector<std::string>::const_iterator at = std::find(descriptor->choices.begin(), descriptor->choices.end(), value.text);
+			choice->setSelectedIndex(at == descriptor->choices.end() ? 0 : static_cast<int>(at - descriptor->choices.begin()));
+		}
+	}
+	else if (hasToken && value.type == UiTokenType::Font)
+	{
+		std::vector<std::string> families = fontFamilies ? fontFamilies() : std::vector<std::string>();
+		if (std::find(families.begin(), families.end(), value.font.family) == families.end()) families.push_back(value.font.family);
+		UiWidget* family = controls_.find("appearance_font_family");
+		if (family)
+		{
+			family->setOptions(families);
+			family->setSelectedIndex(static_cast<int>(std::find(families.begin(), families.end(), value.font.family) - families.begin()));
+		}
+		std::vector<std::string> styles = fontStyles ? fontStyles(value.font.family) : std::vector<std::string>();
+		if (styles.empty()) styles.push_back(value.font.style);
+		else if (std::find(styles.begin(), styles.end(), value.font.style) == styles.end()) styles.push_back(value.font.style);
+		UiWidget* style = controls_.find("appearance_font_style");
+		if (style)
+		{
+			style->setOptions(styles);
+			style->setSelectedIndex(static_cast<int>(std::find(styles.begin(), styles.end(), value.font.style) - styles.begin()));
+		}
+	}
 }
 
 void AppearanceEditorView::updateLayout(int logicalWidth, int logicalHeight)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,9 @@ struct AppearanceEditorPalette
 	UiColor overlayDim;
 };
 
+typedef std::function<std::vector<std::string>()> AppearanceFontFamilyProvider;
+typedef std::function<std::vector<std::string>(const std::string&)> AppearanceFontStyleProvider;
+
 // Owns the appearance editor's retained controls, transactional session, and
 // responsive layout. Native dialogs and GPU resource submission stay in the
 // platform-facing ControlPanel adapter.
@@ -31,6 +35,8 @@ public:
 	void begin(const UiAppearancePreferences& current);
 	void restore();
 	void accept(const UiAppearancePreferences& committed);
+	void synchronizeControls(const AppearanceFontFamilyProvider& fontFamilies,
+		const AppearanceFontStyleProvider& fontStyles);
 	void updateLayout(int logicalWidth, int logicalHeight);
 	void setDescription(const std::string& value) { description_ = value; }
 

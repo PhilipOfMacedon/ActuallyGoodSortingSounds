@@ -1399,3 +1399,17 @@ Verification:
 - `git diff --check` passed. This is an ownership refactor; no runtime performance claim is made.
 
 Next: move appearance-editor widget-state synchronization and semantic action handling behind the view. Keep SDL event translation, GPU submission, and native file dialogs at the platform adapter boundary.
+
+## 2026-10-20 — move appearance control synchronization into the view
+
+`AppearanceEditorView::synchronizeControls` now maps its token model and draft into the retained controls: filtered token options, selected preset/palette/category, search label, type-specific visibility, values, descriptions, and font-family/style options. The platform adapter supplies installed-font choices through callbacks and retains only the renderer-owned `TextLabel` cache and resize/layout call. This removes the duplicated widget-state synchronization block from `ControlPanel` without moving DirectWrite or SDL responsibilities into the view.
+
+An empty token search now keeps its empty-result message and skips type-specific value handling when no token descriptor exists. The test exercises each token type available across the built-in presets and the no-results case.
+
+Verification:
+
+- Full solution builds and `AppFrameworkTests` passed in x64 Debug/Release and x86 Debug/Release.
+- Visually inspected the live appearance editor after synchronization moved; the default color token, swatch, sliders, labels, and modal layout render correctly.
+- `git diff --check` passed. No settings persistence, appearance-edit semantics, or renderer behavior was changed.
+
+Next: move pure appearance-token edit actions into the view and make its boundary return explicit host effects for inline text entry, color/profile dialogs, Apply, and Cancel. SDL event translation, native dialogs, and app-controller dispatch remain in the host adapter.
