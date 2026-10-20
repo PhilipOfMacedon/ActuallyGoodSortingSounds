@@ -145,12 +145,8 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 			const sortinglogic::AlgorithmOptionDescriptor& option = traceAlgorithm->supportedOptions[optionIndex];
 			const std::string group(option.groupId);
 			if (!configuredGroups.insert(group).second) continue;
-			const int value = algorithmOptionValue(preferences_, *traceAlgorithm, group);
-			if (group == "heap_arity" || group == "bucket_count") request.bucketCount = value;
-			else if (group == "grail_buffer_mode") request.bucketCount = value;
-			else if (group == "radix_base") request.radixBase = value;
-			else if (group == "time_magnitude") request.timeMagnitude = value;
-			else if (group == "rotate_buffer_capacity") request.rotateMergeBufferSize = value;
+			const std::string stableId = algorithmOptionStableId(preferences_, *traceAlgorithm, group);
+			if (!stableId.empty()) request.optionSelections[group] = stableId;
 		}
 	}
 

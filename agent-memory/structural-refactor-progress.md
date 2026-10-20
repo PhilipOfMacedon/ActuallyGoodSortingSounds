@@ -215,7 +215,7 @@ Next: reduce configuration and catalog coupling, beginning with shared value sem
 
 ## 2026-10-19 — centralize settings and audio equality
 
-Status: implementation and focused verification complete; pending commit.
+Status: committed and pushed as `1d2c92b`.
 
 - Moved exact equality for synthesizer parameters and reconstructed-audio parameters onto their value types. `AudioPresentationBridge` now consumes those comparisons instead of keeping a second field list.
 - Added value equality for algorithm audio levels and user preferences. `AppController` now uses the shared preference comparison for change detection and persistence gating.
@@ -229,4 +229,23 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - Debug and Release `SoundEngineTests`: each passed 417,371 assertions.
 
-Next: define a pure resolved run-configuration value from the current request and catalog options, preserving today’s accepted defaults and compatibility behavior before moving validation out of the controller and recorder.
+Next: route stable catalog option selections through the sorting boundary and resolve them before trace generation, preserving the legacy numeric request fields as a compatibility adapter.
+
+## 2026-10-19 — resolve stable algorithm options in SortingLogic
+
+Status: implementation and focused verification complete; pending commit.
+
+- Added stable option selections to `TraceBuildRequest`, keyed by catalog group ID and carrying the catalog's stable option ID.
+- `AppController` now forwards those stable selections instead of mapping group-name strings into overloaded numeric request fields.
+- `SortTraceBuilder` validates each selection against the selected descriptor and resolves it before validation and strategy dispatch. It rejects unknown IDs and unbound option groups. The old numeric fields still work when no stable selection is provided, preserving source compatibility.
+- Added checks that stable Merge choices override the compatibility fields, invalid option IDs are rejected, Shell options reach the trace, and heap/rotate/Grail options still reach their existing trace fields through the app path.
+- This is a transition boundary: option group bindings and legacy named fields remain to be consolidated after all existing choices are represented in catalog metadata.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 39,448 checks with 0 failures.
+- Debug and Release catalog-coverage runs: each passed 1,678 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+
+Next: move the remaining option-group-to-field bindings into explicit catalog metadata, then derive a single effective configuration without removing compatibility adapters prematurely.

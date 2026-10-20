@@ -331,6 +331,9 @@ namespace sortinglogic
 	struct TraceBuildRequest
 	{
 		std::vector<SortItem> input;
+		// Stable catalog option IDs keyed by option group. When present, these are
+		// resolved by SortingLogic and override the legacy numeric fields below.
+		std::map<std::string, std::string> optionSelections;
 		FamilyId familyId;
 		VariantId variantId;
 		SortAlgorithm algorithm;
@@ -351,7 +354,7 @@ namespace sortinglogic
 		int bucketCount;
 		int timeMagnitude;
 		int rotateMergeBufferSize;
-		TraceBuildRequest() : input(), familyId(), variantId(), algorithm(SortAlgorithm::Insertion), direction(SortDirection::Ascending),
+		TraceBuildRequest() : input(), optionSelections(), familyId(), variantId(), algorithm(SortAlgorithm::Insertion), direction(SortDirection::Ascending),
 			profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats), pattern(InputPattern::Random),
 			shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
 			mergeExecutionMode(MergeExecutionMode::BottomUp), completionScanEnabled(false),

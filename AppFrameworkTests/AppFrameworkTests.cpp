@@ -1670,6 +1670,9 @@ namespace
 			std::this_thread::yield();
 		}
 		check(app.snapshot().hasTrace, "Shell trace completes through the existing single-job service");
+		const std::shared_ptr<const sortinglogic::SortTrace> shellTrace = app.simulation().currentTrace();
+		check(shellTrace && shellTrace->shellGapSequence == sortinglogic::ShellGapSequence::Tokuda,
+			"stable Shell option selection is resolved into the built trace");
 		check(app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted, "showcase trace starts playback");
 		const int writesBeforeBusyProfile = persistence.writes;
 		check(!app.dispatch(AppAction(AppActionKind::SetInputProfile, 0.0f,
@@ -1728,6 +1731,19 @@ namespace
 			"execution_mode", "missing_option", topDownValue);
 		check(!app.dispatch(invalid).accepted && persistence.writes == writesBeforeInvalid,
 			"unknown stable option IDs are rejected without persisting a change");
+		check(app.dispatch(AppAction(AppActionKind::BuildTrace)).accepted,
+			"Merge builds from its stable option selections");
+		const std::chrono::steady_clock::time_point mergeDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < mergeDeadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		const std::shared_ptr<const sortinglogic::SortTrace> mergeTrace = app.snapshot().hasTrace
+			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
+		check(mergeTrace && mergeTrace->mergeExecutionMode == sortinglogic::MergeExecutionMode::TopDown &&
+			mergeTrace->mergeWritebackMode == sortinglogic::MergeWritebackMode::AnimatedWrites,
+			"stable Merge option selections resolve into the trace independently");
 
 		const sortinglogic::AlgorithmDescriptor* baseN = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::ArrayvBaseNHeap);
 		check(baseN && app.dispatch(AppAction(AppActionKind::SelectAlgorithm, baseN->familyId, baseN->variantId)).accepted,

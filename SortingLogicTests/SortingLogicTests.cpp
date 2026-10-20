@@ -355,6 +355,20 @@ namespace
 		TraceBuildRequest topDownAnimatedRequest = animatedRequest;
 		topDownAnimatedRequest.mergeExecutionMode = MergeExecutionMode::TopDown;
 		const SortTrace topDownAnimated = SortTraceBuilder::build(topDownAnimatedRequest);
+		TraceBuildRequest stableOptionRequest = atomicRequest;
+		stableOptionRequest.optionSelections["execution_mode"] = "top_down";
+		stableOptionRequest.optionSelections["writeback_mode"] = "animated_writes";
+		const SortTrace stableOptionTrace = SortTraceBuilder::build(stableOptionRequest);
+		check(stableOptionTrace.mergeExecutionMode == MergeExecutionMode::TopDown &&
+			stableOptionTrace.mergeWritebackMode == MergeWritebackMode::AnimatedWrites &&
+			stableOptionTrace.events.size() == topDownAnimated.events.size(),
+			"stable Merge option IDs override legacy request fields and resolve to the same configured trace");
+		TraceBuildRequest unknownOptionRequest = atomicRequest;
+		unknownOptionRequest.optionSelections["execution_mode"] = "missing_mode";
+		bool rejectedUnknownOption = false;
+		try { SortTraceBuilder::build(unknownOptionRequest); }
+		catch (const std::invalid_argument&) { rejectedUnknownOption = true; }
+		check(rejectedUnknownOption, "trace builder rejects option IDs missing from the selected catalog variant");
 		std::size_t atomicRangeWrites = 0, atomicItemWrites = 0, animatedItemWrites = 0, animatedRangeWrites = 0;
 		for (std::size_t i = 0; i < atomic.events.size(); ++i)
 		{
