@@ -127,6 +127,15 @@ namespace sortinglogic
 		return isWorkspaceVisible(algorithm, mergeBufferVisualizationEnabled, lane) ? lane : "main";
 	}
 
+	std::vector<ActiveRole> visibleRolesOnMainArray(const RenderSnapshot& snapshot)
+	{
+		std::vector<ActiveRole> roles = snapshot.activeRoles;
+		for (std::size_t i = 0; i < roles.size(); ++i)
+			roles[i].lane = visibleRoleWorkspace(snapshot.algorithm,
+				snapshot.mergeBufferVisualizationEnabled, roles[i].lane);
+		return roles;
+	}
+
 	bool supportsAudioControlCategory(const AlgorithmDescriptor& algorithm, AudioControlCategory category)
 	{
 		switch (category)

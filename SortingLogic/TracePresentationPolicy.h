@@ -65,5 +65,6 @@ namespace sortinglogic
 	bool projectAudioOperands(const SortTrace& trace, const SemanticEvent& event, TraceAudioOperandProjection& projection);
 	bool isWorkspaceVisible(SortAlgorithm algorithm, bool mergeBufferVisualizationEnabled, const std::string& lane);
 	std::string visibleRoleWorkspace(SortAlgorithm algorithm, bool mergeBufferVisualizationEnabled, const std::string& lane);
+	std::vector<ActiveRole> visibleRolesOnMainArray(const RenderSnapshot& snapshot);
 	bool supportsAudioControlCategory(const AlgorithmDescriptor& algorithm, AudioControlCategory category);
 }

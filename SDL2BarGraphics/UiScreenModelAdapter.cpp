@@ -1,7 +1,6 @@
 #include "UiScreenModelAdapter.h"
 
 #include "PlaybackTimebase.h"
-#include "../SortingLogic/TracePresentationPolicy.h"
 
 #include <iomanip>
 #include <sstream>
@@ -92,13 +91,4 @@ UiScreenModel buildUiScreenModel(const sortinglogic::RenderSnapshot& snapshot,
 		model.telemetry.push_back(UiTelemetryValue("peak_auxiliary", "Peak", std::to_string(snapshot.metrics.peakAuxiliaryCapacity)));
 	}
 	return model;
-}
-
-std::vector<sortinglogic::ActiveRole> rolesVisibleOnMainArray(const sortinglogic::RenderSnapshot& snapshot)
-{
-	std::vector<sortinglogic::ActiveRole> roles = snapshot.activeRoles;
-	for (std::size_t i = 0; i < roles.size(); ++i)
-		roles[i].lane = sortinglogic::visibleRoleWorkspace(snapshot.algorithm,
-			snapshot.mergeBufferVisualizationEnabled, roles[i].lane);
-	return roles;
 }

@@ -941,17 +941,6 @@ namespace
 			traceProgressPercent(true, false, 120, 100) == 100 &&
 			traceProgressPercent(true, true, 0, 0) == 100,
 			"collapsed trace progress handles missing, partial, clamped, and completed empty traces");
-		sortinglogic::RenderSnapshot mergeSnapshot;
-		mergeSnapshot.algorithm = sortinglogic::SortAlgorithm::Merge;
-		mergeSnapshot.mergeBufferVisualizationEnabled = false;
-		mergeSnapshot.activeRoles.push_back(sortinglogic::ActiveRole(sortinglogic::SemanticRole::ComparedItem, 11, 0, "merge"));
-		mergeSnapshot.activeRoles.push_back(sortinglogic::ActiveRole(sortinglogic::SemanticRole::WriteTarget, 12, 1, "main"));
-		const std::vector<sortinglogic::ActiveRole> visibleMergeRoles = rolesVisibleOnMainArray(mergeSnapshot);
-		check(visibleMergeRoles.size() == 2 && visibleMergeRoles[0].lane == "main" && visibleMergeRoles[1].lane == "main",
-			"hidden Merge buffer keeps comparison and write roles visible on the primary bars");
-		mergeSnapshot.mergeBufferVisualizationEnabled = true;
-		check(rolesVisibleOnMainArray(mergeSnapshot)[0].lane == "merge",
-			"visible Merge buffer keeps comparison roles attached to the auxiliary lane");
 	}
 
 	void testWindowsFontCatalog()

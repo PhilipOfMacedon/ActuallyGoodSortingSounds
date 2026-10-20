@@ -1781,3 +1781,11 @@ Added `InlineEditView` to own the single inline-edit session shared by main cont
 Added headless coverage for main count and duration edits, action payloads, overflow correction, cancellation restoration, invalid appearance field selection, alpha draft commits, and preservation of an active session when a second target is requested. x64 Debug and Release solution builds passed. `AppFrameworkTests` passed in both configurations. `git diff --check` passed with only configured LF-to-CRLF notices. The smoke window remained closed; this was an ownership-only change.
 
 Next: inspect the remaining `ControlPanel` composition and presentation ownership, then take the next measured settings, renderer, or application boundary from the audit. Keep the structural refactor goal active.
+
+## 2026-10-20 — move chart role projection into trace presentation policy
+
+`ArrayRenderer` no longer includes `UiArchitecture.h` or `UiScreenModelAdapter.h` to remap semantic roles when an auxiliary workspace is hidden. The shared `visibleRolesOnMainArray` projection now lives beside workspace visibility in `SortingLogic::TracePresentationPolicy`; the UI screen adapter is limited to translating simulation/settings state into UI values. This keeps UI semantics out of the chart renderer and makes the hidden/visible Merge mapping testable at its owning policy boundary.
+
+Added core-policy checks for hidden and visible Merge role lanes. The x64 and x86 solution builds passed in Debug and Release. `SortingLogicTests --core-contracts-only` passed in all four configurations with 39,541 checks and zero failures; `AppFrameworkTests` passed in all four configurations. `git diff --check` passed with only configured LF-to-CRLF notices. This changes no trace event, replay state, audio policy, material choice, or renderer ordering; the smoke window remained closed.
+
+Next: review `ControlPanel`'s remaining composition duties and the renderer's shared geometry types, then continue the audit's outstanding event-storage and coordination measurements. Keep the structural refactor goal active.

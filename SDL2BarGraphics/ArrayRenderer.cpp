@@ -6,8 +6,6 @@
 #include <map>
 
 #include "LayoutMetrics.h"
-#include "UiArchitecture.h"
-#include "UiScreenModelAdapter.h"
 #include "../SortingLogic/TracePresentationPolicy.h"
 
 namespace
@@ -68,7 +66,7 @@ void ArrayRenderer::render(
 	// refer to the logical "merge" lane. The items being compared are visible in
 	// the primary array, so resolve those roles there rather than losing their
 	// highlight because the buffer lane was omitted from the chart.
-	const std::vector<sortinglogic::ActiveRole> mainRoles = rolesVisibleOnMainArray(snapshot);
+	const std::vector<sortinglogic::ActiveRole> mainRoles = sortinglogic::visibleRolesOnMainArray(snapshot);
 	mainRoleLookup_.rebuild(mainRoles);
 	workspaceRoleLookup_.rebuild(snapshot.activeRoles);
 	for (std::size_t i = 0; i < materialBuckets_.size(); ++i)

@@ -5264,6 +5264,17 @@ namespace
 			isWorkspaceVisible(SortAlgorithm::Merge, true, "merge") &&
 			visibleRoleWorkspace(SortAlgorithm::Merge, false, "merge") == "main",
 			"audio and chart consumers share Merge lane visibility and main-array role projection");
+		RenderSnapshot mergeSnapshot;
+		mergeSnapshot.algorithm = SortAlgorithm::Merge;
+		mergeSnapshot.mergeBufferVisualizationEnabled = false;
+		mergeSnapshot.activeRoles.push_back(ActiveRole(SemanticRole::ComparedItem, 11, 0, "merge"));
+		mergeSnapshot.activeRoles.push_back(ActiveRole(SemanticRole::WriteTarget, 12, 1, "main"));
+		const std::vector<ActiveRole> hiddenMergeRoles = visibleRolesOnMainArray(mergeSnapshot);
+		check(hiddenMergeRoles.size() == 2 && hiddenMergeRoles[0].lane == "main" && hiddenMergeRoles[1].lane == "main",
+			"hidden Merge buffer projects its semantic roles onto the visible primary array");
+		mergeSnapshot.mergeBufferVisualizationEnabled = true;
+		check(visibleRolesOnMainArray(mergeSnapshot)[0].lane == "merge",
+			"visible Merge buffer preserves the role's auxiliary lane identity");
 		check(supportsAudioControlCategory(*algorithmDescriptor(SortAlgorithm::CanonicalStalinFilter), AudioControlCategory::Discard),
 			"catalog behavior labels declare discard audio controls");
 	}
