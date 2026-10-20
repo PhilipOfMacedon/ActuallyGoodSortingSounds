@@ -1717,3 +1717,11 @@ Centralized settings, popup, and algorithm-menu layout in `layoutInteractiveView
 The x64 Debug and Release solution builds passed. `AppFrameworkTests` passed in both configurations. `git diff --check` passed. These changes preserve label appearance and control geometry; no frame-time benchmark or visual-style change is claimed.
 
 Next: continue with the audit's settings/configuration and application ownership findings, retaining a small behavior check for each boundary change.
+
+## 2026-10-20 — isolate algorithm configuration resolution
+
+Moved stable option lookup, explicit-choice validation, and legacy-field import/projection from `TraceBuilder.cpp` into `AlgorithmConfigurationResolver.cpp`. The resolver returns the typed `AlgorithmConfiguration` consumed by strategy builders; a named compatibility projection continues to populate the older request fields and overloaded legacy `bucketCount` values expected by existing metadata and callers. `TraceBuilder.cpp` now owns run validation and strategy invocation rather than configuration precedence rules.
+
+The x64 Debug and Release solution builds passed. `SortingLogicTests --core-contracts-only` passed in both configurations with 39,535 checks and zero failures. `AppFrameworkTests` passed in both configurations. `git diff --check` passed. No settings format, trace ordering, UI, audio, or runtime behavior change is intended; no performance gain is claimed.
+
+Next: keep reducing configuration duplication at one compatibility seam at a time, then continue the audit's UI ownership and audio/playback boundaries. The smoke window was closed by the user and was not reopened for this structural-only change.
