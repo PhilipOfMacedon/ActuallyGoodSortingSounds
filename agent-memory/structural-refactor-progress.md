@@ -1077,3 +1077,21 @@ Verification:
 - `git diff --check` passed; configured LF-to-CRLF notices only.
 
 Next: continue the remaining UI/rendering ownership items, then revisit any performance boundary only when a representative profile shows meaningful cost.
+
+
+## 2026-10-20 — extract Improved Block Selection Sort
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved `improvedBlockSelectionSort` unchanged from `SortingLogic.cpp` into `SelectionStrategies.cpp`, keeping the same `Recorder` operations, metrics, phases, comparisons, and mutation order.
+- Routed its stable existing algorithm ID through the direct strategy request builder and removed the dead fallback-switch implementation. Catalog metadata and user-visible behavior are unchanged.
+- This is an ownership and source-organization change only; it makes no runtime or performance claim.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86 Debug, x86 Release, x64 Debug, and x64 Release (32-bit project outputs are under `Win32`).
+- Focused Improved Block Selection suite passed 534,724 checks with 0 failures.
+- SortingLogic core contracts passed 39,535 checks with 0 failures.
+- `git diff --check` passed.
+
+Next: continue extracting cohesive recorder-only algorithm families from `SortingLogic.cpp`, first checking helper dependencies and existing focused tests so shared kernels move together rather than being copied into new silos.

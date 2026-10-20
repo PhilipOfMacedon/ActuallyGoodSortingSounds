@@ -26,6 +26,7 @@ namespace sortinglogic
 		void selection(detail::Recorder& recorder);
 		void stableSelection(detail::Recorder& recorder);
 		void stableCycleSort(detail::Recorder& recorder);
+		void improvedBlockSelectionSort(detail::Recorder& recorder);
 		void swaplessBubble(detail::Recorder& recorder);
 		void unoptimizedBubble(detail::Recorder& recorder);
 		void unoptimizedCocktail(detail::Recorder& recorder);
