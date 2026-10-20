@@ -1284,3 +1284,18 @@ Verification:
 - `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
 
 Next: extract the parallel and rotation-based merge strategies with their existing replay suites, then resume the configuration and view-ownership items in the audit.
+
+## 2026-10-20 — extract Parallel Merge Sort
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved Parallel Merge Sort and its recursive task-phase worker into `SortingLogic/MergeStrategies.cpp`; its catalog request now uses a direct strategy builder and its fallback-switch case is removed.
+- Preserved the deterministic sibling-task phases, merge-range writer calls, work charges, task/pass/depth metrics, and event ordering. “Parallel” remains a trace presentation schedule; this move does not add worker threads to the simulation.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- In each configuration: Parallel Merge passed 66,197 checks; core contracts passed 39,535; pinned catalog coverage passed 1,741. All reported 0 failures.
+- `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
+
+Next: inspect and extract the rotation-based merge strategies as a cohesive module, then resume the configuration and view-ownership items in the audit.

@@ -4236,33 +4236,6 @@ namespace sortinglogic
 			}
 		}
 
-		void parallelMergeSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			if (count < 2) return;
-			r.declareMetric("parallel_merge_tasks");
-			r.declareMetric("merge_passes");
-			r.declareMetric("maximum_merge_depth");
-			r.resizeAuxiliary("merge", count);
-			std::function<void(std::size_t, std::size_t, std::size_t)> split;
-			split = [&r, &split](std::size_t first, std::size_t last, std::size_t depth)
-			{
-				r.chargeWork();
-				if (last - first < 2) return;
-				const std::size_t middle = first + (last - first) / 2;
-				const int siblingTasks = r.beginPhase("Parallel Merge sibling tasks");
-				r.addMetric("parallel_merge_tasks");
-				split(first, middle, depth + 1);
-				split(middle, last, depth + 1);
-				r.endPhase(siblingTasks, "Parallel Merge sibling tasks");
-				detail::traceMergeRange(r, first, middle, last);
-				r.addMetric("merge_passes");
-				r.setMetric("maximum_merge_depth", (std::max)(
-					r.state.metrics.algorithm["maximum_merge_depth"], static_cast<std::uint64_t>(depth)));
-			};
-			split(0, count, 1);
-		}
-
 		void rotateMergeSort(Recorder& r, bool parallelSchedule)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -6390,7 +6363,6 @@ namespace sortinglogic
 				case SortAlgorithm::CanonicalStalinFilter: canonicalStalinFilter(recorder); break;
 				case SortAlgorithm::ArrayvStrand: strandSort(recorder); break;
 				case SortAlgorithm::ArrayvRecursiveShell: recursiveShell(recorder); break;
-				case SortAlgorithm::ArrayvParallelMerge: parallelMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvRotateMerge: rotateMergeSort(recorder, false); break;
 				case SortAlgorithm::ArrayvRotateMergeParallel: rotateMergeSort(recorder, true); break;
 				case SortAlgorithm::ArrayvStacklessRotateMerge: stacklessRotateMergeSort(recorder); break;
@@ -6595,7 +6567,7 @@ namespace sortinglogic
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBinaryMergeRequest, ArrayvBinaryMerge, &strategies::binaryMergeStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvIterativeTopDownMergeRequest, ArrayvIterativeTopDownMerge, &strategies::iterativeTopDownMergeStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvInPlaceMergeRequest, ArrayvInPlaceMerge, &strategies::inPlaceMergeStrategy)
-		SORT_REQUEST_BUILDER(buildArrayvParallelMergeRequest, ArrayvParallelMerge)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvParallelMergeRequest, ArrayvParallelMerge, &strategies::parallelMergeStrategy)
 		SORT_REQUEST_BUILDER(buildArrayvRotateMergeRequest, ArrayvRotateMerge)
 		SORT_REQUEST_BUILDER(buildArrayvRotateMergeParallelRequest, ArrayvRotateMergeParallel)
 		SORT_REQUEST_BUILDER(buildArrayvStacklessRotateMergeRequest, ArrayvStacklessRotateMerge)

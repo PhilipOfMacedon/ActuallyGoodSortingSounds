@@ -166,11 +166,39 @@ namespace sortinglogic
 
 				sortRange(0, count);
 			}
+
+			void parallelMergeSort(Recorder& r)
+			{
+				const std::size_t count = r.state.slots.size();
+				if (count < 2) return;
+				r.declareMetric("parallel_merge_tasks");
+				r.declareMetric("merge_passes");
+				r.declareMetric("maximum_merge_depth");
+				r.resizeAuxiliary("merge", count);
+				std::function<void(std::size_t, std::size_t, std::size_t)> split;
+				split = [&r, &split](std::size_t first, std::size_t last, std::size_t depth)
+				{
+					r.chargeWork();
+					if (last - first < 2) return;
+					const std::size_t middle = first + (last - first) / 2;
+					const int siblingTasks = r.beginPhase("Parallel Merge sibling tasks");
+					r.addMetric("parallel_merge_tasks");
+					split(first, middle, depth + 1);
+					split(middle, last, depth + 1);
+					r.endPhase(siblingTasks, "Parallel Merge sibling tasks");
+					detail::traceMergeRange(r, first, middle, last);
+					r.addMetric("merge_passes");
+					r.setMetric("maximum_merge_depth", (std::max)(
+						r.state.metrics.algorithm["maximum_merge_depth"], static_cast<std::uint64_t>(depth)));
+				};
+				split(0, count, 1);
+			}
 		}
 
 		void mergeSortStrategy(Recorder& r) { mergeSort(r); }
 		void binaryMergeStrategy(Recorder& r) { binaryMergeSort(r); }
 		void iterativeTopDownMergeStrategy(Recorder& r) { iterativeTopDownMergeSort(r); }
 		void inPlaceMergeStrategy(Recorder& r) { inPlaceMergeSort(r); }
+		void parallelMergeStrategy(Recorder& r) { parallelMergeSort(r); }
 	}
 }
