@@ -758,3 +758,21 @@ Verification:
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
 Next: isolate playback orchestration state transitions from the main loop, controller, audio bridge, and device adapter without changing callback ownership or generation/revision fencing.
+
+## 2026-10-20 — centralize playback timebase conversions
+
+Status: implementation and focused verification complete.
+
+- Added `PlaybackTimebase` as the single owner of the reference timeline's 300-event cadence and 44.1 kHz sample rate, including duration, cursor/elapsed, and frame/seconds conversions.
+- Routed controller fallback playback, bridge timeline preparation, control-panel duration labels and scrubbing, UI duration captions, and SDL seek-crossfade scaling through the named constants and helpers.
+- Kept the reference timeline distinct from the actual SDL device rate; device resampling and the sound synthesizer remain unchanged.
+- Added focused conversion tests for eligible-event cursor mapping, exact trace completion, and reference-frame conversion.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Standalone `AudioDeviceTransportTests` Debug and Release runs with SDL's dummy backend: passed, including fixed/reference timing and 80/800-item cases.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+Next: extract app-thread playback orchestration transitions into a coordinator while preserving the existing callback ownership and generation/revision fencing.

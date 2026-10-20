@@ -20,6 +20,7 @@
 #include "../SDL2BarGraphics/AlgorithmBrowserView.h"
 #include "../SDL2BarGraphics/AppController.h"
 #include "../SDL2BarGraphics/AudioPresentationBridge.h"
+#include "../SDL2BarGraphics/PlaybackTimebase.h"
 #include "../SDL2BarGraphics/RenderPipeline.h"
 #include "../SDL2BarGraphics/RenderingTypes.h"
 #include "../SDL2BarGraphics/SettingsPanelView.h"
@@ -2643,6 +2644,27 @@ namespace
 			"AppController routes Grail's selected buffer mode into the immutable trace request");
 	}
 
+	void testPlaybackTimebase()
+	{
+		using namespace playbacktimebase;
+		const std::vector<std::size_t> eligible = { 0, 2, 5, 8 };
+		const double duration = durationForReferenceEvents(eligible.size());
+		check(durationForReferenceEvents(0) == 0.0 && durationForReferenceEvents(300) == 1.0 && duration == 4.0 / 300.0,
+			"reference cadence duration uses the shared 300-event timebase");
+		check(elapsedForReferenceCursor(eligible, 0) == 0.0 &&
+			std::fabs(elapsedForReferenceCursor(eligible, 3) - 2.0 / 300.0) < 1e-12 &&
+			std::fabs(elapsedForReferenceCursor(eligible, 6) - 3.0 / 300.0) < 1e-12,
+			"reference cursor elapsed time counts only eligible events before the cursor");
+		check(cursorForReferenceElapsed(eligible, 10, 0.0, duration) == 1 &&
+			cursorForReferenceElapsed(eligible, 10, 0.0034, duration) == 3 &&
+			cursorForReferenceElapsed(eligible, 10, duration - 0.0001, duration) == 9 &&
+			cursorForReferenceElapsed(eligible, 10, duration, duration) == 10,
+			"reference elapsed time advances through eligible events and reaches the exact trace end");
+		check(secondsFromReferenceFrames(ReferenceTimelineSampleRate) == 1.0 &&
+			secondsFromReferenceFrames(ReferenceTimelineSampleRate / 2) == 0.5,
+			"audio playhead frames share the 44.1 kHz reference timeline");
+	}
+
 	void testPlaybackTimingActions()
 	{
 		MemorySettings persistence;
@@ -2763,6 +2785,7 @@ int main()
 	testShowcaseActions();
 	testDistributionAlgorithmsSelectableFromDefaultInput();
 	testMetadataAlgorithmOptions();
+	testPlaybackTimebase();
 	testPlaybackTimingActions();
 	testAudioPreparationPlaybackGate();
 	testStaleAudioPlayheadCannotCancelPlayback();

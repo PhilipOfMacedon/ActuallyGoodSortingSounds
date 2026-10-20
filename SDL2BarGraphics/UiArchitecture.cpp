@@ -1,5 +1,6 @@
 #include "UiArchitecture.h"
 #include "../SortingLogic/TracePresentationPolicy.h"
+#include "PlaybackTimebase.h"
 
 #include <algorithm>
 #include <cmath>
@@ -198,7 +199,8 @@ UiScreenModel buildUiScreenModel(const sortinglogic::RenderSnapshot& snapshot,
 	if (referenceCadence)
 	{
 		std::ostringstream duration;
-		duration << std::fixed << std::setprecision(2) << snapshot.audioEligibleEventCount / 300.0 << " sec";
+		duration << std::fixed << std::setprecision(2)
+			<< playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount) << " sec";
 		model.durationCaption = duration.str();
 	}
 	else model.durationCaption = formatDuration(snapshot.durationSeconds);

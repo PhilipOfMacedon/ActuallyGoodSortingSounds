@@ -8,6 +8,7 @@
 
 #include "BarCountSteps.h"
 #include "AudioSettingsActions.h"
+#include "PlaybackTimebase.h"
 
 namespace
 {
@@ -639,9 +640,8 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 			if (trace && !trace->events.empty())
 			{
 				const std::vector<std::size_t>& eligible = trace->audioEventIndices;
-				const std::size_t due = (std::min)(eligible.size(), static_cast<std::size_t>(std::floor(hostReferenceElapsedSeconds_ * 300.0)) + 1);
-				if (hostReferenceElapsedSeconds_ >= duration) cursor = trace->events.size();
-				else if (due > 0) cursor = eligible[due - 1] + 1;
+				cursor = playbacktimebase::cursorForReferenceElapsed(eligible, trace->events.size(),
+					hostReferenceElapsedSeconds_, duration);
 			}
 			simulation_.synchronizePlaybackPosition(cursor, hostReferenceElapsedSeconds_, duration,
 				hostReferenceElapsedSeconds_ < duration);
@@ -675,9 +675,9 @@ void AppController::applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback&
 		feedback.transportRevision != currentTransportRevision || feedback.durationFrames == 0)
 		return;
 	const double duration = preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
-		? static_cast<double>(feedback.durationFrames) / 44100.0
+		? playbacktimebase::secondsFromReferenceFrames(feedback.durationFrames)
 		: simulation_.durationSeconds();
-	const double elapsed = static_cast<double>(feedback.timelineFrame) / 44100.0;
+	const double elapsed = playbacktimebase::secondsFromReferenceFrames(feedback.timelineFrame);
 	simulation_.synchronizePlaybackPosition(feedback.sourceCursor, elapsed, duration, feedback.playing);
 	hostReferenceElapsedSeconds_ = elapsed;
 }
@@ -686,16 +686,14 @@ double AppController::referenceDurationSeconds() const
 {
 	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
 	if (!trace) return 0.0;
-	return static_cast<double>(trace->audioEventIndices.size()) / 300.0;
+	return playbacktimebase::durationForReferenceEvents(trace->audioEventIndices.size());
 }
 
 double AppController::referenceElapsedAtCursor(std::size_t cursor) const
 {
 	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
 	if (!trace) return 0.0;
-	const std::vector<std::size_t>& eligible = trace->audioEventIndices;
-	const auto end = std::lower_bound(eligible.begin(), eligible.end(), cursor);
-	return static_cast<double>(end - eligible.begin()) / 300.0;
+	return playbacktimebase::elapsedForReferenceCursor(trace->audioEventIndices, cursor);
 }
 
 void AppController::synchronizeReferenceTransport(bool wasPlaying)

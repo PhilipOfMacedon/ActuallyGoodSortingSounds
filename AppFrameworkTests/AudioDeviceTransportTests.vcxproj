@@ -23,6 +23,7 @@
   <ItemGroup>
     <ClCompile Include="AudioDeviceTransportTests.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AudioPresentationBridge.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\PlaybackTimebase.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AudioSettingsActions.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AppController.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\UiAppearance.cpp" />

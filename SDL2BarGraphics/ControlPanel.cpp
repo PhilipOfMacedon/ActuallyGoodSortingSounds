@@ -19,6 +19,7 @@
 #include "SdlUiEventAdapter.h"
 #include "SettingsScroll.h"
 #include "WindowsFontCatalog.h"
+#include "PlaybackTimebase.h"
 
 namespace
 {
@@ -1055,7 +1056,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 		else detailText << "No trace";
 		detailText << " | " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
 		if (settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
-			detailText << snapshot.audioEligibleEventCount / 300.0;
+			detailText << playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount);
 		else detailText << snapshot.durationSeconds;
 		detailText << " sec | seed " << snapshot.inputSeed;
 	}
@@ -1071,7 +1072,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 		else detailText << "No trace";
 		detailText << "  |  " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
 		if (settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
-			detailText << snapshot.audioEligibleEventCount / 300.0;
+			detailText << playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount);
 		else detailText << snapshot.durationSeconds;
 		detailText << " sec";
 		if (snapshot.inputSeed) detailText << "  |  seed " << snapshot.inputSeed;
@@ -1691,7 +1692,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 		const glm::vec4 rail = palette.timelineRail;
 		submitBox(timelineBounds_, rail, TimelineMaterial, UiLayer);
 		const double timelineDuration = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
-			? snapshot.audioEligibleEventCount / 300.0 : snapshot.durationSeconds;
+			? playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount) : snapshot.durationSeconds;
 		const float fraction = (!snapshot.hasTrace && !snapshot.buildingTrace) || timelineDuration <= 0.0 ? 0.0f :
 			static_cast<float>(std::max(0.0, std::min(1.0, snapshot.elapsedSeconds / timelineDuration)));
 		submitBox(UiRect(timelineBounds_.x, timelineBounds_.y, timelineBounds_.width * fraction, timelineBounds_.height), palette.accent, AccentMaterial, layerOffset(UiLayer, 1));

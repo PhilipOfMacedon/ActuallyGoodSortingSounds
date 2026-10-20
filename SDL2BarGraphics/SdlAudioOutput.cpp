@@ -1,5 +1,7 @@
 #include "SdlAudioOutput.h"
 
+#include "PlaybackTimebase.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -244,7 +246,8 @@ void SdlAudioOutput::render(Uint8* stream, int length)
 			seekCrossfading_ = true;
 			seekCrossfadeProgress_ = 0;
 			seekCrossfadeFrames_ = (std::max<std::size_t>)(1, static_cast<std::size_t>(std::ceil(
-				128.0 * static_cast<double>(obtained_.freq) / 44100.0)));
+				128.0 * static_cast<double>(obtained_.freq) /
+					static_cast<double>(playbacktimebase::ReferenceTimelineSampleRate))));
 			appliedTimelineGeneration_ = state.timelineGeneration;
 			appliedTimeline_ = state.timeline;
 			appliedTransportRevision_ = state.transport.revision;

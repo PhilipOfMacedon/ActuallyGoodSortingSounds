@@ -5,6 +5,8 @@
 #include <exception>
 #include <utility>
 
+#include "PlaybackTimebase.h"
+
 namespace
 {
 	bool sameComparison(const SoundEngine::AudioComparison& a, const SoundEngine::AudioComparison& b)
@@ -124,7 +126,8 @@ namespace
 			}
 		}
 		std::unique_ptr<SoundEngine::PreparedAudioTimeline> timeline(new SoundEngine::PreparedAudioTimeline());
-		if (!timeline->prepare(events, trace.events.size(), timingMode, durationSeconds, 44100, 300, &error))
+		if (!timeline->prepare(events, trace.events.size(), timingMode, durationSeconds,
+			playbacktimebase::ReferenceTimelineSampleRate, playbacktimebase::ReferenceCadenceEventsPerSecond, &error))
 			return std::unique_ptr<SoundEngine::PreparedAudioTimeline>();
 		return timeline;
 	}

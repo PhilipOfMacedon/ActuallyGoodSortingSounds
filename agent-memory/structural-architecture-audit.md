@@ -124,9 +124,11 @@ Evidence: `SDL2BarGraphics.cpp:157` takes a snapshot, updates the bridge, feeds 
 
 These mechanisms have real purposes. Consolidate the app-thread transitions into a playback coordinator with explicit preparing/ready/queued/playing/paused/completed states and named generation/revision values. Keep device health distinct from preparation readiness, and keep the existing fenced callback retirement protocol.
 
-Centralize reference-frame/cadence conversions instead of repeating `300.0` and `44100.0` in UI/controller/transport calculations. The 44.1 kHz reference timeline is intentional and distinct from device resampling; it should be represented clearly, not blindly replaced by the output device rate.
+The reference timeline conversion part is now resolved by `PlaybackTimebase`: the 300-event cadence and 44.1 kHz reference sample rate, duration/cursor conversion, and audio-frame seconds conversion have one home. These remain reference-time units and are still distinct from device resampling. The SDL output uses the named 44.1 kHz reference when scaling the existing 128-frame crossfade.
 
-Acceptance: pause/resume, seek, queued play, replacement, device loss/retry, drain/crossfade acknowledgement, and fallback clocks retain existing behavior. The callback must not gain blocking locks, allocation, file access, or ownership destruction. Implement this after lower-risk extractions.
+Remaining work is the higher-risk ownership boundary: consolidate app-thread playback transitions into a coordinator with explicit preparing/ready/queued/playing/paused/completed states and named generation/revision values. Keep device health distinct from preparation readiness, and preserve the callback's fenced retirement protocol.
+
+Acceptance: pause/resume, seek, queued play, replacement, device loss/retry, drain/crossfade acknowledgement, and fallback clocks retain existing behavior. The callback must not gain blocking locks, allocation, file access, or ownership destruction. Verification for the timebase extraction (2026-10-20): x64 Debug/Release solution builds and `AppFrameworkTests` pass; standalone `AudioDeviceTransportTests` pass in Debug and Release with SDL's dummy backend, including reference/fixed timing and 80/800-item cases. `git diff --check` passes with only configured LF-to-CRLF notices. The coordinator extraction remains outstanding.
 
 ### 8. Settings equality, normalization, storage, and audio policy are mixed — medium/high priority
 
