@@ -56,6 +56,7 @@
     <ClCompile Include="AlgorithmBrowserCatalog.cpp" />
     <ClCompile Include="AlgorithmBrowserView.cpp" />
     <ClCompile Include="MainControlsView.cpp" />
+    <ClCompile Include="TimelineView.cpp" />
     <ClCompile Include="SettingsPanelView.cpp" />
     <ClCompile Include="SettingsPanelModel.cpp" />
     <ClCompile Include="SettingsPanelControls.cpp" />

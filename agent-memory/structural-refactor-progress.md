@@ -1546,3 +1546,11 @@ Next: move remaining main-panel composition metadata (title, telemetry, profile,
 Added headless checks for current-preset content, collapsed progress, live update throttling, and immediate title changes across presets. `AppFrameworkTests` passed in x64 Debug and Release; full x64 Debug and Release solution builds passed. `git diff --check` passed. No font-raster or whole-frame performance claim is made.
 
 Next: move remaining main-panel composition metadata (profile, timeline, and section ordering where useful) behind view contracts while keeping GPU-specific drawing in the host; then continue the sorting-core and configuration boundaries.
+
+## 2026-10-20 — extract timeline input and composition
+
+Added a headless `TimelineView` that owns timeline hit regions, event-arrow actions, drag capture, seek-fraction clamping, progress projection, DOS ticks, and pixel-arrow composition. `ControlPanel` now adapts SDL pointer events and supplies palette values; the view emits the existing shared paint commands, including explicit pixel-icon material and painter layers.
+
+Headless checks cover previous/next actions, disabled input, click/drag/release seeks, clamping, progress fraction, painter order, legacy ticks, and collapsed/empty-trace visibility. `AppFrameworkTests` passed in x64 Debug and Release; full x64 Debug and Release solution builds passed. `git diff --check` passed. No live visual or performance claim is made.
+
+Next: continue reducing main-panel composition decisions behind view contracts while keeping renderer resources in the host, then resume sorting-core and configuration extraction.

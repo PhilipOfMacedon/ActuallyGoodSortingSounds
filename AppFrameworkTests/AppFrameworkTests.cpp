@@ -19,6 +19,7 @@
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
 #include "../SDL2BarGraphics/MainControlsView.h"
+#include "../SDL2BarGraphics/TimelineView.h"
 #include "../SDL2BarGraphics/InlineEditModel.h"
 #include "../SDL2BarGraphics/ActiveRoleLookup.h"
 #include "../SDL2BarGraphics/AlgorithmProfileView.h"
@@ -2531,6 +2532,64 @@ namespace
 			"Classic Windows 95 layout hides modern header buttons while preserving its menu bar");
 	}
 
+	void testTimelineViewOwnsSeekInputAndPaintComposition()
+	{
+		TimelineView view;
+		UiLayoutResult layout;
+		layout.timeline = UiRect(10.0f, 20.0f, 120.0f, 12.0f);
+		layout.timelineTrack = UiRect(22.0f, 20.0f, 96.0f, 12.0f);
+		layout.timelineLeftArrow = UiRect(10.0f, 20.0f, 12.0f, 12.0f);
+		layout.timelineRightArrow = UiRect(118.0f, 20.0f, 12.0f, 12.0f);
+		view.applyLayout(layout);
+		AppAction action;
+		check(view.pointerDown(11.0f, 26.0f, true, action) && action.kind == AppActionKind::PreviousEvent,
+			"timeline left arrow emits the previous-event transport action");
+		action = AppAction();
+		check(view.pointerDown(129.0f, 26.0f, true, action) && action.kind == AppActionKind::NextEvent,
+			"timeline right arrow emits the next-event transport action");
+		action = AppAction();
+		check(!view.pointerDown(70.0f, 26.0f, false, action) && action.kind == AppActionKind::None,
+			"disabled timeline input does not capture the pointer or emit a command");
+		action = AppAction();
+		check(view.pointerDown(70.0f, 26.0f, true, action) && action.kind == AppActionKind::SeekFraction &&
+			std::fabs(action.value - 0.5f) < 1.0e-6f && view.dragging(),
+			"timeline track maps pointer position to a captured seek fraction");
+		action = AppAction();
+		check(view.pointerMove(200.0f, action) && std::fabs(action.value - 1.0f) < 1.0e-6f,
+			"timeline drag clamps its seek fraction at the right edge");
+		action = AppAction();
+		check(view.pointerUp(-50.0f, action) && std::fabs(action.value) < 1.0e-6f && !view.dragging(),
+			"timeline release applies its final clamped seek and releases capture");
+
+		sortinglogic::RenderSnapshot snapshot;
+		snapshot.hasTrace = true;
+		snapshot.elapsedSeconds = 5.0f;
+		TimelineViewPalette palette;
+		palette.rail = UiColor(0.1f, 0.2f, 0.3f, 1.0f);
+		palette.accent = UiColor(0.4f, 0.5f, 0.6f, 1.0f);
+		palette.thumb = UiColor(0.7f, 0.8f, 0.9f, 1.0f);
+		palette.button = UiColor(0.2f, 0.3f, 0.4f, 1.0f);
+		palette.text = UiColor(1.0f, 1.0f, 1.0f, 1.0f);
+		palette.border = UiColor(0.3f, 0.3f, 0.3f, 1.0f);
+		palette.brightEdge = palette.text;
+		palette.darkEdge = palette.border;
+		RecordingUiPaintContext paint;
+		view.compose(true, true, false, 10.0, snapshot, palette, UiRect(0.0f, 0.0f, 200.0f, 100.0f), paint);
+		check(paint.commands().size() > 20 && paint.commands()[0].elementId == "timeline.track" &&
+			paint.commands()[1].elementId == "timeline.progress" &&
+			std::fabs(paint.commands()[1].bounds.width - 48.0f) < 1.0e-6f &&
+			paint.commands()[2].elementId == "timeline.tick.0" &&
+			paint.commands()[2].layer == UiPaintLayer::MainControlsTop,
+			"timeline view emits progress, DOS ticks, and pixel controls in painter order");
+
+		paint.clear();
+		snapshot.hasTrace = false;
+		view.compose(true, false, false, 10.0, snapshot, palette, UiRect(0.0f, 0.0f, 200.0f, 100.0f), paint);
+		check(paint.commands().empty(), "timeline stays hidden without a trace outside the legacy presets");
+		view.compose(false, true, false, 10.0, snapshot, palette, UiRect(0.0f, 0.0f, 200.0f, 100.0f), paint);
+		check(paint.commands().empty(), "collapsed layout suppresses timeline paint even when a legacy ruler is available");
+	}
+
 	void testMainControlsViewSynchronizesPresentationState()
 	{
 		UserPreferences preferences;
@@ -4136,6 +4195,7 @@ int main(int argc, char* argv[])
 	testMainControlsViewInitializesTypedControls();
 	testMainControlsViewSynchronizesTextPresentation();
 	testMainControlsViewAppliesLayoutAndVisibility();
+	testTimelineViewOwnsSeekInputAndPaintComposition();
 	testMainControlsViewSynchronizesPresentationState();
 	testMainControlsViewComposesControlPaintCommands();
 	testSettingsPanelViewSynchronizesControlState();

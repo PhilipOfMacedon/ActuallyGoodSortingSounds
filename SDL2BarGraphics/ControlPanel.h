@@ -14,6 +14,7 @@
 #include "SettingsPanelView.h"
 #include "SettingsPanelControls.h"
 #include "AlgorithmProfileView.h"
+#include "TimelineView.h"
 #include "TextLabel.h"
 #include "ThemePalette.h"
 #include "UiLayer.h"
@@ -66,6 +67,7 @@ private:
 	const UserPreferences& settings_;
 	MainControlsView mainControlsView_;
 	UIRoot& mainUi_; // Temporary access alias while input, layout, and paint move behind the view boundary.
+	TimelineView timelineView_;
 	AppearanceEditorView appearanceEditorView_;
 	UiOverlayState overlayState_;
 	AlgorithmBrowserModel algorithmBrowser_;
@@ -86,13 +88,8 @@ private:
 	std::unique_ptr<TextLabel> settingsSaveStatus_;
 	std::unique_ptr<TextLabel> audioDeviceStatus_;
 	std::string displayedSaveStatus_;
-	UiRect timelineBounds_;
-	UiRect timelineControlBounds_;
-	UiRect timelineLeftArrowBounds_;
-	UiRect timelineRightArrowBounds_;
 	UiRect headerBounds_;
 	UiRect gearBounds_;
-	bool draggingTimeline_;
 	bool appearanceSearchFocused_;
 	bool drawingAppearanceEditor_;
 	UiRect chartViewport_;
@@ -151,5 +148,4 @@ private:
 	void chooseAppearanceColor();
 	void importAppearanceProfile();
 	void exportAppearanceProfile();
-	float timelineFraction(float x) const;
 };

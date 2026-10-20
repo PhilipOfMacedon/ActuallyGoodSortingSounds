@@ -156,9 +156,9 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 	const std::map<std::string, UiColor>& resolvedPalette);
 
 enum class UiPaintPrimitive { Rectangle, Border, Text, Icon, Control };
-enum class UiPaintMaterial { Solid, Panel, Button, Timeline, TimelineThumb, Popup, Accent, ModalDim };
+enum class UiPaintMaterial { Solid, Panel, Button, Timeline, TimelineThumb, PixelIcon, Popup, Accent, ModalDim };
 enum class UiPaintLayer { Backdrop, Panel, Accent, Content, SettingsControls, SettingsControlsOverlay, Text, SettingsText,
-	MainControls, MainControlsOverlay, MainDropdown, MainText };
+	MainControls, MainControlsOverlay, MainControlsTop, MainDropdown, MainText };
 enum class UiTextAlignment { Center, Left, Right };
 enum class UiTextOverflow { Fit, Clamp, Marquee };
 struct UiPaintCommand

@@ -69,6 +69,7 @@ namespace
 		case UiPaintLayer::SettingsText: return RenderLayer::SettingsText;
 		case UiPaintLayer::MainControls: return RenderLayer::MainControls;
 		case UiPaintLayer::MainControlsOverlay: return layerOffset(RenderLayer::MainControls, 1);
+		case UiPaintLayer::MainControlsTop: return layerOffset(RenderLayer::MainControls, 2);
 		case UiPaintLayer::MainDropdown: return RenderLayer::Dropdown;
 		case UiPaintLayer::MainText: return RenderLayer::MainText;
 		}
@@ -83,6 +84,7 @@ namespace
 		case UiPaintMaterial::Button: return ButtonMaterial;
 		case UiPaintMaterial::Timeline: return TimelineMaterial;
 		case UiPaintMaterial::TimelineThumb: return MaterialId::TimelineThumb;
+		case UiPaintMaterial::PixelIcon: return MaterialId::PixelIcon;
 		case UiPaintMaterial::Popup: return PopupMaterial;
 		case UiPaintMaterial::Accent: return AccentMaterial;
 		case UiPaintMaterial::ModalDim: return MaterialId::ModalDim;
@@ -278,7 +280,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainControlsView_(), mainUi_(mainControlsView_.controls()), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
+	mainControlsView_(), mainUi_(mainControlsView_.controls()), timelineView_(), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
 		paletteIndex(activeTheme(settings).palette)), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), algorithmProfileView_(measureLogicalTextWidth), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
@@ -289,8 +291,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	settingsSaveStatus_(new TextLabel("Preferences save automatically.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	audioDeviceStatus_(new TextLabel("Audio device is not initialized.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	displayedSaveStatus_(),
-	timelineBounds_(), timelineControlBounds_(), timelineLeftArrowBounds_(), timelineRightArrowBounds_(),
-	headerBounds_(), gearBounds_(), draggingTimeline_(false),
+	headerBounds_(), gearBounds_(),
 	appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
 	inlineEdit_()
@@ -383,10 +384,7 @@ void ControlPanel::updateLayout()
 	layoutResult_ = calculateUiLayout(preset, layoutInput, controlIds);
 	mainControlsView_.applyLayout(preset, layoutResult_, width_, settings_.visual.panelExpanded);
 	headerBounds_ = layoutResult_.header;
-	timelineBounds_ = layoutResult_.timelineTrack.width > 0.0f ? layoutResult_.timelineTrack : layoutResult_.timeline;
-	timelineControlBounds_ = layoutResult_.timeline;
-	timelineLeftArrowBounds_ = layoutResult_.timelineLeftArrow;
-	timelineRightArrowBounds_ = layoutResult_.timelineRightArrow;
+	timelineView_.applyLayout(layoutResult_);
 	chartViewport_ = layoutResult_.chartViewport;
 	for (std::size_t i = 0; i < settingsPanelView_.controls().widgets().size(); ++i)
 	{
@@ -620,38 +618,12 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	}
 	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
 		algorithmProfileView_.pointerUp();
-	if (!settingsOpen() && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
-		settings_.visual.panelExpanded && timelineControlBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
-	{
-		if (timelineLeftArrowBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
-		{
-			action = AppAction(AppActionKind::PreviousEvent);
-			return true;
-		}
-		if (timelineRightArrowBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
-		{
-			action = AppAction(AppActionKind::NextEvent);
-			return true;
-		}
-	}
 	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
-		inRect(timelineBounds_, event.button.x, event.button.y) && settings_.visual.panelExpanded && !settingsOpen())
-	{
-		draggingTimeline_ = true;
-		action = AppAction(AppActionKind::SeekFraction, timelineFraction(static_cast<float>(event.button.x)));
-		return true;
-	}
-	if (event.type == SDL_MOUSEMOTION && draggingTimeline_)
-	{
-		action = AppAction(AppActionKind::SeekFraction, timelineFraction(static_cast<float>(event.motion.x)));
-		return true;
-	}
-	if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT && draggingTimeline_)
-	{
-		draggingTimeline_ = false;
-		action = AppAction(AppActionKind::SeekFraction, timelineFraction(static_cast<float>(event.button.x)));
-		return true;
-	}
+		timelineView_.pointerDown(static_cast<float>(event.button.x), static_cast<float>(event.button.y),
+			settings_.visual.panelExpanded && !settingsOpen(), action)) return true;
+	if (event.type == SDL_MOUSEMOTION && timelineView_.pointerMove(static_cast<float>(event.motion.x), action)) return true;
+	if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
+		timelineView_.pointerUp(static_cast<float>(event.button.x), action)) return true;
 	UiInputEvent input(UiInputType::FocusLost);
 	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Controls, sdlUiEventContext(event)))
 		return settingsOpen() || action.kind != AppActionKind::None;
@@ -737,18 +709,12 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	{
 		mainUi_.closeCombo();
 		settingsPanelView_.controls().closeCombo();
-		draggingTimeline_ = false;
+		timelineView_.cancelDrag();
 		cancelInlineEdit();
 		updateOverlayInputCapture();
 		layoutCacheValid_ = false;
 	}
 	output = action.appAction;
-}
-
-float ControlPanel::timelineFraction(float x) const
-{
-	if (timelineBounds_.width <= 0.0f) return 0.0f;
-	return std::max(0.0f, std::min(1.0f, (x - timelineBounds_.x) / timelineBounds_.width));
 }
 
 void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const std::string& audioStatus)
@@ -907,57 +873,21 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	}
 	if (snapshot.hasTrace || snapshot.buildingTrace || classicVga)
 	{
-		const glm::vec4 rail = palette.timelineRail;
-		submitBox(timelineBounds_, rail, TimelineMaterial, UiLayer);
 		const double timelineDuration = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
 			? playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount) : snapshot.durationSeconds;
-		const float fraction = (!snapshot.hasTrace && !snapshot.buildingTrace) || timelineDuration <= 0.0 ? 0.0f :
-			static_cast<float>(std::max(0.0, std::min(1.0, snapshot.elapsedSeconds / timelineDuration)));
-		submitBox(UiRect(timelineBounds_.x, timelineBounds_.y, timelineBounds_.width * fraction, timelineBounds_.height), palette.accent, AccentMaterial, layerOffset(UiLayer, 1));
-		if (classicVga)
-		{
-			const float tickHeight = std::min(7.0f, timelineBounds_.height * 0.45f);
-			for (int tick = 0; tick <= 10; ++tick)
-			{
-				const float x = timelineBounds_.x + timelineBounds_.width * static_cast<float>(tick) / 10.0f;
-				submitBox(UiRect(x, timelineBounds_.y + timelineBounds_.height - tickHeight, 1.0f, tickHeight),
-					palette.text, MaterialId::PixelIcon, layerOffset(UiLayer, 2));
-			}
-		}
-		const float thumbWidth = classicVga ? std::min(12.0f, timelineBounds_.width) : 8.0f;
-		submitBox(UiRect(timelineBounds_.x + std::max(0.0f, timelineBounds_.width * fraction - thumbWidth * 0.5f),
-			timelineBounds_.y - (classicVga ? 3.0f : 3.0f), thumbWidth, timelineBounds_.height + 6.0f),
-			palette.timelineThumb, MaterialId::TimelineThumb, layerOffset(UiLayer, 1));
-		if (timelineLeftArrowBounds_.width > 0.0f && timelineRightArrowBounds_.width > 0.0f)
-		{
-			const UiRect arrows[] = { timelineLeftArrowBounds_, timelineRightArrowBounds_ };
-			for (int side = 0; side < 2; ++side)
-			{
-				const UiRect& arrow = arrows[side];
-				submitBox(arrow, palette.button, ButtonMaterial, UiLayer);
-				const glm::vec4 bright(windows95 ? 0.96f : palette.text.r, windows95 ? 0.96f : palette.text.g,
-					windows95 ? 0.96f : palette.text.b, 1.0f);
-				const glm::vec4 dark(windows95 ? 0.25f : palette.border.r, windows95 ? 0.25f : palette.border.g,
-					windows95 ? 0.25f : palette.border.b, 1.0f);
-				submitBox(UiRect(arrow.x, arrow.y, arrow.width, 1.0f), bright, ButtonMaterial, layerOffset(UiLayer, 1));
-				submitBox(UiRect(arrow.x, arrow.y, 1.0f, arrow.height), bright, ButtonMaterial, layerOffset(UiLayer, 1));
-				submitBox(UiRect(arrow.x, arrow.y + arrow.height - 1.0f, arrow.width, 1.0f), dark, ButtonMaterial, layerOffset(UiLayer, 1));
-				submitBox(UiRect(arrow.x + arrow.width - 1.0f, arrow.y, 1.0f, arrow.height), dark, ButtonMaterial, layerOffset(UiLayer, 1));
-				const char* leftArrow[] = { "..#", ".##", "###", ".##", "..#" };
-				const char* rightArrow[] = { "#..", "##.", "###", "##.", "#.." };
-				const char* const* pattern = side == 0 ? leftArrow : rightArrow;
-				const float pixel = std::max(1.0f, std::min(2.0f, arrow.height / 8.0f));
-				const float iconWidth = pixel * 3.0f;
-				const float iconHeight = pixel * 5.0f;
-				const float iconX = arrow.x + (arrow.width - iconWidth) * 0.5f;
-				const float iconY = arrow.y + (arrow.height - iconHeight) * 0.5f;
-				for (int row = 0; row < 5; ++row)
-					for (int column = 0; column < 3; ++column)
-						if (pattern[row][column] == '#')
-							submitBox(UiRect(iconX + column * pixel, iconY + row * pixel, pixel, pixel),
-								palette.text, MaterialId::PixelIcon, layerOffset(UiLayer, 2));
-			}
-		}
+		TimelineViewPalette timelinePalette;
+		timelinePalette.rail = toUiColor(palette.timelineRail);
+		timelinePalette.accent = toUiColor(palette.accent);
+		timelinePalette.thumb = toUiColor(palette.timelineThumb);
+		timelinePalette.button = toUiColor(palette.button);
+		timelinePalette.text = toUiColor(palette.text);
+		timelinePalette.border = toUiColor(palette.border);
+		timelinePalette.brightEdge = windows95 ? UiColor(0.96f, 0.96f, 0.96f, 1.0f) : timelinePalette.text;
+		timelinePalette.darkEdge = windows95 ? UiColor(0.25f, 0.25f, 0.25f, 1.0f) : timelinePalette.border;
+		auto renderTimelineCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
+		DispatchingUiPaintContext<decltype(renderTimelineCommand)> timelinePaintContext(renderTimelineCommand);
+		timelineView_.compose(settings_.visual.panelExpanded, classicVga, windows95, timelineDuration,
+			snapshot, timelinePalette, screen, timelinePaintContext);
 	}
 	if (classicVga && layoutResult_.telemetry.width > 0.0f)
 	{
@@ -968,7 +898,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	}
 	else
 	{
-		const float detailY = timelineBounds_.y + 14.0f;
+		const float detailY = timelineView_.trackBounds().y + 14.0f;
 		drawText(*detail_, UiRect(16.0f, detailY, static_cast<float>(width_) - 32.0f, 18.0f), 13.0f, palette.text, TextLayer);
 		drawText(*status_, UiRect(16.0f, detailY + 19.0f, static_cast<float>(width_) - 32.0f, 18.0f), 13.0f, palette.mutedText, TextLayer);
 	}

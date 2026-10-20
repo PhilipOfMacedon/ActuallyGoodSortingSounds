@@ -13,6 +13,7 @@
     <ClCompile Include="AlgorithmBrowserCatalog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmBrowserView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="MainControlsView.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TimelineView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SettingsPanelView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SettingsPanelModel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SettingsPanelControls.cpp"><Filter>Source Files</Filter></ClCompile>
