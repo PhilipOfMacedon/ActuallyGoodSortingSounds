@@ -9,6 +9,11 @@
 #include "SettingsPanelModel.h"
 
 struct UserPreferences;
+namespace sortinglogic
+{
+	struct AlgorithmDescriptor;
+	struct RenderSnapshot;
+}
 
 struct SettingsPanelChrome
 {
@@ -26,6 +31,7 @@ struct SettingsPanelPalette
 {
 	UiColor panel;
 	UiColor accent;
+	UiColor button;
 	UiColor text;
 	UiColor mutedText;
 	UiColor background;
@@ -38,6 +44,10 @@ class SettingsPanelView
 {
 public:
 	void initializeControls(const UserPreferences& preferences);
+	void synchronizeControls(const UserPreferences& preferences, const UserPreferences& renderPreferences,
+		const sortinglogic::RenderSnapshot& snapshot, bool setupBusy);
+	void synchronizeAudioControls(const UserPreferences& preferences,
+		const sortinglogic::AlgorithmDescriptor* algorithm);
 	UIRoot& controls() { return controls_; }
 	const UIRoot& controls() const { return controls_; }
 	std::map<std::string, std::string>& captions() { return captions_; }

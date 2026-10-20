@@ -112,10 +112,9 @@ private:
 	void syncLabels(const sortinglogic::RenderSnapshot& snapshot);
 	void drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette);
 	void drawSettingsPanel(const ThemePalette& palette, const std::string& audioStatus);
+	void drawSettingsPaintCommand(const UiPaintCommand& command, const ThemePalette& palette);
 	void drawAppearanceEditor();
 	void layoutSettingsControls();
-	void updateAudioControls();
-	void updateAlgorithmAudioControls(const sortinglogic::AlgorithmDescriptor& algorithm);
 	void drawSettingsControl(const UiWidget& widget, const ThemePalette& palette);
 	void drawSliderControl(const UiWidget& widget, const ThemePalette& palette, const ClipBounds& clip, RenderLayer layer);
 	void drawWidget(const UiWidget& widget, const ThemePalette& palette, RenderLayer layer, bool popup = false);

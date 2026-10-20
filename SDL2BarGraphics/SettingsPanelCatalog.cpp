@@ -61,6 +61,14 @@ std::vector<std::string> settingsBooleanOptions()
 	return std::vector<std::string>{ "Off", "On" };
 }
 
+bool settingsInputPatternEnabled(sortinglogic::InputDomain domain, sortinglogic::SortAlgorithm algorithm,
+	sortinglogic::InputPattern pattern)
+{
+	return sortinglogic::inputPatternCompatible(domain, pattern) &&
+		(pattern != sortinglogic::InputPattern::AndrutReference ||
+		 sortinglogic::algorithmSupports(algorithm, sortinglogic::InputDomain::NormalizedFloats));
+}
+
 SettingsPanelAlgorithmPresentation settingsPanelAlgorithmPresentation(
 	const sortinglogic::AlgorithmDescriptor* algorithm)
 {

@@ -7,6 +7,9 @@
 
 namespace sortinglogic
 {
+	enum class InputDomain;
+	enum class InputPattern;
+	enum class SortAlgorithm : int;
 	struct AlgorithmDescriptor;
 }
 
@@ -20,3 +23,5 @@ std::vector<std::string> settingsBarSpacingOptions();
 std::vector<std::string> settingsInputDomainOptions();
 std::vector<std::string> settingsInputPatternOptions();
 std::vector<std::string> settingsBooleanOptions();
+bool settingsInputPatternEnabled(sortinglogic::InputDomain domain, sortinglogic::SortAlgorithm algorithm,
+	sortinglogic::InputPattern pattern);

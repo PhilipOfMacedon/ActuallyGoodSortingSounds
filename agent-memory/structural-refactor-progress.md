@@ -1487,4 +1487,22 @@ Centralized palette, preset, spacing, domain, pattern, and boolean option labels
 
 Added headless checks for initialized selection values, typed action payloads, algorithm option coverage, and palette label order. The full Visual Studio solution built in x64 Debug/Release and x86-mapped Win32 Debug/Release. `AppFrameworkTests` passed in all four configurations. The initial x64 Debug compile caught the GLM dependency leak; the pure appearance catalog extraction fixed it. `git diff --check` passes. No visual or performance change is claimed.
 
-Next: move settings widget value/enabled-state synchronization into `SettingsPanelView`, then submit settings tab/content widget paint through the existing `UiPaintCommand` contract. Continue with main-control ownership after those view paths are headless.
+Next: move settings control painting through the existing `UiPaintCommand` contract, then isolate main-control ownership.
+
+## 2026-10-20 — move settings state synchronization into the view
+
+`SettingsPanelView::synchronizeControls` now owns saved selector values, catalog-derived algorithm option selections/actions and busy gating, pattern compatibility, and reconstructed-audio/per-variant gain control synchronization. `ControlPanel` no longer decides those widget values or enabled states. The main panel and settings panel now call the same `settingsInputPatternEnabled` compatibility rule. Per-variant audio sliders use 0.5 dB steps to preserve stored half-decibel overrides.
+
+Added headless checks for busy-state enablement, compatibility-disabled patterns, option selection, reconstructed-audio dependent controls, inherited family levels, variant offsets, and selected-algorithm action IDs. The first run caught whole-decibel slider quantization of a stored 3.5 dB value; the step was corrected and the checks now pass.
+
+Verification: all four Visual Studio solution builds and `AppFrameworkTests` passed. `SoundEngineTests` passed with 417,376 assertions in x64 Debug. `SortingLogicTests` was not completed; duplicate runs were stopped because this settings-only change does not touch the sorting library. `git diff --check` passes. No layout or painter-order changes and no performance claim.
+
+Next: rerun the four-configuration matrix for the combined settings-view change, then move main-control state and composition behind its view boundary.
+
+## 2026-10-20 — compose settings controls through the shared paint contract
+
+`SettingsPanelView::compose` now emits ordered control commands for tabs, the active marker, audio sub-tabs, visible rows, modal buttons, and expanded dropdowns. Commands carry stable widget IDs, render layer, clip bounds, and popup state. `ControlPanel` adapts each command through the existing preset-aware button, slider, combo, and popup rendering routines, so renderer-owned labels and theme-specific drawing remain intact. The view now determines which controls are painted and in what order.
+
+Added view composition checks for Appearance control order/clipping and active-tab state, popup routing, and General Audio control visibility. Full solution builds and `AppFrameworkTests` passed in Win32/x64 Debug and Release. Live inspection confirmed the Algorithm settings controls and Appearance palette popup still render. No layout or painter-order change is intended and no performance gain is claimed.
+
+Next: extract main-control state/composition behind the same view and command boundaries.

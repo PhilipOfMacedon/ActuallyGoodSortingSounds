@@ -1,8 +1,11 @@
 #include "SettingsPanelView.h"
 
 #include <algorithm>
+#include <iomanip>
 #include <set>
+#include <sstream>
 
+#include "../SortingLogic/SortingLogic.h"
 #include "AppActions.h"
 #include "SettingsPanelCatalog.h"
 #include "UiActionRouting.h"
@@ -15,6 +18,15 @@ namespace
 	{
 		return AppAction(AppActionKind::SetReconstructedAudioParameter, parameter);
 	}
+
+	const UiThemeCustomization& activeTheme(const UserPreferences& preferences)
+	{
+		const std::map<UiPresetId, UiThemeCustomization>::const_iterator found =
+			preferences.appearance.themes.find(preferences.appearance.activePreset);
+		if (found != preferences.appearance.themes.end()) return found->second;
+		static const UiThemeCustomization fallback;
+		return fallback;
+	}
 }
 
 void SettingsPanelView::initializeControls(const UserPreferences& preferences)
@@ -26,11 +38,7 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 	controls_.addButton("audio_advanced_tab", "Advanced", AppAction(), UiAction::ViewCommand::ShowAudioAdvanced);
 	controls_.addComboBox("preset", settingsUiPresetOptions(), static_cast<int>(preferences.appearance.activePreset),
 		AppAction(AppActionKind::SetUiPreset));
-	const std::map<UiPresetId, UiThemeCustomization>::const_iterator activeTheme =
-		preferences.appearance.themes.find(preferences.appearance.activePreset);
-	const PaletteId activePalette = activeTheme == preferences.appearance.themes.end()
-		? PaletteId::Cyan : activeTheme->second.palette;
-	controls_.addComboBox("palette", settingsPaletteOptions(), static_cast<int>(activePalette),
+	controls_.addComboBox("palette", settingsPaletteOptions(), static_cast<int>(activeTheme(preferences).palette),
 		AppAction(AppActionKind::SetPalette));
 	controls_.addComboBox("spacing", settingsBarSpacingOptions(), static_cast<int>(preferences.visual.spacing),
 		AppAction(AppActionKind::SetSpacing));
@@ -127,7 +135,7 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 	{
 		const AlgorithmAudioChannel level = static_cast<AlgorithmAudioChannel>(channel);
 		const std::string id = std::string("algorithm_audio_") + (channel < 10 ? "0" : "") + std::to_string(channel);
-		controls_.addSlider(id, algorithmAudioChannelName(level), -60.0f, 12.0f, 1.0f, 0.0f,
+		controls_.addSlider(id, algorithmAudioChannelName(level), -60.0f, 12.0f, 0.5f, 0.0f,
 			AppAction(AppActionKind::SetVariantAudioLevel, preferences.simulation.familyId,
 				preferences.simulation.variantId, 0.0f, channel));
 		captions_[id] = algorithmAudioChannelName(level);
@@ -140,6 +148,112 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 		if (controls_.widgets()[i]->kind() == UiWidgetKind::ComboBox)
 			controls_.widgets()[i]->setRole(UiControlRole::Choice);
+}
+
+void SettingsPanelView::synchronizeControls(const UserPreferences& preferences,
+	const UserPreferences& renderPreferences, const sortinglogic::RenderSnapshot& snapshot, bool setupBusy)
+{
+	if (!controls_.find("preset")) return;
+	controls_.find("preset")->setSelectedIndex(static_cast<int>(renderPreferences.appearance.activePreset));
+	controls_.find("palette")->setSelectedIndex(static_cast<int>(activeTheme(renderPreferences).palette));
+	controls_.find("spacing")->setSelectedIndex(static_cast<int>(preferences.visual.spacing));
+	controls_.find("domain")->setSelectedIndex(static_cast<int>(preferences.simulation.domain));
+	controls_.find("pattern")->setSelectedIndex(static_cast<int>(preferences.simulation.pattern));
+	controls_.find("playback_timing")->setSelectedIndex(static_cast<int>(preferences.simulation.playbackTimingMode));
+	controls_.find("merge_buffer_visualization")->setSelectedIndex(preferences.simulation.mergeBufferVisualizationEnabled ? 1 : 0);
+	controls_.find("completion_scan")->setSelectedIndex(preferences.simulation.completionScanEnabled ? 1 : 0);
+
+	controls_.setWidgetEnabled("domain", !setupBusy);
+	controls_.setWidgetEnabled("pattern", !setupBusy);
+	controls_.setWidgetEnabled("playback_timing", !setupBusy);
+	controls_.setWidgetEnabled("merge_buffer_visualization",
+		!setupBusy && snapshot.algorithm == sortinglogic::SortAlgorithm::Merge);
+	controls_.setWidgetEnabled("completion_scan", !setupBusy);
+
+	const std::vector<sortinglogic::AlgorithmDescriptor>& algorithms = sortinglogic::algorithmCatalog();
+	for (std::size_t algorithmIndex = 0; algorithmIndex < algorithms.size(); ++algorithmIndex)
+	{
+		const sortinglogic::AlgorithmDescriptor& algorithm = algorithms[algorithmIndex];
+		std::set<std::string> groups;
+		for (std::size_t optionIndex = 0; optionIndex < algorithm.supportedOptions.size(); ++optionIndex)
+		{
+			const std::string groupId(algorithm.supportedOptions[optionIndex].groupId);
+			if (!groups.insert(groupId).second) continue;
+			const std::string id = settingsAlgorithmOptionControlId(algorithm.familyId, algorithm.variantId, groupId);
+			UiWidget* widget = controls_.find(id);
+			if (!widget) continue;
+
+			const std::string selectedId = algorithmOptionStableId(preferences, algorithm, groupId);
+			int selectedIndex = 0;
+			for (std::size_t candidateIndex = 0, visibleIndex = 0;
+				candidateIndex < algorithm.supportedOptions.size(); ++candidateIndex)
+			{
+				const sortinglogic::AlgorithmOptionDescriptor& candidate = algorithm.supportedOptions[candidateIndex];
+				if (groupId != candidate.groupId) continue;
+				if (selectedId == candidate.stableId) selectedIndex = static_cast<int>(visibleIndex);
+				++visibleIndex;
+			}
+			widget->setSelectedIndex(selectedIndex);
+			widget->setAction(AppAction(AppActionKind::SetAlgorithmOption,
+				algorithm.familyId, algorithm.variantId, groupId));
+			controls_.setWidgetEnabled(id, !setupBusy && snapshot.algorithm == algorithm.id);
+		}
+	}
+
+	const UiWidget* pattern = controls_.find("pattern");
+	if (pattern)
+		for (int value = static_cast<int>(sortinglogic::InputPattern::Random);
+			value <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++value)
+			controls_.find("pattern")->setOptionEnabled(static_cast<std::size_t>(value),
+				settingsInputPatternEnabled(snapshot.domain, snapshot.algorithm,
+					static_cast<sortinglogic::InputPattern>(value)));
+
+	synchronizeAudioControls(preferences, sortinglogic::algorithmDescriptor(snapshot.algorithm));
+}
+
+void SettingsPanelView::synchronizeAudioControls(const UserPreferences& preferences,
+	const sortinglogic::AlgorithmDescriptor* algorithm)
+{
+	const SoundEngine::ReconstructedParameters& audio = preferences.reconstructedAudio;
+	auto slider = [this](const char* id, float value) { controls_.find(id)->setSliderValue(value); };
+	auto selection = [this](const char* id, int value) { controls_.find(id)->setSelectedIndex(value); };
+	selection("recon_enabled", audio.audioEnabled ? 1 : 0);
+	slider("recon_master", static_cast<float>(audio.masterLevel));
+	selection("recon_idle_policy", static_cast<int>(audio.idlePolicy));
+	slider("recon_release", static_cast<float>(audio.specialReleaseMilliseconds));
+	slider("recon_min_pitch", static_cast<float>(audio.minimumFrequencyHz));
+	slider("recon_max_pitch", static_cast<float>(audio.maximumFrequencyHz));
+	selection("recon_mapping", static_cast<int>(audio.mapping));
+	slider("recon_clock", static_cast<float>(audio.excitationClockHz));
+	slider("recon_cycles", static_cast<float>(audio.carrierCycles));
+	slider("recon_tukey", static_cast<float>(audio.tukeyFraction));
+	slider("recon_delay", static_cast<float>(audio.secondOperandDelayMicroseconds));
+	selection("recon_lowpass", audio.lowPassEnabled ? 1 : 0);
+	slider("recon_cutoff", static_cast<float>(audio.lowPassCutoffHz));
+	controls_.setWidgetEnabled("recon_release",
+		audio.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection);
+	controls_.setWidgetEnabled("recon_cutoff", audio.lowPassEnabled);
+
+	if (!algorithm) return;
+	const AlgorithmAudioLevels inherited = familyAudioLevels(preferences, algorithm->familyId);
+	const AlgorithmAudioLevels offsets = variantAudioLevels(preferences, algorithm->familyId, algorithm->variantId);
+	for (int channel = 0; channel < static_cast<int>(AlgorithmAudioChannel::Count); ++channel)
+	{
+		const AlgorithmAudioChannel level = static_cast<AlgorithmAudioChannel>(channel);
+		const std::size_t index = static_cast<std::size_t>(level);
+		const std::string id = std::string("algorithm_audio_") + (channel < 10 ? "0" : "") + std::to_string(channel);
+		UiWidget* widget = controls_.find(id);
+		if (!widget) continue;
+		widget->setSliderValue(offsets.decibels[index]);
+		widget->setAction(AppAction(AppActionKind::SetVariantAudioLevel, algorithm->familyId, algorithm->variantId,
+			offsets.decibels[index], channel));
+		std::ostringstream caption;
+		caption << algorithmAudioChannelName(level) << " (family " << std::fixed << std::setprecision(1)
+			<< std::showpos << inherited.decibels[index] << " dB)";
+		captions_[id] = caption.str();
+	}
+	controls_.find("algorithm_audio_reset")->setAction(AppAction(AppActionKind::ResetVariantAudioLevels,
+		algorithm->familyId, algorithm->variantId));
 }
 
 void SettingsPanelView::selectAudioBand(int index, int bandCount)
@@ -262,4 +376,64 @@ void SettingsPanelView::compose(const SettingsPanelChrome& chrome, const Setting
 	if (!chrome.footer.empty() && chrome.footerBounds.width > 0.0f && chrome.footerBounds.height > 0.0f)
 		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Text, chrome.footerBounds, palette.mutedText, chrome.footer,
 			"#settings_footer", UiPaintMaterial::Solid, UiPaintLayer::SettingsText, screen, true, 11.0f));
+
+	if (!controls_.find("appearance_tab")) return;
+	const auto submitControl = [&paintContext](const UiWidget* widget, const UiColor& color,
+		UiPaintMaterial material, UiPaintLayer layer, const UiRect& clip, bool hasClip, bool popup)
+	{
+		if (!widget || !widget->visible()) return;
+		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Control, widget->bounds(), color, std::string(),
+			widget->id(), material, layer, clip, hasClip, 0.0f, popup));
+	};
+
+	const char* tabIds[] = { "appearance_tab", "algorithm_tab", "audio_tab" };
+	const UiWidget* tabs[3] = { controls_.find(tabIds[0]), controls_.find(tabIds[1]), controls_.find(tabIds[2]) };
+	for (int tab = 0; tab < 3; ++tab)
+		submitControl(tabs[tab], tab == model_.pageIndex() ? palette.accent : palette.button,
+			tab == model_.pageIndex() ? UiPaintMaterial::Accent : UiPaintMaterial::Button,
+			UiPaintLayer::SettingsControls, screen, true, false);
+	if (model_.pageIndex() >= 0 && model_.pageIndex() < 3 && tabs[model_.pageIndex()])
+	{
+		const UiRect& activeTab = tabs[model_.pageIndex()]->bounds();
+		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle,
+			UiRect(activeTab.x, activeTab.y + activeTab.height - 2.0f, activeTab.width, 2.0f),
+			palette.accent, std::string(), std::string(), UiPaintMaterial::Accent,
+			UiPaintLayer::SettingsControlsOverlay, screen, true, 0.0f));
+	}
+
+	if (model_.isPage(SettingsPanelPage::GeneralAudio))
+	{
+		const char* groupIds[] = { "audio_basic_tab", "audio_advanced_tab" };
+		for (int group = 0; group < 2; ++group)
+		{
+			const bool selected = (model_.audioGroup() == SettingsAudioGroup::Advanced) == (group == 1);
+			submitControl(controls_.find(groupIds[group]), selected ? palette.accent : palette.button,
+				selected ? UiPaintMaterial::Accent : UiPaintMaterial::Button,
+				UiPaintLayer::SettingsControls, screen, true, false);
+		}
+	}
+
+	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+	{
+		const UiWidget* widget = controls_.widgets()[i].get();
+		const std::string& id = widget->id();
+		if (id == "appearance_tab" || id == "algorithm_tab" || id == "audio_tab" ||
+			id == "audio_basic_tab" || id == "audio_advanced_tab" ||
+			id == "settings_close" || id == "audio_retry") continue;
+		submitControl(widget, palette.text, UiPaintMaterial::Solid,
+			UiPaintLayer::SettingsControls, chrome.contentBounds, true, false);
+	}
+	submitControl(controls_.find("settings_close"), palette.button, UiPaintMaterial::Solid,
+		UiPaintLayer::SettingsControls, screen, true, false);
+	if (model_.isPage(SettingsPanelPage::GeneralAudio))
+		submitControl(controls_.find("audio_retry"), palette.button, UiPaintMaterial::Solid,
+			UiPaintLayer::SettingsControls, screen, true, false);
+
+	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+	{
+		const UiWidget* widget = controls_.widgets()[i].get();
+		if (widget->visible() && widget->expanded())
+			submitControl(widget, palette.text, UiPaintMaterial::Popup,
+				UiPaintLayer::Content, screen, true, true);
+	}
 }

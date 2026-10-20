@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
-#include <set>
 #include <sstream>
 
 #include <SDL.h>
@@ -67,6 +66,7 @@ namespace
 		case UiPaintLayer::Accent: return RenderLayer::SettingsAccent;
 		case UiPaintLayer::Content: return RenderLayer::SettingsDropdown;
 		case UiPaintLayer::SettingsControls: return RenderLayer::SettingsControls;
+		case UiPaintLayer::SettingsControlsOverlay: return layerOffset(RenderLayer::SettingsControls, 1);
 		case UiPaintLayer::Text: return RenderLayer::SettingsDropdownText;
 		case UiPaintLayer::SettingsText: return RenderLayer::SettingsText;
 		case UiPaintLayer::MainControls: return RenderLayer::MainControls;
@@ -168,8 +168,6 @@ std::string formatDuration(float seconds)
 }
 
 	int paletteIndex(PaletteId id) { return static_cast<int>(id); }
-	int spacingIndex(BarSpacingMode mode) { return static_cast<int>(mode); }
-
 	const UiThemeCustomization& activeTheme(const UserPreferences& settings)
 	{
 		const std::map<UiPresetId, UiThemeCustomization>::const_iterator found = settings.appearance.themes.find(settings.appearance.activePreset);
@@ -559,53 +557,6 @@ void ControlPanel::layoutSettingsControls()
 	settingsPanelView_.layoutControls(active, scrollbarThickness);
 }
 
-void ControlPanel::updateAudioControls()
-{
-	const SoundEngine::ReconstructedParameters& a = settings_.reconstructedAudio;
-	auto slider = [this](const char* id, float value) { settingsPanelView_.controls().find(id)->setSliderValue(value); };
-	auto selection = [this](const char* id, int value) { settingsPanelView_.controls().find(id)->setSelectedIndex(value); };
-	selection("recon_enabled", a.audioEnabled ? 1 : 0);
-	slider("recon_master", static_cast<float>(a.masterLevel));
-	selection("recon_idle_policy", static_cast<int>(a.idlePolicy));
-	slider("recon_release", static_cast<float>(a.specialReleaseMilliseconds));
-	slider("recon_min_pitch", static_cast<float>(a.minimumFrequencyHz));
-	slider("recon_max_pitch", static_cast<float>(a.maximumFrequencyHz));
-	selection("recon_mapping", static_cast<int>(a.mapping));
-	slider("recon_clock", static_cast<float>(a.excitationClockHz));
-	slider("recon_cycles", static_cast<float>(a.carrierCycles));
-	slider("recon_tukey", static_cast<float>(a.tukeyFraction));
-	slider("recon_delay", static_cast<float>(a.secondOperandDelayMicroseconds));
-	selection("recon_lowpass", a.lowPassEnabled ? 1 : 0);
-	slider("recon_cutoff", static_cast<float>(a.lowPassCutoffHz));
-	settingsPanelView_.controls().setWidgetEnabled("recon_release", a.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection);
-	settingsPanelView_.controls().setWidgetEnabled("recon_cutoff", a.lowPassEnabled);
-}
-
-void ControlPanel::updateAlgorithmAudioControls(const sortinglogic::AlgorithmDescriptor& algorithm)
-{
-	const AlgorithmAudioLevels inherited = familyAudioLevels(settings_, algorithm.familyId);
-	const AlgorithmAudioLevels offsets = variantAudioLevels(settings_, algorithm.familyId, algorithm.variantId);
-	for (int channel = 0; channel < static_cast<int>(AlgorithmAudioChannel::Count); ++channel)
-	{
-		const AlgorithmAudioChannel level = static_cast<AlgorithmAudioChannel>(channel);
-		const std::size_t index = static_cast<std::size_t>(level);
-		const std::string id = std::string("algorithm_audio_") + (channel < 10 ? "0" : "") + std::to_string(channel);
-		UiWidget* widget = settingsPanelView_.controls().find(id);
-		if (!widget) continue;
-		widget->setSliderValue(offsets.decibels[index]);
-		widget->setAction(AppAction(AppActionKind::SetVariantAudioLevel, algorithm.familyId, algorithm.variantId,
-			offsets.decibels[index], channel));
-		std::ostringstream caption;
-		caption << algorithmAudioChannelName(level) << " (family " << std::fixed << std::setprecision(1)
-			<< std::showpos << inherited.decibels[index] << " dB)";
-		settingsPanelView_.captions()[id] = caption.str();
-		std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(id);
-		if (label != labels_.end()) label->second->setContent(caption.str());
-	}
-	settingsPanelView_.controls().find("algorithm_audio_reset")->setAction(AppAction(AppActionKind::ResetVariantAudioLevels,
-		algorithm.familyId, algorithm.variantId));
-}
-
 void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending)
 {
 	screenModel_ = buildUiScreenModel(snapshot, renderPreferences_, playbackPending, displayedSaveStatus_);
@@ -655,62 +606,11 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
 		pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
 		mainUi_.find("pattern")->setOptionEnabled(static_cast<std::size_t>(pattern),
-			sortinglogic::inputPatternCompatible(snapshot.domain, static_cast<sortinglogic::InputPattern>(pattern)) &&
-			(static_cast<sortinglogic::InputPattern>(pattern) != sortinglogic::InputPattern::AndrutReference ||
-				sortinglogic::algorithmSupports(snapshot.algorithm, sortinglogic::InputDomain::NormalizedFloats)));
-	settingsPanelView_.controls().find("preset")->setSelectedIndex(static_cast<int>(renderPreferences_.appearance.activePreset));
-	settingsPanelView_.controls().find("palette")->setSelectedIndex(paletteIndex(activeTheme(renderPreferences_).palette));
-	settingsPanelView_.controls().find("spacing")->setSelectedIndex(spacingIndex(settings_.visual.spacing));
-	settingsPanelView_.controls().find("domain")->setSelectedIndex(static_cast<int>(settings_.simulation.domain));
-	settingsPanelView_.controls().find("pattern")->setSelectedIndex(static_cast<int>(settings_.simulation.pattern));
-	settingsPanelView_.controls().find("playback_timing")->setSelectedIndex(static_cast<int>(settings_.simulation.playbackTimingMode));
-	settingsPanelView_.controls().find("merge_buffer_visualization")->setSelectedIndex(settings_.simulation.mergeBufferVisualizationEnabled ? 1 : 0);
-	settingsPanelView_.controls().find("completion_scan")->setSelectedIndex(settings_.simulation.completionScanEnabled ? 1 : 0);
-	settingsPanelView_.controls().setWidgetEnabled("domain", !busy);
-	settingsPanelView_.controls().setWidgetEnabled("pattern", !busy);
-	settingsPanelView_.controls().setWidgetEnabled("playback_timing", !busy);
-	settingsPanelView_.controls().setWidgetEnabled("merge_buffer_visualization", !busy && snapshot.algorithm == sortinglogic::SortAlgorithm::Merge);
-	settingsPanelView_.controls().setWidgetEnabled("completion_scan", !busy);
+			settingsInputPatternEnabled(snapshot.domain, snapshot.algorithm,
+				static_cast<sortinglogic::InputPattern>(pattern)));
 	mainUi_.setWidgetEnabled("time_down", !busy && !referenceCadence);
 	mainUi_.setWidgetEnabled("time_up", !busy && !referenceCadence);
-	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
-	for (std::size_t algorithmIndex = 0; algorithmIndex < optionCatalog.size(); ++algorithmIndex)
-	{
-		const sortinglogic::AlgorithmDescriptor& algorithmDescriptor = optionCatalog[algorithmIndex];
-		std::set<std::string> groups;
-		for (std::size_t optionIndex = 0; optionIndex < algorithmDescriptor.supportedOptions.size(); ++optionIndex)
-		{
-			const std::string groupId(algorithmDescriptor.supportedOptions[optionIndex].groupId);
-			if (!groups.insert(groupId).second) continue;
-			const std::string id = settingsAlgorithmOptionControlId(algorithmDescriptor.familyId,
-				algorithmDescriptor.variantId, groupId);
-			UiWidget* widget = settingsPanelView_.controls().find(id);
-			if (!widget) continue;
-			const std::string stableId = algorithmOptionStableId(settings_, algorithmDescriptor, groupId);
-			int selectedIndex = 0;
-			for (std::size_t candidateIndex = 0, visibleIndex = 0;
-				candidateIndex < algorithmDescriptor.supportedOptions.size(); ++candidateIndex)
-			{
-				const sortinglogic::AlgorithmOptionDescriptor& candidate = algorithmDescriptor.supportedOptions[candidateIndex];
-				if (groupId != candidate.groupId) continue;
-				if (stableId == candidate.stableId) selectedIndex = static_cast<int>(visibleIndex);
-				++visibleIndex;
-			}
-			widget->setSelectedIndex(selectedIndex);
-			widget->setAction(AppAction(AppActionKind::SetAlgorithmOption, algorithmDescriptor.familyId,
-				algorithmDescriptor.variantId, groupId));
-			settingsPanelView_.controls().setWidgetEnabled(id, !busy && snapshot.algorithm == algorithmDescriptor.id);
-		}
-	}
-	for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
-		pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
-		settingsPanelView_.controls().find("pattern")->setOptionEnabled(static_cast<std::size_t>(pattern),
-			sortinglogic::inputPatternCompatible(snapshot.domain, static_cast<sortinglogic::InputPattern>(pattern)) &&
-			(static_cast<sortinglogic::InputPattern>(pattern) != sortinglogic::InputPattern::AndrutReference ||
-				sortinglogic::algorithmSupports(snapshot.algorithm, sortinglogic::InputDomain::NormalizedFloats)));
-	updateAudioControls();
-	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(snapshot.algorithm);
-	if (descriptor) updateAlgorithmAudioControls(*descriptor);
+	settingsPanelView_.synchronizeControls(settings_, renderPreferences_, snapshot, busy);
 	layoutSettingsControls();
 	updateInlineEditLabel();
 }
@@ -1027,7 +927,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	if (action.appAction.kind == AppActionKind::SelectAudioBand)
 	{
 		settingsPanelView_.selectAudioBand(action.appAction.selection, static_cast<int>(SoundEngine::BandCount));
-		updateAudioControls();
+		settingsPanelView_.synchronizeAudioControls(settings_, nullptr);
 		layoutSettingsControls();
 	}
 	const AppAction controlAction = ui::mainControlActivationAction(action.event);
@@ -1300,6 +1200,7 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 	SettingsPanelPalette chromePalette;
 	chromePalette.panel = toUiColor(palette.panel);
 	chromePalette.accent = toUiColor(palette.accent);
+	chromePalette.button = toUiColor(palette.button);
 	chromePalette.text = toUiColor(palette.text);
 	chromePalette.mutedText = toUiColor(palette.mutedText);
 	chromePalette.background = toUiColor(palette.background);
@@ -1340,48 +1241,37 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 			panelBounds.y + panelBounds.height - 58.0f,
 			panelBounds.width - 120.0f, 16.0f);
 	}
-	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
+	auto renderCommand = [this, &palette](const UiPaintCommand& command)
+	{
+		if (command.primitive == UiPaintPrimitive::Control)
+			drawSettingsPaintCommand(command, palette);
+		else drawUiPaintCommand(command);
+	};
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
 	settingsPanelView_.compose(chrome, chromePalette, paintContext);
-	const UiWidget& appearanceTab = *settingsPanelView_.controls().find("appearance_tab");
-	const UiWidget& algorithmTab = *settingsPanelView_.controls().find("algorithm_tab");
-	const UiWidget& audioTab = *settingsPanelView_.controls().find("audio_tab");
-	const RenderLayer controlLayer = RenderLayer::SettingsControls;
-	const UiWidget* tabs[] = { &appearanceTab, &algorithmTab, &audioTab };
-	for (int tab = 0; tab < 3; ++tab)
+}
+
+void ControlPanel::drawSettingsPaintCommand(const UiPaintCommand& command, const ThemePalette& palette)
+{
+	const UiWidget* widget = settingsPanelView_.controls().find(command.elementId);
+	if (!widget || !widget->visible()) return;
+	const RenderLayer layer = renderLayerForUiPaint(command.layer);
+	const ClipBounds clip = renderClip(command);
+	if (command.popup)
 	{
-		submitBox(tabs[tab]->bounds(), tab == settingsPanelView_.pageIndex() ? palette.accent : palette.button, ButtonMaterial, controlLayer);
-		drawWidget(*tabs[tab], palette, controlLayer);
+		drawWidget(*widget, palette, layer, true);
+		return;
 	}
-	const UiRect activeTab = tabs[settingsPanelView_.pageIndex()]->bounds();
-	submitBox(UiRect(activeTab.x, activeTab.y + activeTab.height - 2.0f, activeTab.width, 2.0f),
-		palette.accent, AccentMaterial, layerOffset(controlLayer, 1));
-	if (settingsPanelView_.isPage(SettingsPanelPage::GeneralAudio))
+	if (command.material == UiPaintMaterial::Button || command.material == UiPaintMaterial::Accent)
 	{
-		const UiWidget* audioGroups[] = { settingsPanelView_.controls().find("audio_basic_tab"), settingsPanelView_.controls().find("audio_advanced_tab") };
-		for (int i = 0; i < 2; ++i)
-		{
-			submitBox(audioGroups[i]->bounds(), ((settingsPanelView_.audioGroup() == SettingsAudioGroup::Advanced) == (i == 1)) ? palette.accent : palette.button,
-				ButtonMaterial, controlLayer);
-			drawWidget(*audioGroups[i], palette, controlLayer);
-		}
+		submitBox(command.bounds, toGlmColor(command.color), materialForUiPaint(command.material), layer, clip);
+		drawWidget(*widget, palette, layer);
+		return;
 	}
-	for (std::size_t i = 0; i < settingsPanelView_.controls().widgets().size(); ++i)
-	{
-		const UiWidget& widget = *settingsPanelView_.controls().widgets()[i];
-		if (!widget.visible() || widget.id() == "appearance_tab" || widget.id() == "algorithm_tab" ||
-			widget.id() == "audio_tab" || widget.id() == "audio_basic_tab" || widget.id() == "audio_advanced_tab" ||
-			widget.id() == "settings_close" || widget.id() == "audio_retry") continue;
-		drawSettingsControl(widget, palette);
-	}
-	drawWidget(*settingsPanelView_.controls().find("settings_close"), palette, RenderLayer::SettingsControls);
-	if (settingsPanelView_.isPage(SettingsPanelPage::GeneralAudio))
-	{
-		drawWidget(*settingsPanelView_.controls().find("audio_retry"), palette, RenderLayer::SettingsControls);
-	}
-	for (std::size_t i = 0; i < settingsPanelView_.controls().widgets().size(); ++i)
-		if (settingsPanelView_.controls().widgets()[i]->visible() && settingsPanelView_.controls().widgets()[i]->expanded())
-			drawWidget(*settingsPanelView_.controls().widgets()[i], palette, RenderLayer::SettingsDropdown, true);
+	if (widget->kind() == UiWidgetKind::Button)
+		drawWidget(*widget, palette, layer);
+	else
+		drawSettingsControl(*widget, palette);
 }
 
 void ControlPanel::drawSettingsControl(const UiWidget& widget, const ThemePalette& palette)

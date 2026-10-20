@@ -2178,6 +2178,92 @@ namespace
 			"settings chrome omits an empty footer instead of emitting an invisible label");
 	}
 
+	void testSettingsPanelViewComposesControlPaintCommands()
+	{
+		UserPreferences preferences;
+		SettingsPanelView view;
+		view.initializeControls(preferences);
+		const UiRect panel(680.0f, 40.0f, 500.0f, 650.0f);
+		view.setPanelBounds(panel, true);
+		view.layoutControls(settingsPanelControlIds(SettingsPanelPage::Appearance, SettingsAudioGroup::Basic, nullptr), 8.0f);
+
+		SettingsPanelChrome chrome;
+		chrome.screenWidth = 1280;
+		chrome.screenHeight = 800;
+		chrome.panelBounds = panel;
+		chrome.contentBounds = view.contentBounds();
+		SettingsPanelPalette palette;
+		palette.panel = UiColor(0.1f, 0.1f, 0.1f, 1.0f);
+		palette.accent = UiColor(0.2f, 0.6f, 0.8f, 1.0f);
+		palette.button = UiColor(0.15f, 0.22f, 0.3f, 1.0f);
+		palette.text = UiColor(0.9f, 0.9f, 0.9f, 1.0f);
+		palette.mutedText = UiColor(0.6f, 0.6f, 0.6f, 1.0f);
+		palette.background = UiColor(0.05f, 0.05f, 0.05f, 1.0f);
+		palette.overlayDim = UiColor(0.0f, 0.0f, 0.0f, 0.5f);
+
+		RecordingUiPaintContext recorder;
+		view.compose(chrome, palette, recorder);
+		std::vector<std::string> controlIds;
+		bool selectedAppearanceTab = false;
+		bool activeUnderline = false;
+		bool paletteControlClipped = false;
+		for (std::size_t i = 0; i < recorder.commands().size(); ++i)
+		{
+			const UiPaintCommand& command = recorder.commands()[i];
+			if (command.primitive == UiPaintPrimitive::Control && !command.popup)
+			{
+				controlIds.push_back(command.elementId);
+				if (command.elementId == "appearance_tab")
+					selectedAppearanceTab = command.material == UiPaintMaterial::Accent;
+				if (command.elementId == "palette")
+					paletteControlClipped = command.hasClip && command.clip.y == chrome.contentBounds.y &&
+						command.clip.height == chrome.contentBounds.height;
+			}
+			if (command.layer == UiPaintLayer::SettingsControlsOverlay && command.bounds.height == 2.0f)
+				activeUnderline = true;
+		}
+		const std::vector<std::string> expectedAppearance{ "appearance_tab", "algorithm_tab", "audio_tab",
+			"preset", "palette", "spacing", "appearance_customize", "settings_close" };
+		check(controlIds == expectedAppearance && selectedAppearanceTab && activeUnderline && paletteControlClipped,
+			"settings view composes visible controls in painter order with active-tab and content-clip metadata");
+
+		UiAction opened;
+		const UiRect paletteBounds = view.controls().find("palette")->bounds();
+		view.controls().handleEvent(UiInputEvent(UiInputType::PointerDown,
+			paletteBounds.x + paletteBounds.width * 0.5f, paletteBounds.y + paletteBounds.height * 0.5f), opened);
+		recorder.clear();
+		view.compose(chrome, palette, recorder);
+		bool palettePopup = false;
+		for (std::size_t i = 0; i < recorder.commands().size(); ++i)
+			if (recorder.commands()[i].primitive == UiPaintPrimitive::Control &&
+				recorder.commands()[i].elementId == "palette" && recorder.commands()[i].popup &&
+				recorder.commands()[i].layer == UiPaintLayer::Content)
+				palettePopup = true;
+		check(view.controls().hasOpenCombo() && palettePopup,
+			"settings view submits an open dropdown as a clipped popup paint command");
+
+		view.handleNavigation(UiAction::ViewCommand::ShowGeneralAudioSettings);
+		view.layoutControls(settingsPanelControlIds(SettingsPanelPage::GeneralAudio, SettingsAudioGroup::Basic, nullptr), 8.0f);
+		chrome.contentBounds = view.contentBounds();
+		recorder.clear();
+		view.compose(chrome, palette, recorder);
+		bool audioSubtabs = false;
+		bool audioRetry = false;
+		bool audioContent = false;
+		bool appearanceHidden = true;
+		for (std::size_t i = 0; i < recorder.commands().size(); ++i)
+		{
+			const UiPaintCommand& command = recorder.commands()[i];
+			if (command.primitive != UiPaintPrimitive::Control) continue;
+			audioSubtabs = audioSubtabs || command.elementId == "audio_basic_tab";
+			audioRetry = audioRetry || command.elementId == "audio_retry";
+			audioContent = audioContent || command.elementId == "recon_master";
+			if (command.elementId == "preset") appearanceHidden = false;
+		}
+		check(audioSubtabs && audioRetry && audioContent && appearanceHidden,
+			"settings view composes the active audio subpage and omits controls from other pages");
+	}
+
 	void testSettingsPanelModel()
 	{
 		SettingsPanelModel model;
@@ -2321,6 +2407,92 @@ namespace
 		}
 		check(everyOptionWasBuilt,
 			"settings view builds one option widget per catalog variant option group");
+	}
+
+	void testSettingsPanelViewSynchronizesControlState()
+	{
+		const sortinglogic::AlgorithmDescriptor* merge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
+		check(merge != nullptr, "settings synchronization fixture resolves the Merge descriptor");
+		if (!merge) return;
+
+		UserPreferences preferences;
+		preferences.simulation.algorithm = static_cast<int>(merge->id);
+		preferences.simulation.familyId = merge->familyId;
+		preferences.simulation.variantId = merge->variantId;
+		preferences.simulation.domain = sortinglogic::InputDomain::NonnegativeIntegerKeys;
+		preferences.simulation.pattern = sortinglogic::InputPattern::FewUnique;
+		preferences.simulation.profile = sortinglogic::InputProfile::IntegerKeys;
+		preferences.simulation.playbackTimingMode = SoundEngine::PlaybackTimingMode::ReferenceCadence;
+		preferences.simulation.mergeBufferVisualizationEnabled = false;
+		preferences.simulation.completionScanEnabled = true;
+		preferences.reconstructedAudio.masterLevel = 0.42;
+		preferences.reconstructedAudio.idlePolicy = SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
+		preferences.reconstructedAudio.lowPassEnabled = false;
+		preferences.familyAudioDefaults[merge->familyId].decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] = -7.0f;
+		preferences.variantAudioOffsets[variantAudioSettingsKey(merge->familyId, merge->variantId)]
+			.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] = 3.5f;
+
+		sortinglogic::RenderSnapshot snapshot;
+		snapshot.algorithm = merge->id;
+		snapshot.domain = preferences.simulation.domain;
+		snapshot.pattern = preferences.simulation.pattern;
+		SettingsPanelView view;
+		view.initializeControls(preferences);
+		view.synchronizeControls(preferences, preferences, snapshot, true);
+
+		const UiWidget* domain = view.controls().find("domain");
+		const UiWidget* pattern = view.controls().find("pattern");
+		const UiWidget* timing = view.controls().find("playback_timing");
+		const UiWidget* mergeBuffer = view.controls().find("merge_buffer_visualization");
+		const UiWidget* completionScan = view.controls().find("completion_scan");
+		check(domain && domain->selectedIndex() == static_cast<int>(preferences.simulation.domain) && !domain->enabled(),
+			"settings view synchronizes simulation selections and disables setup while the run is busy");
+		check(pattern && pattern->selectedIndex() == static_cast<int>(sortinglogic::InputPattern::FewUnique) &&
+			!pattern->optionEnabled(static_cast<std::size_t>(sortinglogic::InputPattern::AndrutReference)),
+			"settings view keeps pattern selection while disabling domain-incompatible choices");
+		check(timing && timing->selectedIndex() == static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence) &&
+			!timing->enabled(),
+			"settings view preserves playback timing selection and busy-state gating");
+		check(mergeBuffer && mergeBuffer->selectedIndex() == 0 && !mergeBuffer->enabled() &&
+			completionScan && completionScan->selectedIndex() == 1 && !completionScan->enabled(),
+			"settings view synchronizes algorithm-specific and completion controls under the busy rule");
+
+		const UiWidget* master = view.controls().find("recon_master");
+		const UiWidget* release = view.controls().find("recon_release");
+		const UiWidget* cutoff = view.controls().find("recon_cutoff");
+		const UiWidget* comparisonGain = view.controls().find("algorithm_audio_00");
+		const UiWidget* audioReset = view.controls().find("algorithm_audio_reset");
+		check(master && std::fabs(master->value() - 0.42f) < 0.0001f && release && release->enabled() &&
+			cutoff && !cutoff->enabled(),
+			"settings view synchronizes reconstructed audio values and dependent enabled states");
+		const std::map<std::string, std::string>::const_iterator comparisonCaption =
+			view.captions().find("algorithm_audio_00");
+		check(comparisonGain && std::fabs(comparisonGain->value() - 3.5f) < 0.0001f,
+			"settings view synchronizes the selected variant audio offset");
+		check(comparisonGain && comparisonGain->action().familyId == merge->familyId &&
+			comparisonGain->action().variantId == merge->variantId,
+			"settings view binds audio changes to the selected family and variant");
+		check(comparisonCaption != view.captions().end() && comparisonCaption->second.find("-7.0 dB") != std::string::npos,
+			"settings view displays the inherited family audio level");
+		check(audioReset && audioReset->action().familyId == merge->familyId &&
+			audioReset->action().variantId == merge->variantId,
+			"settings view binds reset-to-defaults to the selected family and variant");
+
+		const std::string mergeOptionId = settingsAlgorithmOptionControlId(merge->familyId, merge->variantId,
+			merge->supportedOptions.empty() ? std::string() : merge->supportedOptions.front().groupId);
+		const UiWidget* mergeOption = view.controls().find(mergeOptionId);
+		check(mergeOption && !mergeOption->enabled(),
+			"settings view disables catalog-derived algorithm options while setup is busy");
+
+		view.synchronizeControls(preferences, preferences, snapshot, false);
+		check(domain->enabled() && pattern->enabled() && timing->enabled() && mergeBuffer->enabled() &&
+			completionScan->enabled() && mergeOption->enabled(),
+			"settings view restores setup controls when the simulation is no longer busy");
+		check(settingsInputPatternEnabled(sortinglogic::InputDomain::NormalizedFloats, merge->id,
+			sortinglogic::InputPattern::AndrutReference) &&
+			!settingsInputPatternEnabled(sortinglogic::InputDomain::NonnegativeIntegerKeys, merge->id,
+				sortinglogic::InputPattern::AndrutReference),
+			"shared input-pattern compatibility policy is consistent for the main and settings controls");
 	}
 
 	void testSettingsPanelControlCatalog()
@@ -3752,9 +3924,11 @@ int main(int argc, char* argv[])
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();
 	testSettingsPanelPaintComposition();
+	testSettingsPanelViewComposesControlPaintCommands();
 	testSettingsPanelModel();
 	testSettingsPanelViewOwnsNavigationAndScrolling();
 	testSettingsPanelViewInitializesItsControls();
+	testSettingsPanelViewSynchronizesControlState();
 	testSettingsPanelControlCatalog();
 	testSettingsPanelLayout();
 	testSettingsStore();

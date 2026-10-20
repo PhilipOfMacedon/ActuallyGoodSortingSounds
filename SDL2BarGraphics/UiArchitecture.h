@@ -155,9 +155,9 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 	const std::string& role, bool enabled, bool hovered, bool pressed, bool selected,
 	const std::map<std::string, UiColor>& resolvedPalette);
 
-enum class UiPaintPrimitive { Rectangle, Border, Text, Icon };
+enum class UiPaintPrimitive { Rectangle, Border, Text, Icon, Control };
 enum class UiPaintMaterial { Solid, Panel, Button, Timeline, TimelineThumb, Popup, Accent, ModalDim };
-enum class UiPaintLayer { Backdrop, Panel, Accent, Content, SettingsControls, Text, SettingsText, MainControls, MainControlsOverlay, MainText };
+enum class UiPaintLayer { Backdrop, Panel, Accent, Content, SettingsControls, SettingsControlsOverlay, Text, SettingsText, MainControls, MainControlsOverlay, MainText };
 enum class UiTextAlignment { Center, Left, Right };
 enum class UiTextOverflow { Fit, Clamp, Marquee };
 struct UiPaintCommand
@@ -174,17 +174,18 @@ struct UiPaintCommand
 	float textHeight;
 	UiTextAlignment textAlignment;
 	UiTextOverflow textOverflow;
+	bool popup;
 	UiPaintCommand(UiPaintPrimitive kind = UiPaintPrimitive::Rectangle, const UiRect& area = UiRect(),
 		const UiColor& tint = UiColor(), const std::string& label = std::string())
 		: primitive(kind), bounds(area), color(tint), text(label), elementId(), material(UiPaintMaterial::Solid),
 			layer(UiPaintLayer::Content), clip(), hasClip(false), textHeight(12.0f),
-			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit) {}
+			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit), popup(false) {}
 	UiPaintCommand(UiPaintPrimitive kind, const UiRect& area, const UiColor& tint, const std::string& label,
 		const std::string& stableElementId, UiPaintMaterial paintMaterial, UiPaintLayer paintLayer,
-		const UiRect& clipBounds, bool clipped, float targetTextHeight)
+		const UiRect& clipBounds, bool clipped, float targetTextHeight, bool isPopup = false)
 		: primitive(kind), bounds(area), color(tint), text(label), elementId(stableElementId), material(paintMaterial),
 			layer(paintLayer), clip(clipBounds), hasClip(clipped), textHeight(targetTextHeight),
-			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit) {}
+			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit), popup(isPopup) {}
 };
 
 class UiPaintContext
