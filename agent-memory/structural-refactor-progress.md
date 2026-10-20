@@ -1578,3 +1578,11 @@ Moved Pattern-Defeating Merge Sort from the central coordinator into the existin
 The x64 Debug and Release solution builds passed. The focused Pattern-Defeating Merge suite passed in both configurations with 108,027 checks and no failures. `git diff --check` passed. No trace-order or performance change is claimed.
 
 Next: keep removing implementation ownership from the coordinator in coherent groups, then reassess whether the remaining dispatch can become a registry-only path without changing error or validation behavior.
+
+## 2026-10-20 — extract Hanoi Sort workspace strategy
+
+Moved Hanoi Sort's three-peg workspace and reversible transfer strategy into `HanoiStrategy.cpp`. Its builder now selects the strategy directly, removing the implementation and fallback case from the coordinator.
+
+The x64 Debug and Release solution builds passed. The focused Hanoi suite passed in both configurations with 361,811 checks and no failures. `git diff --check` passed. No animation, sound, or runtime-performance change is claimed.
+
+Next: continue migrating remaining self-contained fallback implementations into family modules, then review coordinator responsibilities separately from algorithm ownership.

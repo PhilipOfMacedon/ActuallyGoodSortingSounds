@@ -51,6 +51,7 @@ namespace sortinglogic
 		void tournamentSort(detail::Recorder& recorder);
 		void smoothSort(detail::Recorder& recorder);
 		void binomialSmoothSort(detail::Recorder& recorder);
+		void hanoiSort(detail::Recorder& recorder);
 		void aaTreeSort(detail::Recorder& recorder);
 		void avlTreeSort(detail::Recorder& recorder);
 		void splayTreeSort(detail::Recorder& recorder);
