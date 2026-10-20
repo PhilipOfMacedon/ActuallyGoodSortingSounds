@@ -20,6 +20,8 @@ namespace sortinglogic
 		void doubleSelection(detail::Recorder& recorder);
 		void gnome(detail::Recorder& recorder);
 		void insertion(detail::Recorder& recorder);
+		void binaryInsertion(detail::Recorder& recorder);
+		void binaryInsertionRange(detail::Recorder& recorder, std::size_t first, std::size_t end);
 		void oddEven(detail::Recorder& recorder);
 		void binaryGnome(detail::Recorder& recorder);
 		void optimizedGnome(detail::Recorder& recorder);

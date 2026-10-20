@@ -1127,3 +1127,19 @@ Verification:
 - `git diff --check` passed.
 
 Next: address the Circle/Intro Circle dependency on the shared binary insertion range before moving that family; then continue with remaining heap and tree ownership boundaries.
+
+## 2026-10-20 — extract shared binary insertion kernel
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved Binary Insertion Sort and its reusable `binaryInsertionRange` kernel into `InsertionStrategy.cpp`.
+- Routed the algorithm's stable ID through the strategy builder. Qualified all 40 remaining call sites in `SortingLogic.cpp` through the strategy boundary; the helper body and each caller's parameters are unchanged.
+- This gives Intro Circle and the many merge/hybrid strategies one shared insertion kernel rather than a hidden dependency on the monolithic translation unit.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86 Debug/Release and x64 Debug/Release.
+- Focused Binary Insertion tests passed 2,639 checks; pinned catalog coverage passed 1,741 checks; SortingLogic core contracts passed 39,535 checks. All reported 0 failures.
+- `git diff --check` passed.
+
+Next: move Circle and Intro Circle with their shared recursion helper now that their binary-insertion dependency is an explicit strategy API; then continue the remaining exchange and heap boundaries.

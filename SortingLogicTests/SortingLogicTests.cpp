@@ -644,6 +644,20 @@ namespace
 			}
 	}
 
+	void testBinaryInsertionStrategy()
+	{
+		using namespace sortinglogic;
+		const std::vector<std::vector<float> > cases = {
+			{}, { 0.5f }, { 0.4f, 0.2f, 0.4f, 0.2f }, { 0.3f, 0.3f, 0.3f, 0.3f },
+			{ 0.1f, 0.2f, 0.3f, 0.4f }, { 0.5f, 0.4f, 0.3f, 0.2f }, { 0.6f, 0.1f, 0.8f, 0.2f, 0.7f, 0.3f }
+		};
+		for (std::size_t input = 0; input < cases.size(); ++input)
+			for (int direction = 0; direction < 2; ++direction)
+				verifyAlgorithmCase("Binary Insertion case " + std::to_string(input), floats(cases[input]),
+					InputProfile::NormalizedFloat, SortAlgorithm::ArrayvBinaryInsertion,
+					direction == 0 ? SortDirection::Ascending : SortDirection::Descending);
+	}
+
 	void testPancakeStrategyFamily()
 	{
 		using namespace sortinglogic;
@@ -5184,6 +5198,13 @@ int main(int argc, char* argv[])
 		if (argc > 1 && std::string(argv[1]) == "--catalog-coverage-only")
 		{
 			std::cout << "Pinned ArrayV catalog coverage: " << checks << " checks, " << failures << " failures.\n";
+			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+		if (argc > 1 && std::string(argv[1]) == "--binary-insertion-only")
+		{
+			stage = "testBinaryInsertionStrategy";
+			testBinaryInsertionStrategy();
+			std::cout << "Focused Binary Insertion tests: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 		if (argc > 1 && std::string(argv[1]) == "--pancake-family-only")

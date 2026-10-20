@@ -2951,31 +2951,6 @@ namespace sortinglogic
 			}
 		}
 
-		void binaryInsertionRange(Recorder& r, std::size_t first, std::size_t end)
-		{
-			for (std::size_t i = first + (first < end ? 1 : 0); i < end; ++i)
-			{
-				const SortItem key = r.at(i);
-				r.hold(i);
-				std::size_t low = first, high = i;
-				while (low < high)
-				{
-					const std::size_t middle = low + (high - low) / 2;
-					const SortItem candidate = r.at(middle);
-					r.compare(key, candidate, i, middle, "main", "main", SemanticRole::HeldKey, SemanticRole::ComparedItem);
-					if (compareItems(key, candidate, r.trace.direction) == ComparisonResult::Less) high = middle;
-					else low = middle + 1;
-				}
-				for (std::size_t position = i; position > low; --position) r.shift(position - 1, position);
-				r.place(low, key);
-			}
-		}
-
-		void binaryInsertion(Recorder& r)
-		{
-			binaryInsertionRange(r, 0, r.state.slots.size());
-		}
-
 		void simplifiedLibrarySort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -2986,7 +2961,7 @@ namespace sortinglogic
 			const std::size_t rebalanceFactor = 4;
 			std::size_t minimumRun = count;
 			while (minimumRun >= 32) minimumRun = (minimumRun - 1) / rebalanceFactor + 1;
-			binaryInsertionRange(r, 0, minimumRun);
+			strategies::binaryInsertionRange(r, 0, minimumRun);
 			if (count < 32)
 			{
 				r.addMetric("simplified_library_small_fallbacks");
@@ -3046,18 +3021,18 @@ namespace sortinglogic
 
 				const std::size_t firstEnd = static_cast<std::size_t>(r.counter("simplified-library-counts", 0));
 				require(firstEnd <= prefixEnd, "Simplified Library Sort's first rebuilt shelf exceeds its prefix.");
-				binaryInsertionRange(r, 0, firstEnd);
+				strategies::binaryInsertionRange(r, 0, firstEnd);
 				for (std::size_t i = 0; i + 1 < sortedCount; ++i)
 				{
 					const std::size_t begin = static_cast<std::size_t>(r.counter("simplified-library-counts", i));
 					const std::size_t end = static_cast<std::size_t>(r.counter("simplified-library-counts", i + 1));
 					require(begin <= end && end <= prefixEnd, "Simplified Library Sort's rebuilt shelf bounds are invalid.");
-					binaryInsertionRange(r, begin, end);
+					strategies::binaryInsertionRange(r, begin, end);
 				}
 				const std::size_t lastBegin = static_cast<std::size_t>(r.counter("simplified-library-counts", sortedCount - 1));
 				const std::size_t lastEnd = static_cast<std::size_t>(r.counter("simplified-library-counts", sortedCount));
 				require(lastBegin <= lastEnd && lastEnd <= prefixEnd, "Simplified Library Sort's final shelf bounds are invalid.");
-				binaryInsertionRange(r, lastBegin, lastEnd);
+				strategies::binaryInsertionRange(r, lastBegin, lastEnd);
 				for (std::size_t i = 0; i < sortedCount + 2; ++i)
 					r.writeCounter("simplified-library-counts", i, 0);
 				r.addMetric("simplified_library_rebalances");
@@ -3109,7 +3084,7 @@ namespace sortinglogic
 			const std::size_t rebalanceFactor = 4;
 			std::size_t sortedPrefix = count;
 			while (sortedPrefix >= 32) sortedPrefix = (sortedPrefix - 1) / rebalanceFactor + 1;
-			binaryInsertionRange(r, 0, sortedPrefix);
+			strategies::binaryInsertionRange(r, 0, sortedPrefix);
 			if (count < 32)
 			{
 				r.addMetric("library_small_fallbacks");
@@ -3508,7 +3483,7 @@ namespace sortinglogic
 				if (iterations >= threshold)
 				{
 					r.addMetric("binary_fallbacks");
-					binaryInsertionRange(r, 0, count);
+					strategies::binaryInsertionRange(r, 0, count);
 					break;
 				}
 				std::size_t swaps = 0;
@@ -3856,7 +3831,7 @@ namespace sortinglogic
 			const std::size_t runSize = 16;
 			for (std::size_t first = 0; first < count; first += runSize)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + runSize));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + runSize));
 				r.addMetric("grail_runs");
 			}
 		for (std::size_t width = runSize; width < count;)
@@ -3894,7 +3869,7 @@ namespace sortinglogic
 			r.resizeAuxiliary("parallel_grail_buffer", bufferCapacity);
 			for (std::size_t first = 0; first < count; first += runSize)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + runSize));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + runSize));
 				r.addMetric("parallel_grail_runs");
 			}
 
@@ -3965,7 +3940,7 @@ namespace sortinglogic
 				const std::size_t targetEnd = (std::min)(count, (std::max)(last, first + minimumRun));
 				if (targetEnd > last)
 				{
-					binaryInsertionRange(r, first, targetEnd);
+					strategies::binaryInsertionRange(r, first, targetEnd);
 					last = targetEnd;
 					r.addMetric("adaptive_grail_extensions");
 				}
@@ -4010,7 +3985,7 @@ namespace sortinglogic
 			for (std::size_t first = 0; first < count; first += blockLength)
 			{
 				const std::size_t last = (std::min)(count, first + blockLength);
-				binaryInsertionRange(r, first, last);
+				strategies::binaryInsertionRange(r, first, last);
 				r.addMetric("sqrt_runs");
 				r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "Square-root insertion block",
 					r.trace.events.empty() ? 0 : r.trace.events.size() - 1);
@@ -4059,7 +4034,7 @@ namespace sortinglogic
 			r.resizeAuxiliary("ecta_buffer", count);
 			for (std::size_t first = 0; first < count; first += minRun)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + minRun));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + minRun));
 				r.addMetric("ecta_insertion_runs");
 			}
 
@@ -4128,7 +4103,7 @@ namespace sortinglogic
 			r.resizeAuxiliary("circular_grail_buffer", count);
 			for (std::size_t first = 0; first < count; first += runSize)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + runSize));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + runSize));
 				r.addMetric("circular_grail_runs");
 			}
 		std::size_t ringHead = count / 3;
@@ -4189,7 +4164,7 @@ namespace sortinglogic
 			const std::size_t runSize = 16;
 			for (std::size_t first = 0; first < count; first += runSize)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + runSize));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + runSize));
 				r.addMetric("unstable_grail_runs");
 			}
 		for (std::size_t width = runSize; width < count;)
@@ -4397,7 +4372,7 @@ namespace sortinglogic
 		{
 			for (std::size_t start = first; start < last; start += 8)
 			{
-				binaryInsertionRange(r, start, (std::min)(last, start + 8));
+				strategies::binaryInsertionRange(r, start, (std::min)(last, start + 8));
 				r.addMetric(metricPrefix + "_insertion_runs");
 			}
 			for (std::size_t width = 8; width < last - first;)
@@ -4530,7 +4505,7 @@ namespace sortinglogic
 						r.addMetric("optimized_weave_bit_reversals");
 					}
 				}
-				binaryInsertionRange(r, first, last);
+				strategies::binaryInsertionRange(r, first, last);
 				r.addMetric("optimized_weave_blocks");
 				r.addMetric("optimized_weave_insertion_passes");
 				r.annotate("main", RegionKind::Contiguous, first, last, 1, phase, "Bit-reversed weave block", begin);
@@ -4593,7 +4568,7 @@ namespace sortinglogic
 				}
 				else r.addMetric("wiki_natural_runs");
 				const std::size_t target = (std::min)(count, (std::max)(last, first + minimumRun));
-				if (target > last) { binaryInsertionRange(r, first, target); r.addMetric("wiki_extensions"); last = target; }
+				if (target > last) { strategies::binaryInsertionRange(r, first, target); r.addMetric("wiki_extensions"); last = target; }
 				runs.push_back(Run(first, last));
 				first = last;
 			}
@@ -4630,7 +4605,7 @@ namespace sortinglogic
 			const std::size_t block = (std::max)(std::size_t(2), static_cast<std::size_t>(std::sqrt(static_cast<double>(count))));
 			for (std::size_t first = 0; first < count; first += block)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + block));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + block));
 				r.addMetric("andrey_runs");
 			}
 			for (std::size_t width = block; width < count;)
@@ -4710,7 +4685,7 @@ namespace sortinglogic
 			r.resizeAuxiliary("yuji_buffer", count / 2 + (count & 1u));
 			for (std::size_t first = 0; first < count; first += runSize)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + runSize));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + runSize));
 				r.addMetric("yuji_runs");
 			}
 			for (std::size_t width = runSize; width < count;)
@@ -4769,7 +4744,7 @@ namespace sortinglogic
 			r.resizeAuxiliary("kota_block_buffer", count);
 			for (std::size_t first = 0; first < count; first += block)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + block));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + block));
 				r.addMetric("kota_initial_blocks");
 			}
 			std::size_t width = block;
@@ -4891,7 +4866,7 @@ namespace sortinglogic
 				r.setMetric("flan_maximum_depth", (std::max)(r.state.metrics.algorithm["flan_maximum_depth"], static_cast<std::uint64_t>(range.depth)));
 				if (range.last - range.first <= 24)
 				{
-					binaryInsertionRange(r, range.first, range.last); r.addMetric("flan_insertion_fallbacks"); continue;
+					strategies::binaryInsertionRange(r, range.first, range.last); r.addMetric("flan_insertion_fallbacks"); continue;
 				}
 				const std::size_t n = range.last - range.first;
 				std::vector<std::size_t> positions;
@@ -4951,7 +4926,7 @@ namespace sortinglogic
 			}
 			if (descents <= count / 6 || descents >= (count * 5) / 6)
 			{
-				binaryInsertionRange(r, 0, count); r.addMetric("flux_near_ordered_fallbacks"); return;
+				strategies::binaryInsertionRange(r, 0, count); r.addMetric("flux_near_ordered_fallbacks"); return;
 			}
 			struct Range { std::size_t first, last, depth; Range(std::size_t a, std::size_t b, std::size_t d) : first(a), last(b), depth(d) {} };
 			std::vector<Range> pending(1, Range(0, count, 0));
@@ -4962,7 +4937,7 @@ namespace sortinglogic
 				r.setMetric("flux_maximum_depth", (std::max)(r.state.metrics.algorithm["flux_maximum_depth"], static_cast<std::uint64_t>(range.depth)));
 				if (range.last - range.first <= 20)
 				{
-					binaryInsertionRange(r, range.first, range.last); r.addMetric("flux_insertion_fallbacks"); continue;
+					strategies::binaryInsertionRange(r, range.first, range.last); r.addMetric("flux_insertion_fallbacks"); continue;
 				}
 				const std::size_t n = range.last - range.first;
 				const std::vector<std::size_t> positions = { range.first, range.first + n / 4, range.first + n / 2,
@@ -5027,7 +5002,7 @@ namespace sortinglogic
 			r.resizeAuxiliary("quad_buffer", count);
 			for (std::size_t first = 0; first < count; first += 8)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + 8));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + 8));
 				r.addMetric("quad_leaf_runs");
 			}
 			for (std::size_t runWidth = 8; runWidth < count;)
@@ -5066,19 +5041,19 @@ namespace sortinglogic
 			if (count <= 16)
 			{
 				r.addMetric("laziest_block_runs");
-				binaryInsertionRange(r, 0, count);
+				strategies::binaryInsertionRange(r, 0, count);
 				return;
 			}
 			const std::size_t blockLength = (std::max)(std::size_t(16), static_cast<std::size_t>(std::sqrt(static_cast<double>(count))));
 			std::size_t runStart = 0;
 			for (; runStart + 2 * blockLength < count; runStart += blockLength)
 			{
-				binaryInsertionRange(r, runStart, runStart + blockLength);
+				strategies::binaryInsertionRange(r, runStart, runStart + blockLength);
 				r.addMetric("laziest_block_runs");
 			}
 			if (runStart < count)
 			{
-				binaryInsertionRange(r, runStart, count);
+				strategies::binaryInsertionRange(r, runStart, count);
 				r.addMetric("laziest_block_runs");
 			}
 
@@ -5174,7 +5149,7 @@ namespace sortinglogic
 			if (count <= 16)
 			{
 				r.addMetric("lazierest_block_runs");
-				binaryInsertionRange(r, 0, count);
+				strategies::binaryInsertionRange(r, 0, count);
 				return;
 			}
 
@@ -5191,7 +5166,7 @@ namespace sortinglogic
 			const std::size_t squareLength = blockLength * blockLength;
 			for (std::size_t end = count % blockLength; end <= count; end += blockLength)
 			{
-				binaryInsertionRange(r, end >= blockLength ? end - blockLength : 0, end);
+				strategies::binaryInsertionRange(r, end >= blockLength ? end - blockLength : 0, end);
 				r.addMetric("lazierest_block_runs");
 			}
 
@@ -6445,7 +6420,7 @@ namespace sortinglogic
 				if (length < 2) return;
 				if (length <= 16)
 				{
-					binaryInsertionRange(r, first, last);
+					strategies::binaryInsertionRange(r, first, last);
 					r.addMetric("inplace_merge_insertion_runs");
 					return;
 				}
@@ -6643,7 +6618,7 @@ namespace sortinglogic
 				if (length < 2) return;
 				if (length < 64)
 				{
-					binaryInsertionRange(r, first, end);
+					strategies::binaryInsertionRange(r, first, end);
 					r.addMetric("binary_insertion_runs");
 					return;
 				}
@@ -6702,7 +6677,7 @@ namespace sortinglogic
 			const std::size_t runSize = 16;
 			for (std::size_t first = 0; first < n; first += runSize)
 			{
-				binaryInsertionRange(r, first, std::min(first + runSize, n));
+				strategies::binaryInsertionRange(r, first, std::min(first + runSize, n));
 				r.addMetric("binary_insertion_runs");
 			}
 			if (n <= runSize) return;
@@ -6898,14 +6873,14 @@ namespace sortinglogic
 				for (std::size_t group = first; group < end; group += 5)
 				{
 					const std::size_t groupEnd = (std::min)(end, group + 5);
-					binaryInsertionRange(r, group, groupEnd);
+					strategies::binaryInsertionRange(r, group, groupEnd);
 					const std::size_t median = group + (groupEnd - group - 1) / 2;
 					if (medianWrite != median) r.swap(medianWrite, median, SemanticRole::Pivot);
 					++medianWrite;
 				}
 				end = medianWrite;
 			}
-			binaryInsertionRange(r, first, end);
+			strategies::binaryInsertionRange(r, first, end);
 			return first + (end - first) / 2;
 		}
 
@@ -6915,7 +6890,7 @@ namespace sortinglogic
 			const std::size_t runSize = 16;
 			for (std::size_t run = first; run < end; run += runSize)
 			{
-				binaryInsertionRange(r, run, (std::min)(end, run + runSize));
+				strategies::binaryInsertionRange(r, run, (std::min)(end, run + runSize));
 				r.addMetric("median_merge_initial_runs");
 			}
 			for (std::size_t width = runSize; width < end - first;)
@@ -6997,7 +6972,7 @@ namespace sortinglogic
 					}
 				}
 				if (end > first && end - first <= 16)
-					binaryInsertionRange(r, first, end);
+					strategies::binaryInsertionRange(r, first, end);
 			}
 			r.resizeAuxiliary("merge", 0);
 		}
@@ -7110,7 +7085,7 @@ namespace sortinglogic
 					static_cast<std::uint64_t>(depth)));
 				if (length <= 16)
 				{
-					binaryInsertionRange(r, first, end);
+					strategies::binaryInsertionRange(r, first, end);
 					r.addMetric("pdq_insertion_ranges");
 					return;
 				}
@@ -7179,7 +7154,7 @@ namespace sortinglogic
 					if (depthLimit == 0 || high - low <= 3)
 					{
 						if (depthLimit == 0) r.addMetric("buffer_partition_fallbacks");
-						binaryInsertionRange(r, low, high);
+						strategies::binaryInsertionRange(r, low, high);
 						return target;
 					}
 					--depthLimit;
@@ -7208,7 +7183,7 @@ namespace sortinglogic
 				r.chargeWork();
 				if (end - first <= 16)
 				{
-					binaryInsertionRange(r, first, end);
+					strategies::binaryInsertionRange(r, first, end);
 					return;
 				}
 				const std::size_t middle = first + (end - first) / 2;
@@ -7237,7 +7212,7 @@ namespace sortinglogic
 			const std::size_t runSize = 16;
 			for (std::size_t first = 0; first < count; first += runSize)
 			{
-				binaryInsertionRange(r, first, (std::min)(count, first + runSize));
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + runSize));
 				r.addMetric("parallel_block_runs");
 			}
 			for (std::size_t width = runSize; width < count;)
@@ -7370,7 +7345,7 @@ namespace sortinglogic
 			for (std::size_t first = 0; first < count; first += run)
 			{
 				const std::size_t last = (std::min)(count, first + run);
-				binaryInsertionRange(r, first, last);
+				strategies::binaryInsertionRange(r, first, last);
 				r.addMetric("optimized_rotate_runs");
 			}
 		for (std::size_t width = run; width < count;)
@@ -8908,7 +8883,6 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvAndrey: andreySort(recorder); break;
 				case SortAlgorithm::ArrayvNewShuffleMerge: newShuffleMergeSort(recorder); break;
 				case SortAlgorithm::Shell: shell(recorder); break;
-				case SortAlgorithm::ArrayvBinaryInsertion: binaryInsertion(recorder); break;
 				case SortAlgorithm::ArrayvBlockInsertion: blockInsertionSort(recorder); break;
 				case SortAlgorithm::ArrayvDoubleInsertion: doubleInsertion(recorder, false); break;
 				case SortAlgorithm::ArrayvBinaryDoubleInsertion: doubleInsertion(recorder, true); break;
@@ -9087,7 +9061,7 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvNewShuffleMergeRequest, ArrayvNewShuffleMerge)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvCycleRequest, ArrayvCycle, &strategies::cycleSort)
 		SORT_REQUEST_BUILDER(buildShellRequest, Shell)
-		SORT_REQUEST_BUILDER(buildArrayvBinaryInsertionRequest, ArrayvBinaryInsertion)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBinaryInsertionRequest, ArrayvBinaryInsertion, &strategies::binaryInsertion)
 		SORT_REQUEST_BUILDER(buildArrayvBlockInsertionRequest, ArrayvBlockInsertion)
 		SORT_REQUEST_BUILDER(buildArrayvDoubleInsertionRequest, ArrayvDoubleInsertion)
 		SORT_REQUEST_BUILDER(buildArrayvBinaryDoubleInsertionRequest, ArrayvBinaryDoubleInsertion)

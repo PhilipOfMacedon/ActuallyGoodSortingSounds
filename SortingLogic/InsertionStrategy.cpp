@@ -26,5 +26,31 @@ namespace sortinglogic
 			}
 		}
 
+
+		void binaryInsertionRange(Recorder& r, std::size_t first, std::size_t end)
+		{
+			for (std::size_t i = first + (first < end ? 1 : 0); i < end; ++i)
+			{
+				const SortItem key = r.at(i);
+				r.hold(i);
+				std::size_t low = first, high = i;
+				while (low < high)
+				{
+					const std::size_t middle = low + (high - low) / 2;
+					const SortItem candidate = r.at(middle);
+					r.compare(key, candidate, i, middle, "main", "main", SemanticRole::HeldKey, SemanticRole::ComparedItem);
+					if (compareItems(key, candidate, r.trace.direction) == ComparisonResult::Less) high = middle;
+					else low = middle + 1;
+				}
+				for (std::size_t position = i; position > low; --position) r.shift(position - 1, position);
+				r.place(low, key);
+			}
+		}
+
+		void binaryInsertion(Recorder& r)
+		{
+			binaryInsertionRange(r, 0, r.state.slots.size());
+		}
+
 	}
 }
