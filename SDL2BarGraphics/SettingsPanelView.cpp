@@ -1,22 +1,10 @@
 #include "SettingsPanelView.h"
 
+#include <algorithm>
+#include <set>
+
 #include "UiActionRouting.h"
-
-void SettingsPanelView::configureScroll(const UiRect& viewport, float contentExtent,
-	float rowExtent, float requestedOffset)
-{
-	model_.scrollViewport().configure(viewport, contentExtent, rowExtent, requestedOffset);
-}
-
-UiRect SettingsPanelView::scrollItemBounds(std::size_t index, float itemExtent) const
-{
-	return model_.scrollViewport().itemBounds(index, itemExtent);
-}
-
-bool SettingsPanelView::scrollItemIntersectsViewport(std::size_t index, float itemExtent) const
-{
-	return model_.scrollViewport().itemIntersectsViewport(index, itemExtent);
-}
+#include "SettingsPanelLayout.h"
 
 void SettingsPanelView::selectAudioBand(int index, int bandCount)
 {
@@ -43,6 +31,74 @@ bool SettingsPanelView::isScrollablePage() const
 bool SettingsPanelView::handleScrollWheel(float x, float y, int wheelDelta)
 {
 	return isScrollablePage() && model_.scrollViewport().scrollWheel(x, y, wheelDelta);
+}
+
+void SettingsPanelView::setPanelBounds(const UiRect& panelBounds, bool modalOpen)
+{
+	panelBounds_ = panelBounds;
+	controls_.layoutContainer("settings_panel", panelBounds_);
+	if (modalOpen)
+		controls_.setModalBounds(panelBounds_, UiAction::ViewCommand::CloseSettings);
+}
+
+void SettingsPanelView::setModalActive(bool active)
+{
+	controls_.setInputCaptured(active);
+	if (active && panelBounds_.width > 0.0f)
+		controls_.setModalBounds(panelBounds_, UiAction::ViewCommand::CloseSettings);
+}
+
+void SettingsPanelView::layoutControls(const std::vector<std::string>& activeControlIds,
+	float scrollbarThickness)
+{
+	if (panelBounds_.width <= 0.0f) return;
+	const float x = panelBounds_.x + 16.0f;
+	const float width = std::max(1.0f, panelBounds_.width - 32.0f);
+	const SettingsPanelGeometry panelGeometry = calculateSettingsPanelGeometry(panelBounds_, model_.page());
+	controls_.find("appearance_tab")->setBounds(panelGeometry.tabs[0]);
+	controls_.find("algorithm_tab")->setBounds(panelGeometry.tabs[1]);
+	controls_.find("audio_tab")->setBounds(panelGeometry.tabs[2]);
+	controls_.find("audio_basic_tab")->setBounds(panelGeometry.audioGroups[0]);
+	controls_.find("audio_advanced_tab")->setBounds(panelGeometry.audioGroups[1]);
+	contentBounds_ = panelGeometry.content;
+	controls_.find("settings_close")->setBounds(panelGeometry.closeButton);
+	controls_.find("audio_retry")->setBounds(panelGeometry.audioRetryButton);
+
+	std::set<std::string> visibleWidgetIds;
+	visibleWidgetIds.insert("appearance_tab");
+	visibleWidgetIds.insert("algorithm_tab");
+	visibleWidgetIds.insert("audio_tab");
+	visibleWidgetIds.insert("settings_close");
+	if (model_.isPage(SettingsPanelPage::GeneralAudio))
+	{
+		visibleWidgetIds.insert("audio_retry");
+		visibleWidgetIds.insert("audio_basic_tab");
+		visibleWidgetIds.insert("audio_advanced_tab");
+	}
+	const float rowHeight = 48.0f;
+	const float contentBottom = contentBounds_.y + contentBounds_.height;
+	const float totalHeight = static_cast<float>(activeControlIds.size()) * rowHeight;
+	model_.scrollViewport().configure(contentBounds_, totalHeight, rowHeight, model_.scrollOffset());
+	for (std::size_t i = 0; i < activeControlIds.size(); ++i)
+	{
+		const UiRect rowBounds = model_.scrollViewport().itemBounds(i, rowHeight);
+		const float rowY = rowBounds.y;
+		const bool visible = model_.scrollViewport().itemIntersectsViewport(i, rowHeight) &&
+			rowY + rowHeight <= contentBottom + 0.5f;
+		if (visible) visibleWidgetIds.insert(activeControlIds[i]);
+		UiWidget* widget = controls_.find(activeControlIds[i]);
+		if (!widget) continue;
+		const SettingsWidgetGeometry geometry = calculateSettingsWidgetGeometry(*widget, rowBounds,
+			x, width, panelBounds_, scrollbarThickness);
+		widget->setBounds(geometry.bounds);
+		widget->setInteractiveSubregions(geometry.interactiveSubregions);
+		if (geometry.setPopupAbove) widget->setPopupAbove(geometry.popupAbove);
+	}
+	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+	{
+		const std::string& id = controls_.widgets()[i]->id();
+		controls_.setWidgetVisible(id, visibleWidgetIds.find(id) != visibleWidgetIds.end());
+	}
 }
 
 SettingsPanelChrome::SettingsPanelChrome()

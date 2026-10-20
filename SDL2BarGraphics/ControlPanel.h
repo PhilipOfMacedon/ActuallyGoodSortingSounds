@@ -12,7 +12,6 @@
 #include "RenderingTypes.h"
 #include "SettingsPanelView.h"
 #include "SettingsPanelControls.h"
-#include "SettingsPanelLayout.h"
 #include "AlgorithmProfileView.h"
 #include "TextLabel.h"
 #include "ThemePalette.h"
@@ -95,8 +94,6 @@ private:
 	UiRect timelineRightArrowBounds_;
 	UiRect headerBounds_;
 	UiRect gearBounds_;
-	UiRect settingsPanelBounds_;
-	UiRect settingsContentBounds_;
 	bool draggingTimeline_;
 	bool appearanceSearchFocused_;
 	bool drawingAppearanceEditor_;

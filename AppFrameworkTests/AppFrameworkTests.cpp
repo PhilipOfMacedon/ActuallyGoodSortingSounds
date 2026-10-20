@@ -2217,28 +2217,50 @@ namespace
 		SettingsPanelView view;
 		check(view.page() == SettingsPanelPage::Appearance && !view.isScrollablePage(),
 			"settings view starts on Appearance and keeps that short page non-scrollable");
+		view.controls().addContainer("settings_panel", UiContainerKind::Panel);
+		view.controls().addButton("appearance_tab", "Appearance");
+		view.controls().addButton("algorithm_tab", "Algorithm");
+		view.controls().addButton("audio_tab", "General Audio");
+		view.controls().addButton("audio_basic_tab", "Basic");
+		view.controls().addButton("audio_advanced_tab", "Advanced");
+		view.controls().addButton("settings_close", "Done");
+		view.controls().addButton("audio_retry", "Retry audio device");
 		view.controls().addButton("view_owned_control", "Owned by settings view");
+		view.controls().addButton("inactive_control", "Inactive control");
 		check(view.controls().find("view_owned_control") != nullptr,
 			"settings view owns the retained widget root used by the platform adapter");
 
 		check(view.handleNavigation(UiAction::ViewCommand::ShowAlgorithmSettings) &&
 			view.page() == SettingsPanelPage::Algorithm && view.audioGroup() == SettingsAudioGroup::Basic,
 			"settings view applies algorithm-tab navigation and preserves audio subpage state");
-		view.configureScroll(UiRect(20.0f, 30.0f, 200.0f, 100.0f), 700.0f, 48.0f, 0.0f);
-		check(view.isScrollablePage() && view.handleScrollWheel(40.0f, 50.0f, -1) && view.scrollOffset() > 0.0f,
+		const UiRect panelBounds(500.0f, 20.0f, 400.0f, 500.0f);
+		std::vector<std::string> longControlList;
+		longControlList.push_back("view_owned_control");
+		for (int row = 1; row < 20; ++row) longControlList.push_back(std::string("catalog_row_") + std::to_string(row));
+		view.setPanelBounds(panelBounds, false);
+		view.layoutControls(longControlList, 8.0f);
+		check(view.contentBounds().y == panelBounds.y + 82.0f &&
+			view.controls().find("appearance_tab")->visible() && view.controls().find("settings_close")->visible() &&
+			!view.controls().find("audio_basic_tab")->visible() && !view.controls().find("inactive_control")->visible(),
+			"settings view owns tab geometry, page visibility, and active-row placement");
+		check(view.isScrollablePage() && view.handleScrollWheel(520.0f, 125.0f, -1) && view.scrollOffset() > 0.0f,
 			"settings view owns wheel scrolling for long algorithm settings");
 		const float offsetAfterScroll = view.scrollOffset();
-		check(!view.handleScrollWheel(400.0f, 50.0f, -1) && view.scrollOffset() == offsetAfterScroll,
+		check(!view.handleScrollWheel(400.0f, 125.0f, -1) && view.scrollOffset() == offsetAfterScroll,
 			"settings view does not scroll when the pointer is outside its viewport");
 
 		check(view.handleNavigation(UiAction::ViewCommand::ShowAudioAdvanced) &&
 			view.page() == SettingsPanelPage::GeneralAudio && view.audioGroup() == SettingsAudioGroup::Advanced &&
 			view.scrollOffset() == 0.0f,
 			"audio subpage navigation changes the view state and resets its transient scroll offset");
+		view.layoutControls(longControlList, 8.0f);
+		check(view.contentBounds().y == panelBounds.y + 112.0f &&
+			view.controls().find("audio_basic_tab")->visible() && view.controls().find("audio_retry")->visible(),
+			"General Audio layout places subpage tabs and retry controls in their reserved rows");
 		check(view.handleNavigation(UiAction::ViewCommand::ShowGeneralAudioSettings) &&
 			view.page() == SettingsPanelPage::GeneralAudio && view.audioGroup() == SettingsAudioGroup::Advanced,
 			"direct General Audio navigation preserves the selected audio subpage");
-		check(view.handleScrollWheel(40.0f, 50.0f, -1) && view.scrollOffset() > 0.0f,
+		check(view.handleScrollWheel(520.0f, 150.0f, -1) && view.scrollOffset() > 0.0f,
 			"settings view can scroll the selected long audio subpage");
 		check(view.handleNavigation(UiAction::ViewCommand::ShowAppearanceSettings) &&
 			view.page() == SettingsPanelPage::Appearance && view.scrollOffset() == 0.0f && !view.isScrollablePage(),

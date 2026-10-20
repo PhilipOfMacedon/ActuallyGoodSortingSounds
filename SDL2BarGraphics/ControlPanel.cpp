@@ -367,7 +367,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	audioDeviceStatus_(new TextLabel("Audio device is not initialized.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	displayedDetail_(), displayedStatus_(), displayedCollapsedSummary_(), displayedSaveStatus_(), lastDetailUpdate_(0),
 	timelineBounds_(), timelineControlBounds_(), timelineLeftArrowBounds_(), timelineRightArrowBounds_(),
-	headerBounds_(), gearBounds_(), settingsPanelBounds_(), settingsContentBounds_(), draggingTimeline_(false),
+	headerBounds_(), gearBounds_(), draggingTimeline_(false),
 	appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
 	inlineEdit_()
@@ -669,11 +669,9 @@ void ControlPanel::updateLayout()
 
 	const float panelWidth = std::min(520.0f, std::max(180.0f, static_cast<float>(width_) - 32.0f));
 	const float panelHeight = std::min(650.0f, std::max(300.0f, static_cast<float>(height_) - 54.0f));
-	settingsPanelBounds_ = UiRect(std::max(8.0f, static_cast<float>(width_) - panelWidth - 8.0f), 42.0f,
+	const UiRect settingsPanelBounds(std::max(8.0f, static_cast<float>(width_) - panelWidth - 8.0f), 42.0f,
 		panelWidth, std::min(panelHeight, std::max(200.0f, static_cast<float>(height_) - 50.0f)));
-	settingsPanelView_.controls().layoutContainer("settings_panel", settingsPanelBounds_);
-	if (overlayState_.is(UiOverlayId::Settings))
-		settingsPanelView_.controls().setModalBounds(settingsPanelBounds_, UiAction::ViewCommand::CloseSettings);
+	settingsPanelView_.setPanelBounds(settingsPanelBounds, overlayState_.is(UiOverlayId::Settings));
 	layoutAlgorithmMenu();
 	layoutSettingsControls();
 	layoutMainComboPopups();
@@ -727,58 +725,14 @@ void ControlPanel::layoutMainComboPopups()
 
 void ControlPanel::layoutSettingsControls()
 {
-	if (settingsPanelBounds_.width <= 0.0f) return;
-	const float x = settingsPanelBounds_.x + 16.0f;
-	const float width = std::max(1.0f, settingsPanelBounds_.width - 32.0f);
-	const SettingsPanelGeometry panelGeometry = calculateSettingsPanelGeometry(settingsPanelBounds_, settingsPanelView_.page());
-	settingsPanelView_.controls().find("appearance_tab")->setBounds(panelGeometry.tabs[0]);
-	settingsPanelView_.controls().find("algorithm_tab")->setBounds(panelGeometry.tabs[1]);
-	settingsPanelView_.controls().find("audio_tab")->setBounds(panelGeometry.tabs[2]);
-	settingsPanelView_.controls().find("audio_basic_tab")->setBounds(panelGeometry.audioGroups[0]);
-	settingsPanelView_.controls().find("audio_advanced_tab")->setBounds(panelGeometry.audioGroups[1]);
-	settingsContentBounds_ = panelGeometry.content;
-	settingsPanelView_.controls().find("settings_close")->setBounds(panelGeometry.closeButton);
-	settingsPanelView_.controls().find("audio_retry")->setBounds(panelGeometry.audioRetryButton);
+	if (settingsPanelView_.panelBounds().width <= 0.0f) return;
 	const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(
 		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
 	const SettingsPanelAlgorithmPresentation selectedPresentation = settingsPanelAlgorithmPresentation(selected);
 	const std::vector<std::string> active = settingsPanelControlIds(
 		settingsPanelView_.page(), settingsPanelView_.audioGroup(), &selectedPresentation);
-	std::set<std::string> visibleWidgetIds;
-	visibleWidgetIds.insert("appearance_tab");
-	visibleWidgetIds.insert("algorithm_tab");
-	visibleWidgetIds.insert("audio_tab");
-	visibleWidgetIds.insert("settings_close");
-	if (settingsPanelView_.isPage(SettingsPanelPage::GeneralAudio))
-	{
-		visibleWidgetIds.insert("audio_retry");
-		visibleWidgetIds.insert("audio_basic_tab");
-		visibleWidgetIds.insert("audio_advanced_tab");
-	}
-	const float rowHeight = 48.0f;
-	const float contentBottom = settingsContentBounds_.y + settingsContentBounds_.height;
-	const float totalHeight = static_cast<float>(active.size()) * rowHeight;
 	const float scrollbarThickness = themeNumber(renderPreferences_, "scrollbar.thickness", 8.0f);
-	settingsPanelView_.configureScroll(settingsContentBounds_, totalHeight, rowHeight, settingsPanelView_.scrollOffset());
-	for (std::size_t i = 0; i < active.size(); ++i)
-	{
-		const UiRect rowBounds = settingsPanelView_.scrollItemBounds(i, rowHeight);
-		const float rowY = rowBounds.y;
-		const bool visible = settingsPanelView_.scrollItemIntersectsViewport(i, rowHeight) && rowY + rowHeight <= contentBottom + 0.5f;
-		if (visible) visibleWidgetIds.insert(active[i]);
-		UiWidget* widget = settingsPanelView_.controls().find(active[i]);
-		if (!widget) continue;
-		const SettingsWidgetGeometry geometry = calculateSettingsWidgetGeometry(*widget, rowBounds,
-			x, width, settingsPanelBounds_, scrollbarThickness);
-		widget->setBounds(geometry.bounds);
-		widget->setInteractiveSubregions(geometry.interactiveSubregions);
-		if (geometry.setPopupAbove) widget->setPopupAbove(geometry.popupAbove);
-	}
-	for (std::size_t i = 0; i < settingsPanelView_.controls().widgets().size(); ++i)
-	{
-		const std::string& id = settingsPanelView_.controls().widgets()[i]->id();
-		settingsPanelView_.controls().setWidgetVisible(id, visibleWidgetIds.find(id) != visibleWidgetIds.end());
-	}
+	settingsPanelView_.layoutControls(active, scrollbarThickness);
 }
 
 void ControlPanel::updateAudioControls()
@@ -1226,7 +1180,6 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	{
 		if (!overlayState_.openSettings()) return;
 		updateOverlayInputCapture();
-		settingsPanelView_.controls().setModalBounds(settingsPanelBounds_, UiAction::ViewCommand::CloseSettings);
 		mainUi_.closeCombo();
 		return;
 	}
@@ -1517,8 +1470,8 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 	SettingsPanelChrome chrome;
 	chrome.screenWidth = width_;
 	chrome.screenHeight = height_;
-	chrome.panelBounds = settingsPanelBounds_;
-	chrome.contentBounds = settingsContentBounds_;
+	chrome.panelBounds = settingsPanelView_.panelBounds();
+	chrome.contentBounds = settingsPanelView_.contentBounds();
 	chrome.title = settingsTitle_->text();
 	SettingsPanelPalette chromePalette;
 	chromePalette.panel = toUiColor(palette.panel);
@@ -1550,16 +1503,18 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 			? "Reconstructed reference | " : "Customized | ") + audioStatus;
 		audioDeviceStatus_->setContent(profileStatus);
 		chrome.footer = profileStatus;
-		chrome.footerBounds = UiRect(settingsPanelBounds_.x + 16.0f,
-			settingsPanelBounds_.y + settingsPanelBounds_.height - 62.0f,
-			settingsPanelBounds_.width - 130.0f, 16.0f);
+		const UiRect& panelBounds = settingsPanelView_.panelBounds();
+		chrome.footerBounds = UiRect(panelBounds.x + 16.0f,
+			panelBounds.y + panelBounds.height - 62.0f,
+			panelBounds.width - 130.0f, 16.0f);
 	}
 	else
 	{
 		chrome.footer = settingsSaveStatus_->text();
-		chrome.footerBounds = UiRect(settingsPanelBounds_.x + 16.0f,
-			settingsPanelBounds_.y + settingsPanelBounds_.height - 58.0f,
-			settingsPanelBounds_.width - 120.0f, 16.0f);
+		const UiRect& panelBounds = settingsPanelView_.panelBounds();
+		chrome.footerBounds = UiRect(panelBounds.x + 16.0f,
+			panelBounds.y + panelBounds.height - 58.0f,
+			panelBounds.width - 120.0f, 16.0f);
 	}
 	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
@@ -1607,8 +1562,8 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 
 void ControlPanel::drawSettingsControl(const UiWidget& widget, const ThemePalette& palette)
 {
-	const ClipBounds clip(settingsContentBounds_.x, settingsContentBounds_.y,
-		settingsContentBounds_.width, settingsContentBounds_.height);
+	const UiRect& contentBounds = settingsPanelView_.contentBounds();
+	const ClipBounds clip(contentBounds.x, contentBounds.y, contentBounds.width, contentBounds.height);
 	if (widget.kind() == UiWidgetKind::Button)
 	{
 		drawWidget(widget, palette, RenderLayer::SettingsControls);
@@ -1961,7 +1916,7 @@ void ControlPanel::closeSettings()
 void ControlPanel::updateOverlayInputCapture()
 {
 	mainUi_.setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
-	settingsPanelView_.controls().setInputCaptured(overlayState_.is(UiOverlayId::Settings));
+	settingsPanelView_.setModalActive(overlayState_.is(UiOverlayId::Settings));
 	appearanceEditorView_.controls().setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
 }
 

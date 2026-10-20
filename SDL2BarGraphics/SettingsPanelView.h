@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "UiArchitecture.h"
 #include "SettingsPanelModel.h"
@@ -44,13 +45,15 @@ public:
 	SettingsAudioGroup audioGroup() const { return model_.audioGroup(); }
 	bool isPage(SettingsPanelPage value) const { return model_.isPage(value); }
 	float scrollOffset() const { return model_.scrollOffset(); }
-	void configureScroll(const UiRect& viewport, float contentExtent, float rowExtent, float requestedOffset);
-	UiRect scrollItemBounds(std::size_t index, float itemExtent) const;
-	bool scrollItemIntersectsViewport(std::size_t index, float itemExtent) const;
 	void selectAudioBand(int index, int bandCount);
 	bool handleNavigation(UiAction::ViewCommand command);
 	bool isScrollablePage() const;
 	bool handleScrollWheel(float x, float y, int wheelDelta);
+	void setPanelBounds(const UiRect& panelBounds, bool modalOpen);
+	void setModalActive(bool active);
+	const UiRect& panelBounds() const { return panelBounds_; }
+	const UiRect& contentBounds() const { return contentBounds_; }
+	void layoutControls(const std::vector<std::string>& activeControlIds, float scrollbarThickness);
 
 	void compose(const SettingsPanelChrome& chrome, const SettingsPanelPalette& palette,
 		UiPaintContext& paintContext) const;
@@ -59,4 +62,6 @@ private:
 	UIRoot controls_;
 	SettingsPanelModel model_;
 	std::map<std::string, std::string> captions_;
+	UiRect panelBounds_;
+	UiRect contentBounds_;
 };

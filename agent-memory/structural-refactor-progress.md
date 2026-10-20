@@ -1464,3 +1464,17 @@ Verification:
 - `git diff --check` passed. Control geometry and paint order did not change; no performance improvement is claimed.
 
 Next: move settings control construction, page layout/visibility, state synchronization, and shared-command paint composition into the view using prepared catalog data; then isolate the main-control root.
+
+## 2026-10-20 — move settings layout and visibility into the view
+
+`SettingsPanelView` now owns settings-panel/content bounds, container and modal bounds, tab/subpage geometry, responsive row placement, active-control visibility, popup placement, and clipped scroll configuration. `ControlPanel` supplies only the active settings control IDs derived from the UI-owned algorithm presentation and the theme scrollbar thickness. The panel container is laid out on screen-layout cache invalidation; cached-frame preparation only updates page control geometry and no longer reissues the container layout.
+
+Added view-level layout assertions for active/inactive widgets, Appearance and General Audio content offsets, audio subpage/retry visibility, and long-list scrolling. Live Computer Use inspection covered Appearance, Algorithm, General Audio Basic and Advanced, and scrolling down to the final Advanced Audio control; the modal tabs and footer stayed fixed.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64/x86 Debug and Release.
+- `AppFrameworkTests` passed in all four configurations.
+- `git diff --check` passed. No performance improvement is claimed; frame/layout cost has not been benchmarked.
+
+Next: move settings control creation and value/enabled-state synchronization behind `SettingsPanelView`, then submit settings tab/content paint through the existing `UiPaintCommand` path.
