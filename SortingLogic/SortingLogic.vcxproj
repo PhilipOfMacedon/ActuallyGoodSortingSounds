@@ -49,6 +49,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="SortingLogic.cpp" />
+    <ClCompile Include="Simulation.cpp" />
     <ClCompile Include="TraceState.cpp" />
     <ClCompile Include="TraceBuildService.cpp" />
   </ItemGroup>

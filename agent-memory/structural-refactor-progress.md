@@ -43,7 +43,7 @@ Verification:
 
 ## 2026-10-19 — isolate trace state and replay
 
-Status: first `SortingLogic` extraction implemented; pending commit.
+Status: first `SortingLogic` extraction committed and pushed as `af1e2c3`.
 
 - Moved `SemanticEvent`, `SortTrace`, and `RenderSnapshot` construction, initial-state creation, comparison, forward/backward event application, state validation, and Shell-gap generation from `SortingLogic.cpp` into `TraceState.cpp`.
 - Added `SortingLogicInternal.h` for invariant helpers shared by the recorder and replay code. The public `SortingLogic.h` API remains unchanged.
@@ -62,3 +62,21 @@ Verification:
 Existing baseline coverage was verified before extraction: `testDistributionAudioBaselines` freezes Counting/Radix trace and eligible-audio event order; `SoundEngineTests` compares PCM bit-for-bit to independent `LegacySoundEngine`; settings tests cover migrations through v8; focused Lazierest tests include the reported 400-item seed. The full-run cost means the broad suite should be decomposed into reusable focused contracts before it is used as the only regression gate.
 
 Next: extract Simulation and input-generation ownership behind the existing facade, then split catalog/build routing and algorithm family strategies. Keep baselines fixed and run focused tests for each moved boundary.
+
+## 2026-10-19 — isolate simulation and prepared input
+
+Status: Simulation/input extraction implemented; pending commit.
+
+- Moved seed creation, prepared input generation, baseline presets, configuration commands, trace build lifecycle, playback/seek, active-role projection, and snapshots into `Simulation.cpp`.
+- Kept the `Simulation` type and public API in `SortingLogic.h`. The move uses existing public `SortingLogic` contracts for replay, compatibility, and catalog metadata; no new cross-module public API was introduced.
+- Verified the moved method block matches the pre-extraction source after newline normalization (with only the new file's closing whitespace outside the compared block).
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 8,218 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- Release LNK4020 PDB type-record warnings appeared again while linking `AppFrameworkTests`; linking and tests succeeded.
+- No sound, settings, algorithms, event payloads, or trace order were changed.
+
+Next: separate trace request validation/dispatch from recording, then create the private recorder boundary needed to move algorithm families without turning internal mutation helpers into public API.
