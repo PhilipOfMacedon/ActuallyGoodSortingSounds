@@ -10307,7 +10307,10 @@ namespace sortinglogic
 			}
 		}
 
-		SortTrace buildSelectedAlgorithm(const TraceBuildRequest& request, SortAlgorithm algorithm)
+		typedef void (*AlgorithmStrategy)(Recorder&);
+
+		SortTrace buildSelectedAlgorithm(const TraceBuildRequest& request, SortAlgorithm algorithm,
+			AlgorithmStrategy strategy = nullptr)
 		{
 			std::unique_ptr<Recorder> recorderStorage;
 			try
@@ -10333,14 +10336,9 @@ namespace sortinglogic
 			Recorder& recorder = *recorderStorage;
 			try
 			{
-				switch (algorithm)
+				if (strategy != nullptr) strategy(recorder);
+				else switch (algorithm)
 				{
-				case SortAlgorithm::Insertion: strategies::insertion(recorder); break;
-				case SortAlgorithm::Bubble: strategies::bubble(recorder); break;
-				case SortAlgorithm::Selection: strategies::selection(recorder); break;
-				case SortAlgorithm::ArrayvBingo: strategies::bingo(recorder); break;
-				case SortAlgorithm::ArrayvDoubleSelection: strategies::doubleSelection(recorder); break;
-				case SortAlgorithm::ArrayvStableSelection: strategies::stableSelection(recorder); break;
 				case SortAlgorithm::ArrayvBadSort: badSort(recorder); break;
 				case SortAlgorithm::ArrayvAsynchronous: asynchronousSort(recorder); break;
 				case SortAlgorithm::ArrayvPDMerge: pdMergeSort(recorder); break;
@@ -10442,10 +10440,6 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvPoplarHeap: poplarHeapSort(recorder); break;
 				case SortAlgorithm::Counting: counting(recorder); break;
 			case SortAlgorithm::Radix: radix(recorder); break;
-			case SortAlgorithm::Gnome: strategies::gnome(recorder); break;
-			case SortAlgorithm::Cocktail: strategies::cocktail(recorder); break;
-			case SortAlgorithm::Comb: strategies::comb(recorder); break;
-			case SortAlgorithm::OddEven: strategies::oddEven(recorder); break;
 			case SortAlgorithm::Pancake: pancake(recorder); break;
 			case SortAlgorithm::ArrayvBurntPancake: arrayvBurntPancake(recorder); break;
 			case SortAlgorithm::CanonicalBurntPancake: canonicalBurntPancake(recorder); break;
@@ -10478,42 +10472,12 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvTernaryLRQuick: ternaryQuickSort(recorder, false); break;
 				case SortAlgorithm::ArrayvStablePermutation: stablePermutationSort(recorder); break;
 				case SortAlgorithm::ArrayvTable: tableSort(recorder); break;
-				case SortAlgorithm::ArrayvOptimizedBubble: strategies::optimizedBubble(recorder); break;
 				case SortAlgorithm::ArrayvHybridComb: hybridComb(recorder); break;
-				case SortAlgorithm::ArrayvUnoptimizedBubble: strategies::unoptimizedBubble(recorder); break;
-			case SortAlgorithm::ArrayvSwaplessBubble: strategies::swaplessBubble(recorder); break;
 				case SortAlgorithm::ArrayvBinaryGnome: binaryGnome(recorder); break;
 				case SortAlgorithm::ArrayvCircleIterative: circleSort(recorder, false); break;
 				case SortAlgorithm::ArrayvCircleRecursive: circleSort(recorder, true); break;
 				case SortAlgorithm::ArrayvIntroCircleIterative: introCircleSort(recorder, false); break;
 				case SortAlgorithm::ArrayvIntroCircleRecursive: introCircleSort(recorder, true); break;
-				case SortAlgorithm::ArrayvClassicThreeSmoothComb: strategies::classicThreeSmoothComb(recorder); break;
-				case SortAlgorithm::ArrayvThreeSmoothCombIterative: strategies::threeSmoothCombIterative(recorder); break;
-				case SortAlgorithm::ArrayvThreeSmoothCombRecursive: strategies::recursiveThreeSmooth(recorder, false); break;
-				case SortAlgorithm::ArrayvThreeSmoothCombParallel: strategies::recursiveThreeSmooth(recorder, true); break;
-				case SortAlgorithm::ArrayvBitonicIterative: strategies::bitonicIterative(recorder); break;
-				case SortAlgorithm::ArrayvBitonicRecursive: strategies::bitonicRecursiveSort(recorder, 0, recorder.state.slots.size(), true); break;
-				case SortAlgorithm::ArrayvBitonicParallel: strategies::bitonicParallel(recorder); break;
-				case SortAlgorithm::ArrayvBoseNelsonIterative: strategies::boseNelsonIterative(recorder); break;
-				case SortAlgorithm::ArrayvBoseNelsonRecursive: strategies::boseNelsonSortRecursive(recorder, 0, recorder.state.slots.size(), false); break;
-				case SortAlgorithm::ArrayvBoseNelsonParallel: strategies::boseNelsonSortRecursive(recorder, 0, recorder.state.slots.size(), true); break;
-				case SortAlgorithm::ArrayvOddEvenMergeIterative: strategies::oddEvenMergeIterative(recorder); break;
-				case SortAlgorithm::ArrayvOddEvenMergeRecursive: strategies::oddEvenMergeRecursive(recorder, false); break;
-				case SortAlgorithm::ArrayvOddEvenMergeParallel: strategies::oddEvenMergeRecursive(recorder, true); break;
-				case SortAlgorithm::ArrayvDiamondIterative: strategies::diamondIterative(recorder); break;
-				case SortAlgorithm::ArrayvDiamondRecursive: strategies::diamondRecursiveVariant(recorder); break;
-				case SortAlgorithm::ArrayvPairwiseIterative: strategies::pairwiseIterative(recorder); break;
-				case SortAlgorithm::ArrayvPairwiseRecursive: strategies::pairwiseRecursive(recorder, 0, recorder.state.slots.size(), 1); break;
-				case SortAlgorithm::ArrayvCrease: strategies::creaseSort(recorder); break;
-				case SortAlgorithm::ArrayvFold: strategies::foldSort(recorder); break;
-				case SortAlgorithm::ArrayvMergeExchangeIterative: strategies::mergeExchangeIterative(recorder); break;
-				case SortAlgorithm::ArrayvPairwiseMergeIterative: strategies::pairwiseMergeIterative(recorder); break;
-				case SortAlgorithm::ArrayvPairwiseMergeRecursive:
-					strategies::pairwiseMergeSort(recorder); break;
-				case SortAlgorithm::ArrayvWeaveIterative: strategies::weaveIterative(recorder); break;
-				case SortAlgorithm::ArrayvWeaveParallel: strategies::weaveParallel(recorder); break;
-				case SortAlgorithm::ArrayvWeaveRecursive: strategies::weaveRecursive(recorder); break;
-				case SortAlgorithm::ArrayvMatrix: strategies::matrixSort(recorder); break;
 				case SortAlgorithm::ArrayvOptimizedStooge: optimizedStooge(recorder); break;
 				case SortAlgorithm::ArrayvOptimizedStoogeStudio: optimizedStoogeStudio(recorder); break;
 				case SortAlgorithm::ArrayvQuadStooge: quadStooge(recorder); break;
@@ -10523,8 +10487,6 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvSnuffle: snuffleSort(recorder); break;
 				case SortAlgorithm::ArrayvCompleteGraph: completeGraphSort(recorder); break;
 				case SortAlgorithm::ArrayvFun: funSort(recorder); break;
-				case SortAlgorithm::ArrayvOptimizedCocktail: strategies::optimizedCocktail(recorder); break;
-				case SortAlgorithm::ArrayvUnoptimizedCocktail: strategies::unoptimizedCocktail(recorder); break;
 				case SortAlgorithm::ArrayvOptimizedGnome: optimizedGnome(recorder); break;
 				case SortAlgorithm::ArrayvShove: shove(recorder); break;
 				case SortAlgorithm::ArrayvSlope: slope(recorder); break;
@@ -10579,12 +10541,14 @@ namespace sortinglogic
 
 #define SORT_REQUEST_BUILDER(name, id) \
 		SortTrace name(const TraceBuildRequest& request) { return buildSelectedAlgorithm(request, SortAlgorithm::id); }
-		SORT_REQUEST_BUILDER(buildInsertionRequest, Insertion)
-		SORT_REQUEST_BUILDER(buildBubbleRequest, Bubble)
-		SORT_REQUEST_BUILDER(buildSelectionRequest, Selection)
-		SORT_REQUEST_BUILDER(buildArrayvBingoRequest, ArrayvBingo)
-		SORT_REQUEST_BUILDER(buildArrayvDoubleSelectionRequest, ArrayvDoubleSelection)
-		SORT_REQUEST_BUILDER(buildArrayvStableSelectionRequest, ArrayvStableSelection)
+#define SORT_STRATEGY_REQUEST_BUILDER(name, id, strategy) \
+		SortTrace name(const TraceBuildRequest& request) { return buildSelectedAlgorithm(request, SortAlgorithm::id, strategy); }
+		SORT_STRATEGY_REQUEST_BUILDER(buildInsertionRequest, Insertion, &strategies::insertion)
+		SORT_STRATEGY_REQUEST_BUILDER(buildBubbleRequest, Bubble, &strategies::bubble)
+		SORT_STRATEGY_REQUEST_BUILDER(buildSelectionRequest, Selection, &strategies::selection)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBingoRequest, ArrayvBingo, &strategies::bingo)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvDoubleSelectionRequest, ArrayvDoubleSelection, &strategies::doubleSelection)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvStableSelectionRequest, ArrayvStableSelection, &strategies::stableSelection)
 		SORT_REQUEST_BUILDER(buildArrayvBadSortRequest, ArrayvBadSort)
 		SORT_REQUEST_BUILDER(buildArrayvAsynchronousRequest, ArrayvAsynchronous)
 		SORT_REQUEST_BUILDER(buildArrayvPDMergeRequest, ArrayvPDMerge)
@@ -10671,10 +10635,10 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvPoplarHeapRequest, ArrayvPoplarHeap)
 		SORT_REQUEST_BUILDER(buildCountingRequest, Counting)
 		SORT_REQUEST_BUILDER(buildRadixRequest, Radix)
-		SORT_REQUEST_BUILDER(buildGnomeRequest, Gnome)
-		SORT_REQUEST_BUILDER(buildCocktailRequest, Cocktail)
-		SORT_REQUEST_BUILDER(buildCombRequest, Comb)
-		SORT_REQUEST_BUILDER(buildOddEvenRequest, OddEven)
+		SORT_STRATEGY_REQUEST_BUILDER(buildGnomeRequest, Gnome, &strategies::gnome)
+		SORT_STRATEGY_REQUEST_BUILDER(buildCocktailRequest, Cocktail, &strategies::cocktail)
+		SORT_STRATEGY_REQUEST_BUILDER(buildCombRequest, Comb, &strategies::comb)
+		SORT_STRATEGY_REQUEST_BUILDER(buildOddEvenRequest, OddEven, &strategies::oddEven)
 		SORT_REQUEST_BUILDER(buildPancakeRequest, Pancake)
 		SORT_REQUEST_BUILDER(buildArrayvBurntPancakeRequest, ArrayvBurntPancake)
 		SORT_REQUEST_BUILDER(buildCanonicalBurntPancakeRequest, CanonicalBurntPancake)
@@ -10721,41 +10685,41 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvCocktailMergeRequest, ArrayvCocktailMerge)
 		SORT_REQUEST_BUILDER(buildArrayvImprovedInPlaceMergeRequest, ArrayvImprovedInPlaceMerge)
 		SORT_REQUEST_BUILDER(buildArrayvOptimizedBottomUpMergeRequest, ArrayvOptimizedBottomUpMerge)
-		SORT_REQUEST_BUILDER(buildArrayvOptimizedBubbleRequest, ArrayvOptimizedBubble)
-		SORT_REQUEST_BUILDER(buildArrayvUnoptimizedBubbleRequest, ArrayvUnoptimizedBubble)
-		SORT_REQUEST_BUILDER(buildArrayvSwaplessBubbleRequest, ArrayvSwaplessBubble)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOptimizedBubbleRequest, ArrayvOptimizedBubble, &strategies::optimizedBubble)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvUnoptimizedBubbleRequest, ArrayvUnoptimizedBubble, &strategies::unoptimizedBubble)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvSwaplessBubbleRequest, ArrayvSwaplessBubble, &strategies::swaplessBubble)
 		SORT_REQUEST_BUILDER(buildArrayvBinaryGnomeRequest, ArrayvBinaryGnome)
 		SORT_REQUEST_BUILDER(buildArrayvCircleIterativeRequest, ArrayvCircleIterative)
 		SORT_REQUEST_BUILDER(buildArrayvCircleRecursiveRequest, ArrayvCircleRecursive)
 		SORT_REQUEST_BUILDER(buildArrayvIntroCircleIterativeRequest, ArrayvIntroCircleIterative)
 		SORT_REQUEST_BUILDER(buildArrayvIntroCircleRecursiveRequest, ArrayvIntroCircleRecursive)
 		SORT_REQUEST_BUILDER(buildArrayvHybridCombRequest, ArrayvHybridComb)
-		SORT_REQUEST_BUILDER(buildArrayvClassicThreeSmoothCombRequest, ArrayvClassicThreeSmoothComb)
-		SORT_REQUEST_BUILDER(buildArrayvThreeSmoothCombIterativeRequest, ArrayvThreeSmoothCombIterative)
-		SORT_REQUEST_BUILDER(buildArrayvThreeSmoothCombRecursiveRequest, ArrayvThreeSmoothCombRecursive)
-		SORT_REQUEST_BUILDER(buildArrayvThreeSmoothCombParallelRequest, ArrayvThreeSmoothCombParallel)
-		SORT_REQUEST_BUILDER(buildArrayvBitonicIterativeRequest, ArrayvBitonicIterative)
-		SORT_REQUEST_BUILDER(buildArrayvBitonicRecursiveRequest, ArrayvBitonicRecursive)
-		SORT_REQUEST_BUILDER(buildArrayvBitonicParallelRequest, ArrayvBitonicParallel)
-		SORT_REQUEST_BUILDER(buildArrayvBoseNelsonIterativeRequest, ArrayvBoseNelsonIterative)
-		SORT_REQUEST_BUILDER(buildArrayvBoseNelsonRecursiveRequest, ArrayvBoseNelsonRecursive)
-		SORT_REQUEST_BUILDER(buildArrayvBoseNelsonParallelRequest, ArrayvBoseNelsonParallel)
-		SORT_REQUEST_BUILDER(buildArrayvOddEvenMergeIterativeRequest, ArrayvOddEvenMergeIterative)
-		SORT_REQUEST_BUILDER(buildArrayvOddEvenMergeRecursiveRequest, ArrayvOddEvenMergeRecursive)
-		SORT_REQUEST_BUILDER(buildArrayvOddEvenMergeParallelRequest, ArrayvOddEvenMergeParallel)
-		SORT_REQUEST_BUILDER(buildArrayvDiamondIterativeRequest, ArrayvDiamondIterative)
-		SORT_REQUEST_BUILDER(buildArrayvDiamondRecursiveRequest, ArrayvDiamondRecursive)
-		SORT_REQUEST_BUILDER(buildArrayvPairwiseIterativeRequest, ArrayvPairwiseIterative)
-		SORT_REQUEST_BUILDER(buildArrayvPairwiseRecursiveRequest, ArrayvPairwiseRecursive)
-		SORT_REQUEST_BUILDER(buildArrayvCreaseRequest, ArrayvCrease)
-		SORT_REQUEST_BUILDER(buildArrayvFoldRequest, ArrayvFold)
-		SORT_REQUEST_BUILDER(buildArrayvMergeExchangeIterativeRequest, ArrayvMergeExchangeIterative)
-		SORT_REQUEST_BUILDER(buildArrayvPairwiseMergeIterativeRequest, ArrayvPairwiseMergeIterative)
-		SORT_REQUEST_BUILDER(buildArrayvPairwiseMergeRecursiveRequest, ArrayvPairwiseMergeRecursive)
-		SORT_REQUEST_BUILDER(buildArrayvWeaveIterativeRequest, ArrayvWeaveIterative)
-		SORT_REQUEST_BUILDER(buildArrayvWeaveParallelRequest, ArrayvWeaveParallel)
-		SORT_REQUEST_BUILDER(buildArrayvWeaveRecursiveRequest, ArrayvWeaveRecursive)
-		SORT_REQUEST_BUILDER(buildArrayvMatrixRequest, ArrayvMatrix)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvClassicThreeSmoothCombRequest, ArrayvClassicThreeSmoothComb, &strategies::classicThreeSmoothComb)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvThreeSmoothCombIterativeRequest, ArrayvThreeSmoothCombIterative, &strategies::threeSmoothCombIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvThreeSmoothCombRecursiveRequest, ArrayvThreeSmoothCombRecursive, &strategies::recursiveThreeSmoothSequential)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvThreeSmoothCombParallelRequest, ArrayvThreeSmoothCombParallel, &strategies::recursiveThreeSmoothParallel)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBitonicIterativeRequest, ArrayvBitonicIterative, &strategies::bitonicIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBitonicRecursiveRequest, ArrayvBitonicRecursive, &strategies::bitonicRecursive)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBitonicParallelRequest, ArrayvBitonicParallel, &strategies::bitonicParallel)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBoseNelsonIterativeRequest, ArrayvBoseNelsonIterative, &strategies::boseNelsonIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBoseNelsonRecursiveRequest, ArrayvBoseNelsonRecursive, &strategies::boseNelsonRecursive)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBoseNelsonParallelRequest, ArrayvBoseNelsonParallel, &strategies::boseNelsonParallel)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOddEvenMergeIterativeRequest, ArrayvOddEvenMergeIterative, &strategies::oddEvenMergeIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOddEvenMergeRecursiveRequest, ArrayvOddEvenMergeRecursive, &strategies::oddEvenMergeRecursiveDefault)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOddEvenMergeParallelRequest, ArrayvOddEvenMergeParallel, &strategies::oddEvenMergeParallel)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvDiamondIterativeRequest, ArrayvDiamondIterative, &strategies::diamondIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvDiamondRecursiveRequest, ArrayvDiamondRecursive, &strategies::diamondRecursiveVariant)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvPairwiseIterativeRequest, ArrayvPairwiseIterative, &strategies::pairwiseIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvPairwiseRecursiveRequest, ArrayvPairwiseRecursive, &strategies::pairwiseRecursiveDefault)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvCreaseRequest, ArrayvCrease, &strategies::creaseSort)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvFoldRequest, ArrayvFold, &strategies::foldSort)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvMergeExchangeIterativeRequest, ArrayvMergeExchangeIterative, &strategies::mergeExchangeIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvPairwiseMergeIterativeRequest, ArrayvPairwiseMergeIterative, &strategies::pairwiseMergeIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvPairwiseMergeRecursiveRequest, ArrayvPairwiseMergeRecursive, &strategies::pairwiseMergeSort)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvWeaveIterativeRequest, ArrayvWeaveIterative, &strategies::weaveIterative)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvWeaveParallelRequest, ArrayvWeaveParallel, &strategies::weaveParallel)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvWeaveRecursiveRequest, ArrayvWeaveRecursive, &strategies::weaveRecursive)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvMatrixRequest, ArrayvMatrix, &strategies::matrixSort)
 		SORT_REQUEST_BUILDER(buildArrayvOptimizedStoogeRequest, ArrayvOptimizedStooge)
 		SORT_REQUEST_BUILDER(buildArrayvOptimizedStoogeStudioRequest, ArrayvOptimizedStoogeStudio)
 		SORT_REQUEST_BUILDER(buildArrayvQuadStoogeRequest, ArrayvQuadStooge)
@@ -10765,8 +10729,8 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvSnuffleRequest, ArrayvSnuffle)
 		SORT_REQUEST_BUILDER(buildArrayvCompleteGraphRequest, ArrayvCompleteGraph)
 		SORT_REQUEST_BUILDER(buildArrayvFunRequest, ArrayvFun)
-		SORT_REQUEST_BUILDER(buildArrayvOptimizedCocktailRequest, ArrayvOptimizedCocktail)
-		SORT_REQUEST_BUILDER(buildArrayvUnoptimizedCocktailRequest, ArrayvUnoptimizedCocktail)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOptimizedCocktailRequest, ArrayvOptimizedCocktail, &strategies::optimizedCocktail)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvUnoptimizedCocktailRequest, ArrayvUnoptimizedCocktail, &strategies::unoptimizedCocktail)
 		SORT_REQUEST_BUILDER(buildArrayvOptimizedGnomeRequest, ArrayvOptimizedGnome)
 		SORT_REQUEST_BUILDER(buildArrayvShoveRequest, ArrayvShove)
 		SORT_REQUEST_BUILDER(buildArrayvSlopeRequest, ArrayvSlope)
@@ -10791,6 +10755,7 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvStacklessAmericanFlagRequest, ArrayvStacklessAmericanFlag)
 		SORT_REQUEST_BUILDER(buildArrayvStacklessBinaryQuickRequest, ArrayvStacklessBinaryQuick)
 #undef SORT_REQUEST_BUILDER
+#undef SORT_STRATEGY_REQUEST_BUILDER
 	}
 
 	const std::vector<AlgorithmDescriptor>& algorithmCatalog()

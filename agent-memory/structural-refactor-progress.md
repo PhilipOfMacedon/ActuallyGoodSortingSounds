@@ -155,7 +155,7 @@ Next: continue extracting cohesive algorithm families, then replace the growing 
 
 ## 2026-10-19 — isolate sorting-network strategies
 
-Status: implementation and focused verification complete; pending commit.
+Status: committed and pushed as `eeebd5f`.
 
 - Moved the compare-exchange helpers, deterministic layer scheduling, recursive kernels, and network strategy bodies into `SortingNetworkStrategies.cpp`.
 - Routed the 26 catalog entries for 3-smooth comb, Bitonic, Bose–Nelson, Odd-Even Merge, Diamond, Pairwise, Crease, Fold, Merge-Exchange, Pairwise Merge, Weave, and Matrix strategies through the private strategy interface.
@@ -171,4 +171,25 @@ Verification:
 - Release `AppFrameworkTests` linking emitted the existing LNK4020 PDB type-record warnings; link and execution succeeded.
 - No sound synthesis, event semantics, catalog metadata, or settings behavior changed.
 
-Next: extract a similarly cohesive family module with focused replay coverage, then start reducing algorithm dispatch and catalog construction coupling.
+Next: continue migrating catalog entries to direct strategy registrations and reduce algorithm dispatch and catalog construction coupling.
+
+## 2026-10-19 — register extracted strategies directly
+
+Status: implementation and focused verification complete; pending commit.
+
+- Added a strategy-function path to the common trace-build harness. It still owns recorder construction, budget failures, finalization, trace validation, and audio-event indexing.
+- Pointed the extracted insertion, elementary exchange/selection, and sorting-network catalog builders directly at their strategy functions instead of redispatching through the algorithm switch. The switch remains the compatibility route for strategies not yet extracted.
+- Moved network-specific variant adapters—recursive/parallel schedules and padded pairwise-merge setup—into `SortingNetworkStrategies.cpp`, so the central build path does not encode those algorithm choices.
+- Added small exhaustive replay cases for the direct 3-Smooth and Matrix registrations, completing direct-path verification for the network group. Existing contracts cover the remaining network variants and elementary methods.
+- Kept the catalog's stable IDs, descriptor ordering, public builder signatures, and request defaults unchanged.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 16,740 checks with 0 failures.
+- Debug and Release catalog-coverage runs: each passed 1,678 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- The final Release rebuild completed its full link-time code generation after an IPDB/IOBJ cache mismatch; all targets linked. Earlier incremental builds have emitted LNK4020 PDB warnings, while the final rebuild did not.
+- The direct strategy path did not change trace events, phase schedules, Counting/Radix baselines, audio eligibility, or settings behavior.
+
+Next: continue extracting and directly registering cohesive algorithm groups, then move catalog metadata and run configuration behind smaller private modules.

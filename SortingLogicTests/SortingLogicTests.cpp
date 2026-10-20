@@ -4957,6 +4957,20 @@ int main(int argc, char* argv[])
 				verifyAlgorithmCase("Elementary " + label + " ascending", input, profile, algorithm, SortDirection::Ascending, domain);
 				verifyAlgorithmCase("Elementary " + label + " descending", input, profile, algorithm, SortDirection::Descending, domain);
 			}
+			const SortAlgorithm remainingNetworkStrategies[] = {
+				SortAlgorithm::ArrayvClassicThreeSmoothComb, SortAlgorithm::ArrayvThreeSmoothCombIterative,
+				SortAlgorithm::ArrayvThreeSmoothCombRecursive, SortAlgorithm::ArrayvThreeSmoothCombParallel,
+				SortAlgorithm::ArrayvMatrix
+			};
+			const std::vector<SortItem> networkInput = integers(std::vector<int>{ 9, 1, 7, 3, 8, 2, 5, 0, 6, 4, 4 });
+			for (std::size_t algorithmIndex = 0; algorithmIndex < sizeof(remainingNetworkStrategies) / sizeof(remainingNetworkStrategies[0]); ++algorithmIndex)
+				for (int directionIndex = 0; directionIndex < 2; ++directionIndex)
+				{
+					const SortAlgorithm algorithm = remainingNetworkStrategies[algorithmIndex];
+					const SortDirection direction = directionIndex == 0 ? SortDirection::Ascending : SortDirection::Descending;
+					verifyAlgorithmCase(std::string("Extracted ") + algorithmDisplayName(algorithm), networkInput, InputProfile::IntegerKeys,
+						algorithm, direction, InputDomain::NonnegativeIntegerKeys);
+				}
 			stage = "testDistributionAudioBaselines";
 			testDistributionAudioBaselines();
 			stage = "testBurntPancakeOrientation";

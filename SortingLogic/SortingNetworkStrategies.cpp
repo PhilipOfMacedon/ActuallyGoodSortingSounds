@@ -1002,21 +1002,33 @@ namespace sortinglogic
 		void classicThreeSmoothComb(detail::Recorder& recorder) { sortinglogic::classicThreeSmoothComb(recorder); }
 		void threeSmoothCombIterative(detail::Recorder& recorder) { sortinglogic::threeSmoothCombIterative(recorder); }
 		void recursiveThreeSmooth(detail::Recorder& recorder, bool parallel) { sortinglogic::recursiveThreeSmooth(recorder, parallel); }
+		void recursiveThreeSmoothSequential(detail::Recorder& recorder) { recursiveThreeSmooth(recorder, false); }
+		void recursiveThreeSmoothParallel(detail::Recorder& recorder) { recursiveThreeSmooth(recorder, true); }
 		void bitonicIterative(detail::Recorder& recorder) { sortinglogic::bitonicIterative(recorder); }
 		void bitonicRecursiveSort(detail::Recorder& recorder, std::size_t first, std::size_t length, bool ascendingLayer)
 		{ sortinglogic::bitonicRecursiveSort(recorder, first, length, ascendingLayer); }
+		void bitonicRecursive(detail::Recorder& recorder)
+		{ bitonicRecursiveSort(recorder, 0, recorder.state.slots.size(), true); }
 		void bitonicParallel(detail::Recorder& recorder) { sortinglogic::bitonicParallel(recorder); }
 		void boseNelsonIterative(detail::Recorder& recorder) { sortinglogic::boseNelsonIterative(recorder); }
 		void boseNelsonSortRecursive(detail::Recorder& recorder, std::size_t first, std::size_t length, bool parallelSchedule)
 		{ sortinglogic::boseNelsonSortRecursive(recorder, first, length, parallelSchedule); }
+		void boseNelsonRecursive(detail::Recorder& recorder)
+		{ boseNelsonSortRecursive(recorder, 0, recorder.state.slots.size(), false); }
+		void boseNelsonParallel(detail::Recorder& recorder)
+		{ boseNelsonSortRecursive(recorder, 0, recorder.state.slots.size(), true); }
 		void oddEvenMergeIterative(detail::Recorder& recorder) { sortinglogic::oddEvenMergeIterative(recorder); }
 		void oddEvenMergeRecursive(detail::Recorder& recorder, bool parallelSchedule)
 		{ sortinglogic::oddEvenMergeRecursive(recorder, parallelSchedule); }
+		void oddEvenMergeRecursiveDefault(detail::Recorder& recorder) { oddEvenMergeRecursive(recorder, false); }
+		void oddEvenMergeParallel(detail::Recorder& recorder) { oddEvenMergeRecursive(recorder, true); }
 		void diamondIterative(detail::Recorder& recorder) { sortinglogic::diamondIterative(recorder); }
 		void diamondRecursiveVariant(detail::Recorder& recorder) { sortinglogic::diamondRecursiveVariant(recorder); }
 		void pairwiseIterative(detail::Recorder& recorder) { sortinglogic::pairwiseIterative(recorder); }
 		void pairwiseRecursive(detail::Recorder& recorder, std::size_t first, std::size_t end, std::size_t gap)
 		{ sortinglogic::pairwiseRecursive(recorder, first, end, gap); }
+		void pairwiseRecursiveDefault(detail::Recorder& recorder)
+		{ pairwiseRecursive(recorder, 0, recorder.state.slots.size(), 1); }
 		void creaseSort(detail::Recorder& recorder) { sortinglogic::creaseSort(recorder); }
 		void foldSort(detail::Recorder& recorder) { sortinglogic::foldSort(recorder); }
 		void mergeExchangeIterative(detail::Recorder& recorder) { sortinglogic::mergeExchangeIterative(recorder); }
