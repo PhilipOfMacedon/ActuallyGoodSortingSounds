@@ -478,7 +478,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
 	inlineEditWidgetId_(), inlineEditBuffer_(), inlineEditReplaceOnNextDigit_(false), inlineEditAppearanceValue_(false),
 	appearanceDraft_(settings.appearance), appearanceEditingPreset_(settings.appearance.activePreset), appearanceSearch_(),
-	appearanceCategoryFilter_(0), selectedAppearanceToken_(), filteredAppearanceTokens_(), appearanceError_(), appearancePanelBounds_(), appearanceColorSwatchBounds_(),
+	appearanceCategoryFilter_(0), selectedAppearanceToken_(), filteredAppearanceTokens_(), appearanceError_(), appearanceLayout_(),
 	appearanceEditorTitle_(new TextLabel("Appearance customization", "Courier New Bold", 18, { 255, 255, 255, 255 })),
 	appearanceTokenDescription_(new TextLabel("", "Courier New Bold", 13, { 255, 255, 255, 255 })),
 	appearanceStatus_(new TextLabel("", "Courier New Bold", 12, { 255, 255, 255, 255 }))
@@ -813,6 +813,7 @@ void ControlPanel::updateLayout()
 	layoutAlgorithmMenu();
 	layoutSettingsControls();
 	layoutMainComboPopups();
+	if (appearanceEditorOpen_) layoutAppearanceEditor();
 }
 
 void ControlPanel::layoutMainComboPopups()
@@ -2769,61 +2770,24 @@ void ControlPanel::updateAppearanceEditorControls()
 void ControlPanel::layoutAppearanceEditor()
 {
 	if (!appearanceEditorOpen_ || width_ <= 0 || height_ <= 0) return;
-	const float margin = 12.0f;
-	const float panelWidth = std::min(880.0f, std::max(1.0f, static_cast<float>(width_) - margin * 2.0f));
-	const float panelHeight = std::min(660.0f, std::max(1.0f, static_cast<float>(height_) - margin * 2.0f));
-	appearancePanelBounds_ = UiRect((static_cast<float>(width_) - panelWidth) * 0.5f,
-		(static_cast<float>(height_) - panelHeight) * 0.5f, panelWidth, panelHeight);
-	const float left = appearancePanelBounds_.x + 18.0f;
-	const float contentWidth = std::max(1.0f, appearancePanelBounds_.width - 36.0f);
-	const float scale = std::min(1.0f, panelHeight / 660.0f);
-	const float gap = 8.0f * scale;
-	const float row = 30.0f * scale;
-	const float top = appearancePanelBounds_.y + 58.0f * scale;
-	const float half = std::max(1.0f, (contentWidth - gap) * 0.5f);
-	appearanceUi_.find("appearance_preset")->setBounds(UiRect(left, top, half, row));
-	appearanceUi_.find("appearance_palette")->setBounds(UiRect(left + half + gap, top, half, row));
-	const float filterY = top + row + 8.0f * scale;
-	appearanceUi_.find("appearance_category")->setBounds(UiRect(left, filterY, half, row));
-	appearanceUi_.find("appearance_search")->setBounds(UiRect(left + half + gap, filterY, half, row));
-	appearanceUi_.find("appearance_token")->setBounds(UiRect(left, filterY + row + 8.0f * scale, contentWidth, row));
-	const float propertyY = appearancePanelBounds_.y + 210.0f * scale;
-	appearanceColorSwatchBounds_ = UiRect(left, propertyY, contentWidth, 42.0f * scale);
-	const float propertyButton = std::min(54.0f, half);
-	appearanceUi_.find("appearance_value_down")->setBounds(UiRect(left, propertyY, propertyButton, row));
-	appearanceUi_.find("appearance_value")->setBounds(UiRect(left + propertyButton + gap, propertyY,
-		std::max(1.0f, contentWidth - 2.0f * (propertyButton + gap)), row));
-	appearanceUi_.find("appearance_value_up")->setBounds(UiRect(left + contentWidth - propertyButton, propertyY, propertyButton, row));
-	appearanceUi_.find("appearance_value_slider")->setBounds(UiRect(left, propertyY + row + gap, contentWidth, 42.0f * scale));
-	const float colorActionsY = propertyY + 50.0f * scale;
-	appearanceUi_.find("appearance_color")->setBounds(UiRect(left, colorActionsY, half, row));
-	appearanceUi_.find("appearance_color_alpha")->setBounds(UiRect(left + half + gap, colorActionsY, half, row));
-	const float colorSliderY = colorActionsY + row + 8.0f * scale;
-	const char* colorSliderIds[] = { "appearance_color_r", "appearance_color_g", "appearance_color_b", "appearance_color_a" };
-	for (std::size_t i = 0; i < sizeof(colorSliderIds) / sizeof(colorSliderIds[0]); ++i)
-		appearanceUi_.find(colorSliderIds[i])->setBounds(UiRect(left, colorSliderY + static_cast<float>(i) * 42.0f * scale,
-			contentWidth, 40.0f * scale));
-	appearanceUi_.find("appearance_boolean")->setBounds(UiRect(left, propertyY, contentWidth, row));
-	appearanceUi_.find("appearance_choice")->setBounds(UiRect(left, propertyY, contentWidth, row));
-	appearanceUi_.find("appearance_font_family")->setBounds(UiRect(left, propertyY, contentWidth, row));
-	appearanceUi_.find("appearance_font_style")->setBounds(UiRect(left, propertyY + row + gap, contentWidth, row));
-	const float bottomY = appearancePanelBounds_.y + panelHeight - 40.0f * scale;
-	const float actionsY = bottomY - 2.0f * row - 2.0f * gap;
-	appearanceUi_.find("appearance_reset_token")->setBounds(UiRect(left, actionsY, half, row));
-	appearanceUi_.find("appearance_reset_theme")->setBounds(UiRect(left + half + gap, actionsY, half, row));
-	appearanceUi_.find("appearance_import")->setBounds(UiRect(left, actionsY + row + gap, half, row));
-	appearanceUi_.find("appearance_export")->setBounds(UiRect(left + half + gap, actionsY + row + gap, half, row));
-	appearanceUi_.find("appearance_cancel")->setBounds(UiRect(left, bottomY, half, row));
-	appearanceUi_.find("appearance_apply")->setBounds(UiRect(left + half + gap, bottomY, half, row));
+	appearanceLayout_ = calculateAppearanceEditorLayout(static_cast<float>(width_), static_cast<float>(height_));
+	if (!appearanceLayout_.valid) return;
+	for (std::map<std::string, UiRect>::const_iterator control = appearanceLayout_.controls.begin();
+		control != appearanceLayout_.controls.end(); ++control)
+	{
+		UiWidget* widget = appearanceUi_.find(control->first);
+		if (widget) widget->setBounds(control->second);
+	}
 	const char* popupIds[] = { "appearance_category", "appearance_token", "appearance_choice", "appearance_font_family", "appearance_font_style" };
 	for (std::size_t i = 0; i < sizeof(popupIds) / sizeof(popupIds[0]); ++i)
 	{
 		UiWidget* widget = appearanceUi_.find(popupIds[i]);
 		if (widget)
 			widget->setPopupAbove(widget->bounds().y + widget->bounds().height *
-				(static_cast<float>(widget->visibleOptionCount()) + 1.0f) > appearancePanelBounds_.y + appearancePanelBounds_.height - 8.0f);
+				(static_cast<float>(widget->visibleOptionCount()) + 1.0f) >
+				appearanceLayout_.panelBounds.y + appearanceLayout_.panelBounds.height - 8.0f);
 	}
-	appearanceUi_.setModalBounds(appearancePanelBounds_, UiAction::ViewCommand::CloseAppearanceEditor);
+	appearanceUi_.setModalBounds(appearanceLayout_.panelBounds, UiAction::ViewCommand::CloseAppearanceEditor);
 }
 
 void ControlPanel::drawAppearanceEditor()
@@ -2833,38 +2797,33 @@ void ControlPanel::drawAppearanceEditor()
 	const ThemePalette readable = paletteForAppearance(preset,
 		defaultUiThemeCustomization(preset, PaletteId::Monochrome));
 	drawingAppearanceEditor_ = true;
+	const UiRect& panel = appearanceLayout_.panelBounds;
 	submitBox(UiRect(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_)),
 		readable.overlayDim, MaterialId::ModalDim, DimLayer);
-	submitBox(appearancePanelBounds_, readable.panel, PanelMaterial, SettingsLayer);
-	submitBox(UiRect(appearancePanelBounds_.x, appearancePanelBounds_.y, appearancePanelBounds_.width, 2.0f),
+	submitBox(panel, readable.panel, PanelMaterial, SettingsLayer);
+	submitBox(UiRect(panel.x, panel.y, panel.width, 2.0f),
 		readable.accent, AccentMaterial, RenderLayer::SettingsAccent);
-	drawText(*appearanceEditorTitle_, UiRect(appearancePanelBounds_.x + 18.0f, appearancePanelBounds_.y + 14.0f,
-		appearancePanelBounds_.width - 36.0f, 26.0f), 17.0f, readable.text, SettingsTextLayer);
-	const float left = appearancePanelBounds_.x + 18.0f;
-	const float top = appearancePanelBounds_.y + 40.0f;
-	const float contentWidth = std::max(1.0f, appearancePanelBounds_.width - 36.0f);
-	const float scale = std::min(1.0f, appearancePanelBounds_.height / 660.0f);
-	const UiRect controlClip(appearancePanelBounds_.x + 1.0f, top,
-		appearancePanelBounds_.width - 2.0f, std::max(0.0f, appearancePanelBounds_.height - 120.0f * scale));
+	drawText(*appearanceEditorTitle_, appearanceLayout_.titleBounds, 17.0f, readable.text, SettingsTextLayer);
+	const float scale = appearanceLayout_.scale;
+	const UiRect& controlClip = appearanceLayout_.contentClip;
 	const ClipBounds clip(controlClip.x, controlClip.y, controlClip.width, controlClip.height);
 	const UiTokenValue selectedValue = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], selectedAppearanceToken_);
 	if (selectedValue.type == UiTokenType::Color)
 	{
 		const UiColor& c = selectedValue.color;
 		const glm::vec4 fill(c.r, c.g, c.b, c.a);
-		submitBox(appearanceColorSwatchBounds_, fill, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		submitBox(appearanceLayout_.colorSwatchBounds, fill, ButtonMaterial, RenderLayer::SettingsControls, clip);
 		const float edge = std::max(1.0f, 1.0f * scale);
-		submitBox(UiRect(appearanceColorSwatchBounds_.x, appearanceColorSwatchBounds_.y,
-			appearanceColorSwatchBounds_.width, edge), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
-		submitBox(UiRect(appearanceColorSwatchBounds_.x, appearanceColorSwatchBounds_.y + appearanceColorSwatchBounds_.height - edge,
-			appearanceColorSwatchBounds_.width, edge), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
-		submitBox(UiRect(appearanceColorSwatchBounds_.x, appearanceColorSwatchBounds_.y, edge,
-			appearanceColorSwatchBounds_.height), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
-		submitBox(UiRect(appearanceColorSwatchBounds_.x + appearanceColorSwatchBounds_.width - edge,
-			appearanceColorSwatchBounds_.y, edge, appearanceColorSwatchBounds_.height), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		submitBox(UiRect(appearanceLayout_.colorSwatchBounds.x, appearanceLayout_.colorSwatchBounds.y,
+			appearanceLayout_.colorSwatchBounds.width, edge), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		submitBox(UiRect(appearanceLayout_.colorSwatchBounds.x, appearanceLayout_.colorSwatchBounds.y + appearanceLayout_.colorSwatchBounds.height - edge,
+			appearanceLayout_.colorSwatchBounds.width, edge), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		submitBox(UiRect(appearanceLayout_.colorSwatchBounds.x, appearanceLayout_.colorSwatchBounds.y, edge,
+			appearanceLayout_.colorSwatchBounds.height), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
+		submitBox(UiRect(appearanceLayout_.colorSwatchBounds.x + appearanceLayout_.colorSwatchBounds.width - edge,
+			appearanceLayout_.colorSwatchBounds.y, edge, appearanceLayout_.colorSwatchBounds.height), readable.border, ButtonMaterial, RenderLayer::SettingsControls, clip);
 	}
-	drawText(*appearanceTokenDescription_, UiRect(left, appearancePanelBounds_.y + 170.0f * scale,
-		contentWidth, 32.0f * scale), 12.0f, readable.mutedText, SettingsTextLayer, clip);
+	drawText(*appearanceTokenDescription_, appearanceLayout_.descriptionBounds, 12.0f, readable.mutedText, SettingsTextLayer, clip);
 	const char* rowIds[] = { "appearance_preset", "appearance_palette", "appearance_category", "appearance_search", "appearance_token",
 		"appearance_value_down", "appearance_value", "appearance_value_up", "appearance_value_slider",
 		"appearance_color", "appearance_color_alpha", "appearance_color_r", "appearance_color_g", "appearance_color_b", "appearance_color_a", "appearance_boolean",
@@ -2883,14 +2842,8 @@ void ControlPanel::drawAppearanceEditor()
 		drawWidget(*widget, readable, RenderLayer::SettingsControls);
 	}
 	appearanceStatus_->setContent(appearanceError_.empty() ? "Changes preview behind this editor. Apply saves; Cancel discards." : appearanceError_);
-	const float bottomY = appearancePanelBounds_.y + appearancePanelBounds_.height - 40.0f * scale;
-	const float row = 30.0f * scale;
-	const float gap = 8.0f * scale;
-	const float actionsY = bottomY - 2.0f * row - 2.0f * gap;
-	drawText(*appearanceStatus_, UiRect(left, actionsY - 26.0f * scale,
-		contentWidth, 18.0f * scale), 11.0f, appearanceError_.empty() ? readable.mutedText : readable.accent,
-		SettingsTextLayer, ClipBounds(appearancePanelBounds_.x, appearancePanelBounds_.y,
-		appearancePanelBounds_.width, appearancePanelBounds_.height));
+	drawText(*appearanceStatus_, appearanceLayout_.statusBounds, 11.0f, appearanceError_.empty() ? readable.mutedText : readable.accent,
+		SettingsTextLayer, ClipBounds(panel.x, panel.y, panel.width, panel.height));
 	const char* actionIds[] = { "appearance_reset_token", "appearance_reset_theme", "appearance_import",
 		"appearance_export", "appearance_apply", "appearance_cancel" };
 	for (std::size_t i = 0; i < sizeof(actionIds) / sizeof(actionIds[0]); ++i)

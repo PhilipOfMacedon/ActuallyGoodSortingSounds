@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
+#include "../SDL2BarGraphics/AppearanceEditorLayout.h"
 #include "../SDL2BarGraphics/BarCountSteps.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserModel.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserView.h"
@@ -800,6 +801,35 @@ namespace
 		browser.close();
 		check(!browser.open && !browser.searchFocused && !browser.pendingSelection,
 			"closing the browser releases its modal search and pending-selection state");
+	}
+
+	void testAppearanceEditorLayout()
+	{
+		const AppearanceEditorLayoutResult wide = calculateAppearanceEditorLayout(1920.0f, 1080.0f);
+		check(wide.valid && wide.panelBounds.x == 520.0f && wide.panelBounds.y == 210.0f &&
+			wide.panelBounds.width == 880.0f && wide.panelBounds.height == 660.0f,
+			"appearance editor centers and caps its panel at the established wide-window size");
+		const UiRect preset = wide.control("appearance_preset");
+		const UiRect palette = wide.control("appearance_palette");
+		const UiRect apply = wide.control("appearance_apply");
+		check(preset.x == 538.0f && preset.y == 268.0f && preset.height == 30.0f &&
+			palette.x > preset.x + preset.width && apply.y + apply.height <= wide.panelBounds.y + wide.panelBounds.height,
+			"appearance controls retain their two-column positions and bottom actions stay inside the panel");
+		check(wide.contentClip.x == wide.panelBounds.x + 1.0f && wide.contentClip.y == wide.panelBounds.y + 40.0f &&
+			wide.colorSwatchBounds.y == 420.0f && wide.titleBounds.y == 224.0f &&
+			wide.descriptionBounds.y == 380.0f && wide.statusBounds.height == 18.0f && wide.controls.size() == 25,
+			"appearance title, description, content clip, status, and color preview share one resolved layout");
+
+		const AppearanceEditorLayoutResult compact = calculateAppearanceEditorLayout(320.0f, 240.0f);
+		check(compact.valid && compact.panelBounds.x == 12.0f && compact.panelBounds.y == 12.0f &&
+			compact.panelBounds.width == 296.0f && compact.panelBounds.height == 216.0f && compact.scale < 1.0f,
+			"appearance editor scales its centered layout to a compact window");
+		const UiRect compactApply = compact.control("appearance_apply");
+		check(compactApply.y + compactApply.height <= compact.panelBounds.y + compact.panelBounds.height + 0.001f,
+			"compact appearance actions remain within the dialog bounds");
+		check(!calculateAppearanceEditorLayout(0.0f, 480.0f).valid &&
+			!calculateAppearanceEditorLayout(640.0f, 0.0f).valid,
+			"appearance layout stays invalid until the window has positive logical dimensions");
 	}
 
 	void testAlgorithmBrowserInputAndLayout()
@@ -2186,6 +2216,7 @@ int main()
 	testTextBlockLayoutCache();
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
+	testAppearanceEditorLayout();
 	testAlgorithmBrowserModel();
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();

@@ -7,6 +7,7 @@
 
 #include <SDL.h>
 
+#include "AppearanceEditorLayout.h"
 #include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
 #include "Renderer2D.h"
@@ -121,8 +122,7 @@ private:
 	std::string selectedAppearanceToken_;
 	std::vector<std::string> filteredAppearanceTokens_;
 	std::string appearanceError_;
-	UiRect appearancePanelBounds_;
-	UiRect appearanceColorSwatchBounds_;
+	AppearanceEditorLayoutResult appearanceLayout_;
 	std::unique_ptr<TextLabel> appearanceEditorTitle_;
 	std::unique_ptr<TextLabel> appearanceTokenDescription_;
 	std::unique_ptr<TextLabel> appearanceStatus_;

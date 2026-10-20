@@ -419,3 +419,21 @@ Verification:
 - `git diff --check`: passed; Git emitted only configured LF-to-CRLF working-tree notices.
 
 Next: extract the Appearance settings composition as the next sizeable view boundary, keeping setting edits as typed actions and using the same production/test paint-command path.
+
+## 2026-10-19 — isolate appearance editor layout
+
+Status: implementation and focused verification complete.
+
+- Added a pure `calculateAppearanceEditorLayout` function for the appearance editor's centered panel, title, description/status, color swatch, content clip, scale, and 25 named widget bounds. It uses logical window dimensions and has no renderer or platform dependencies beyond the shared UI geometry contract.
+- `ControlPanel` now applies that one result to its retained widgets and modal hit bounds, then paints from the same title, description, status, clip, panel, swatch, and scale values. This removes the duplicate panel/swatch state and avoids recomputing editor geometry during paint.
+- When the existing main layout key invalidates on resize/DPI/preset changes, the appearance layout now refreshes with it. Popup-above decisions still use each widget's current visible option count, which remains input/layout state rather than fixed geometry.
+- Added checks for the established 1920×1080 layout, compact 320×240 scaling, bottom action containment, empty dimensions, and the complete widget-bound set. Visually inspected the editor with all settings controls visible; the modal remains centered and the controls fit the panel.
+- No settings values, edit actions, token behavior, renderer materials, or text rasterization changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git emitted only configured LF-to-CRLF working-tree notices.
+
+Next: move the appearance editor's token filtering and draft-selection state behind a small view model, keeping file/color dialogs and app-action dispatch in the platform/facade layer.

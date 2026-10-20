@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AppearanceEditorLayout.cpp" />
     <ClCompile Include="AppController.cpp" />
     <ClCompile Include="AlgorithmBrowserModel.cpp" />
     <ClCompile Include="AlgorithmBrowserView.cpp" />
@@ -45,6 +46,7 @@
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AppearanceEditorLayout.h" />
     <ClInclude Include="AlgorithmBrowserModel.h" />
     <ClInclude Include="AlgorithmBrowserView.h" />
     <ClInclude Include="AppActions.h" />
