@@ -4,6 +4,7 @@
 #include <SDL.h>
 #include "../SDL2BarGraphics/AppController.h"
 #include "../SDL2BarGraphics/AudioPresentationBridge.h"
+#include "../SDL2BarGraphics/PlaybackFrameCoordinator.h"
 #include "../SDL2BarGraphics/SdlAudioOutput.h"
 #include <chrono>
 #include <cmath>
@@ -30,10 +31,12 @@ public:
     LatestAudioStateMailbox mailbox;
     AudioPresentationBridge bridge;
     SdlAudioOutput output;
+    PlaybackFrameCoordinator playbackFrame;
     std::chrono::steady_clock::time_point last;
     unsigned preparations = 0;
     bool wasPreparing = false;
-    explicit Session(const UserPreferences& preferences) : settings(), app(seed(preferences)), mailbox(), bridge(), output(mailbox), last(std::chrono::steady_clock::now()) {
+    explicit Session(const UserPreferences& preferences) : settings(), app(seed(preferences)), mailbox(), bridge(), output(mailbox),
+        playbackFrame(mailbox, bridge, output), last(std::chrono::steady_clock::now()) {
         require(output.available(), "SDL dummy audio device did not open");
         std::cout << "Audio backend: " << SDL_GetCurrentAudioDriver() << "; " << output.status() << '\n';
     }
@@ -41,17 +44,8 @@ public:
     void frame() {
         const auto now = std::chrono::steady_clock::now();
         const float elapsed = std::chrono::duration<float>(now-last).count(); last=now;
-        app.update(elapsed, output.available() && bridge.playheadReady(output.timelineAcknowledgement()));
-        bridge.update(app.simulation(), app.snapshot(), app.effectiveAudio(), mailbox,
-            app.effectiveReconstructedAudio(), app.preferences().simulation.playbackTimingMode,
-            output.available());
-        const AudioTimelineAcknowledgement acknowledgement=output.timelineAcknowledgement();
-        const bool ready=bridge.playheadReady(acknowledgement);
-        app.setAudioPreparationPending(bridge.timelinePreparing() || (output.available() && bridge.timelineReady() && !ready));
-        bridge.collectRetiredTimelines(acknowledgement, output.available());
-        SoundEngine::AudioPlayheadFeedback feedback;
-        if (output.available() && ready && output.readPlayheadFeedback(feedback))
-            app.applyAudioPlayhead(feedback, bridge.playbackRevision());
+        app.update(elapsed, playbackFrame.audioClockAvailable());
+        playbackFrame.updateAudioPresentation(app, app.snapshot());
         const bool preparing=bridge.timelinePreparing();
         if (preparing && !wasPreparing) ++preparations;
         wasPreparing=preparing;
@@ -66,7 +60,7 @@ public:
         auto stableSince=std::chrono::steady_clock::now();
         do {
             frame();
-            if (!bridge.playheadReady(output.timelineAcknowledgement())) stableSince=std::chrono::steady_clock::now();
+            if (!playbackFrame.audioClockAvailable()) stableSince=std::chrono::steady_clock::now();
             else if (std::chrono::steady_clock::now()-stableSince>std::chrono::milliseconds(60)) return;
         } while(std::chrono::steady_clock::now()<deadline);
         std::cerr << "preparations=" << preparations << " transport_revision=" << bridge.transportRevision() << '\n';

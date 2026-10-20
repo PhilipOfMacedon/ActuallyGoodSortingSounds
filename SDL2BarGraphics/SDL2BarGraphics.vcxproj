@@ -31,6 +31,7 @@
     <ClCompile Include="SettingsPanelLayout.cpp" />
     <ClCompile Include="AudioPresentationBridge.cpp" />
     <ClCompile Include="PlaybackCoordinator.cpp" />
+    <ClCompile Include="PlaybackFrameCoordinator.cpp" />
     <ClCompile Include="PlaybackTimebase.cpp" />
     <ClCompile Include="ArrayRenderer.cpp" />
     <ClCompile Include="ControlPanel.cpp" />
@@ -74,6 +75,7 @@
     <ClInclude Include="AudioPresentationBridge.h" />
     <ClInclude Include="AudioPlaybackRevision.h" />
     <ClInclude Include="PlaybackCoordinator.h" />
+    <ClInclude Include="PlaybackFrameCoordinator.h" />
     <ClInclude Include="PlaybackTimebase.h" />
     <ClInclude Include="BarCountSteps.h" />
     <ClInclude Include="ArrayRenderer.h" />

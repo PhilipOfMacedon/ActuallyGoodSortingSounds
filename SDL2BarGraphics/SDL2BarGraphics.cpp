@@ -8,6 +8,7 @@
 #include "ArrayRenderer.h"
 #include "ControlPanel.h"
 #include "FrameCoordinator.h"
+#include "PlaybackFrameCoordinator.h"
 #include "Renderer2D.h"
 #include "SdlAudioOutput.h"
 #include "TextLabel.h"
@@ -132,6 +133,7 @@ int main(int argc, char** argv)
 	LatestAudioStateMailbox audioMailbox;
 	AudioPresentationBridge audioBridge;
 	SdlAudioOutput audioOutput(audioMailbox);
+	PlaybackFrameCoordinator playbackFrameCoordinator(audioMailbox, audioBridge, audioOutput);
 	FrameCoordinator frameCoordinator(mainWindow);
 	ArrayRenderer arrayRenderer(mainWindow, frameCoordinator.renderer());
 	ControlPanel controlPanel(mainWindow, frameCoordinator.renderer(), app.preferences());
@@ -148,33 +150,15 @@ int main(int argc, char** argv)
 			: 0.0f;
 		previousCounter = currentCounter;
 
-		const bool audioClockAvailable = audioOutput.available() &&
-			audioBridge.playheadReady(audioOutput.timelineAcknowledgement());
-		app.update(deltaSeconds, audioClockAvailable);
+		app.update(deltaSeconds, playbackFrameCoordinator.audioClockAvailable());
 		handleEvents(mainWindow, controlPanel, app, audioOutput, audioBridge, audioMailbox);
 		audioOutput.serviceDiagnosticCapture();
 
 		sortinglogic::RenderSnapshot snapshot = app.snapshot();
-		audioBridge.update(app.simulation(), snapshot, app.effectiveAudio(), audioMailbox,
-			app.effectiveReconstructedAudio(), app.preferences().simulation.playbackTimingMode,
-			audioOutput.available());
-		const AudioTimelineAcknowledgement timelineAcknowledgement = audioOutput.timelineAcknowledgement();
-		const bool audioPlayheadReady = audioBridge.playheadReady(timelineAcknowledgement);
-		app.setAudioPreparationPending(audioBridge.timelinePreparing() ||
-			(audioOutput.available() && audioBridge.timelineReady() && !audioPlayheadReady));
-		audioBridge.collectRetiredTimelines(timelineAcknowledgement, audioOutput.available());
-		SoundEngine::AudioPlayheadFeedback playhead;
-		if (audioOutput.available() && audioPlayheadReady && audioOutput.readPlayheadFeedback(playhead))
-			app.applyAudioPlayhead(playhead, audioBridge.playbackRevision());
+		const std::string audioStatus = playbackFrameCoordinator.updateAudioPresentation(app, snapshot);
 		snapshot = app.snapshot();
 		const UiThemeCustomization& activeTheme = app.preferences().appearance.themes.find(app.preferences().appearance.activePreset)->second;
 		const ThemePalette palette = paletteForAppearance(app.preferences().appearance.activePreset, activeTheme);
-		std::string audioStatus = audioOutput.status();
-		if (audioOutput.outputOverloadCount() > 0)
-			audioStatus += " | output safety clamp: " + std::to_string(audioOutput.outputOverloadCount()) + " samples";
-		if (audioBridge.timelinePreparing()) audioStatus = "Preparing audio timeline...";
-		else if (!audioBridge.timelineError().empty())
-			audioStatus = "Timeline error: " + audioBridge.timelineError() + " | sorting remains available";
 		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());
 		frameCoordinator.beginFrame(palette.background);
 		arrayRenderer.render(snapshot, app.preferences(), controlPanel.chartViewport(), palette);

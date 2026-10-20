@@ -812,3 +812,21 @@ Verification:
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
 Next: extract the main loop's snapshot, bridge-update, readiness, feedback, and retirement sequence behind a small app-thread frame coordinator while preserving its current order.
+
+## 2026-10-20 — extract audio frame handoff coordination
+
+Status: implementation and focused verification complete.
+
+- Added `PlaybackFrameCoordinator` for the app-thread sequence that checks audio-clock readiness, publishes the current simulation snapshot to the bridge, updates the preparation gate, retires acknowledged timelines, applies current playhead feedback, and builds audio status text.
+- Updated the main loop to delegate this handoff while retaining input processing, diagnostic-capture service, rendering, and the second post-feedback snapshot.
+- Updated `AudioDeviceTransportTests` to use the production frame coordinator instead of reproducing its bridge/readiness/feedback wiring.
+- Kept `AudioPresentationBridge`'s single timeline worker and all SDL callback installation, atomic acknowledgement, and retirement fencing in their existing owners.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Standalone `AudioDeviceTransportTests` Debug and Release builds and runs with SDL's dummy backend: passed, including device/seek readiness, pause/step/resume, fixed/reference timing, and 80/800-item cases.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+Next: measure the remaining full-snapshot and role/region projection costs from audit item 9 before adding caches or changing frame snapshot ownership.

@@ -30,6 +30,7 @@
     <ClCompile Include="AudioSettingsActions.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AudioPresentationBridge.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="PlaybackCoordinator.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="PlaybackFrameCoordinator.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="PlaybackTimebase.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ControlPanel.cpp">
       <Filter>Source Files</Filter>
@@ -85,6 +86,7 @@
     <ClInclude Include="AudioPresentationBridge.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AudioPlaybackRevision.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PlaybackCoordinator.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="PlaybackFrameCoordinator.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PlaybackTimebase.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="BarCountSteps.h">
       <Filter>Header Files</Filter>
