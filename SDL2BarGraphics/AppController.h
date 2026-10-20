@@ -46,7 +46,7 @@ private:
 	sortinglogic::CommandResult requestTraceBuild(bool playWhenReady);
 	void startPendingPlaybackIfReady();
 	void synchronizeSimulationPreferences();
-	void persistIfChanged(const UserPreferences& previous);
+	void persistPreferences();
 	double referenceDurationSeconds() const;
 	double referenceElapsedAtCursor(std::size_t cursor) const;
 	void synchronizeReferenceTransport(bool wasPlaying);

@@ -139,6 +139,27 @@ namespace
 		}
 	}
 
+	void testPreferenceValueEquality()
+	{
+		const VisualPreferences visualDefaults;
+		check(visualDefaults == VisualPreferences(), "visual preference defaults compare equal by value");
+		VisualPreferences changedVisual = visualDefaults;
+		changedVisual.spacing = BarSpacingMode::Comfortable;
+		check(!(changedVisual == visualDefaults), "visual preference equality detects spacing changes");
+
+		const SimulationPreferences simulationDefaults;
+		check(simulationDefaults == SimulationPreferences(), "simulation preference defaults compare equal by value");
+		SimulationPreferences changedSimulation = simulationDefaults;
+		changedSimulation.pattern = sortinglogic::InputPattern::Sorted;
+		check(!(changedSimulation == simulationDefaults), "simulation preference equality detects input pattern changes");
+
+		const UserPreferences defaults;
+		check(defaults == UserPreferences(), "user preference equality delegates to value groups");
+		UserPreferences changedUser = defaults;
+		changedUser.simulation = changedSimulation;
+		check(!(changedUser == defaults), "user preference equality includes simulation value groups");
+	}
+
 	void testBarCountSteps()
 	{
 		check(adjustBarCount(2, true, false, 2, 800) == 3, "Bars + increments by one from the minimum");
@@ -2711,6 +2732,7 @@ namespace
 int main()
 {
 	testSpacing();
+	testPreferenceValueEquality();
 	testBarCountSteps();
 	testModifierStepSizes();
 	testAppearanceAndPresetArchitecture();

@@ -783,25 +783,34 @@ const char* algorithmAudioChannelName(AlgorithmAudioChannel channel)
 }
 
 VisualPreferences::VisualPreferences() : palette(PaletteId::Cyan), spacing(BarSpacingMode::Compact), panelExpanded(true) {}
+
+bool VisualPreferences::operator==(const VisualPreferences& other) const
+{
+	return palette == other.palette && spacing == other.spacing && panelExpanded == other.panelExpanded;
+}
+
 SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(10),
 	playbackTimingMode(SoundEngine::PlaybackTimingMode::FixedDuration), descending(false),
 	algorithm(static_cast<int>(sortinglogic::SortAlgorithm::Insertion)), familyId("insertion-methods"), variantId("insertion"),
 	profile(sortinglogic::InputProfile::NormalizedFloat), domain(sortinglogic::InputDomain::NormalizedFloats),
 	pattern(sortinglogic::InputPattern::Random), mergeBufferVisualizationEnabled(true), completionScanEnabled(false) {}
+
+bool SimulationPreferences::operator==(const SimulationPreferences& other) const
+{
+	return itemCount == other.itemCount && durationSeconds == other.durationSeconds &&
+		playbackTimingMode == other.playbackTimingMode && descending == other.descending && algorithm == other.algorithm &&
+		familyId == other.familyId && variantId == other.variantId && profile == other.profile && domain == other.domain &&
+		pattern == other.pattern && mergeBufferVisualizationEnabled == other.mergeBufferVisualizationEnabled &&
+		completionScanEnabled == other.completionScanEnabled;
+}
+
 UserPreferences::UserPreferences() : version(CurrentVersion), visual(), appearance(), simulation(), audio(), reconstructedAudio(), familyAudioDefaults(),
 	variantAudioOffsets(), algorithmOptions() {}
 
 bool UserPreferences::operator==(const UserPreferences& other) const
 {
-	return visual.palette == other.visual.palette && visual.spacing == other.visual.spacing &&
-		visual.panelExpanded == other.visual.panelExpanded && sameUiAppearancePreferences(appearance, other.appearance) &&
-		simulation.itemCount == other.simulation.itemCount && simulation.durationSeconds == other.simulation.durationSeconds &&
-		simulation.playbackTimingMode == other.simulation.playbackTimingMode && simulation.descending == other.simulation.descending &&
-		simulation.algorithm == other.simulation.algorithm && simulation.familyId == other.simulation.familyId &&
-		simulation.variantId == other.simulation.variantId && simulation.profile == other.simulation.profile &&
-		simulation.domain == other.simulation.domain && simulation.pattern == other.simulation.pattern &&
-		simulation.mergeBufferVisualizationEnabled == other.simulation.mergeBufferVisualizationEnabled &&
-		simulation.completionScanEnabled == other.simulation.completionScanEnabled && audio == other.audio &&
+	return visual == other.visual && sameUiAppearancePreferences(appearance, other.appearance) &&
+		simulation == other.simulation && audio == other.audio &&
 		reconstructedAudio == other.reconstructedAudio && familyAudioDefaults == other.familyAudioDefaults &&
 		variantAudioOffsets == other.variantAudioOffsets && algorithmOptions == other.algorithmOptions;
 }

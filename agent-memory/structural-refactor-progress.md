@@ -645,4 +645,20 @@ Verification:
 - Release `SoundEngineTests`: passed (417,376 assertions).
 - `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
 
-Next: measure and classify preference-changing actions before reducing the dispatch-time `UserPreferences` copy; keep INI migration, Win32 replacement, and audio-profile resolution separate in later slices.
+Next: separate INI schema/migration logic from atomic platform storage and family/variant audio-profile resolution. Keep the current settings version and immediate save behavior.
+
+## 2026-10-19 — narrow dispatch preference snapshots
+
+Status: implementation and focused verification complete.
+
+- Added value equality for `VisualPreferences` and `SimulationPreferences`, and made `UserPreferences` equality compose those value contracts.
+- `AppController::dispatch` now snapshots simulation configuration for every action because accepted commands can reconcile saved input, but only actions that can change non-simulation preferences take a full `UserPreferences` snapshot. Play, pause, step, seek, reset, fullscreen, audio-band selection, and device retry avoid copying appearance/audio/options maps.
+- Unknown future action kinds conservatively use the full snapshot until explicitly classified. All current `AppActionKind` values are listed.
+- Actual preference changes still save immediately; unchanged values and transport-only actions still produce no writes.
+- Added direct tests for preference value equality. Existing controller persistence tests continue to cover no-op edits, transport actions, and one-save-per-change behavior.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <set>
 #include <utility>
 
@@ -10,6 +11,86 @@
 
 namespace
 {
+	bool needsFullPreferenceSnapshot(AppActionKind action)
+	{
+		// The simulation settings are captured separately for every dispatch.
+		// These actions can also mutate non-simulation preferences and need the
+		// complete snapshot for change detection.
+		switch (action)
+		{
+		case AppActionKind::SetUiPreset:
+		case AppActionKind::SetPalette:
+		case AppActionKind::SetSpacing:
+		case AppActionKind::SetPanelExpanded:
+		case AppActionKind::TogglePanelExpanded:
+		case AppActionKind::SetAlgorithmOption:
+		case AppActionKind::SetShellGapSequence:
+		case AppActionKind::SetMergeWritebackMode:
+		case AppActionKind::SetMergeExecutionMode:
+		case AppActionKind::SetAudioParameter:
+		case AppActionKind::SetReconstructedAudioParameter:
+		case AppActionKind::RestoreReconstructedDefaults:
+		case AppActionKind::SetVariantAudioLevel:
+		case AppActionKind::ResetVariantAudioLevels:
+			return true;
+		case AppActionKind::Shuffle:
+		case AppActionKind::InstaSort:
+		case AppActionKind::InstaInvert:
+		case AppActionKind::SelectAlgorithm:
+		case AppActionKind::SetDirection:
+		case AppActionKind::SetPlaybackTimingMode:
+		case AppActionKind::SetCompletionScan:
+		case AppActionKind::SetMergeBufferVisualization:
+		case AppActionKind::BuildTrace:
+		case AppActionKind::GenerateAndPlay:
+		case AppActionKind::TogglePlayback:
+		case AppActionKind::Reset:
+		case AppActionKind::PreviousEvent:
+		case AppActionKind::NextEvent:
+		case AppActionKind::DecreaseCountFine:
+		case AppActionKind::DecreaseCountCoarse:
+		case AppActionKind::IncreaseCountFine:
+		case AppActionKind::IncreaseCountCoarse:
+		case AppActionKind::AdjustItemCount:
+		case AppActionKind::SetItemCount:
+		case AppActionKind::DecreaseDuration:
+		case AppActionKind::AdjustDuration:
+		case AppActionKind::IncreaseDuration:
+		case AppActionKind::SetDuration:
+		case AppActionKind::SeekFraction:
+		case AppActionKind::ApplyAppearance:
+		case AppActionKind::SetInputProfile:
+		case AppActionKind::SetInputDomain:
+		case AppActionKind::SetInputPattern:
+		case AppActionKind::ToggleBorderlessFullscreen:
+		case AppActionKind::SelectAudioBand:
+		case AppActionKind::RetryAudioDevice:
+		case AppActionKind::None:
+			return false;
+		default:
+			// New commands take the conservative path until explicitly classified.
+			return true;
+		}
+	}
+
+	class PreferenceChangeSnapshot
+	{
+	public:
+		PreferenceChangeSnapshot(const UserPreferences& current, bool captureFullPreferences)
+			: simulation_(current.simulation), full_(captureFullPreferences ? new UserPreferences(current) : nullptr)
+		{
+		}
+
+		bool changed(const UserPreferences& current) const
+		{
+			return !(simulation_ == current.simulation) || (full_ && !(*full_ == current));
+		}
+
+	private:
+		SimulationPreferences simulation_;
+		std::unique_ptr<UserPreferences> full_;
+	};
+
 	void storeAlgorithmOption(UserPreferences& preferences, const sortinglogic::AlgorithmDescriptor& algorithm,
 		const std::string& groupId, int value)
 	{
@@ -166,7 +247,7 @@ void AppController::startPendingPlaybackIfReady()
 sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 {
 	sortinglogic::CommandResult result(true, "");
-	const UserPreferences previous = preferences_;
+	const PreferenceChangeSnapshot previous(preferences_, needsFullPreferenceSnapshot(action.kind));
 	const bool wasPlaying = simulation_.isPlaying();
 	const std::shared_ptr<const sortinglogic::SortTrace> previousTrace = simulation_.currentTrace();
 	switch (action.kind)
@@ -523,9 +604,9 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	if (result.accepted && (action.kind == AppActionKind::Reset || action.kind == AppActionKind::PreviousEvent ||
 		action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction))
 		playbackPending_ = false;
-	if (!(previous == preferences_))
+	if (previous.changed(preferences_))
 	{
-		persistIfChanged(previous);
+		persistPreferences();
 		if (result.accepted && persistenceStatus_.find("Could not save") == 0)
 			result.message += " " + persistenceStatus_;
 	}
@@ -652,10 +733,8 @@ void AppController::synchronizeSimulationPreferences()
 	preferences_.simulation.completionScanEnabled = simulation_.completionScanEnabled();
 }
 
-void AppController::persistIfChanged(const UserPreferences& previous)
+void AppController::persistPreferences()
 {
-	if (previous == preferences_)
-		return;
 	std::string error;
 	if (!settingsPersistence_.save(preferences_, &error))
 		persistenceStatus_ = "Could not save preferences" + (error.empty() ? std::string(".") : ": " + error);

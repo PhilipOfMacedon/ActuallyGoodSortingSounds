@@ -22,6 +22,7 @@ struct VisualPreferences
 	BarSpacingMode spacing;
 	bool panelExpanded;
 	VisualPreferences();
+	bool operator==(const VisualPreferences& other) const;
 };
 
 struct SimulationPreferences
@@ -39,6 +40,7 @@ struct SimulationPreferences
 	bool mergeBufferVisualizationEnabled;
 	bool completionScanEnabled;
 	SimulationPreferences();
+	bool operator==(const SimulationPreferences& other) const;
 };
 
 enum class AlgorithmAudioChannel : std::size_t
