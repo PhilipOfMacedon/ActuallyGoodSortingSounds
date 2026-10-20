@@ -17,6 +17,7 @@
 #include "UiActionRouting.h"
 #include "SdlUiEventAdapter.h"
 #include "SettingsScroll.h"
+#include "SettingsPanelCatalog.h"
 #include "WindowsFontCatalog.h"
 #include "PlaybackTimebase.h"
 #include "UiScreenModelAdapter.h"
@@ -466,7 +467,7 @@ void ControlPanel::createWidgets()
 				if (candidate.stableId == selectedId) selectedIndex = static_cast<int>(optionNames.size());
 				optionNames.push_back(candidate.displayName);
 			}
-			const std::string id = settingsAlgorithmOptionControlId(algorithm, groupId);
+			const std::string id = settingsAlgorithmOptionControlId(algorithm.familyId, algorithm.variantId, groupId);
 			settingsUi_.addComboBox(id, optionNames, selectedIndex,
 				AppAction(AppActionKind::SetAlgorithmOption, algorithm.familyId, algorithm.variantId, groupId));
 			settingsCaptions_[id] = settingsAlgorithmOptionCaption(groupId);
@@ -740,8 +741,9 @@ void ControlPanel::layoutSettingsControls()
 	settingsUi_.find("audio_retry")->setBounds(panelGeometry.audioRetryButton);
 	const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(
 		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
+	const SettingsPanelAlgorithmPresentation selectedPresentation = settingsPanelAlgorithmPresentation(selected);
 	const std::vector<std::string> active = settingsPanelControlIds(
-		settingsPanelModel_.page(), settingsPanelModel_.audioGroup(), selected);
+		settingsPanelModel_.page(), settingsPanelModel_.audioGroup(), &selectedPresentation);
 	std::set<std::string> visibleWidgetIds;
 	visibleWidgetIds.insert("appearance_tab");
 	visibleWidgetIds.insert("algorithm_tab");
@@ -902,7 +904,8 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 		{
 			const std::string groupId(algorithmDescriptor.supportedOptions[optionIndex].groupId);
 			if (!groups.insert(groupId).second) continue;
-			const std::string id = settingsAlgorithmOptionControlId(algorithmDescriptor, groupId);
+			const std::string id = settingsAlgorithmOptionControlId(algorithmDescriptor.familyId,
+				algorithmDescriptor.variantId, groupId);
 			UiWidget* widget = settingsUi_.find(id);
 			if (!widget) continue;
 			const std::string stableId = algorithmOptionStableId(settings_, algorithmDescriptor, groupId);

@@ -1438,3 +1438,15 @@ Verification:
 - `git diff --check` passed. No visual layout changed, so no screenshot review was run. No performance improvement is claimed.
 
 Next: extract main/settings view ownership and assess whether their runtime paint and action paths can use the existing shared paint/action contracts without introducing a second abstraction.
+
+## 2026-10-20 — isolate settings catalog translation
+
+`SettingsPanelControls` no longer accepts `SortingLogic::AlgorithmDescriptor` or imports sorting/audio policy. It consumes `SettingsPanelAlgorithmPresentation`, a UI-owned value with stable family/variant IDs, option groups, Merge-buffer visibility, and visible audio-control IDs. The new `SettingsPanelCatalog` adapter performs the one-way mapping from the algorithm registry and semantic audio capabilities. `ControlPanel` supplies that presentation when laying out the selected algorithm's settings.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64/x86 Debug and Release.
+- `AppFrameworkTests` passed in all four configurations. Settings catalog assertions cover Insertion, Merge, Counting, unknown metadata, and both General Audio groups.
+- `git diff --check` passed. Control IDs, filtering order, and visible options are unchanged; no runtime performance claim is made.
+
+Next: extract ownership of the main/settings widget roots and their layout/action state through the existing paint/action contracts, keeping renderer and SDL adapters at the boundary.

@@ -58,6 +58,7 @@
     <ClCompile Include="SettingsPanelView.cpp" />
     <ClCompile Include="SettingsPanelModel.cpp" />
     <ClCompile Include="SettingsPanelControls.cpp" />
+    <ClCompile Include="SettingsPanelCatalog.cpp" />
     <ClCompile Include="SettingsPanelLayout.cpp" />
     <ClCompile Include="AudioPresentationBridge.cpp" />
     <ClCompile Include="PlaybackCoordinator.cpp" />

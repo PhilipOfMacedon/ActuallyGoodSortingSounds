@@ -4,10 +4,21 @@
 #include <vector>
 
 #include "SettingsPanelModel.h"
-#include "../SortingLogic/SortingLogic.h"
 
-std::string settingsAlgorithmOptionControlId(const sortinglogic::AlgorithmDescriptor& algorithm,
-	const std::string& groupId);
+struct SettingsPanelAlgorithmPresentation
+{
+	std::string familyId;
+	std::string variantId;
+	bool showsMergeBufferVisualization;
+	std::vector<std::string> optionGroupIds;
+	std::vector<std::string> visibleAudioControlIds;
+
+	SettingsPanelAlgorithmPresentation()
+		: familyId(), variantId(), showsMergeBufferVisualization(false), optionGroupIds(), visibleAudioControlIds() {}
+};
+
+std::string settingsAlgorithmOptionControlId(const std::string& familyId,
+	const std::string& variantId, const std::string& groupId);
 std::string settingsAlgorithmOptionCaption(const std::string& groupId);
 std::vector<std::string> settingsPanelControlIds(SettingsPanelPage page, SettingsAudioGroup audioGroup,
-	const sortinglogic::AlgorithmDescriptor* selectedAlgorithm);
+	const SettingsPanelAlgorithmPresentation* selectedAlgorithm);

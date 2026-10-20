@@ -2,15 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
-#include <set>
 
-#include "../SortingLogic/TracePresentationPolicy.h"
-#include "UserSettings.h"
-
-std::string settingsAlgorithmOptionControlId(const sortinglogic::AlgorithmDescriptor& algorithm,
-	const std::string& groupId)
+std::string settingsAlgorithmOptionControlId(const std::string& familyId,
+	const std::string& variantId, const std::string& groupId)
 {
-	return std::string("algorithm_option_") + algorithm.familyId + "_" + algorithm.variantId + "_" + groupId;
+	return std::string("algorithm_option_") + familyId + "_" + variantId + "_" + groupId;
 }
 
 std::string settingsAlgorithmOptionCaption(const std::string& groupId)
@@ -27,7 +23,7 @@ std::string settingsAlgorithmOptionCaption(const std::string& groupId)
 }
 
 std::vector<std::string> settingsPanelControlIds(SettingsPanelPage page, SettingsAudioGroup audioGroup,
-	const sortinglogic::AlgorithmDescriptor* selectedAlgorithm)
+	const SettingsPanelAlgorithmPresentation* selectedAlgorithm)
 {
 	std::vector<std::string> active;
 	if (page == SettingsPanelPage::Appearance)
@@ -43,54 +39,17 @@ std::vector<std::string> settingsPanelControlIds(SettingsPanelPage page, Setting
 		active.push_back("pattern");
 		active.push_back("playback_timing");
 		active.push_back("completion_scan");
-		if (selectedAlgorithm && selectedAlgorithm->id == sortinglogic::SortAlgorithm::Merge)
+		if (selectedAlgorithm && selectedAlgorithm->showsMergeBufferVisualization)
 			active.push_back("merge_buffer_visualization");
 		if (selectedAlgorithm)
 		{
-			std::set<std::string> groups;
-			for (std::size_t option = 0; option < selectedAlgorithm->supportedOptions.size(); ++option)
-			{
-				const std::string groupId(selectedAlgorithm->supportedOptions[option].groupId);
-				if (groups.insert(groupId).second)
-					active.push_back(settingsAlgorithmOptionControlId(*selectedAlgorithm, groupId));
-			}
+			for (std::size_t option = 0; option < selectedAlgorithm->optionGroupIds.size(); ++option)
+				active.push_back(settingsAlgorithmOptionControlId(selectedAlgorithm->familyId,
+					selectedAlgorithm->variantId, selectedAlgorithm->optionGroupIds[option]));
+			active.insert(active.end(), selectedAlgorithm->visibleAudioControlIds.begin(),
+				selectedAlgorithm->visibleAudioControlIds.end());
 		}
-		const std::vector<AlgorithmAudioChannel> roleChannels = selectedAlgorithm
-			? supportedAudioRoleChannels(*selectedAlgorithm) : std::vector<AlgorithmAudioChannel>();
-		for (int channelIndex = 0; channelIndex < static_cast<int>(AlgorithmAudioChannel::Count); ++channelIndex)
-		{
-			const AlgorithmAudioChannel channel = static_cast<AlgorithmAudioChannel>(channelIndex);
-			bool visible = false;
-			switch (channel)
-			{
-			case AlgorithmAudioChannel::Comparison:
-				visible = true;
-				break;
-			case AlgorithmAudioChannel::ProbeAccent:
-				visible = selectedAlgorithm && sortinglogic::supportsAudioControlCategory(*selectedAlgorithm,
-					sortinglogic::AudioControlCategory::Probe);
-				break;
-			case AlgorithmAudioChannel::MainChangeAccent:
-				visible = selectedAlgorithm && sortinglogic::supportsAudioControlCategory(*selectedAlgorithm,
-					sortinglogic::AudioControlCategory::MainChange);
-				break;
-			case AlgorithmAudioChannel::AuxiliaryAccent:
-				visible = selectedAlgorithm && sortinglogic::supportsAudioControlCategory(*selectedAlgorithm,
-					sortinglogic::AudioControlCategory::Auxiliary);
-				break;
-			case AlgorithmAudioChannel::DiscardAccent:
-				visible = selectedAlgorithm && sortinglogic::supportsAudioControlCategory(*selectedAlgorithm,
-					sortinglogic::AudioControlCategory::Discard);
-				break;
-			default:
-				for (std::size_t role = 0; role < roleChannels.size(); ++role)
-					visible = visible || roleChannels[role] == channel;
-				break;
-			}
-			if (visible)
-				active.push_back(std::string("algorithm_audio_") + (channelIndex < 10 ? "0" : "") +
-					std::to_string(channelIndex));
-		}
+		else active.push_back("algorithm_audio_00");
 		active.push_back("algorithm_audio_reset");
 	}
 	else if (audioGroup == SettingsAudioGroup::Basic)

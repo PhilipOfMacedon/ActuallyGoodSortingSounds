@@ -37,6 +37,7 @@
 #include "../SDL2BarGraphics/SettingsPanelView.h"
 #include "../SDL2BarGraphics/SettingsPanelModel.h"
 #include "../SDL2BarGraphics/SettingsPanelControls.h"
+#include "../SDL2BarGraphics/SettingsPanelCatalog.h"
 #include "../SDL2BarGraphics/SettingsPanelLayout.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
 #define SDL_MAIN_HANDLED
@@ -2224,8 +2225,11 @@ namespace
 		const sortinglogic::AlgorithmDescriptor* counting = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Counting);
 		check(insertion && merge && counting, "settings control catalog fixtures are registered");
 		if (!insertion || !merge || !counting) return;
+		const SettingsPanelAlgorithmPresentation insertionPresentation = settingsPanelAlgorithmPresentation(insertion);
+		const SettingsPanelAlgorithmPresentation mergePresentation = settingsPanelAlgorithmPresentation(merge);
+		const SettingsPanelAlgorithmPresentation countingPresentation = settingsPanelAlgorithmPresentation(counting);
 		const std::vector<std::string> insertionControls = settingsPanelControlIds(
-			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, insertion);
+			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, &insertionPresentation);
 		const auto contains = [](const std::vector<std::string>& ids, const std::string& id)
 		{
 			for (std::size_t i = 0; i < ids.size(); ++i) if (ids[i] == id) return true;
@@ -2237,22 +2241,29 @@ namespace
 			"algorithm settings include common controls and only the existing audio operations for Insertion Sort");
 
 		const std::vector<std::string> mergeControls = settingsPanelControlIds(
-			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, merge);
+			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, &mergePresentation);
 		check(contains(mergeControls, "merge_buffer_visualization") &&
-			contains(mergeControls, settingsAlgorithmOptionControlId(*merge, "execution_mode")) &&
-			contains(mergeControls, settingsAlgorithmOptionControlId(*merge, "writeback_mode")) &&
+			contains(mergeControls, settingsAlgorithmOptionControlId(merge->familyId, merge->variantId, "execution_mode")) &&
+			contains(mergeControls, settingsAlgorithmOptionControlId(merge->familyId, merge->variantId, "writeback_mode")) &&
 			contains(mergeControls, "algorithm_audio_03"),
 			"Merge settings expose its registered options, buffer preference, and auxiliary audio level");
 
 		const std::vector<std::string> countingControls = settingsPanelControlIds(
-			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, counting);
+			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, &countingPresentation);
 		check(contains(countingControls, "algorithm_audio_01") && contains(countingControls, "algorithm_audio_03"),
 			"distribution settings expose probe and auxiliary audio levels");
+		const SettingsPanelAlgorithmPresentation unknownPresentation = settingsPanelAlgorithmPresentation(nullptr);
+		const std::vector<std::string> unknownAlgorithm = settingsPanelControlIds(
+			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, &unknownPresentation);
+		check(contains(unknownAlgorithm, "algorithm_audio_00") &&
+			contains(unknownAlgorithm, "algorithm_audio_reset") &&
+			!contains(unknownAlgorithm, "algorithm_audio_01"),
+			"missing algorithm metadata keeps generic comparison controls visible through the catalog adapter");
 
 		const std::vector<std::string> basicAudio = settingsPanelControlIds(
-			SettingsPanelPage::GeneralAudio, SettingsAudioGroup::Basic, insertion);
+			SettingsPanelPage::GeneralAudio, SettingsAudioGroup::Basic, &insertionPresentation);
 		const std::vector<std::string> advancedAudio = settingsPanelControlIds(
-			SettingsPanelPage::GeneralAudio, SettingsAudioGroup::Advanced, insertion);
+			SettingsPanelPage::GeneralAudio, SettingsAudioGroup::Advanced, &insertionPresentation);
 		check(basicAudio.size() == 5 && basicAudio[0] == "recon_enabled" && basicAudio[4] == "recon_restore" &&
 			advancedAudio.size() == 9 && advancedAudio[0] == "recon_min_pitch" && advancedAudio[8] == "recon_cutoff",
 			"General Audio basic and advanced groups preserve their existing control lists");
