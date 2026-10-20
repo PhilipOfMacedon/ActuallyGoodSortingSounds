@@ -1797,3 +1797,11 @@ Added `Geometry2D.h` for logical-space `Rect2D` and `ClipBounds`. `UiLayer.h` re
 The x64 and x86 solution builds passed in Debug and Release. `AppFrameworkTests` passed in all four configurations, including existing rectangle, clipping, and text-layout checks. `git diff --check` passed with only configured LF-to-CRLF notices. No renderer appearance or performance change is claimed.
 
 Next: assess remaining `ControlPanel` composition, measure any outstanding frame coordination costs, and continue the sorting-core and event-storage audit without changing trace or audio behavior.
+
+## 2026-10-20 — isolate Buffered Stooge outcome classification
+
+Moved the Buffered Stooge completion check out of `TraceRequestBuilder.cpp` and into its request adapter in `RecursiveNoveltyStrategies.cpp`. The common builder now handles recorder construction, shared limits, finalization, audio-event indexing, and state validation for every strategy. The Buffered Stooge adapter inspects the complete trace's final snapshot and sets `IncompleteDemonstration` only when that final sequence is not ordered for the requested direction. A missing final snapshot on a complete trace is treated as an invariant failure.
+
+The x64 and Win32 solution builds passed in Debug and Release. In each configuration, the focused Buffered Stooge suite passed 14,598 checks, SortingLogic core contracts passed 39,541 checks, and `AppFrameworkTests` passed. `git diff --check` passed. The smoke window remained closed. This is an ownership cleanup; trace events, replay state, audio presentation, and rendering are unchanged.
+
+Next: continue the audit with measured runtime costs or a cohesive sorting-core extraction, keeping event-storage format changes separate from algorithm ownership work.

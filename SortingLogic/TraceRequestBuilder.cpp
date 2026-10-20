@@ -3,6 +3,7 @@
 #include "SortingLogicInternal.h"
 #include "TracePresentationPolicy.h"
 #include "TraceRecorder.h"
+#include "TraceRequestBuilderInternal.h"
 
 #include <memory>
 #include <stdexcept>
@@ -11,16 +12,9 @@
 
 namespace sortinglogic
 {
-	using detail::OperationLimitReached;
-	using detail::Recorder;
-	using detail::TraceBudgetReached;
-	using detail::effectiveDomain;
-
-	namespace
+	namespace detail
 	{
-		typedef void (*AlgorithmStrategy)(Recorder&);
-
-		SortTrace buildSelectedAlgorithm(const TraceBuildRequest& request, SortAlgorithm algorithm,
+		SortTrace buildAlgorithmTrace(const TraceBuildRequest& request, SortAlgorithm algorithm,
 			AlgorithmStrategy strategy)
 		{
 			std::unique_ptr<Recorder> recorderStorage;
@@ -58,17 +52,6 @@ namespace sortinglogic
 			{
 				recorder.finishPartial(limit.reason);
 			}
-			if (algorithm == SortAlgorithm::ArrayvBufferedStooge && recorder.trace.complete)
-			{
-				bool ordered = true;
-				for (std::size_t i = 1; i < recorder.state.slots.size(); ++i)
-					if (compareItems(recorder.state.slots[i - 1].item, recorder.state.slots[i].item, request.direction) == ComparisonResult::Greater)
-					{
-						ordered = false;
-						break;
-					}
-				if (!ordered) recorder.trace.outcome = AlgorithmOutcome::IncompleteDemonstration;
-			}
 			sortinglogic::populateAudioEventIndices(recorder.trace);
 			std::string reason;
 			if (!validateState(recorder.state, request.input.size(), &reason)) throw std::logic_error(reason.c_str());
@@ -78,7 +61,7 @@ namespace sortinglogic
 	}
 
 #define SORT_STRATEGY_REQUEST_BUILDER(name, id, strategy) \
-		SortTrace name(const TraceBuildRequest& request) { return buildSelectedAlgorithm(request, SortAlgorithm::id, strategy); }
+		SortTrace name(const TraceBuildRequest& request) { return detail::buildAlgorithmTrace(request, SortAlgorithm::id, strategy); }
 		SORT_STRATEGY_REQUEST_BUILDER(buildInsertionRequest, Insertion, &strategies::insertion)
 		SORT_STRATEGY_REQUEST_BUILDER(buildBubbleRequest, Bubble, &strategies::bubble)
 		SORT_STRATEGY_REQUEST_BUILDER(buildSelectionRequest, Selection, &strategies::selection)
@@ -180,7 +163,6 @@ namespace sortinglogic
 		SORT_STRATEGY_REQUEST_BUILDER(buildCanonicalBurntPancakeRequest, CanonicalBurntPancake, &strategies::canonicalBurntPancake)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvPancakeInsertionRequest, ArrayvPancakeInsertion, &strategies::arrayvPancakeInsertion)
 		SORT_STRATEGY_REQUEST_BUILDER(buildStoogeRequest, Stooge, &strategies::stooge)
-		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBufferedStoogeRequest, ArrayvBufferedStooge, &strategies::bufferedStoogeSort)
 		SORT_STRATEGY_REQUEST_BUILDER(buildBogoRequest, Bogo, &strategies::bogo)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBozoRequest, ArrayvBozo, &strategies::bozoSort)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvBubbleBogoRequest, ArrayvBubbleBogo, &strategies::bubbleBogoSort)

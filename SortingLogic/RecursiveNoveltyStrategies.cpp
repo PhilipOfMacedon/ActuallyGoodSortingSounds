@@ -1,4 +1,5 @@
 #include "AlgorithmStrategies.h"
+#include "TraceRequestBuilderInternal.h"
 #include "TraceRecorder.h"
 
 #include <algorithm>
@@ -437,5 +438,26 @@ namespace sortinglogic
 				}
 			}
 		}
+	}
+
+	SortTrace buildArrayvBufferedStoogeRequest(const TraceBuildRequest& request)
+	{
+		SortTrace trace = detail::buildAlgorithmTrace(request, SortAlgorithm::ArrayvBufferedStooge,
+			&strategies::bufferedStoogeSort);
+		if (!trace.complete) return trace;
+
+		const std::size_t finalCursor = trace.events.size();
+		const std::map<std::size_t, SortState>::const_iterator finalState = trace.snapshots.find(finalCursor);
+		if (finalState == trace.snapshots.end())
+			throw std::logic_error("A complete Buffered Stooge trace is missing its final snapshot.");
+
+		for (std::size_t i = 1; i < finalState->second.slots.size(); ++i)
+			if (compareItems(finalState->second.slots[i - 1].item, finalState->second.slots[i].item, request.direction)
+				== ComparisonResult::Greater)
+			{
+				trace.outcome = AlgorithmOutcome::IncompleteDemonstration;
+				break;
+			}
+		return trace;
 	}
 }
