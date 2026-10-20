@@ -103,10 +103,74 @@ namespace sortinglogic
 					subarrayCount >>= 1;
 				}
 			}
+
+			void inPlaceMergeSort(Recorder& r)
+			{
+				const std::size_t count = r.state.slots.size();
+				if (count < 2) return;
+				r.declareMetric("in_place_merges");
+				r.declareMetric("in_place_merge_swaps");
+				r.declareMetric("merge_comparisons");
+
+				std::function<void(std::size_t, std::size_t)> sortRange;
+				sortRange = [&r, &sortRange](std::size_t first, std::size_t last)
+				{
+					r.chargeWork();
+					const std::size_t length = last - first;
+					if (length < 2) return;
+					if (length == 2)
+					{
+						const SortItem a = r.at(first), b = r.at(first + 1);
+						r.compare(a, b, first, first + 1);
+						r.addMetric("merge_comparisons");
+						if (compareItems(a, b, r.trace.direction) == ComparisonResult::Greater)
+						{
+							r.swap(first, first + 1, SemanticRole::WriteTarget);
+							r.addMetric("in_place_merge_swaps");
+						}
+						return;
+					}
+
+					const std::size_t middle = first + length / 2;
+					sortRange(first, middle);
+					sortRange(middle, last);
+					const std::size_t annotationBegin = r.trace.events.size();
+					const int phase = r.beginPhase("In-place stable merge");
+					for (std::size_t left = first; left < middle; ++left)
+					{
+						r.chargeWork();
+						const SortItem a = r.at(left), b = r.at(middle);
+						r.compare(a, b, left, middle, "main", "main", SemanticRole::ComparedItem, SemanticRole::WriteTarget);
+						r.addMetric("merge_comparisons");
+						if (compareItems(a, b, r.trace.direction) == ComparisonResult::Greater)
+						{
+							r.swap(left, middle, SemanticRole::WriteTarget);
+							r.addMetric("in_place_merge_swaps");
+							for (std::size_t right = middle; right + 1 < last; ++right)
+							{
+								r.chargeWork();
+								const SortItem earlier = r.at(right), later = r.at(right + 1);
+								r.compare(earlier, later, right, right + 1, "main", "main",
+									SemanticRole::ComparedItem, SemanticRole::WriteTarget);
+								r.addMetric("merge_comparisons");
+								if (compareItems(earlier, later, r.trace.direction) != ComparisonResult::Greater) break;
+								r.swap(right, right + 1, SemanticRole::WriteTarget);
+								r.addMetric("in_place_merge_swaps");
+							}
+						}
+					}
+					r.addMetric("in_place_merges");
+					r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "In-place merge range", annotationBegin);
+					r.endPhase(phase, "In-place stable merge");
+				};
+
+				sortRange(0, count);
+			}
 		}
 
 		void mergeSortStrategy(Recorder& r) { mergeSort(r); }
 		void binaryMergeStrategy(Recorder& r) { binaryMergeSort(r); }
 		void iterativeTopDownMergeStrategy(Recorder& r) { iterativeTopDownMergeSort(r); }
+		void inPlaceMergeStrategy(Recorder& r) { inPlaceMergeSort(r); }
 	}
 }

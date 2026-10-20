@@ -1269,3 +1269,18 @@ Verification:
 - `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
 
 Next: extract the in-place merge strategy, then continue through merge kernels with dedicated existing replay suites.
+
+## 2026-10-20 — extract In-Place Merge Sort
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved In-Place Merge Sort and its recursive range worker into `SortingLogic/MergeStrategies.cpp`, registered through a direct strategy builder, and removed its fallback-switch case.
+- Kept the existing rotation-by-swapping procedure, comparison roles, work charges, phase annotations, metrics, and event sequence intact. The catalog ID and its in-place/unstable metadata remain unchanged.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- In each configuration: In-Place Merge passed 39,872 checks; core contracts passed 39,535; pinned catalog coverage passed 1,741. All reported 0 failures.
+- `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
+
+Next: extract the parallel and rotation-based merge strategies with their existing replay suites, then resume the configuration and view-ownership items in the audit.

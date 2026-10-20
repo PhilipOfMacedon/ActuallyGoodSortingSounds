@@ -70,6 +70,7 @@ namespace sortinglogic
 		void mergeSortStrategy(detail::Recorder& recorder);
 		void binaryMergeStrategy(detail::Recorder& recorder);
 		void iterativeTopDownMergeStrategy(detail::Recorder& recorder);
+		void inPlaceMergeStrategy(detail::Recorder& recorder);
 		void optimizedBubble(detail::Recorder& recorder);
 		void optimizedCocktail(detail::Recorder& recorder);
 		void selection(detail::Recorder& recorder);
