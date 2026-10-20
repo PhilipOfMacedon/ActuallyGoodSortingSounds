@@ -32,6 +32,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AssetPaths.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="AppearanceDialogAdapter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SDL2BarGraphics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -45,6 +46,7 @@
   <ItemGroup>
     <ClInclude Include="AppearanceEditorLayout.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppearanceEditorModel.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="AppearanceDialogAdapter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ActiveRoleLookup.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserModel.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserView.h"><Filter>Header Files</Filter></ClInclude>

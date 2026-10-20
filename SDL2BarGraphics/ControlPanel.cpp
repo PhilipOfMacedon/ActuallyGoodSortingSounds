@@ -11,11 +11,7 @@
 
 #include <SDL.h>
 
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <Windows.h>
-#include <commdlg.h>
-
+#include "AppearanceDialogAdapter.h"
 #include "LayoutMetrics.h"
 #include "Renderer2D.h"
 #include "Window.h"
@@ -171,48 +167,6 @@ namespace
 		case UiTokenType::Font: text << value.font.family << " | " << value.font.style; break;
 		}
 		return text.str();
-	}
-
-	bool writeUtf8File(const std::wstring& path, const std::string& contents, std::string* error)
-	{
-		HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (file == INVALID_HANDLE_VALUE)
-		{
-			if (error) *error = "Could not create the profile file.";
-			return false;
-		}
-		DWORD written = 0;
-		const BOOL ok = WriteFile(file, contents.data(), static_cast<DWORD>(contents.size()), &written, nullptr) && written == contents.size();
-		CloseHandle(file);
-		if (!ok && error) *error = "Could not write the full profile file.";
-		return ok != FALSE;
-	}
-
-bool readUtf8File(const std::wstring& path, std::string& contents, std::string* error)
-	{
-		HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (file == INVALID_HANDLE_VALUE)
-		{
-			if (error) *error = "Could not open the profile file.";
-			return false;
-		}
-		LARGE_INTEGER size;
-		if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 || size.QuadPart > 1024 * 1024)
-		{
-			CloseHandle(file);
-			if (error) *error = "The profile file is too large or could not be read.";
-			return false;
-		}
-		contents.assign(static_cast<std::size_t>(size.QuadPart), '\0');
-		DWORD read = 0;
-		const BOOL ok = contents.empty() || ReadFile(file, &contents[0], static_cast<DWORD>(contents.size()), &read, nullptr);
-		CloseHandle(file);
-		if (!ok || read != contents.size())
-		{
-			if (error) *error = "Could not read the full profile file.";
-			return false;
-		}
-		return true;
 	}
 
 	std::vector<std::string> spacingNames()
@@ -2896,17 +2850,8 @@ void ControlPanel::chooseAppearanceColor()
 	const UiTokenValue value = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken);
 	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
 	if (!descriptor || descriptor->type != UiTokenType::Color || value.type != UiTokenType::Color) return;
-	static COLORREF customColors[16] = {};
-	CHOOSECOLORW dialog = {};
-	dialog.lStructSize = sizeof(dialog);
-	dialog.hwndOwner = window_.getWindow() ? GetActiveWindow() : nullptr;
-	dialog.rgbResult = RGB(static_cast<BYTE>(value.color.r * 255.0f), static_cast<BYTE>(value.color.g * 255.0f), static_cast<BYTE>(value.color.b * 255.0f));
-	dialog.lpCustColors = customColors;
-	dialog.Flags = CC_FULLOPEN | CC_RGBINIT;
-	if (!ChooseColorW(&dialog)) return;
-	UiColor color(static_cast<float>(GetRValue(dialog.rgbResult)) / 255.0f,
-		static_cast<float>(GetGValue(dialog.rgbResult)) / 255.0f,
-		static_cast<float>(GetBValue(dialog.rgbResult)) / 255.0f, value.color.a);
+	UiColor color;
+	if (!AppearanceDialogAdapter::chooseColor(window_, value.color, color)) return;
 	std::string error;
 	if (!setUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken,
 		UiTokenValue::fromColor(color), &error)) appearanceError_ = error;
@@ -2916,16 +2861,10 @@ void ControlPanel::chooseAppearanceColor()
 
 void ControlPanel::importAppearanceProfile()
 {
-	wchar_t path[MAX_PATH] = {};
-	OPENFILENAMEW dialog = {};
-	dialog.lStructSize = sizeof(dialog); dialog.hwndOwner = window_.getWindow() ? GetActiveWindow() : nullptr;
-	dialog.lpstrFilter = L"AGSS UI profiles (*.agss-ui.ini)\0*.agss-ui.ini\0INI files (*.ini)\0*.ini\0All files (*.*)\0*.*\0\0";
-	dialog.lpstrFile = path; dialog.nMaxFile = MAX_PATH; dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-	if (!GetOpenFileNameW(&dialog)) return;
-	std::string contents, error;
-	if (!readUtf8File(path, contents, &error)) { appearanceError_ = error; return; }
-	UiAppearanceProfile profile;
-	if (!parseUiAppearanceProfile(contents, profile, &error)) { appearanceError_ = error; return; }
+	const AppearanceDialogResult result = AppearanceDialogAdapter::importProfile(window_);
+	if (result.status == AppearanceDialogStatus::Cancelled) return;
+	if (result.status == AppearanceDialogStatus::Failed) { appearanceError_ = result.error; return; }
+	const UiAppearanceProfile& profile = result.profile;
 	appearanceDraft_.themes[profile.preset] = profile.theme;
 	appearanceDraft_.activePreset = profile.preset;
 	appearanceEditorModel_.setPreset(profile.preset);
@@ -2944,18 +2883,12 @@ void ControlPanel::importAppearanceProfile()
 
 void ControlPanel::exportAppearanceProfile()
 {
-	wchar_t path[MAX_PATH] = L"appearance.agss-ui.ini";
-	OPENFILENAMEW dialog = {};
-	dialog.lStructSize = sizeof(dialog); dialog.hwndOwner = window_.getWindow() ? GetActiveWindow() : nullptr;
-	dialog.lpstrFilter = L"AGSS UI profiles (*.agss-ui.ini)\0*.agss-ui.ini\0\0";
-	dialog.lpstrFile = path; dialog.nMaxFile = MAX_PATH; dialog.lpstrDefExt = L"agss-ui.ini";
-	dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-	if (!GetSaveFileNameW(&dialog)) return;
-	std::string error;
 	const UiPresetId preset = appearanceEditorModel_.preset();
-	const std::string contents = serializeUiAppearanceProfile(preset, appearanceDraft_.themes[preset]);
-	if (!writeUtf8File(path, contents, &error)) appearanceError_ = error;
-	else appearanceError_ = "Appearance profile exported.";
+	const AppearanceDialogResult result = AppearanceDialogAdapter::exportProfile(window_, preset,
+		appearanceDraft_.themes[preset]);
+	if (result.status == AppearanceDialogStatus::Cancelled) return;
+	appearanceError_ = result.status == AppearanceDialogStatus::Failed
+		? result.error : "Appearance profile exported.";
 }
 
 void ControlPanel::completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result)

@@ -22,6 +22,7 @@
     <ClCompile Include="PlaybackFrameCoordinator.cpp" />
     <ClCompile Include="ArrayRenderer.cpp" />
     <ClCompile Include="AssetPaths.cpp" />
+    <ClCompile Include="AppearanceDialogAdapter.cpp" />
     <ClCompile Include="ControlPanel.cpp" />
     <ClCompile Include="FrameCoordinator.cpp" />
     <ClCompile Include="Renderer2D.cpp" />
@@ -37,6 +38,7 @@
   <ItemGroup>
     <ClInclude Include="AppearanceEditorLayout.h" />
     <ClInclude Include="AppearanceEditorModel.h" />
+    <ClInclude Include="AppearanceDialogAdapter.h" />
     <ClInclude Include="ActiveRoleLookup.h" />
     <ClInclude Include="AlgorithmBrowserModel.h" />
     <ClInclude Include="AlgorithmBrowserView.h" />

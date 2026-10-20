@@ -994,6 +994,22 @@ Verification:
 
 Next: continue the UI boundary work from the corrected current-tree audit. Prefer extracting one cohesive owner from `ControlPanel` (appearance editing or main profile composition) rather than moving rendering code without ownership changes.
 
+## 2026-10-20 — move native appearance dialogs behind an adapter
+
+Status: implementation and four-configuration build/test verification complete.
+
+- Added `AppearanceDialogAdapter` to the Windows/SDL application host. It now owns the native color chooser, appearance-profile file pickers, bounded UTF-8 file reads/writes, and calls to the existing profile codec.
+- `ControlPanel` handles only the returned status/profile/error and applies successful edits to its current draft. The existing dialog filters, default export filename, 1 MiB import limit, cancellation behavior, profile messages, and color alpha are preserved.
+- Removed the Win32 dialog and file APIs from `ControlPanel.cpp`; no appearance serialization format or preset/token behavior changed.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64 Debug/Release and Win32 Debug/Release.
+- `AppFrameworkTests` passed in all four configurations, including existing appearance-profile codec checks.
+- `git diff --check` passed; only configured LF-to-CRLF notices were reported.
+
+Next: extract one remaining `ControlPanel` state/composition owner. The platform dialog, SDL event, and font-enumeration adapters are now explicit; avoid merely moving drawing statements into a second facade.
+
 ## 2026-10-20 — remove Release framework PDB warnings
 
 Status: implementation and warning/performance verification complete.
