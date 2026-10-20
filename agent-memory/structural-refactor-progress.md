@@ -175,7 +175,7 @@ Next: continue migrating catalog entries to direct strategy registrations and re
 
 ## 2026-10-19 — register extracted strategies directly
 
-Status: implementation and focused verification complete; pending commit.
+Status: committed and pushed as `d8df4a4`.
 
 - Added a strategy-function path to the common trace-build harness. It still owns recorder construction, budget failures, finalization, trace validation, and audio-event indexing.
 - Pointed the extracted insertion, elementary exchange/selection, and sorting-network catalog builders directly at their strategy functions instead of redispatching through the algorithm switch. The switch remains the compatibility route for strategies not yet extracted.
@@ -193,3 +193,22 @@ Verification:
 - The direct strategy path did not change trace events, phase schedules, Counting/Radix baselines, audio eligibility, or settings behavior.
 
 Next: continue extracting and directly registering cohesive algorithm groups, then move catalog metadata and run configuration behind smaller private modules.
+
+## 2026-10-19 — isolate distribution strategies
+
+Status: implementation and focused verification complete; pending commit.
+
+- Moved Counting, Radix, American Flag, binary quick variants, Flash, Pigeonhole, Index, in-place and rotate radix variants, Gravity variants, Shatter variants, Static, and Time Sort into `DistributionStrategies.cpp`.
+- Kept key transforms, bucket helpers, reversible counter/workspace operations, and distribution-specific bounds in the same private module. Special variant selection is wrapped by named strategy entry points.
+- Pointed all 21 distribution catalog entries directly at their strategy functions. The common trace harness still owns budgets, finalization, state validation, and audio-index generation.
+- Added exhaustive small duplicate-key/permutation replay cases for every distribution strategy in ascending and descending order. Counting/Radix's existing event-order, audio-eligibility, and PCM reference fixtures remain separate regression gates.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 39,446 checks with 0 failures. This includes all distribution variants in both directions and the frozen Counting/Radix event/audio fixtures.
+- Debug and Release catalog-coverage runs: each passed 1,678 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- No Counting/Radix event order, audio eligibility, gains, synthesis, or transport behavior changed.
+
+Next: extract another cohesive algorithm family and directly register its variants; then reduce the remaining configuration and catalog coupling.

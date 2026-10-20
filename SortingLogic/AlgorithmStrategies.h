@@ -58,5 +58,27 @@ namespace sortinglogic
 		void weaveParallel(detail::Recorder& recorder);
 		void weaveRecursive(detail::Recorder& recorder);
 		void matrixSort(detail::Recorder& recorder);
+
+		void counting(detail::Recorder& recorder);
+		void radix(detail::Recorder& recorder);
+		void americanFlag(detail::Recorder& recorder);
+		void binaryQuickIterative(detail::Recorder& recorder);
+		void binaryQuickRecursive(detail::Recorder& recorder);
+		void stacklessBinaryRadix(detail::Recorder& recorder);
+		void stacklessAmericanFlag(detail::Recorder& recorder);
+		void flash(detail::Recorder& recorder);
+		void pigeonhole(detail::Recorder& recorder);
+		void indexSort(detail::Recorder& recorder);
+		void inPlaceLsdRadix(detail::Recorder& recorder);
+		void rotateLsdRadix(detail::Recorder& recorder);
+		void rotateMsdRadix(detail::Recorder& recorder);
+		void msdRadix(detail::Recorder& recorder);
+		void gravity(detail::Recorder& recorder);
+		void classicGravity(detail::Recorder& recorder);
+		void simplisticGravity(detail::Recorder& recorder);
+		void shatterSort(detail::Recorder& recorder);
+		void simpleShatterSort(detail::Recorder& recorder);
+		void staticSort(detail::Recorder& recorder);
+		void timeSort(detail::Recorder& recorder);
 	}
 }

@@ -632,6 +632,60 @@ namespace
 			}
 	}
 
+	void testDirectDistributionStrategies()
+	{
+		using namespace sortinglogic;
+		const SortAlgorithm algorithms[] = {
+			SortAlgorithm::Counting, SortAlgorithm::Radix, SortAlgorithm::ArrayvAmericanFlag,
+			SortAlgorithm::ArrayvBinaryQuickIterative, SortAlgorithm::ArrayvBinaryQuickRecursive,
+			SortAlgorithm::ArrayvClassicGravity, SortAlgorithm::ArrayvFlash, SortAlgorithm::ArrayvGravity,
+			SortAlgorithm::ArrayvInPlaceLsdRadix, SortAlgorithm::ArrayvIndex, SortAlgorithm::ArrayvLsdRadix,
+			SortAlgorithm::ArrayvMsdRadix, SortAlgorithm::ArrayvPigeonhole, SortAlgorithm::ArrayvRotateLsdRadix,
+			SortAlgorithm::ArrayvRotateMsdRadix, SortAlgorithm::ArrayvShatter, SortAlgorithm::ArrayvSimpleShatter,
+			SortAlgorithm::ArrayvSimplisticGravity, SortAlgorithm::ArrayvStatic, SortAlgorithm::ArrayvTime,
+			SortAlgorithm::ArrayvStacklessAmericanFlag, SortAlgorithm::ArrayvStacklessBinaryQuick
+		};
+		const InputDomain candidateDomains[] = { InputDomain::NonnegativeIntegerKeys, InputDomain::SignedIntegerKeys,
+			InputDomain::IntegerPermutation, InputDomain::NormalizedFloats };
+		for (std::size_t algorithmIndex = 0; algorithmIndex < sizeof(algorithms) / sizeof(algorithms[0]); ++algorithmIndex)
+		{
+			const SortAlgorithm algorithm = algorithms[algorithmIndex];
+			InputDomain domain = InputDomain::NormalizedFloats;
+			for (std::size_t domainIndex = 0; domainIndex < sizeof(candidateDomains) / sizeof(candidateDomains[0]); ++domainIndex)
+				if (algorithmSupports(algorithm, candidateDomains[domainIndex]))
+				{
+					domain = candidateDomains[domainIndex];
+					break;
+				}
+			std::vector<SortItem> input;
+			if (domain == InputDomain::NormalizedFloats) input = floats({ 0.6f, 0.2f, 0.6f, 0.1f, 0.2f });
+			else if (domain == InputDomain::IntegerPermutation)
+			{
+				const int keys[] = { 3, 1, 4, 0, 2 };
+				for (std::size_t item = 0; item < 5; ++item)
+					input.push_back(SortItem(item, keys[item], static_cast<float>(keys[item] + 1) / 5.0f));
+			}
+			else
+			{
+				const int keys[] = { 3, 1, 3, 0, 1 };
+				for (std::size_t item = 0; item < 5; ++item)
+				{
+					const int key = domain == InputDomain::SignedIntegerKeys ? keys[item] - 2 : keys[item];
+					const float value = domain == InputDomain::SignedIntegerKeys
+						? static_cast<float>(key + 5) / 10.0f : static_cast<float>(key + 1) / 5.0f;
+					input.push_back(SortItem(item, key, value));
+				}
+			}
+			for (int directionIndex = 0; directionIndex < 2; ++directionIndex)
+			{
+				const SortDirection direction = directionIndex == 0 ? SortDirection::Ascending : SortDirection::Descending;
+				verifyAlgorithmCase(std::string("Direct distribution ") + algorithmDisplayName(algorithm) +
+					(directionIndex == 0 ? " ascending" : " descending"), input, inputProfileForDomain(domain),
+					algorithm, direction, domain);
+			}
+		}
+	}
+
 	void testMatrixSortShapes()
 	{
 		using namespace sortinglogic;
@@ -4971,6 +5025,8 @@ int main(int argc, char* argv[])
 					verifyAlgorithmCase(std::string("Extracted ") + algorithmDisplayName(algorithm), networkInput, InputProfile::IntegerKeys,
 						algorithm, direction, InputDomain::NonnegativeIntegerKeys);
 				}
+			stage = "Direct distribution strategy extraction";
+			testDirectDistributionStrategies();
 			stage = "testDistributionAudioBaselines";
 			testDistributionAudioBaselines();
 			stage = "testBurntPancakeOrientation";
