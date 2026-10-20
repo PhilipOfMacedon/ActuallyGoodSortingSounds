@@ -34,7 +34,7 @@ namespace
 }
 
 AlgorithmBrowserModel::AlgorithmBrowserModel()
-	: open(false), variantPane(false), searchFocused(false), pendingSelection(false), status(), search(), selectedFamily(),
+	: variantPane(false), searchFocused(false), pendingSelection(false), status(), search(), selectedFamily(),
 	familySelection(0), variantSelection(0), familyScroll(0), variantScroll(0), bounds(), searchBounds(), familyBounds(),
 	variantBounds(), familyViewport(), variantViewport()
 {
@@ -42,7 +42,6 @@ AlgorithmBrowserModel::AlgorithmBrowserModel()
 
 void AlgorithmBrowserModel::begin(const sortinglogic::FamilyId& initialFamily)
 {
-	open = true;
 	variantPane = false;
 	searchFocused = true;
 	pendingSelection = false;
@@ -55,9 +54,8 @@ void AlgorithmBrowserModel::begin(const sortinglogic::FamilyId& initialFamily)
 	variantScroll = 0;
 }
 
-void AlgorithmBrowserModel::close()
+void AlgorithmBrowserModel::reset()
 {
-	open = false;
 	pendingSelection = false;
 	status.clear();
 	variantPane = false;
@@ -66,7 +64,7 @@ void AlgorithmBrowserModel::close()
 
 void AlgorithmBrowserModel::layout(const UiRect& anchor, int logicalWidth, int logicalHeight)
 {
-	if (!open || logicalWidth <= 0 || logicalHeight <= 0) return;
+	if (logicalWidth <= 0 || logicalHeight <= 0) return;
 	const float width = static_cast<float>(logicalWidth);
 	const float height = static_cast<float>(logicalHeight);
 	const float menuWidth = std::min(700.0f, std::max(1.0f, width - 24.0f));
@@ -178,7 +176,6 @@ AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEven
 	int selectedAlgorithm)
 {
 	AlgorithmBrowserInputResult result;
-	if (!open) return result;
 	prepare();
 	const std::vector<const AlgorithmFamilyEntry*> matches = visibleFamilies();
 	const AlgorithmFamilyEntry* selected = nullptr;

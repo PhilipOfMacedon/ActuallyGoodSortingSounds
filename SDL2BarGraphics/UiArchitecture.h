@@ -11,6 +11,32 @@
 
 enum class UiTransportState { NoTrace, Ready, Playing, Building, Queued, Preparing, Replay };
 
+enum class UiOverlayId { None, Settings, AlgorithmBrowser, AppearanceEditor };
+
+// Keeps modal ownership in one place. The appearance editor may be opened from
+// Settings and returns there when dismissed; all other overlays are exclusive.
+class UiOverlayState
+{
+public:
+	UiOverlayState();
+
+	UiOverlayId active() const { return active_; }
+	bool is(UiOverlayId overlay) const { return active_ == overlay; }
+	bool settingsSurfaceOpen() const;
+	bool modalOpen() const { return active_ != UiOverlayId::None; }
+
+	bool openSettings();
+	bool closeSettings();
+	bool openAlgorithmBrowser();
+	bool closeAlgorithmBrowser();
+	bool openAppearanceEditor();
+	bool closeAppearanceEditor();
+
+private:
+	UiOverlayId active_;
+	UiOverlayId appearanceReturnOverlay_;
+};
+
 struct UiTelemetryValue
 {
 	std::string key;

@@ -517,3 +517,22 @@ Verification:
 - `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
 
 Next: replace the independent overlay booleans with explicit overlay ownership and transitions, then centralize view event-to-action routing.
+
+## 2026-10-19 — centralize modal overlay ownership
+
+Status: implementation and focused verification complete.
+
+- Added `UiOverlayState` as the single authority for the active settings panel, algorithm browser, and appearance editor. It enforces modal exclusivity and records the appearance editor's return destination when opened from Settings.
+- Removed the settings, appearance-editor, and saved-return booleans from `ControlPanel`; input capture, event routing, drawing, and modal queries now derive from the overlay state. Input capture is synchronized whenever an overlay transition occurs.
+- Removed the algorithm browser model's independent visibility flag. The model now owns only search, selection, and scroll interaction state; `ControlPanel` owns whether its view is active.
+- Added headless transition checks for initial state, Settings-to-Appearance return, modal exclusivity, browser ownership, and return to the main view.
+- Preserved the existing routes and appearance workflow. Opening the appearance editor from the algorithm browser now closes that browser first, preventing overlapping modal state.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Release `SoundEngineTests`: passed (417,371 assertions); no sound code changed.
+- A separate Debug `SortingLogicTests` catalog run is still in progress; no SortingLogic files changed in this slice.
+
+Next: centralize view event-to-action routing so the retained UI tree emits one typed action path instead of mixing widget events and direct view commands inside `ControlPanel`.

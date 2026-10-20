@@ -433,7 +433,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), settingsUi_(), appearanceUi_(), settingsPanelModel_(), algorithmBrowser_(), algorithmBrowserView_(), settingsPanelView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+	mainUi_(), settingsUi_(), appearanceUi_(), settingsPanelModel_(), overlayState_(), algorithmBrowser_(), algorithmBrowserView_(), settingsPanelView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
@@ -445,7 +445,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	displayedDetail_(), displayedStatus_(), displayedCollapsedSummary_(), displayedSaveStatus_(), lastDetailUpdate_(0),
 	timelineBounds_(), timelineControlBounds_(), timelineLeftArrowBounds_(), timelineRightArrowBounds_(),
 	headerBounds_(), gearBounds_(), settingsPanelBounds_(), settingsContentBounds_(), draggingTimeline_(false),
-	settingsOpen_(false), appearanceEditorOpen_(false), appearanceWasSettingsOpen_(false), appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
+	appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
 	algorithmProfileScrollViewport_(), algorithmProfileComplexityLayout_(measureLogicalTextWidth),
 	algorithmProfileDescriptionLayout_(measureLogicalTextWidth),
 	algorithmProfileScrollTrack_(), algorithmProfileScrollThumb_(),
@@ -464,7 +464,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 
 ControlPanel::~ControlPanel()
 {
-	if (!inlineEditWidgetId_.empty() || algorithmBrowser_.open || appearanceSearchFocused_) SDL_StopTextInput();
+	if (!inlineEditWidgetId_.empty() || algorithmBrowserOpen() || appearanceSearchFocused_) SDL_StopTextInput();
 }
 
 bool ControlPanel::isReady() const
@@ -783,12 +783,12 @@ void ControlPanel::updateLayout()
 	settingsPanelBounds_ = UiRect(std::max(8.0f, static_cast<float>(width_) - panelWidth - 8.0f), 42.0f,
 		panelWidth, std::min(panelHeight, std::max(200.0f, static_cast<float>(height_) - 50.0f)));
 	settingsUi_.layoutContainer("settings_panel", settingsPanelBounds_);
-	if (settingsOpen_)
+	if (overlayState_.is(UiOverlayId::Settings))
 		settingsUi_.setModalBounds(settingsPanelBounds_, UiAction::ViewCommand::CloseSettings);
 	layoutAlgorithmMenu();
 	layoutSettingsControls();
 	layoutMainComboPopups();
-	if (appearanceEditorOpen_) layoutAppearanceEditor();
+	if (appearanceEditorOpen()) layoutAppearanceEditor();
 }
 
 void ControlPanel::layoutMainComboPopups()
@@ -1158,7 +1158,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 
 bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 {
-	if (!appearanceEditorOpen_ && !algorithmBrowser_.open && !appearanceSearchFocused_ && inlineEditWidgetId_.empty() &&
+	if (!appearanceEditorOpen() && !algorithmBrowserOpen() && !appearanceSearchFocused_ && inlineEditWidgetId_.empty() &&
 		event.type == SDL_KEYDOWN && !event.key.repeat &&
 		event.key.keysym.sym == SDLK_F12 && (event.key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT)) == (KMOD_CTRL | KMOD_SHIFT))
 	{
@@ -1166,13 +1166,13 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		return true;
 	}
 	renderPreferences_ = settings_;
-	if (appearanceEditorOpen_) renderPreferences_.appearance = appearanceDraft_;
+	if (appearanceEditorOpen()) renderPreferences_.appearance = appearanceDraft_;
 	updateLayout();
-	if (appearanceEditorOpen_)
+	if (appearanceEditorOpen())
 		return handleAppearanceEditorEvent(event, action);
-	if (algorithmBrowser_.open)
+	if (algorithmBrowserOpen())
 		return handleAlgorithmMenuEvent(event, action);
-	if (!settingsOpen_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+	if (!settingsOpen() && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 	{
 		const UiWidget* bars = mainUi_.find("bars_value");
 		const UiWidget* duration = mainUi_.find("time_value");
@@ -1225,7 +1225,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 			return true;
 		}
 	}
-	if (settingsOpen_ && event.type == SDL_MOUSEWHEEL)
+	if (overlayState_.is(UiOverlayId::Settings) && event.type == SDL_MOUSEWHEEL)
 	{
 		int mouseX = 0, mouseY = 0;
 		SDL_GetMouseState(&mouseX, &mouseY);
@@ -1238,14 +1238,14 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		}
 		return true;
 	}
-	if (!settingsOpen_ && algorithmProfileVisible_ && event.type == SDL_MOUSEWHEEL)
+	if (!settingsOpen() && algorithmProfileVisible_ && event.type == SDL_MOUSEWHEEL)
 	{
 		int mouseX = 0, mouseY = 0;
 		SDL_GetMouseState(&mouseX, &mouseY);
 		if (algorithmProfileScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
 			return true;
 	}
-	if (!settingsOpen_ && algorithmProfileVisible_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+	if (!settingsOpen() && algorithmProfileVisible_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
 		algorithmProfileScrollViewport_.maximumOffset() > 0.0f &&
 		algorithmProfileScrollTrack_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
 	{
@@ -1261,7 +1261,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		algorithmProfileDragStartOffset_ = algorithmProfileScrollViewport_.offset();
 		return true;
 	}
-	if (!settingsOpen_ && algorithmProfileVisible_ && event.type == SDL_MOUSEMOTION && draggingAlgorithmProfileScroll_)
+	if (!settingsOpen() && algorithmProfileVisible_ && event.type == SDL_MOUSEMOTION && draggingAlgorithmProfileScroll_)
 	{
 		const float trackTravel = algorithmProfileScrollTrack_.height - algorithmProfileScrollThumb_.height;
 		if (trackTravel > 0.0f)
@@ -1279,7 +1279,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	}
 	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
 		draggingAlgorithmProfileScroll_ = false;
-	if (!settingsOpen_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+	if (!settingsOpen() && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
 		settings_.visual.panelExpanded && timelineControlBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
 	{
 		if (timelineLeftArrowBounds_.contains(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
@@ -1294,7 +1294,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		}
 	}
 	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
-		inRect(timelineBounds_, event.button.x, event.button.y) && settings_.visual.panelExpanded && !settingsOpen_)
+		inRect(timelineBounds_, event.button.x, event.button.y) && settings_.visual.panelExpanded && !settingsOpen())
 	{
 		draggingTimeline_ = true;
 		action = AppAction(AppActionKind::SeekFraction, timelineFraction(static_cast<float>(event.button.x)));
@@ -1352,7 +1352,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	else
 		translated = false;
 	if (!translated)
-		return settingsOpen_ || action.kind != AppActionKind::None;
+		return settingsOpen() || action.kind != AppActionKind::None;
 	if (event.type == SDL_MOUSEBUTTONDOWN)
 	{
 		const SDL_Keymod modifiers = SDL_GetModState();
@@ -1361,7 +1361,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		input.alt = (modifiers & KMOD_ALT) != 0;
 	}
 	UiAction uiAction;
-	const bool consumed = (settingsOpen_ ? settingsUi_ : mainUi_).handleEvent(input, uiAction);
+	const bool consumed = (settingsOpen() ? settingsUi_ : mainUi_).handleEvent(input, uiAction);
 	if (consumed && (uiAction.viewCommand != UiAction::ViewCommand::None || uiAction.appAction.kind != AppActionKind::None ||
 		uiAction.event.kind != UiEventKind::None))
 	{
@@ -1370,7 +1370,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		if (processedAction.kind != AppActionKind::None || action.kind == AppActionKind::None)
 			action = processedAction;
 	}
-	return consumed || settingsOpen_ || action.kind != AppActionKind::None;
+	return consumed || settingsOpen() || action.kind != AppActionKind::None;
 }
 
 void ControlPanel::processAction(const UiAction& action, AppAction& output)
@@ -1417,8 +1417,8 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	}
 	if (action.viewCommand == UiAction::ViewCommand::OpenSettings)
 	{
-		settingsOpen_ = true;
-		settingsUi_.setInputCaptured(true);
+		if (!overlayState_.openSettings()) return;
+		updateOverlayInputCapture();
 		settingsUi_.setModalBounds(settingsPanelBounds_, UiAction::ViewCommand::CloseSettings);
 		mainUi_.closeCombo();
 		return;
@@ -1516,8 +1516,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		settingsUi_.closeCombo();
 		draggingTimeline_ = false;
 		cancelInlineEdit();
-		mainUi_.setInputCaptured(false);
-		settingsUi_.setInputCaptured(settingsOpen_);
+		updateOverlayInputCapture();
 		layoutCacheValid_ = false;
 	}
 	output = action.appAction;
@@ -1536,16 +1535,16 @@ void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const st
 	syncLabels(snapshot);
 	fontFallbackActive_ = false;
 	drawMainPanel(snapshot, palette);
-	if (settingsOpen_ && !appearanceEditorOpen_) drawSettingsPanel(palette, audioStatus);
-	if (algorithmBrowser_.open) drawAlgorithmMenu(palette);
-	if (appearanceEditorOpen_) drawAppearanceEditor();
+	if (overlayState_.is(UiOverlayId::Settings)) drawSettingsPanel(palette, audioStatus);
+	if (algorithmBrowserOpen()) drawAlgorithmMenu(palette);
+	if (appearanceEditorOpen()) drawAppearanceEditor();
 }
 
 void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
 	const std::string& persistenceStatus, bool playbackPending)
 {
 	renderPreferences_ = settings_;
-	if (appearanceEditorOpen_) renderPreferences_.appearance = appearanceDraft_;
+	if (appearanceEditorOpen()) renderPreferences_.appearance = appearanceDraft_;
 	displayedSaveStatus_ = persistenceStatus;
 	updateLayout();
 	updateWidgetStates(snapshot, playbackPending);
@@ -2209,7 +2208,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		// Center the 18x18 pixel-art cog against the button's current bounds.
 		const float cx = x + widget.bounds().width * 0.5f - 6.0f;
 		const float cy = y + widget.bounds().height * 0.5f - 6.0f;
-		const glm::vec4 color = settingsOpen_ ? palette.accent : palette.text;
+		const glm::vec4 color = settingsOpen() ? palette.accent : palette.text;
 		submitBox(UiRect(cx + 2, cy + 2, 8, 8), color, MaterialId::Gear, layerOffset(layer, 2), screenClip);
 		submitBox(UiRect(cx + 4, cy + 4, 4, 4), palette.button, MaterialId::GearCutout, layerOffset(layer, 3), screenClip);
 		submitBox(UiRect(cx + 4, cy - 3, pixel, pixel), color, MaterialId::Gear, layerOffset(layer, 2), screenClip);
@@ -2337,31 +2336,41 @@ void ControlPanel::submitBox(const UiRect& bounds, const glm::vec4& color, Mater
 
 void ControlPanel::closeSettings()
 {
-	settingsOpen_ = false;
-	settingsUi_.setInputCaptured(false);
+	if (!overlayState_.closeSettings()) return;
+	updateOverlayInputCapture();
 	settingsUi_.closeCombo();
+}
+
+void ControlPanel::updateOverlayInputCapture()
+{
+	mainUi_.setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
+	settingsUi_.setInputCaptured(overlayState_.is(UiOverlayId::Settings));
+	appearanceUi_.setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
 }
 
 void ControlPanel::openAlgorithmMenu()
 {
-	if (settingsOpen_) return;
+	if (!overlayState_.openAlgorithmBrowser()) return;
 	const sortinglogic::AlgorithmDescriptor* current = sortinglogic::algorithmDescriptor(
 		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
 	algorithmBrowser_.begin(current ? current->familyId : sortinglogic::FamilyId());
 	mainUi_.closeCombo();
+	updateOverlayInputCapture();
 	SDL_StartTextInput();
 	layoutAlgorithmMenu();
 }
 
 void ControlPanel::closeAlgorithmMenu()
 {
-	algorithmBrowser_.close();
+	if (!overlayState_.closeAlgorithmBrowser()) return;
+	algorithmBrowser_.reset();
+	updateOverlayInputCapture();
 	SDL_StopTextInput();
 }
 
 void ControlPanel::beginInlineEdit(const std::string& widgetId)
 {
-	if ((widgetId == "appearance_value" || widgetId == "appearance_color_alpha") && appearanceEditorOpen_)
+	if ((widgetId == "appearance_value" || widgetId == "appearance_color_alpha") && appearanceEditorOpen())
 	{
 		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorModel_.preset()), appearanceEditorModel_.selectedToken());
 		if (!descriptor || (widgetId == "appearance_value" && descriptor->type != UiTokenType::Number) ||
@@ -2504,21 +2513,18 @@ void ControlPanel::cancelInlineEdit()
 
 void ControlPanel::openAppearanceEditor()
 {
-	if (appearanceEditorOpen_) return;
-	appearanceWasSettingsOpen_ = settingsOpen_;
+	if (appearanceEditorOpen()) return;
+	if (algorithmBrowserOpen()) closeAlgorithmMenu();
+	if (!overlayState_.openAppearanceEditor()) return;
 	appearanceDraft_ = settings_.appearance;
 	appearanceEditorModel_.begin(appearanceDraft_.activePreset);
 	appearanceError_.clear();
-	settingsOpen_ = true;
 	settingsPanelModel_.showPage(SettingsPanelPage::Appearance);
-	appearanceEditorOpen_ = true;
 	appearanceSearchFocused_ = false;
 	mainUi_.closeCombo();
 	settingsUi_.closeCombo();
 	appearanceUi_.closeCombo();
-	mainUi_.setInputCaptured(true);
-	settingsUi_.setInputCaptured(false);
-	appearanceUi_.setInputCaptured(true);
+	updateOverlayInputCapture();
 	refreshAppearanceTokens();
 	updateAppearanceEditorControls();
 	layoutAppearanceEditor();
@@ -2526,7 +2532,7 @@ void ControlPanel::openAppearanceEditor()
 
 void ControlPanel::closeAppearanceEditor(bool restore)
 {
-	if (!appearanceEditorOpen_) return;
+	if (!appearanceEditorOpen()) return;
 	if (!inlineEditWidgetId_.empty()) cancelInlineEdit();
 	if (appearanceSearchFocused_)
 	{
@@ -2538,12 +2544,9 @@ void ControlPanel::closeAppearanceEditor(bool restore)
 		appearanceDraft_ = settings_.appearance;
 		appearanceEditorModel_.setPreset(appearanceDraft_.activePreset);
 	}
-	appearanceEditorOpen_ = false;
+	if (!overlayState_.closeAppearanceEditor()) return;
 	appearanceUi_.closeCombo();
-	appearanceUi_.setInputCaptured(false);
-	settingsOpen_ = appearanceWasSettingsOpen_;
-	settingsUi_.setInputCaptured(settingsOpen_);
-	mainUi_.setInputCaptured(settingsOpen_);
+	updateOverlayInputCapture();
 	layoutCacheValid_ = false;
 }
 
@@ -2569,7 +2572,7 @@ void ControlPanel::refreshAppearanceTokens()
 
 void ControlPanel::updateAppearanceEditorControls()
 {
-	if (!appearanceEditorOpen_) return;
+	if (!appearanceEditorOpen()) return;
 	const UiPresetId preset = appearanceEditorModel_.preset();
 	const std::string& selectedToken = appearanceEditorModel_.selectedToken();
 	const bool hasTokenOptions = !appearanceEditorModel_.options().empty();
@@ -2661,7 +2664,7 @@ void ControlPanel::updateAppearanceEditorControls()
 
 void ControlPanel::layoutAppearanceEditor()
 {
-	if (!appearanceEditorOpen_ || width_ <= 0 || height_ <= 0) return;
+	if (!appearanceEditorOpen() || width_ <= 0 || height_ <= 0) return;
 	appearanceLayout_ = calculateAppearanceEditorLayout(static_cast<float>(width_), static_cast<float>(height_));
 	if (!appearanceLayout_.valid) return;
 	for (std::map<std::string, UiRect>::const_iterator control = appearanceLayout_.controls.begin();
@@ -2684,7 +2687,7 @@ void ControlPanel::layoutAppearanceEditor()
 
 void ControlPanel::drawAppearanceEditor()
 {
-	if (!appearanceEditorOpen_) return;
+	if (!appearanceEditorOpen()) return;
 	const UiPresetId preset = appearanceEditorModel_.preset();
 	const ThemePalette readable = paletteForAppearance(preset,
 		defaultUiThemeCustomization(preset, PaletteId::Monochrome));
@@ -2906,7 +2909,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 		else if (uiAction.event.kind != UiEventKind::None)
 			processAppearanceEditorAction(uiAction, action);
 	}
-	return consumed || appearanceEditorOpen_;
+	return consumed || appearanceEditorOpen();
 }
 
 void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppAction& output)
@@ -3128,14 +3131,14 @@ void ControlPanel::exportAppearanceProfile()
 
 void ControlPanel::completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result)
 {
-	if (action.kind == AppActionKind::SelectAlgorithm && algorithmBrowser_.open && algorithmBrowser_.pendingSelection)
+	if (action.kind == AppActionKind::SelectAlgorithm && algorithmBrowserOpen() && algorithmBrowser_.pendingSelection)
 	{
 		algorithmBrowser_.pendingSelection = false;
 		if (result.accepted) closeAlgorithmMenu();
 		else algorithmBrowser_.status = result.message.empty() ? "Pause playback before changing algorithms." : result.message;
 		return;
 	}
-	if (action.kind != AppActionKind::ApplyAppearance || !appearanceEditorOpen_) return;
+	if (action.kind != AppActionKind::ApplyAppearance || !appearanceEditorOpen()) return;
 	if (!result.accepted)
 	{
 		appearanceError_ = result.message.empty() ? "Could not save appearance. Check the settings file and try again." : result.message;
@@ -3147,7 +3150,7 @@ void ControlPanel::completeActionResult(const AppAction& action, const sortinglo
 
 void ControlPanel::layoutAlgorithmMenu()
 {
-	if (!algorithmBrowser_.open || width_ <= 0 || height_ <= 0) return;
+	if (!algorithmBrowserOpen() || width_ <= 0 || height_ <= 0) return;
 	algorithmBrowser_.layout(mainUi_.find("algorithm")->bounds(), width_, height_);
 }
 

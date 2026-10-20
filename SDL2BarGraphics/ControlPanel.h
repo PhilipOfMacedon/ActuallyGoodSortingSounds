@@ -46,13 +46,13 @@ public:
 	void render(const sortinglogic::RenderSnapshot& snapshot,
 		const std::string& audioStatus = "Audio device is not initialized.");
 	const UiRect& chartViewport() const { return chartViewport_; }
-	bool settingsOpen() const { return settingsOpen_; }
+	bool settingsOpen() const { return overlayState_.settingsSurfaceOpen(); }
 	bool textEntryActive() const
 	{
 		return !inlineEditWidgetId_.empty() || appearanceSearchFocused_ ||
-			(algorithmBrowser_.open && algorithmBrowser_.searchFocused);
+			(overlayState_.is(UiOverlayId::AlgorithmBrowser) && algorithmBrowser_.searchFocused);
 	}
-	bool modalUiOpen() const { return settingsOpen_ || appearanceEditorOpen_ || algorithmBrowser_.open; }
+	bool modalUiOpen() const { return overlayState_.modalOpen(); }
 
 private:
 	Window& window_;
@@ -62,6 +62,7 @@ private:
 	UIRoot settingsUi_;
 	UIRoot appearanceUi_;
 	SettingsPanelModel settingsPanelModel_;
+	UiOverlayState overlayState_;
 	AlgorithmBrowserModel algorithmBrowser_;
 	AlgorithmBrowserView algorithmBrowserView_;
 	SettingsPanelView settingsPanelView_;
@@ -93,9 +94,6 @@ private:
 	UiRect settingsPanelBounds_;
 	UiRect settingsContentBounds_;
 	bool draggingTimeline_;
-	bool settingsOpen_;
-	bool appearanceEditorOpen_;
-	bool appearanceWasSettingsOpen_;
 	bool appearanceSearchFocused_;
 	bool drawingAppearanceEditor_;
 	UiScrollViewport algorithmProfileScrollViewport_;
@@ -150,6 +148,9 @@ private:
 		TextHorizontalAlignment alignment = TextHorizontalAlignment::Center);
 	void submitBox(const UiRect& bounds, const glm::vec4& color, MaterialId material, RenderLayer layer, const ClipBounds& clip = ClipBounds());
 	void processAction(const UiAction& action, AppAction& output);
+	bool appearanceEditorOpen() const { return overlayState_.is(UiOverlayId::AppearanceEditor); }
+	bool algorithmBrowserOpen() const { return overlayState_.is(UiOverlayId::AlgorithmBrowser); }
+	void updateOverlayInputCapture();
 	void closeSettings();
 	void layoutAlgorithmMenu();
 	void layoutMainComboPopups();

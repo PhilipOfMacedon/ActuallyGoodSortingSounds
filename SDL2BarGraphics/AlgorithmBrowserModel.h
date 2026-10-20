@@ -28,7 +28,6 @@ struct AlgorithmBrowserInputResult
 // selection results; SDL lifecycle and painting remain with ControlPanel.
 struct AlgorithmBrowserModel
 {
-	bool open;
 	bool variantPane;
 	bool searchFocused;
 	bool pendingSelection;
@@ -48,7 +47,7 @@ struct AlgorithmBrowserModel
 
 	AlgorithmBrowserModel();
 	void begin(const sortinglogic::FamilyId& initialFamily);
-	void close();
+	void reset();
 	void layout(const UiRect& anchor, int logicalWidth, int logicalHeight);
 	void prepare();
 	void configureViewports();

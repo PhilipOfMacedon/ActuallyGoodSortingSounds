@@ -737,7 +737,7 @@ namespace
 		if (!insertion) return;
 
 		browser.begin(insertion->familyId);
-		check(browser.open && browser.searchFocused && browser.selectedFamily == insertion->familyId,
+		check(browser.searchFocused && browser.selectedFamily == insertion->familyId,
 			"opening the browser resets its search state and focuses the query field");
 		check(browser.visibleFamilies().size() == catalog.size(),
 			"an empty search displays every family in catalog order");
@@ -804,9 +804,36 @@ namespace
 		browser.begin(insertion->familyId);
 		check(browser.search.empty() && browser.familyScroll == 0 && browser.variantScroll == 0 && !browser.variantPane,
 			"reopening the browser starts a clean selection session");
-		browser.close();
-		check(!browser.open && !browser.searchFocused && !browser.pendingSelection,
-			"closing the browser releases its modal search and pending-selection state");
+		browser.reset();
+		check(!browser.searchFocused && !browser.pendingSelection && !browser.variantPane,
+			"resetting browser interaction clears modal search and pending-selection state");
+	}
+
+	void testUiOverlayState()
+	{
+		UiOverlayState overlays;
+		check(overlays.active() == UiOverlayId::None && !overlays.modalOpen() && !overlays.settingsSurfaceOpen(),
+			"overlay ownership starts closed without claiming modal input");
+		check(overlays.openSettings() && overlays.is(UiOverlayId::Settings) && overlays.settingsSurfaceOpen(),
+			"opening settings establishes a single settings owner");
+		check(!overlays.openAlgorithmBrowser(),
+			"the algorithm browser cannot take ownership while settings is modal");
+		check(overlays.openAppearanceEditor() && overlays.is(UiOverlayId::AppearanceEditor) && overlays.settingsSurfaceOpen(),
+			"the appearance editor replaces settings while retaining its return destination");
+		check(!overlays.openSettings() && !overlays.openAlgorithmBrowser(),
+			"other modal requests cannot displace the appearance editor");
+		check(overlays.closeAppearanceEditor() && overlays.is(UiOverlayId::Settings),
+			"closing the appearance editor restores the settings panel");
+		check(overlays.closeSettings() && overlays.active() == UiOverlayId::None && !overlays.modalOpen(),
+			"closing settings releases modal ownership");
+		check(overlays.openAlgorithmBrowser() && overlays.is(UiOverlayId::AlgorithmBrowser),
+			"the algorithm browser can own the modal after settings close");
+		check(!overlays.openSettings(),
+			"settings cannot open over the algorithm browser");
+		check(overlays.openAppearanceEditor() && overlays.is(UiOverlayId::AppearanceEditor),
+			"appearance editing can replace a browser request without retaining stale browser ownership");
+		check(overlays.closeAppearanceEditor() && overlays.active() == UiOverlayId::None,
+			"appearance editing entered outside settings returns to the main view");
 	}
 
 	void testAppearanceEditorLayout()
@@ -2449,6 +2476,7 @@ int main()
 	testAppearanceEditorLayout();
 	testAppearanceEditorModel();
 	testAlgorithmBrowserModel();
+	testUiOverlayState();
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();
 	testSettingsPanelPaintComposition();

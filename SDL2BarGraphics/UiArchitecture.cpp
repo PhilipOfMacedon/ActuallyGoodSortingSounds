@@ -82,6 +82,60 @@ namespace
 	}
 }
 
+UiOverlayState::UiOverlayState()
+	: active_(UiOverlayId::None), appearanceReturnOverlay_(UiOverlayId::None)
+{
+}
+
+bool UiOverlayState::settingsSurfaceOpen() const
+{
+	return active_ == UiOverlayId::Settings || active_ == UiOverlayId::AppearanceEditor;
+}
+
+bool UiOverlayState::openSettings()
+{
+	if (active_ != UiOverlayId::None && active_ != UiOverlayId::Settings) return false;
+	active_ = UiOverlayId::Settings;
+	return true;
+}
+
+bool UiOverlayState::closeSettings()
+{
+	if (active_ != UiOverlayId::Settings) return false;
+	active_ = UiOverlayId::None;
+	return true;
+}
+
+bool UiOverlayState::openAlgorithmBrowser()
+{
+	if (active_ != UiOverlayId::None && active_ != UiOverlayId::AlgorithmBrowser) return false;
+	active_ = UiOverlayId::AlgorithmBrowser;
+	return true;
+}
+
+bool UiOverlayState::closeAlgorithmBrowser()
+{
+	if (active_ != UiOverlayId::AlgorithmBrowser) return false;
+	active_ = UiOverlayId::None;
+	return true;
+}
+
+bool UiOverlayState::openAppearanceEditor()
+{
+	if (active_ == UiOverlayId::AppearanceEditor) return false;
+	appearanceReturnOverlay_ = active_ == UiOverlayId::Settings ? UiOverlayId::Settings : UiOverlayId::None;
+	active_ = UiOverlayId::AppearanceEditor;
+	return true;
+}
+
+bool UiOverlayState::closeAppearanceEditor()
+{
+	if (active_ != UiOverlayId::AppearanceEditor) return false;
+	active_ = appearanceReturnOverlay_;
+	appearanceReturnOverlay_ = UiOverlayId::None;
+	return true;
+}
+
 UiScreenModel::UiScreenModel()
 	: preset(UiPresetId::Current), transport(UiTransportState::NoTrace), setupEnabled(true), runEnabled(false), playEnabled(false),
 		countEditable(true), durationEditable(true), descending(false), hasTrace(false), buildingTrace(false), playing(false), completed(false),
