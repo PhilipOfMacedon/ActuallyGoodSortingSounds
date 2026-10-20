@@ -252,7 +252,7 @@ Next: use explicit option targets and defaults as the catalog contract, then der
 
 ## 2026-10-19 — declare option bindings and defaults in the catalog
 
-Status: implementation and focused verification complete; pending commit.
+Status: committed and pushed as `e45d3a7`.
 
 - Added `AlgorithmOptionTarget` and an explicit default marker to each current choice descriptor. All registered option groups now declare exactly one default and a trace-configuration target.
 - Replaced `TraceBuilder`'s group-name routing with target-based request resolution. App option dispatch and settings migration also use the declared target.
@@ -266,4 +266,24 @@ Verification:
 - Debug and Release catalog-coverage runs: each passed 1,726 checks with 0 failures.
 - Debug and Release `AppFrameworkTests`: passed.
 
-Next: move the resolved choice values into a named algorithm-configuration value so strategies stop interpreting shared legacy numeric fields such as `bucketCount`; keep existing request fields as a compatibility adapter until every call site is migrated.
+Next: completed in the following entry.
+
+## 2026-10-19 — add a resolved algorithm configuration value
+
+Status: implementation and focused verification complete.
+
+- Added `AlgorithmConfiguration` to trace requests and immutable traces. Stable catalog options resolve into named fields, and strategies now read that configuration for Shell, Merge, Grail, Base-N heap, Rotate Merge, radix, distribution bucket counts, and Time Sort.
+- Added explicit choice targets for heap arity and Grail buffer mode so they no longer travel internally as overloaded bucket counts. Existing scalar request and trace fields remain compatibility projections.
+- Added `TraceBuildRequest::setConfiguration` to distinguish an intentional typed value (including a default) from an untouched request. Legacy callers still map their old fields; catalog option IDs override the matching typed or legacy setting.
+- Validate explicit choice values against catalog options and verify every choice in an option group shares one configuration target. Added checks for typed-over-legacy precedence, typed Base-N execution, compatibility projection, and invalid typed choices.
+- Kept event construction, replay mutations, and Counting/Radix audio presentation unchanged.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 39,514 checks with 0 failures.
+- Debug and Release pinned catalog-coverage runs: each passed 1,741 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- Debug and Release `SoundEngineTests`: passed 417,371 assertions each during this slice; no sound-engine code changed.
+
+Next: move simulation and app request construction toward the resolved configuration value, keeping the old scalar fields at the public compatibility edge until their consumers are migrated.

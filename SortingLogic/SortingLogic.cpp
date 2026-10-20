@@ -3532,7 +3532,7 @@ namespace sortinglogic
 
 		void shell(Recorder& r)
 		{
-			const std::vector<std::size_t> gaps = shellGaps(r.state.slots.size(), r.trace.shellGapSequence);
+			const std::vector<std::size_t> gaps = shellGaps(r.state.slots.size(), r.trace.configuration.shellGapSequence);
 			for (std::size_t g = 0; g < gaps.size(); ++g)
 			{
 				const std::size_t gap = gaps[g];
@@ -4157,7 +4157,7 @@ namespace sortinglogic
 			const std::size_t begin = r.trace.events.size();
 			for (std::size_t i = first; i < last; ++i) r.writeAuxiliary("merge", i, r.at(i));
 			std::vector<SortItem> merged;
-			if (r.trace.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite)
+			if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite)
 				merged.reserve(last - first);
 			std::size_t left = first, right = middle;
 			for (std::size_t out = first; out < last; ++out)
@@ -4173,10 +4173,10 @@ namespace sortinglogic
 						chosen = r.auxiliaryAt("merge", left++);
 					else chosen = r.auxiliaryAt("merge", right++);
 				}
-				if (r.trace.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite) merged.push_back(chosen);
+				if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite) merged.push_back(chosen);
 				else r.writeMain(out, chosen);
 			}
-			if (r.trace.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite)
+			if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite)
 				r.writeMainRange(first, merged);
 			r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "Merge range", begin);
 		}
@@ -4186,7 +4186,7 @@ namespace sortinglogic
 			const std::size_t n = r.state.slots.size();
 			if (n < 2) return;
 			r.resizeAuxiliary("merge", n);
-			if (r.trace.mergeExecutionMode == MergeExecutionMode::TopDown)
+			if (r.trace.configuration.mergeExecutionMode == MergeExecutionMode::TopDown)
 			{
 				std::size_t maximumDepth = 0;
 				for (std::size_t span = n; span > 1; span = (span + 1) / 2) ++maximumDepth;
@@ -4456,8 +4456,10 @@ namespace sortinglogic
 				"grail_buffer_writes", "grail_comparisons" }) r.declareMetric(key);
 			if (count < 2) return;
 			std::size_t bufferCapacity = 0;
-			if (r.trace.bucketCount == 1) bufferCapacity = (std::min)(std::size_t(512), count / 2);
-			else if (r.trace.bucketCount == 2) bufferCapacity = static_cast<std::size_t>(std::sqrt(static_cast<double>(count)));
+			if (r.trace.configuration.grailBufferMode == GrailBufferMode::StaticBuffer)
+				bufferCapacity = (std::min)(std::size_t(512), count / 2);
+			else if (r.trace.configuration.grailBufferMode == GrailBufferMode::DynamicBuffer)
+				bufferCapacity = static_cast<std::size_t>(std::sqrt(static_cast<double>(count)));
 			if (bufferCapacity > 0) r.resizeAuxiliary("grail_buffer", bufferCapacity);
 			const std::size_t runSize = 16;
 			for (std::size_t first = 0; first < count; first += runSize)
@@ -7878,7 +7880,7 @@ namespace sortinglogic
 				"optimized_rotate_in_place_merges", "optimized_rotate_buffer_writes", "optimized_rotate_comparisons",
 				"optimized_rotate_trimmed_items" }) r.declareMetric(key);
 			if (count < 2) return;
-			const std::size_t bufferCapacity = static_cast<std::size_t>((std::max)(1, (std::min)(256, r.trace.rotateMergeBufferSize)));
+			const std::size_t bufferCapacity = static_cast<std::size_t>((std::max)(1, (std::min)(256, r.trace.configuration.rotateMergeBufferSize)));
 			r.resizeAuxiliary("rotate_merge_buffer", bufferCapacity);
 
 			const auto bufferedMerge = [&r, bufferCapacity](std::size_t first, std::size_t middle, std::size_t last)
@@ -9575,7 +9577,7 @@ namespace sortinglogic
 				case SortAlgorithm::Heap: heapSort(recorder); break;
 				case SortAlgorithm::ArrayvTernaryHeap: arityHeapSort(recorder, 3, false, false); break;
 				case SortAlgorithm::ArrayvBaseNHeap: arityHeapSort(recorder,
-					static_cast<std::size_t>(request.bucketCount >= 2 ? request.bucketCount : 4), false, false); break;
+					static_cast<std::size_t>(request.configuration.heapArity), false, false); break;
 				case SortAlgorithm::ArrayvMinHeap: arityHeapSort(recorder, 2, true, false); break;
 				case SortAlgorithm::ArrayvFlippedMinHeap: arityHeapSort(recorder, 2, true, true); break;
 				case SortAlgorithm::ArrayvBottomUpHeap: bottomUpHeapSort(recorder); break;
@@ -10166,9 +10168,9 @@ namespace sortinglogic
 				"merge-hybrid", "optimized-rotate", "Merge and Hybrid Sorts", std::vector<SemanticRole>{ SemanticRole::ProbedItem, SemanticRole::AuxiliaryCopy, SemanticRole::ComparedItem, SemanticRole::WriteTarget }),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvGrail, "arrayv.grail_sort", "Grail Sort", "O(n log n)", "O(1), fixed 512-item, or O(√n) buffer", true, false, true, true, &buildArrayvGrailRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(0, "in_place", "In-place", "grail_buffer_mode", AlgorithmOptionTarget::BucketCount, true),
-					AlgorithmOptionDescriptor(1, "static_buffer", "Static buffer (up to 512 items)", "grail_buffer_mode", AlgorithmOptionTarget::BucketCount),
-					AlgorithmOptionDescriptor(2, "dynamic_buffer", "Dynamic √n buffer", "grail_buffer_mode", AlgorithmOptionTarget::BucketCount)
+					AlgorithmOptionDescriptor(0, "in_place", "In-place", "grail_buffer_mode", AlgorithmOptionTarget::GrailBufferMode, true),
+					AlgorithmOptionDescriptor(1, "static_buffer", "Static buffer (up to 512 items)", "grail_buffer_mode", AlgorithmOptionTarget::GrailBufferMode),
+					AlgorithmOptionDescriptor(2, "dynamic_buffer", "Dynamic √n buffer", "grail_buffer_mode", AlgorithmOptionTarget::GrailBufferMode)
 				}, std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("grail_runs", "Sixteen-item insertion runs"),
 					AlgorithmMetricDescriptor("grail_merges", "Block merge ranges"),
@@ -10690,11 +10692,11 @@ namespace sortinglogic
 				"heap-sorts", "ternary", "Heap Sorts"),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvBaseNHeap, "arrayv.base_n_heap", "Base-N Max Heap Sort", "O(n logᵦ n)", "O(1)", false, true, true, true, &buildArrayvBaseNHeapRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(4, "base_4", "Base 4", "heap_arity", AlgorithmOptionTarget::BucketCount, true),
-					AlgorithmOptionDescriptor(2, "base_2", "Base 2", "heap_arity", AlgorithmOptionTarget::BucketCount),
-					AlgorithmOptionDescriptor(3, "base_3", "Base 3", "heap_arity", AlgorithmOptionTarget::BucketCount),
-					AlgorithmOptionDescriptor(8, "base_8", "Base 8", "heap_arity", AlgorithmOptionTarget::BucketCount),
-					AlgorithmOptionDescriptor(16, "base_16", "Base 16", "heap_arity", AlgorithmOptionTarget::BucketCount)
+					AlgorithmOptionDescriptor(4, "base_4", "Base 4", "heap_arity", AlgorithmOptionTarget::HeapArity, true),
+					AlgorithmOptionDescriptor(2, "base_2", "Base 2", "heap_arity", AlgorithmOptionTarget::HeapArity),
+					AlgorithmOptionDescriptor(3, "base_3", "Base 3", "heap_arity", AlgorithmOptionTarget::HeapArity),
+					AlgorithmOptionDescriptor(8, "base_8", "Base 8", "heap_arity", AlgorithmOptionTarget::HeapArity),
+					AlgorithmOptionDescriptor(16, "base_16", "Base 16", "heap_arity", AlgorithmOptionTarget::HeapArity)
 				}, std::vector<AlgorithmMetricDescriptor>(), MaxItemCount, "general permutation sort",
 				"heap-sorts", "base-n", "Heap Sorts"),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvMinHeap, "arrayv.min_heap", "Min Heap Sort", "O(n log n)", "O(1)", false, true, true, true, &buildArrayvMinHeapRequest,

@@ -10,8 +10,74 @@ namespace sortinglogic
 
 	namespace
 	{
+		int configuredOptionValue(const AlgorithmConfiguration& configuration, AlgorithmOptionTarget target)
+		{
+			switch (target)
+			{
+			case AlgorithmOptionTarget::ShellGapSequence: return static_cast<int>(configuration.shellGapSequence);
+			case AlgorithmOptionTarget::MergeExecutionMode: return static_cast<int>(configuration.mergeExecutionMode);
+			case AlgorithmOptionTarget::MergeWritebackMode: return static_cast<int>(configuration.mergeWritebackMode);
+			case AlgorithmOptionTarget::BucketCount: return configuration.bucketCount;
+			case AlgorithmOptionTarget::HeapArity: return configuration.heapArity;
+			case AlgorithmOptionTarget::GrailBufferMode: return static_cast<int>(configuration.grailBufferMode);
+			case AlgorithmOptionTarget::RadixBase: return configuration.radixBase;
+			case AlgorithmOptionTarget::TimeMagnitude: return configuration.timeMagnitude;
+			case AlgorithmOptionTarget::RotateMergeBufferSize: return configuration.rotateMergeBufferSize;
+			case AlgorithmOptionTarget::Unbound: break;
+			}
+			throw std::invalid_argument("The requested algorithm option group has no trace configuration binding.");
+		}
+
+		void validateExplicitChoiceOptions(const AlgorithmConfiguration& configuration,
+			const AlgorithmDescriptor& descriptor)
+		{
+			std::set<std::string> validatedGroups;
+			for (std::size_t i = 0; i < descriptor.supportedOptions.size(); ++i)
+			{
+				const AlgorithmOptionDescriptor& option = descriptor.supportedOptions[i];
+				if (!validatedGroups.insert(option.groupId).second) continue;
+
+				const int selectedValue = configuredOptionValue(configuration, option.target);
+				bool registeredValue = false;
+				for (std::size_t candidateIndex = 0; candidateIndex < descriptor.supportedOptions.size(); ++candidateIndex)
+				{
+					const AlgorithmOptionDescriptor& candidate = descriptor.supportedOptions[candidateIndex];
+					if (candidate.groupId == option.groupId && candidate.target == option.target &&
+						candidate.value == selectedValue)
+					{
+						registeredValue = true;
+						break;
+					}
+				}
+				if (!registeredValue)
+					throw std::invalid_argument("The explicit algorithm configuration contains an unregistered choice value.");
+			}
+		}
+
 		void applyOptionSelections(TraceBuildRequest& request, const AlgorithmDescriptor& descriptor)
 		{
+			const bool explicitConfiguration = request.hasExplicitConfiguration;
+			AlgorithmConfiguration configuration = request.configuration;
+			if (!request.hasExplicitConfiguration)
+			{
+				configuration.shellGapSequence = request.shellGapSequence;
+				configuration.mergeWritebackMode = request.mergeWritebackMode;
+				configuration.mergeExecutionMode = request.mergeExecutionMode;
+				configuration.radixBase = request.radixBase;
+				configuration.bucketCount = request.bucketCount;
+				configuration.timeMagnitude = request.timeMagnitude;
+				configuration.rotateMergeBufferSize = request.rotateMergeBufferSize;
+				if (descriptor.id == SortAlgorithm::ArrayvBaseNHeap && request.bucketCount >= 2)
+					configuration.heapArity = request.bucketCount;
+				if (descriptor.id == SortAlgorithm::ArrayvGrail)
+				{
+					if (request.bucketCount == 1) configuration.grailBufferMode = GrailBufferMode::StaticBuffer;
+					else if (request.bucketCount == 2) configuration.grailBufferMode = GrailBufferMode::DynamicBuffer;
+				}
+			}
+			bool bucketCountSelected = false;
+			bool heapAritySelected = false;
+			bool grailBufferModeSelected = false;
 			for (std::map<std::string, std::string>::const_iterator selected = request.optionSelections.begin();
 				selected != request.optionSelections.end(); ++selected)
 			{
@@ -32,30 +98,54 @@ namespace sortinglogic
 				switch (resolved->target)
 				{
 				case AlgorithmOptionTarget::ShellGapSequence:
-					request.shellGapSequence = static_cast<ShellGapSequence>(value);
+					configuration.shellGapSequence = static_cast<ShellGapSequence>(value);
 					break;
 				case AlgorithmOptionTarget::MergeExecutionMode:
-					request.mergeExecutionMode = static_cast<MergeExecutionMode>(value);
+					configuration.mergeExecutionMode = static_cast<MergeExecutionMode>(value);
 					break;
 				case AlgorithmOptionTarget::MergeWritebackMode:
-					request.mergeWritebackMode = static_cast<MergeWritebackMode>(value);
+					configuration.mergeWritebackMode = static_cast<MergeWritebackMode>(value);
 					break;
 				case AlgorithmOptionTarget::BucketCount:
-					request.bucketCount = value;
+					configuration.bucketCount = value;
+					bucketCountSelected = true;
+					break;
+				case AlgorithmOptionTarget::HeapArity:
+					configuration.heapArity = value;
+					heapAritySelected = true;
+					break;
+				case AlgorithmOptionTarget::GrailBufferMode:
+					configuration.grailBufferMode = static_cast<GrailBufferMode>(value);
+					grailBufferModeSelected = true;
 					break;
 				case AlgorithmOptionTarget::RadixBase:
-					request.radixBase = value;
+					configuration.radixBase = value;
 					break;
 				case AlgorithmOptionTarget::TimeMagnitude:
-					request.timeMagnitude = value;
+					configuration.timeMagnitude = value;
 					break;
 				case AlgorithmOptionTarget::RotateMergeBufferSize:
-					request.rotateMergeBufferSize = value;
+					configuration.rotateMergeBufferSize = value;
 					break;
 				case AlgorithmOptionTarget::Unbound:
 					throw std::invalid_argument("The requested algorithm option group has no trace configuration binding.");
 				}
 			}
+			if (explicitConfiguration) validateExplicitChoiceOptions(configuration, descriptor);
+			request.configuration = configuration;
+			request.hasExplicitConfiguration = true;
+			request.shellGapSequence = configuration.shellGapSequence;
+			request.mergeWritebackMode = configuration.mergeWritebackMode;
+			request.mergeExecutionMode = configuration.mergeExecutionMode;
+			request.radixBase = configuration.radixBase;
+			request.timeMagnitude = configuration.timeMagnitude;
+			request.rotateMergeBufferSize = configuration.rotateMergeBufferSize;
+			if (bucketCountSelected) request.bucketCount = configuration.bucketCount;
+			else if (heapAritySelected || descriptor.id == SortAlgorithm::ArrayvBaseNHeap)
+				request.bucketCount = configuration.heapArity;
+			else if (grailBufferModeSelected || descriptor.id == SortAlgorithm::ArrayvGrail)
+				request.bucketCount = static_cast<int>(configuration.grailBufferMode);
+			else request.bucketCount = configuration.bucketCount;
 		}
 	}
 
@@ -81,11 +171,11 @@ namespace sortinglogic
 			throw std::invalid_argument("The requested family and variant IDs do not match the registered algorithm.");
 		TraceBuildRequest resolvedRequest = request;
 		applyOptionSelections(resolvedRequest, *descriptor);
-		if (resolvedRequest.mergeWritebackMode != MergeWritebackMode::AnimatedWrites &&
-			resolvedRequest.mergeWritebackMode != MergeWritebackMode::AtomicRangeWrite)
+		if (resolvedRequest.configuration.mergeWritebackMode != MergeWritebackMode::AnimatedWrites &&
+			resolvedRequest.configuration.mergeWritebackMode != MergeWritebackMode::AtomicRangeWrite)
 			throw std::invalid_argument("The requested Merge Sort writeback mode is invalid.");
-		if (resolvedRequest.mergeExecutionMode != MergeExecutionMode::BottomUp &&
-			resolvedRequest.mergeExecutionMode != MergeExecutionMode::TopDown)
+		if (resolvedRequest.configuration.mergeExecutionMode != MergeExecutionMode::BottomUp &&
+			resolvedRequest.configuration.mergeExecutionMode != MergeExecutionMode::TopDown)
 			throw std::invalid_argument("The requested Merge Sort execution mode is invalid.");
 		const InputDomain domain = effectiveDomain(resolvedRequest);
 		if (!inputPatternCompatible(domain, resolvedRequest.pattern))

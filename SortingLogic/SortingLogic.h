@@ -30,6 +30,7 @@ namespace sortinglogic
 	enum class ShellGapSequence { Halving, Knuth, Ciura, Tokuda };
 	enum class MergeWritebackMode { AnimatedWrites, AtomicRangeWrite };
 	enum class MergeExecutionMode { BottomUp, TopDown };
+	enum class GrailBufferMode { InPlace, StaticBuffer, DynamicBuffer };
 
 	// Values stay normalized for bar height. Integer profile items also carry their
 	// exact key, so duplicate keys remain distinct logical items.
@@ -234,9 +235,28 @@ namespace sortinglogic
 		MergeExecutionMode,
 		MergeWritebackMode,
 		BucketCount,
+		HeapArity,
+		GrailBufferMode,
 		RadixBase,
 		TimeMagnitude,
 		RotateMergeBufferSize
+	};
+
+	struct AlgorithmConfiguration
+	{
+		ShellGapSequence shellGapSequence;
+		MergeWritebackMode mergeWritebackMode;
+		MergeExecutionMode mergeExecutionMode;
+		GrailBufferMode grailBufferMode;
+		int radixBase;
+		int bucketCount;
+		int heapArity;
+		int timeMagnitude;
+		int rotateMergeBufferSize;
+		AlgorithmConfiguration()
+			: shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
+			mergeExecutionMode(MergeExecutionMode::BottomUp), grailBufferMode(GrailBufferMode::InPlace),
+			radixBase(0), bucketCount(0), heapArity(4), timeMagnitude(10), rotateMergeBufferSize(64) {}
 	};
 
 	struct AlgorithmOptionDescriptor
@@ -320,6 +340,7 @@ namespace sortinglogic
 		InputProfile profile;
 		InputDomain domain;
 		InputPattern pattern;
+		AlgorithmConfiguration configuration;
 		ShellGapSequence shellGapSequence;
 		MergeWritebackMode mergeWritebackMode;
 		MergeExecutionMode mergeExecutionMode;
@@ -347,7 +368,7 @@ namespace sortinglogic
 	{
 		std::vector<SortItem> input;
 		// Stable catalog option IDs keyed by option group. When present, these are
-		// resolved by SortingLogic and override the legacy numeric fields below.
+		// resolved by SortingLogic and override matching explicit or legacy values.
 		std::map<std::string, std::string> optionSelections;
 		FamilyId familyId;
 		VariantId variantId;
@@ -356,6 +377,8 @@ namespace sortinglogic
 		InputProfile profile;
 		InputDomain domain;
 		InputPattern pattern;
+		AlgorithmConfiguration configuration;
+		bool hasExplicitConfiguration;
 		ShellGapSequence shellGapSequence;
 		MergeWritebackMode mergeWritebackMode;
 		MergeExecutionMode mergeExecutionMode;
@@ -370,12 +393,18 @@ namespace sortinglogic
 		int timeMagnitude;
 		int rotateMergeBufferSize;
 		TraceBuildRequest() : input(), optionSelections(), familyId(), variantId(), algorithm(SortAlgorithm::Insertion), direction(SortDirection::Ascending),
-			profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats), pattern(InputPattern::Random),
+			profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats), pattern(InputPattern::Random), configuration(),
+			hasExplicitConfiguration(false),
 			shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
 			mergeExecutionMode(MergeExecutionMode::BottomUp), completionScanEnabled(false),
 			mergeBufferVisualizationEnabled(true), inputSeed(0),
 			maxOperations(DefaultTraceOperationLimit), maxWorkSteps(DefaultTraceWorkLimit),
 			maxTraceBytes(DefaultTraceByteLimit), radixBase(0), bucketCount(0), timeMagnitude(10), rotateMergeBufferSize(64) {}
+		void setConfiguration(const AlgorithmConfiguration& value)
+		{
+			configuration = value;
+			hasExplicitConfiguration = true;
+		}
 	};
 
 	enum class TraceBuildStatus { Complete, Partial, Failed };

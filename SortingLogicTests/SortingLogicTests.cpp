@@ -90,6 +90,7 @@ namespace
 			check(catalogVariantIds.insert(catalog[i].familyId + "\n" + catalog[i].variantId).second,
 				"catalog family and variant pairs are unique");
 			std::map<std::string, std::size_t> defaultCountByGroup;
+			std::map<std::string, AlgorithmOptionTarget> targetByGroup;
 			std::set<std::string> optionIds;
 			for (std::size_t option = 0; option < catalog[i].supportedOptions.size(); ++option)
 			{
@@ -99,6 +100,11 @@ namespace
 					"catalog options declare a trace-configuration target: " + catalog[i].variantId + "/" + group);
 				check(optionIds.insert(group + "\n" + descriptor.stableId).second,
 					"stable option IDs are unique within each catalog group");
+				const std::pair<std::map<std::string, AlgorithmOptionTarget>::iterator, bool> targetInsertion =
+					targetByGroup.insert(std::make_pair(group, descriptor.target));
+				if (!targetInsertion.second)
+					check(targetInsertion.first->second == descriptor.target,
+						"every choice in a catalog option group uses the same configuration target");
 				if (descriptor.isDefault) ++defaultCountByGroup[group];
 				else defaultCountByGroup.insert(std::make_pair(group, 0));
 			}
@@ -377,8 +383,39 @@ namespace
 		const SortTrace stableOptionTrace = SortTraceBuilder::build(stableOptionRequest);
 		check(stableOptionTrace.mergeExecutionMode == MergeExecutionMode::TopDown &&
 			stableOptionTrace.mergeWritebackMode == MergeWritebackMode::AnimatedWrites &&
+			stableOptionTrace.configuration.mergeExecutionMode == MergeExecutionMode::TopDown &&
+			stableOptionTrace.configuration.mergeWritebackMode == MergeWritebackMode::AnimatedWrites &&
 			stableOptionTrace.events.size() == topDownAnimated.events.size(),
 			"stable Merge option IDs override legacy request fields and resolve to the same configured trace");
+		TraceBuildRequest explicitConfigurationRequest = atomicRequest;
+		explicitConfigurationRequest.mergeExecutionMode = MergeExecutionMode::TopDown;
+		AlgorithmConfiguration explicitConfiguration;
+		explicitConfigurationRequest.setConfiguration(explicitConfiguration);
+		const SortTrace explicitConfigurationTrace = SortTraceBuilder::build(explicitConfigurationRequest);
+		check(explicitConfigurationTrace.configuration.mergeExecutionMode == MergeExecutionMode::BottomUp &&
+			explicitConfigurationTrace.mergeExecutionMode == MergeExecutionMode::BottomUp,
+			"explicit typed configuration takes precedence over a conflicting legacy request field, including its default value");
+		TraceBuildRequest typedHeapRequest;
+		typedHeapRequest.input = floats({ 0.8f, 0.1f, 0.6f, 0.2f, 0.4f, 0.3f });
+		typedHeapRequest.algorithm = SortAlgorithm::ArrayvBaseNHeap;
+		typedHeapRequest.bucketCount = 2;
+		AlgorithmConfiguration typedHeapConfiguration;
+		typedHeapConfiguration.heapArity = 8;
+		typedHeapRequest.setConfiguration(typedHeapConfiguration);
+		const SortTrace typedHeapTrace = SortTraceBuilder::build(typedHeapRequest);
+		SortState typedHeapEnd = typedHeapTrace.initialState;
+		for (std::size_t i = 0; i < typedHeapTrace.events.size(); ++i) applyEventForward(typedHeapEnd, typedHeapTrace.events[i]);
+		check(typedHeapTrace.configuration.heapArity == 8 && typedHeapTrace.bucketCount == 8 &&
+			isSorted(typedHeapEnd, SortDirection::Ascending),
+			"typed Base-N heap arity drives the strategy and projects the effective value to the legacy trace field");
+		TraceBuildRequest invalidTypedHeapRequest = typedHeapRequest;
+		AlgorithmConfiguration invalidTypedHeapConfiguration;
+		invalidTypedHeapConfiguration.heapArity = 1;
+		invalidTypedHeapRequest.setConfiguration(invalidTypedHeapConfiguration);
+		bool rejectedInvalidTypedHeap = false;
+		try { SortTraceBuilder::build(invalidTypedHeapRequest); }
+		catch (const std::invalid_argument&) { rejectedInvalidTypedHeap = true; }
+		check(rejectedInvalidTypedHeap, "typed algorithm configuration rejects a choice absent from the catalog");
 		TraceBuildRequest unknownOptionRequest = atomicRequest;
 		unknownOptionRequest.optionSelections["execution_mode"] = "missing_mode";
 		bool rejectedUnknownOption = false;

@@ -71,7 +71,7 @@ namespace sortinglogic
 			const std::size_t n = r.state.slots.size();
 			if (n == 0) return;
 			const int defaultBase = r.trace.algorithm == SortAlgorithm::ArrayvLsdRadix ? 4 : 10;
-			const std::size_t base = static_cast<std::size_t>(r.trace.radixBase >= 2 ? std::min(r.trace.radixBase, 256) : defaultBase);
+			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 256) : defaultBase);
 			r.resizeCounters("digits", base);
 			r.resizeAuxiliary("radix_output", n);
 			r.probe(0, SemanticRole::ProcessedItem);
@@ -132,7 +132,7 @@ namespace sortinglogic
 
 		std::size_t boundedRadix(const TraceBuildRequest& request, std::size_t fallback)
 		{
-			return static_cast<std::size_t>(request.bucketCount >= 2 ? std::min(request.bucketCount, 256) : fallback);
+			return static_cast<std::size_t>(request.configuration.bucketCount >= 2 ? std::min(request.configuration.bucketCount, 256) : fallback);
 		}
 
 		std::size_t maxKeyBits(const Recorder& r)
@@ -149,7 +149,7 @@ namespace sortinglogic
 		{
 			const std::size_t n = r.state.slots.size();
 			if (n < 2) return;
-			const std::size_t base = static_cast<std::size_t>(r.trace.bucketCount >= 2 ? std::min(r.trace.bucketCount, 256) : 128);
+			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.bucketCount >= 2 ? std::min(r.trace.configuration.bucketCount, 256) : 128);
 			std::size_t bitsPerDigit = 0;
 			while ((static_cast<std::size_t>(1) << bitsPerDigit) < base) ++bitsPerDigit;
 			const std::size_t actualBase = static_cast<std::size_t>(1) << bitsPerDigit;
@@ -308,7 +308,7 @@ namespace sortinglogic
 		{
 			const std::size_t n = r.state.slots.size();
 			if (n < 2) return;
-			const std::size_t requested = static_cast<std::size_t>(r.trace.bucketCount >= 2 ? std::min(r.trace.bucketCount, 256) : 16);
+			const std::size_t requested = static_cast<std::size_t>(r.trace.configuration.bucketCount >= 2 ? std::min(r.trace.configuration.bucketCount, 256) : 16);
 			std::size_t bits = 0;
 			while ((static_cast<std::size_t>(1) << bits) < requested) ++bits;
 			const std::size_t base = static_cast<std::size_t>(1) << bits;
@@ -551,7 +551,7 @@ namespace sortinglogic
 				const std::int64_t key = orderedIntegerKey(r.at(i), r.trace.direction);
 				minimum = std::min(minimum, key); maximum = std::max(maximum, key);
 			}
-			const std::size_t base = static_cast<std::size_t>(r.trace.radixBase >= 2 ? std::min(r.trace.radixBase, 16) : 4);
+			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 16) : 4);
 			std::int64_t place = 1;
 			do
 			{
@@ -573,7 +573,7 @@ namespace sortinglogic
 				minimum = std::min(minimum, key); maximum = std::max(maximum, key);
 			}
 			if (minimum == maximum) return;
-			const std::size_t base = static_cast<std::size_t>(r.trace.radixBase >= 2 ? std::min(r.trace.radixBase, 16) : 4);
+			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 16) : 4);
 			std::int64_t topPlace = 1;
 			while (topPlace <= (maximum - minimum) / static_cast<std::int64_t>(base)) topPlace *= static_cast<std::int64_t>(base);
 			if (!mostSignificantFirst)
@@ -612,7 +612,7 @@ namespace sortinglogic
 		void msdRadix(Recorder& r)
 		{
 			const std::size_t n = r.state.slots.size(); if (n < 2) return;
-			const std::size_t base = static_cast<std::size_t>(r.trace.radixBase >= 2 ? std::min(r.trace.radixBase, 64) : 4);
+			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 64) : 4);
 			std::int64_t minimum = orderedIntegerKey(r.at(0), r.trace.direction), maximum = minimum;
 			for (std::size_t i = 0; i < n; ++i)
 			{
@@ -852,7 +852,7 @@ namespace sortinglogic
 		{
 			const std::size_t n = r.state.slots.size(); if (n < 2) return;
 			if (n > 128) throw TraceBudgetReached("Time Sort is limited to 128 items so deterministic deadline events stay inspectable.");
-			const int magnitude = std::max(1, std::min(1000, r.trace.timeMagnitude));
+			const int magnitude = std::max(1, std::min(1000, r.trace.configuration.timeMagnitude));
 			r.resizeAuxiliary("time_deadlines", n);
 			std::vector<std::pair<std::int64_t, SortItem> > deadlines;
 			deadlines.reserve(n);
