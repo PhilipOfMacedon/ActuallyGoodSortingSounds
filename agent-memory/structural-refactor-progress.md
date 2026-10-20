@@ -437,3 +437,20 @@ Verification:
 - `git diff --check`: passed; Git emitted only configured LF-to-CRLF working-tree notices.
 
 Next: move the appearance editor's token filtering and draft-selection state behind a small view model, keeping file/color dialogs and app-action dispatch in the platform/facade layer.
+
+## 2026-10-19 — move appearance token browsing into a view model
+
+Status: implementation and focused verification complete.
+
+- Added platform-neutral `AppearanceEditorModel` to own the editing preset, category filter, bounded search string, filtered stable token IDs/labels, and selected token. Search remains case-insensitive, catalog order is unchanged, and a vanished selection falls back to the first result (or clears when there are no results).
+- `ControlPanel` now translates SDL text and widget selection into model calls, then mirrors the model's token options into the retained combo box. Draft appearance values, Win32 color/file dialogs, text-entry focus, and `ApplyAppearance` dispatch stay at the facade boundary.
+- Removed the second appearance-preset field and the duplicated token-filter/search/selection containers from `ControlPanel`. Import, cancel, and preset selection still follow their existing draft behavior; category selection remains remembered across editor sessions, while search clears on reopen.
+- Added headless checks for case-insensitive description search, stable IDs, category filtering, selection/fallback, preset switching, search limits, backspace, and clear. No appearance setting or serialized key changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git emitted only configured LF-to-CRLF working-tree notices.
+
+Next: extract the settings-panel composition into a view that emits the same shared paint commands used by the algorithm browser, then separate its retained interaction state from `ControlPanel`.

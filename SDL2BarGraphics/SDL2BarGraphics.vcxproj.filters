@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AppearanceEditorLayout.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="AppearanceEditorModel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmBrowserModel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmBrowserView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Window.cpp">
@@ -58,6 +59,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AppearanceEditorLayout.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="AppearanceEditorModel.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserModel.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserView.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppActions.h"><Filter>Header Files</Filter></ClInclude>

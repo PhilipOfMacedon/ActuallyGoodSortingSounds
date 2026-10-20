@@ -11,6 +11,7 @@
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
+#include "../SDL2BarGraphics/AppearanceEditorModel.h"
 #include "../SDL2BarGraphics/BarCountSteps.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserModel.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserView.h"
@@ -830,6 +831,52 @@ namespace
 		check(!calculateAppearanceEditorLayout(0.0f, 480.0f).valid &&
 			!calculateAppearanceEditorLayout(640.0f, 0.0f).valid,
 			"appearance layout stays invalid until the window has positive logical dimensions");
+	}
+
+	void testAppearanceEditorModel()
+	{
+		AppearanceEditorModel model;
+		model.begin(UiPresetId::Current);
+		check(!model.options().empty() && model.selectedToken() == model.options()[0].stableId,
+			"appearance editor starts with the first token in catalog order selected");
+		model.setSearch("APPLICATION BACKGROUND");
+		check(model.options().size() == 1 && model.options()[0].stableId == "color.background" &&
+			model.selectedToken() == "color.background",
+			"appearance token search is case-insensitive across descriptions and preserves stable IDs");
+
+		model.clearSearch();
+		model.setCategoryFilter(static_cast<int>(UiTokenCategory::Typography) + 1);
+		check(!model.options().empty(), "appearance category filter retains matching typography tokens");
+		bool allTypography = true;
+		for (std::size_t i = 0; i < model.options().size(); ++i)
+		{
+			const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(model.preset()), model.options()[i].stableId);
+			allTypography = allTypography && descriptor && descriptor->category == UiTokenCategory::Typography;
+		}
+		check(allTypography, "appearance category filtering returns only tokens from the selected category");
+		model.selectOption(static_cast<int>(model.options().size()) - 1);
+		check(model.selectedIndex() == static_cast<int>(model.options().size()) - 1,
+			"appearance token selection resolves back to its filtered-list index");
+
+		model.setSearch("no matching token");
+		check(model.options().empty() && model.selectedToken().empty() && model.selectedIndex() == -1,
+			"empty appearance search clears stale selection and exposes no selected index");
+		model.setSearch(std::string());
+		check(!model.options().empty() && model.selectedToken() == model.options()[0].stableId,
+			"clearing an unmatched search selects the first remaining token deterministically");
+		model.setPreset(UiPresetId::FlatVgaDos);
+		check(model.preset() == UiPresetId::FlatVgaDos && !model.options().empty(),
+			"changing appearance preset refreshes the token catalog without losing the category filter");
+		model.begin(UiPresetId::Current);
+		check(model.search().empty(), "reopening appearance editing clears search while retaining its category preference");
+		model.setCategoryFilter(0);
+		model.setSearch(std::string(96, 'x'));
+		model.appendSearch("y");
+		check(model.search().size() == 96, "appearance search remains bounded to the existing 96-character limit");
+		model.eraseSearchCharacter();
+		check(model.search().size() == 95, "appearance search backspace removes one character");
+		model.clearSearch();
+		check(model.search().empty() && !model.options().empty(), "clearing appearance search restores the unfiltered catalog");
 	}
 
 	void testAlgorithmBrowserInputAndLayout()
@@ -2217,6 +2264,7 @@ int main()
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
 	testAppearanceEditorLayout();
+	testAppearanceEditorModel();
 	testAlgorithmBrowserModel();
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();

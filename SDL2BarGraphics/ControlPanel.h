@@ -8,6 +8,7 @@
 #include <SDL.h>
 
 #include "AppearanceEditorLayout.h"
+#include "AppearanceEditorModel.h"
 #include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
 #include "Renderer2D.h"
@@ -116,11 +117,7 @@ private:
 	bool inlineEditReplaceOnNextDigit_;
 	bool inlineEditAppearanceValue_;
 	UiAppearancePreferences appearanceDraft_;
-	UiPresetId appearanceEditingPreset_;
-	std::string appearanceSearch_;
-	int appearanceCategoryFilter_;
-	std::string selectedAppearanceToken_;
-	std::vector<std::string> filteredAppearanceTokens_;
+	AppearanceEditorModel appearanceEditorModel_;
 	std::string appearanceError_;
 	AppearanceEditorLayoutResult appearanceLayout_;
 	std::unique_ptr<TextLabel> appearanceEditorTitle_;
