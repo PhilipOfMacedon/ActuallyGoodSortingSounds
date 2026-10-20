@@ -1,5 +1,6 @@
 #include "MainControlsView.h"
 
+#include <map>
 #include <vector>
 
 #include "AppActions.h"
@@ -69,6 +70,56 @@ void MainControlsView::initializeControls(const UserPreferences& preferences, co
 	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 		if (controls_.widgets()[i]->kind() == UiWidgetKind::ComboBox)
 			controls_.widgets()[i]->setRole(UiControlRole::Choice);
+}
+
+void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layout, int logicalWidth, bool expanded)
+{
+	controls_.setFocusOrder(layout.focusOrder);
+	for (std::map<std::string, UiRect>::const_iterator bounds = layout.controlBounds.begin();
+		bounds != layout.controlBounds.end(); ++bounds)
+	{
+		UiWidget* widget = controls_.find(bounds->first);
+		if (widget) widget->setBounds(bounds->second);
+	}
+	UiWidget* direction = controls_.find("direction");
+	direction->setPresentation(preset != UiPresetId::Current
+		? UiWidgetPresentation::RadioGroup : UiWidgetPresentation::Standard);
+	const std::map<std::string, std::vector<UiRect> >::const_iterator directionRegions =
+		layout.interactiveSubregions.find("direction");
+	direction->setInteractiveSubregions(directionRegions == layout.interactiveSubregions.end()
+		? std::vector<UiRect>() : directionRegions->second);
+	controls_.find("bars_value")->setPresentation(UiWidgetPresentation::EditableLabel);
+	controls_.find("time_value")->setPresentation(UiWidgetPresentation::EditableLabel);
+
+	if (!expanded)
+	{
+		for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+		{
+			const std::string& id = controls_.widgets()[i]->id();
+			const bool headerControl = (preset != UiPresetId::ClassicWindows95 && (id == "panel_toggle" || id == "settings")) ||
+				(preset != UiPresetId::Current && (id == "menu_file" || id == "menu_view" || id == "menu_tools"));
+			controls_.setWidgetVisible(id, headerControl || id == "start_overlay");
+		}
+	}
+	else
+	{
+		for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+			controls_.setWidgetVisible(controls_.widgets()[i]->id(), true);
+	}
+
+	const bool hasClassicRail = preset != UiPresetId::Current;
+	controls_.setWidgetVisible("menu_file", hasClassicRail);
+	controls_.setWidgetVisible("menu_view", hasClassicRail);
+	controls_.setWidgetVisible("menu_tools", hasClassicRail);
+	controls_.setWidgetVisible("run", !hasClassicRail);
+	controls_.setWidgetVisible("panel_toggle", preset != UiPresetId::ClassicWindows95);
+	controls_.setWidgetVisible("settings", preset != UiPresetId::ClassicWindows95);
+	const bool wideLayout = logicalWidth >= 900;
+	controls_.setWidgetVisible("domain", hasClassicRail && wideLayout && expanded);
+	controls_.setWidgetVisible("pattern", hasClassicRail && wideLayout && expanded);
+	controls_.setWidgetVisible("seed_readout", hasClassicRail && wideLayout && expanded);
+	controls_.setWidgetVisible("start_overlay", !expanded);
+	controls_.find("panel_toggle")->setLabel(expanded ? "v" : ">");
 }
 
 void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetId activePreset,

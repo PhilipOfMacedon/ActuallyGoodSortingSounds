@@ -381,24 +381,13 @@ void ControlPanel::updateLayout()
 	std::vector<std::string> controlIds;
 	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i) controlIds.push_back(mainUi_.widgets()[i]->id());
 	layoutResult_ = calculateUiLayout(preset, layoutInput, controlIds);
-	mainUi_.setFocusOrder(layoutResult_.focusOrder);
+	mainControlsView_.applyLayout(preset, layoutResult_, width_, settings_.visual.panelExpanded);
 	headerBounds_ = layoutResult_.header;
 	timelineBounds_ = layoutResult_.timelineTrack.width > 0.0f ? layoutResult_.timelineTrack : layoutResult_.timeline;
 	timelineControlBounds_ = layoutResult_.timeline;
 	timelineLeftArrowBounds_ = layoutResult_.timelineLeftArrow;
 	timelineRightArrowBounds_ = layoutResult_.timelineRightArrow;
 	chartViewport_ = layoutResult_.chartViewport;
-	for (std::map<std::string, UiRect>::const_iterator bounds = layoutResult_.controlBounds.begin();
-		bounds != layoutResult_.controlBounds.end(); ++bounds)
-	{
-		UiWidget* widget = mainUi_.find(bounds->first);
-		if (widget) widget->setBounds(bounds->second);
-	}
-	mainUi_.find("direction")->setPresentation(preset != UiPresetId::Current
-		? UiWidgetPresentation::RadioGroup : UiWidgetPresentation::Standard);
-	mainUi_.find("direction")->setInteractiveSubregions(layoutResult_.interactiveSubregions["direction"]);
-	mainUi_.find("bars_value")->setPresentation(UiWidgetPresentation::EditableLabel);
-	mainUi_.find("time_value")->setPresentation(UiWidgetPresentation::EditableLabel);
 	for (std::size_t i = 0; i < settingsPanelView_.controls().widgets().size(); ++i)
 	{
 		UiWidget* widget = settingsPanelView_.controls().widgets()[i].get();
@@ -415,35 +404,6 @@ void ControlPanel::updateLayout()
 			widget->setPresentation(preset != UiPresetId::Current ? UiWidgetPresentation::RadioGroup : UiWidgetPresentation::Standard);
 		else widget->setPresentation(UiWidgetPresentation::Standard);
 	}
-	if (!settings_.visual.panelExpanded)
-	{
-		for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
-		{
-			const UiWidget* widget = mainUi_.widgets()[i].get();
-			const std::string& id = widget->id();
-			const bool headerControl = (preset != UiPresetId::ClassicWindows95 && (id == "panel_toggle" || id == "settings")) ||
-				(preset != UiPresetId::Current && (id == "menu_file" || id == "menu_view" || id == "menu_tools"));
-			mainUi_.setWidgetVisible(id, headerControl || id == "start_overlay");
-		}
-	}
-	else
-	{
-		for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
-			mainUi_.setWidgetVisible(mainUi_.widgets()[i]->id(), true);
-	}
-	const bool hasClassicRail = preset != UiPresetId::Current;
-	mainUi_.setWidgetVisible("menu_file", hasClassicRail);
-	mainUi_.setWidgetVisible("menu_view", hasClassicRail);
-	mainUi_.setWidgetVisible("menu_tools", hasClassicRail);
-	mainUi_.setWidgetVisible("run", !hasClassicRail);
-	mainUi_.setWidgetVisible("panel_toggle", preset != UiPresetId::ClassicWindows95);
-	mainUi_.setWidgetVisible("settings", preset != UiPresetId::ClassicWindows95);
-	const bool wideLayout = width_ >= 900;
-	mainUi_.setWidgetVisible("domain", hasClassicRail && wideLayout && settings_.visual.panelExpanded);
-	mainUi_.setWidgetVisible("pattern", hasClassicRail && wideLayout && settings_.visual.panelExpanded);
-	mainUi_.setWidgetVisible("seed_readout", hasClassicRail && wideLayout && settings_.visual.panelExpanded);
-	mainUi_.setWidgetVisible("start_overlay", !settings_.visual.panelExpanded);
-	mainUi_.find("panel_toggle")->setLabel(settings_.visual.panelExpanded ? "v" : ">");
 	gearBounds_ = mainUi_.find("settings")->bounds();
 
 	const float panelWidth = std::min(520.0f, std::max(180.0f, static_cast<float>(width_) - 32.0f));

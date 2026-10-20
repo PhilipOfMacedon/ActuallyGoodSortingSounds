@@ -19,6 +19,7 @@ class MainControlsView
 {
 public:
 	void initializeControls(const UserPreferences& preferences, const std::string& algorithmLabel);
+	void applyLayout(UiPresetId preset, const UiLayoutResult& layout, int logicalWidth, bool expanded);
 	void synchronize(const UserPreferences& preferences, UiPresetId activePreset,
 		const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel,
 		const std::string& algorithmLabel);

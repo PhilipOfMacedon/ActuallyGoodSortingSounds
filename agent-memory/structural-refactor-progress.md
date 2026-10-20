@@ -1530,3 +1530,11 @@ Next: move main-control paint ordering through `UiPaintCommand`, preserving `Con
 Headless checks cover section ordering, visibility filtering, clipped popup commands, and dropdown layer selection. `AppFrameworkTests` passed in x64 Debug and Release; the app linked in x64 Debug to a separate output, and the full x64 Release solution built. A live Release smoke view showed the main panel and chart rendering without an obvious layering regression. `git diff --check` passed. This is a testability/ownership change, not a measured render optimization.
 
 Next: move the remaining main-panel composition decisions (title/telemetry/profile/timeline section metadata where useful) behind the view without relocating renderer-specific drawing, then continue the structural audit's sorting and configuration boundaries.
+
+## 2026-10-20 — move main-control layout state into the view
+
+`MainControlsView::applyLayout` now owns main-control focus order, widget bounds, direction and editable-label presentation, collapsed/expanded visibility, preset-specific menu/run visibility, wide-layout input controls, and the panel-toggle caption. `ControlPanel` still owns settings-panel geometry and screen-level chart/timeline placement, and adapts the resulting view tree to existing renderers.
+
+Headless checks cover current, Flat VGA DOS, and Classic Windows 95 layouts in expanded and collapsed states. `AppFrameworkTests` passed in x64 Debug and Release; the x64 Debug app linked to an isolated output directory and the full x64 Release solution built in an isolated output directory. `git diff --check` passed. The user closed the earlier smoke window; no fresh visual claim is made for this layout-only move.
+
+Next: move remaining main-panel composition metadata (title, telemetry, profile, and timeline where useful) behind the view without relocating renderer-specific drawing, then continue the sorting-core and configuration boundaries. The goal remains active; no performance improvement is claimed.

@@ -2441,6 +2441,47 @@ namespace
 			"main controls view keeps action routing, semantic roles, and menu heading behavior in its tree");
 	}
 
+	void testMainControlsViewAppliesLayoutAndVisibility()
+	{
+		UserPreferences preferences;
+		MainControlsView view;
+		view.initializeControls(preferences, "Fixture Sort");
+		UiLayoutResult layout;
+		layout.focusOrder.push_back("shuffle");
+		layout.controlBounds["algorithm"] = UiRect(100.0f, 40.0f, 220.0f, 28.0f);
+		layout.controlBounds["direction"] = UiRect(330.0f, 40.0f, 180.0f, 28.0f);
+		layout.interactiveSubregions["direction"].push_back(UiRect(330.0f, 40.0f, 90.0f, 28.0f));
+		layout.interactiveSubregions["direction"].push_back(UiRect(420.0f, 40.0f, 90.0f, 28.0f));
+
+		view.applyLayout(UiPresetId::Current, layout, 1280, true);
+		check(view.controls().find("algorithm")->bounds().x == 100.0f &&
+			view.controls().find("direction")->presentation() == UiWidgetPresentation::Standard &&
+			view.controls().find("direction")->interactiveSubregions().size() == 2 &&
+			view.controls().find("bars_value")->presentation() == UiWidgetPresentation::EditableLabel,
+			"main view applies cached layout geometry and control presentations");
+		check(view.controls().find("shuffle")->visible() && !view.controls().find("menu_file")->visible() &&
+			view.controls().find("run")->visible() && !view.controls().find("domain")->visible(),
+			"current preset keeps its compact visible-control set");
+
+		view.applyLayout(UiPresetId::FlatVgaDos, layout, 1280, true);
+		check(view.controls().find("direction")->presentation() == UiWidgetPresentation::RadioGroup &&
+			view.controls().find("menu_file")->visible() && !view.controls().find("run")->visible() &&
+			view.controls().find("domain")->visible() && view.controls().find("pattern")->visible() &&
+			view.controls().find("seed_readout")->visible(),
+			"wide legacy preset promotes domain controls and radio presentation into its menu rail");
+
+		view.applyLayout(UiPresetId::FlatVgaDos, layout, 1280, false);
+		check(!view.controls().find("shuffle")->visible() && view.controls().find("panel_toggle")->visible() &&
+			view.controls().find("menu_tools")->visible() && view.controls().find("start_overlay")->visible() &&
+			view.controls().find("panel_toggle")->label() == ">",
+			"collapsed legacy layout retains its header/menu and start action while hiding setup controls");
+
+		view.applyLayout(UiPresetId::ClassicWindows95, layout, 1280, false);
+		check(!view.controls().find("panel_toggle")->visible() && !view.controls().find("settings")->visible() &&
+			view.controls().find("menu_file")->visible(),
+			"Classic Windows 95 layout hides modern header buttons while preserving its menu bar");
+	}
+
 	void testMainControlsViewSynchronizesPresentationState()
 	{
 		UserPreferences preferences;
@@ -4044,6 +4085,7 @@ int main(int argc, char* argv[])
 	testSettingsPanelViewOwnsNavigationAndScrolling();
 	testSettingsPanelViewInitializesItsControls();
 	testMainControlsViewInitializesTypedControls();
+	testMainControlsViewAppliesLayoutAndVisibility();
 	testMainControlsViewSynchronizesPresentationState();
 	testMainControlsViewComposesControlPaintCommands();
 	testSettingsPanelViewSynchronizesControlState();
