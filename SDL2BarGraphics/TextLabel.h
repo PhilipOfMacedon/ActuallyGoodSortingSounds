@@ -55,6 +55,7 @@ private:
 	GLuint textureId_;
 	GLfloat heightPercent_;
 	bool hasContent_;
+	bool textureDirty_;
 
 	void createTextLabel();
 	void setResolvedText(std::string text, const std::string& identity, const std::string& path,

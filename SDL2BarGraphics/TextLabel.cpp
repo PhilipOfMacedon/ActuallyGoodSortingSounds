@@ -75,7 +75,8 @@ TextLabel::TextLabel(std::string text, std::string fontFace, int fontSize, SDL_C
 	dimensions_(0.0f),
 	textureId_(0),
 	heightPercent_(0.0275f),
-	hasContent_(false)
+	hasContent_(false),
+	textureDirty_(false)
 {
 	setText(text, fontFace, fontSize, color);
 }
@@ -111,14 +112,20 @@ void TextLabel::setContent(std::string text)
 	if (text_ == text)
 		return;
 	text_ = std::move(text);
-	if (!hasContent_ || fontSize_ <= 0 || fontPath_.empty())
-		return;
-	createTextLabel();
+	// The view supplies its resolved font and DPI at draw time; defer rasterization until then.
+	textureDirty_ = true;
 }
 
 void TextLabel::setText(std::string text, const UiFontReference& font, int fontSize, SDL_Color color, int dpi)
 {
 	std::string identity = font.family + "|" + font.style;
+	// Labels are submitted every frame, so reuse the resolved font when nothing changed.
+	if (hasContent_ && !textureDirty_ && text_ == text && fontFace_ == identity && fontSize_ == fontSize &&
+		dpiX_ == dpi && dpiY_ == dpi && requestedFontFamily_ == font.family && requestedFontStyle_ == font.style)
+	{
+		color_ = color;
+		return;
+	}
 	std::string path = applicationAssetPath("Resources/Courier New Bold.ttf");
 	int index = 0;
 	bool fallback = false;
@@ -166,6 +173,7 @@ void TextLabel::setResolvedText(std::string text, const std::string& identity, c
 
 void TextLabel::createTextLabel()
 {
+	textureDirty_ = true;
 	if (textureId_)
 	{
 		glDeleteTextures(1, &textureId_);
@@ -223,6 +231,7 @@ void TextLabel::createTextLabel()
 	glBindTexture(GL_TEXTURE_2D, 0);
 	dimensions_ = glm::vec2(static_cast<float>(rgba->w), static_cast<float>(rgba->h));
 	SDL_FreeSurface(rgba);
+	textureDirty_ = false;
 }
 
 void TextLabel::clearFontCache()

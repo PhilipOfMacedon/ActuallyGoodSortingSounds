@@ -1707,3 +1707,13 @@ Moved the static 211-entry descriptor catalog, lookup helpers, compatibility che
 The x64 Debug and Release solution builds passed. The pinned catalog coverage test passed in both configurations with 1,741 checks and zero failures, including all 208 source mappings. `git diff --check` passed. No behavior or runtime-performance change is claimed.
 
 Next: review remaining catalog/configuration duplication and begin the application-side structural work at the label-style/cache boundary identified by the audit.
+
+## 2026-10-20 — defer label rasterization and prepare UI geometry once
+
+The audit's original `setText` alternation is no longer present: current label synchronization already calls `setContent`. I kept that content/style boundary explicit and improved it by making `setContent` mark text dirty rather than rasterizing immediately. `TextLabel` now rasterizes once when the draw path supplies the resolved font and DPI, then skips repeated font resolution for unchanged text/style frames. This avoids the startup/content-update raster followed by a second themed raster.
+
+Centralized settings, popup, and algorithm-menu layout in `layoutInteractiveViews`. `prepareFrame` now runs this once after widget state synchronization; `updateLayout` only recalculates base geometry when its cache key changes. Event handling still refreshes interactive geometry after window or input changes.
+
+The x64 Debug and Release solution builds passed. `AppFrameworkTests` passed in both configurations. `git diff --check` passed. These changes preserve label appearance and control geometry; no frame-time benchmark or visual-style change is claimed.
+
+Next: continue with the audit's settings/configuration and application ownership findings, retaining a small behavior check for each boundary change.

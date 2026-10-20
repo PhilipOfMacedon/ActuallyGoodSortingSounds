@@ -103,6 +103,7 @@ private:
 
 	void createWidgets();
 	void updateLayout();
+	void layoutInteractiveViews();
 	void updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending);
 	void syncLabels(const sortinglogic::RenderSnapshot& snapshot);
 	void drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette);

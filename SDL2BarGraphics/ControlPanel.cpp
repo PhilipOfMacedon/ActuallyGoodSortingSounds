@@ -298,6 +298,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 {
 	createWidgets();
 	updateLayout();
+	layoutInteractiveViews();
 }
 
 ControlPanel::~ControlPanel()
@@ -354,13 +355,7 @@ void ControlPanel::updateLayout()
 	const UiPresetId preset = renderPreferences_.appearance.activePreset;
 	const LayoutCacheKey currentKey(width_, height_, window_.getDrawableWidth(), window_.getDrawableHeight(),
 		settings_.visual.panelExpanded, static_cast<int>(preset), layoutRevision(renderPreferences_), fontMetricRevision(renderPreferences_));
-	if (layoutCacheValid_ && sameLayoutInputs(layoutKey_, currentKey))
-	{
-		layoutSettingsControls();
-		layoutMainComboPopups();
-		layoutAlgorithmMenu();
-		return;
-	}
+	if (layoutCacheValid_ && sameLayoutInputs(layoutKey_, currentKey)) return;
 	layoutKey_ = currentKey;
 	layoutCacheValid_ = true;
 	laidOutPreset_ = preset;
@@ -409,9 +404,6 @@ void ControlPanel::updateLayout()
 	const UiRect settingsPanelBounds(std::max(8.0f, static_cast<float>(width_) - panelWidth - 8.0f), 42.0f,
 		panelWidth, std::min(panelHeight, std::max(200.0f, static_cast<float>(height_) - 50.0f)));
 	settingsPanelView_.setPanelBounds(settingsPanelBounds, overlayState_.is(UiOverlayId::Settings));
-	layoutAlgorithmMenu();
-	layoutSettingsControls();
-	layoutMainComboPopups();
 	if (appearanceEditorOpen()) layoutAppearanceEditor();
 }
 
@@ -472,6 +464,14 @@ void ControlPanel::layoutSettingsControls()
 	settingsPanelView_.layoutControls(active, scrollbarThickness);
 }
 
+void ControlPanel::layoutInteractiveViews()
+{
+	if (width_ <= 0 || height_ <= 0) return;
+	layoutSettingsControls();
+	layoutMainComboPopups();
+	layoutAlgorithmMenu();
+}
+
 void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending)
 {
 	screenModel_ = buildUiScreenModel(snapshot, renderPreferences_, playbackPending, displayedSaveStatus_);
@@ -479,7 +479,6 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	mainControlsView_.synchronize(settings_, renderPreferences_.appearance.activePreset, snapshot,
 		screenModel_, algorithmLabel(snapshot.algorithm));
 	settingsPanelView_.synchronizeControls(settings_, renderPreferences_, snapshot, busy);
-	layoutSettingsControls();
 	updateInlineEditLabel();
 }
 
@@ -532,6 +531,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	renderPreferences_ = settings_;
 	if (appearanceEditorOpen()) renderPreferences_.appearance = appearanceEditorView_.session().draft();
 	updateLayout();
+	layoutInteractiveViews();
 	if (appearanceEditorOpen())
 		return handleAppearanceEditorEvent(event, action);
 	if (algorithmBrowserOpen())
@@ -736,7 +736,7 @@ void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
 	displayedSaveStatus_ = persistenceStatus;
 	updateLayout();
 	updateWidgetStates(snapshot, playbackPending);
-	layoutAlgorithmMenu();
+	layoutInteractiveViews();
 	if (isReady()) syncLabels(snapshot);
 }
 
