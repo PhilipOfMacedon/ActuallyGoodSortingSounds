@@ -23,6 +23,7 @@
 #include "../SDL2BarGraphics/SettingsPanelView.h"
 #include "../SDL2BarGraphics/SettingsPanelModel.h"
 #include "../SDL2BarGraphics/SettingsPanelControls.h"
+#include "../SDL2BarGraphics/SettingsPanelLayout.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
 #include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
@@ -1191,6 +1192,59 @@ namespace
 		check(basicAudio.size() == 5 && basicAudio[0] == "recon_enabled" && basicAudio[4] == "recon_restore" &&
 			advancedAudio.size() == 9 && advancedAudio[0] == "recon_min_pitch" && advancedAudio[8] == "recon_cutoff",
 			"General Audio basic and advanced groups preserve their existing control lists");
+	}
+
+	void testSettingsPanelLayout()
+	{
+		const UiRect panel(100.0f, 50.0f, 600.0f, 500.0f);
+		const SettingsPanelGeometry appearance = calculateSettingsPanelGeometry(panel, SettingsPanelPage::Appearance);
+		const float tabWidth = (568.0f - 8.0f) / 3.0f;
+		check(appearance.tabs[0].x == 116.0f && appearance.tabs[1].x == 116.0f + tabWidth + 4.0f &&
+			appearance.tabs[2].x == 116.0f + 2.0f * (tabWidth + 4.0f) &&
+			appearance.content.y == 132.0f && appearance.content.height == 358.0f &&
+			appearance.closeButton.x == 608.0f && appearance.audioRetryButton.width == 190.0f,
+			"settings panel geometry preserves Appearance tab, content, and footer placement");
+		const SettingsPanelGeometry audio = calculateSettingsPanelGeometry(panel, SettingsPanelPage::GeneralAudio);
+		check(audio.content.y == 162.0f && audio.content.height == 328.0f &&
+			audio.audioGroups[0].y == 127.0f && audio.audioGroups[1].y == 127.0f,
+			"General Audio geometry reserves its additional group-tab row");
+		const SettingsPanelGeometry compact = calculateSettingsPanelGeometry(UiRect(5.0f, 7.0f, 80.0f, 40.0f),
+			SettingsPanelPage::Algorithm);
+		check(compact.content.width == 48.0f && compact.content.height == 28.0f,
+			"small settings panes preserve the existing minimum content size");
+
+		UiWidget combo(UiWidgetKind::ComboBox, "combo", "Choice", AppAction(), UiAction::ViewCommand::None);
+		SettingsWidgetGeometry comboGeometry = calculateSettingsWidgetGeometry(combo, UiRect(20.0f, 100.0f, 300.0f, 48.0f),
+			30.0f, 280.0f, panel, 8.0f);
+		check(comboGeometry.bounds.x == 30.0f && comboGeometry.bounds.y == 117.0f &&
+			comboGeometry.bounds.width == 280.0f && comboGeometry.bounds.height == 27.0f,
+			"settings combo rows retain their label gap and control dimensions");
+
+		UiWidget radio(UiWidgetKind::Button, "radio", "Radio", AppAction(), UiAction::ViewCommand::None);
+		radio.setPresentation(UiWidgetPresentation::RadioGroup);
+		radio.setOptions(std::vector<std::string>{ "One", "Two", "Three" });
+		const SettingsWidgetGeometry radioGeometry = calculateSettingsWidgetGeometry(radio,
+			UiRect(20.0f, 100.0f, 300.0f, 48.0f), 30.0f, 280.0f, panel, 8.0f);
+		check(radioGeometry.bounds.y == 108.0f && radioGeometry.bounds.height == 28.0f &&
+			radioGeometry.interactiveSubregions.size() == 3 && radioGeometry.interactiveSubregions[1].x ==
+			30.0f + 280.0f / 3.0f,
+			"radio settings retain equal pointer-hit segments");
+
+		UiWidget dosScroll(UiWidgetKind::Slider, "scroll", "Scroll", AppAction(), UiAction::ViewCommand::None);
+		dosScroll.setPresentation(UiWidgetPresentation::DosScrollbar);
+		dosScroll.setScrollbarArrowSize(16.0f);
+		const SettingsWidgetGeometry dosGeometry = calculateSettingsWidgetGeometry(dosScroll,
+			UiRect(20.0f, 100.0f, 300.0f, 48.0f), 30.0f, 180.0f, panel, 8.0f);
+		check(dosGeometry.interactiveSubregions.size() == 3 && dosGeometry.interactiveSubregions[0].x == 30.0f &&
+			dosGeometry.interactiveSubregions[1].x == 46.0f && dosGeometry.interactiveSubregions[1].width == 148.0f &&
+			dosGeometry.interactiveSubregions[2].x == 194.0f,
+			"DOS scrollbar layout preserves arrow, track, and pointer subregions");
+
+		UiWidget legacyBand(UiWidgetKind::ComboBox, "band_selector", "Band", AppAction(), UiAction::ViewCommand::None);
+		const SettingsWidgetGeometry popupGeometry = calculateSettingsWidgetGeometry(legacyBand,
+			UiRect(20.0f, 180.0f, 300.0f, 48.0f), 30.0f, 280.0f, UiRect(0.0f, 0.0f, 400.0f, 220.0f), 8.0f);
+		check(popupGeometry.setPopupAbove && popupGeometry.popupAbove,
+			"legacy band-selector popup placement remains panel-aware");
 	}
 
 	void testSettingsStore()
@@ -2400,6 +2454,7 @@ int main()
 	testSettingsPanelPaintComposition();
 	testSettingsPanelModel();
 	testSettingsPanelControlCatalog();
+	testSettingsPanelLayout();
 	testSettingsStore();
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();

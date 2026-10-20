@@ -27,6 +27,7 @@
     <ClCompile Include="SettingsPanelView.cpp" />
     <ClCompile Include="SettingsPanelModel.cpp" />
     <ClCompile Include="SettingsPanelControls.cpp" />
+    <ClCompile Include="SettingsPanelLayout.cpp" />
     <ClCompile Include="AudioPresentationBridge.cpp" />
     <ClCompile Include="ArrayRenderer.cpp" />
     <ClCompile Include="ControlPanel.cpp" />
@@ -57,6 +58,7 @@
     <ClInclude Include="SettingsPanelView.h" />
     <ClInclude Include="SettingsPanelModel.h" />
     <ClInclude Include="SettingsPanelControls.h" />
+    <ClInclude Include="SettingsPanelLayout.h" />
     <ClInclude Include="AppActions.h" />
     <ClInclude Include="AppController.h" />
     <ClInclude Include="AudioPresentationBridge.h" />

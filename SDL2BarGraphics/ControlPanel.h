@@ -15,6 +15,7 @@
 #include "SettingsPanelView.h"
 #include "SettingsPanelModel.h"
 #include "SettingsPanelControls.h"
+#include "SettingsPanelLayout.h"
 #include "TextLabel.h"
 #include "ThemePalette.h"
 #include "UiLayer.h"

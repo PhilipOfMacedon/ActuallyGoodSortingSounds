@@ -841,20 +841,15 @@ void ControlPanel::layoutSettingsControls()
 	if (settingsPanelBounds_.width <= 0.0f) return;
 	const float x = settingsPanelBounds_.x + 16.0f;
 	const float width = std::max(1.0f, settingsPanelBounds_.width - 32.0f);
-	const float tabWidth = (width - 8.0f) / 3.0f;
-	settingsUi_.find("appearance_tab")->setBounds(UiRect(x, settingsPanelBounds_.y + 42.0f, tabWidth, 28.0f));
-	settingsUi_.find("algorithm_tab")->setBounds(UiRect(x + tabWidth + 4.0f, settingsPanelBounds_.y + 42.0f, tabWidth, 28.0f));
-	settingsUi_.find("audio_tab")->setBounds(UiRect(x + 2.0f * (tabWidth + 4.0f), settingsPanelBounds_.y + 42.0f, tabWidth, 28.0f));
-	settingsUi_.find("audio_basic_tab")->setBounds(UiRect(x, settingsPanelBounds_.y + 77.0f, (width - 4.0f) * 0.5f, 24.0f));
-	settingsUi_.find("audio_advanced_tab")->setBounds(UiRect(x + (width + 4.0f) * 0.5f, settingsPanelBounds_.y + 77.0f,
-		(width - 4.0f) * 0.5f, 24.0f));
-	const float contentOffset = settingsPanelModel_.isPage(SettingsPanelPage::GeneralAudio) ? 112.0f : 82.0f;
-	settingsContentBounds_ = UiRect(x, settingsPanelBounds_.y + contentOffset, width,
-		std::max(28.0f, settingsPanelBounds_.height - contentOffset - 60.0f));
-	const float footerY = settingsPanelBounds_.y + settingsPanelBounds_.height - 38.0f;
-	settingsUi_.find("settings_close")->setBounds(UiRect(settingsPanelBounds_.x + settingsPanelBounds_.width - 92.0f,
-		footerY, 76.0f, 26.0f));
-	settingsUi_.find("audio_retry")->setBounds(UiRect(x, footerY, std::min(190.0f, width - 90.0f), 26.0f));
+	const SettingsPanelGeometry panelGeometry = calculateSettingsPanelGeometry(settingsPanelBounds_, settingsPanelModel_.page());
+	settingsUi_.find("appearance_tab")->setBounds(panelGeometry.tabs[0]);
+	settingsUi_.find("algorithm_tab")->setBounds(panelGeometry.tabs[1]);
+	settingsUi_.find("audio_tab")->setBounds(panelGeometry.tabs[2]);
+	settingsUi_.find("audio_basic_tab")->setBounds(panelGeometry.audioGroups[0]);
+	settingsUi_.find("audio_advanced_tab")->setBounds(panelGeometry.audioGroups[1]);
+	settingsContentBounds_ = panelGeometry.content;
+	settingsUi_.find("settings_close")->setBounds(panelGeometry.closeButton);
+	settingsUi_.find("audio_retry")->setBounds(panelGeometry.audioRetryButton);
 	const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(
 		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
 	const std::vector<std::string> active = settingsPanelControlIds(
@@ -873,6 +868,7 @@ void ControlPanel::layoutSettingsControls()
 	const float rowHeight = 48.0f;
 	const float contentBottom = settingsContentBounds_.y + settingsContentBounds_.height;
 	const float totalHeight = static_cast<float>(active.size()) * rowHeight;
+	const float scrollbarThickness = themeNumber(renderPreferences_, "scrollbar.thickness", 8.0f);
 	settingsPanelModel_.scrollViewport().configure(settingsContentBounds_, totalHeight, rowHeight, settingsPanelModel_.scrollOffset());
 	for (std::size_t i = 0; i < active.size(); ++i)
 	{
@@ -882,47 +878,17 @@ void ControlPanel::layoutSettingsControls()
 		if (visible) visibleWidgetIds.insert(active[i]);
 		UiWidget* widget = settingsUi_.find(active[i]);
 		if (!widget) continue;
-		if (widget->kind() == UiWidgetKind::ComboBox)
-			widget->setBounds(UiRect(x, rowY + 17.0f, width, 27.0f));
-		else if (widget->kind() == UiWidgetKind::Button)
-			widget->setBounds(UiRect(x, rowY + 8.0f, width, 28.0f));
-		else
-			widget->setBounds(UiRect(x, rowY, width, 43.0f));
-		std::vector<UiRect> interactive;
-		if (widget->presentation() == UiWidgetPresentation::RadioGroup && !widget->options().empty())
-		{
-			const float segment = widget->bounds().width / static_cast<float>(widget->options().size());
-			for (std::size_t option = 0; option < widget->options().size(); ++option)
-				interactive.push_back(UiRect(widget->bounds().x + static_cast<float>(option) * segment,
-					widget->bounds().y, segment, widget->bounds().height));
-		}
-		else if (widget->kind() == UiWidgetKind::Slider && widget->presentation() == UiWidgetPresentation::DosScrollbar)
-		{
-			const float arrow = std::min(widget->scrollbarArrowSize(), widget->bounds().width * 0.25f);
-			const float trackHeight = std::min(themeNumber(renderPreferences_, "scrollbar.thickness", 8.0f),
-				std::max(1.0f, widget->bounds().height - 29.0f));
-			const float y = widget->bounds().y + 28.0f;
-			if (arrow > 0.0f)
-			{
-				interactive.push_back(UiRect(widget->bounds().x, y - 2.0f, arrow, trackHeight + 4.0f));
-				interactive.push_back(UiRect(widget->bounds().x + arrow, y,
-					std::max(1.0f, widget->bounds().width - 2.0f * arrow), trackHeight));
-				interactive.push_back(UiRect(widget->bounds().x + widget->bounds().width - arrow, y - 2.0f, arrow, trackHeight + 4.0f));
-			}
-		}
-		widget->setInteractiveSubregions(interactive);
-		if (active[i] == "band_selector")
-			widget->setPopupAbove(widget->bounds().y + widget->bounds().height * 9.0f >
-				settingsPanelBounds_.y + settingsPanelBounds_.height - 46.0f);
+		const SettingsWidgetGeometry geometry = calculateSettingsWidgetGeometry(*widget, rowBounds,
+			x, width, settingsPanelBounds_, scrollbarThickness);
+		widget->setBounds(geometry.bounds);
+		widget->setInteractiveSubregions(geometry.interactiveSubregions);
+		if (geometry.setPopupAbove) widget->setPopupAbove(geometry.popupAbove);
 	}
 	for (std::size_t i = 0; i < settingsUi_.widgets().size(); ++i)
 	{
 		const std::string& id = settingsUi_.widgets()[i]->id();
 		settingsUi_.setWidgetVisible(id, visibleWidgetIds.find(id) != visibleWidgetIds.end());
 	}
-	settingsUi_.find("settings_close")->setBounds(UiRect(settingsPanelBounds_.x + settingsPanelBounds_.width - 92.0f,
-		footerY, 76.0f, 26.0f));
-	settingsUi_.find("audio_retry")->setBounds(UiRect(x, footerY, std::min(190.0f, width - 90.0f), 26.0f));
 }
 
 void ControlPanel::updateAudioControls()

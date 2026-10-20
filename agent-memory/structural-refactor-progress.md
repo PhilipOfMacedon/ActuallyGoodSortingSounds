@@ -501,4 +501,19 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
 
-Next: extract the remaining settings-pane geometry and row placement into a pure layout helper, then continue with explicit overlay ownership and generic event-to-action binding.
+## 2026-10-19 — extract settings panel geometry
+
+Status: implementation and focused verification complete.
+
+- Added pure `calculateSettingsPanelGeometry` and `calculateSettingsWidgetGeometry` helpers. They return tab/content/footer rectangles, row bounds, radio hit segments, DOS scrollbar subregions, and the legacy band-selector popup direction.
+- `ControlPanel::layoutSettingsControls` now applies those results to retained widgets. It no longer recalculates per-widget placement or pointer subregions itself; page control selection and geometry are separate helpers.
+- Added checks for Appearance versus General Audio content offsets, compact-window minimum height, tab/footer placement, combo/button/radio geometry, scrollbar hit regions, and popup-above placement.
+- The existing formulas and modal layout are unchanged. No settings, action, sorting, trace, or audio behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: pending before commit.
+
+Next: replace the independent overlay booleans with explicit overlay ownership and transitions, then centralize view event-to-action routing.
