@@ -21,6 +21,7 @@
 #include "../SDL2BarGraphics/AlgorithmProfileView.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
 #include "../SDL2BarGraphics/AppearanceEditorModel.h"
+#include "../SDL2BarGraphics/AppearanceEditorView.h"
 #include "../SDL2BarGraphics/AudioSettingsActions.h"
 #include "../SDL2BarGraphics/BarCountSteps.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserCatalog.h"
@@ -1454,6 +1455,54 @@ namespace
 		check(!calculateAppearanceEditorLayout(0.0f, 480.0f).valid &&
 			!calculateAppearanceEditorLayout(640.0f, 0.0f).valid,
 			"appearance layout stays invalid until the window has positive logical dimensions");
+	}
+
+	void testAppearanceEditorViewComposition()
+	{
+		UiAppearancePreferences initial;
+		const std::vector<std::string> presets = { "Current", "Flat VGA DOS", "Classic Windows 95" };
+		const std::vector<std::string> palettes = { "Cyan", "Amber", "Monochrome", "Light", "VGA Classic", "Windows 95" };
+		AppearanceEditorView view(presets, palettes, initial, 0);
+		view.updateLayout(1280, 720);
+		view.setDescription("Color | Interface and chart color token.");
+		const UiRect expectedPreset = view.layoutResult().control("appearance_preset");
+		const UiWidget* presetWidget = view.controls().find("appearance_preset");
+		check(view.layoutResult().valid && view.controls().widgets().size() == 25 && presetWidget &&
+			presetWidget->bounds().x == expectedPreset.x && presetWidget->bounds().y == expectedPreset.y,
+			"appearance view owns its retained controls and applies one responsive layout to them");
+
+		AppearanceEditorPalette palette;
+		palette.panel = UiColor(0.1f, 0.12f, 0.14f, 1.0f);
+		palette.border = UiColor(0.3f, 0.4f, 0.45f, 1.0f);
+		palette.accent = UiColor(0.1f, 0.8f, 0.7f, 1.0f);
+		palette.text = UiColor(0.9f, 0.95f, 1.0f, 1.0f);
+		palette.mutedText = UiColor(0.65f, 0.7f, 0.75f, 1.0f);
+		palette.overlayDim = UiColor(0.0f, 0.0f, 0.0f, 0.5f);
+		RecordingUiPaintContext paint;
+		view.compose(1280, 720, "Changes preview behind this editor.", false,
+			UiTokenValue::fromColor(UiColor(0.2f, 0.4f, 0.6f, 1.0f)), palette, paint);
+		const std::vector<UiPaintCommand>& commands = paint.commands();
+		check(commands.size() == 11 && commands[0].layer == UiPaintLayer::Backdrop &&
+			commands[0].bounds.width == 1280.0f && commands[0].bounds.height == 720.0f &&
+			commands[1].layer == UiPaintLayer::Panel && commands[2].layer == UiPaintLayer::Accent,
+			"appearance view submits the modal backdrop and panel chrome in painter order");
+		check(commands.size() == 11 && commands[3].elementId == "#appearance_title" &&
+			commands[4].layer == UiPaintLayer::SettingsControls && commands[4].hasClip &&
+			commands[9].text == "Color | Interface and chart color token." &&
+			commands[9].textOverflow == UiTextOverflow::Fit &&
+			commands[10].elementId == "#appearance_status" && commands[10].color.r == palette.mutedText.r,
+			"appearance title, clipped swatch, description, and status use the shared paint contract");
+		paint.clear();
+		view.compose(1280, 720, "Validation failed.", true,
+			UiTokenValue::fromNumber(1.0), palette, paint);
+		check(paint.commands().size() == 6 && paint.commands()[5].color.r == palette.accent.r,
+			"appearance error state uses the accent color without requiring a color-token swatch");
+
+		view.controls().setInputCaptured(true);
+		UiAction outsideClick;
+		const bool consumed = view.controls().handleEvent(UiInputEvent(UiInputType::PointerDown, 0.0f, 0.0f), outsideClick);
+		check(consumed && outsideClick.viewCommand == UiAction::ViewCommand::CloseAppearanceEditor,
+			"appearance view retains modal pointer capture and outside-click dismissal");
 	}
 
 	void testAlgorithmProfileView()
@@ -3276,6 +3325,7 @@ int main(int argc, char* argv[])
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
 	testAppearanceEditorLayout();
+	testAppearanceEditorViewComposition();
 	testAlgorithmProfileView();
 	testAppearanceEditorModel();
 	testAppearanceEditorSession();

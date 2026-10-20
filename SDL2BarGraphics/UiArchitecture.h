@@ -157,7 +157,7 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 
 enum class UiPaintPrimitive { Rectangle, Border, Text, Icon };
 enum class UiPaintMaterial { Solid, Panel, Button, Timeline, TimelineThumb, Popup, Accent, ModalDim };
-enum class UiPaintLayer { Backdrop, Panel, Accent, Content, Text, SettingsText, MainControls, MainControlsOverlay, MainText };
+enum class UiPaintLayer { Backdrop, Panel, Accent, Content, SettingsControls, Text, SettingsText, MainControls, MainControlsOverlay, MainText };
 enum class UiTextAlignment { Center, Left, Right };
 enum class UiTextOverflow { Fit, Clamp, Marquee };
 struct UiPaintCommand

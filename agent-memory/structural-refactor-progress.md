@@ -1385,3 +1385,17 @@ Verification:
 - `git diff --check` passed. No live-window screenshot review was run because this slice changes state ownership only.
 
 Next: extract appearance editor layout, paint composition, and widget action handling behind a dedicated view while keeping native file dialogs in the platform adapter.
+
+## 2026-10-20 — extract the appearance editor view boundary
+
+Added `AppearanceEditorView` to own the retained editor controls, `AppearanceEditorSession`, responsive layout result, description text, and painter-ordered modal composition. `ControlPanel` delegates editor creation, layout, and modal chrome/swatch/status composition to the view. It remains the SDL and renderer adapter for pointer/key translation, specialized widget painting, native profile dialogs, and app action dispatch; those responsibilities are the next extraction boundary rather than something this slice pretends has vanished.
+
+Added the shared `SettingsControls` paint layer so the view can order its swatch alongside controls. New headless checks cover control/layout ownership, modal paint order and clipping, status/error styling, and outside-click input capture. Removed an unused palette field from the view contract.
+
+Verification:
+
+- Full x64 Debug/Release and x86 Debug/Release solution builds and `AppFrameworkTests` passed for this slice. After removing the unused palette field, the full x64 Debug solution build and `AppFrameworkTests` were rerun and passed.
+- Visually inspected the live appearance editor and settings window; the modal, controls, swatch, description, and status were visible and correctly layered.
+- `git diff --check` passed. This is an ownership refactor; no runtime performance claim is made.
+
+Next: move appearance-editor widget-state synchronization and semantic action handling behind the view. Keep SDL event translation, GPU submission, and native file dialogs at the platform adapter boundary.

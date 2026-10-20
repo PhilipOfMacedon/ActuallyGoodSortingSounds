@@ -5,8 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "AppearanceEditorLayout.h"
-#include "AppearanceEditorModel.h"
+#include "AppearanceEditorView.h"
 #include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
 #include "RenderingTypes.h"
@@ -67,7 +66,7 @@ private:
 	const UserPreferences& settings_;
 	UIRoot mainUi_;
 	UIRoot settingsUi_;
-	UIRoot appearanceUi_;
+	AppearanceEditorView appearanceEditorView_;
 	SettingsPanelModel settingsPanelModel_;
 	UiOverlayState overlayState_;
 	AlgorithmBrowserModel algorithmBrowser_;
@@ -115,11 +114,6 @@ private:
 	std::string inlineEditBuffer_;
 	bool inlineEditReplaceOnNextDigit_;
 	bool inlineEditAppearanceValue_;
-	AppearanceEditorSession appearanceEditorSession_;
-	AppearanceEditorLayoutResult appearanceLayout_;
-	std::unique_ptr<TextLabel> appearanceEditorTitle_;
-	std::unique_ptr<TextLabel> appearanceTokenDescription_;
-	std::unique_ptr<TextLabel> appearanceStatus_;
 
 	void createWidgets();
 	void updateLayout();

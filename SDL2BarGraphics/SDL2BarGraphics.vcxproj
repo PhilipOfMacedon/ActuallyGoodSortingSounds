@@ -38,6 +38,7 @@
   <ItemGroup>
     <ClInclude Include="AppearanceEditorLayout.h" />
     <ClInclude Include="AppearanceEditorModel.h" />
+    <ClInclude Include="AppearanceEditorView.h" />
     <ClInclude Include="AppearanceDialogAdapter.h" />
     <ClInclude Include="ActiveRoleLookup.h" />
     <ClInclude Include="AlgorithmBrowserModel.h" />
