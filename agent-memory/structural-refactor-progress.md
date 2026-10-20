@@ -1330,3 +1330,18 @@ Verification:
 - `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
 
 Next: audit remaining merge implementations for the next cohesive extraction, then return to settings/configuration and UI ownership work from the structural audit.
+
+## 2026-10-20 — extract Optimized Bottom-up Merge
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved Optimized Bottom-up Merge and its alternating-buffer pass helper into `SortingLogic/MergeStrategies.cpp`; the catalog request now uses a direct strategy builder and the fallback-switch case is removed.
+- Preserved 16-item binary-insertion run formation, alternating main/auxiliary passes, lane names, comparison/write order, metrics, and annotations. The shared binary-insertion kernel remains owned by the insertion strategy module.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- In each configuration: merge-family tests passed 44,531 checks; core contracts passed 39,535; pinned catalog coverage passed 1,741. All reported 0 failures.
+- `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
+
+Next: continue auditing remaining cross-family merge helpers, then resume the settings/configuration, UI ownership, and measured rendering items in the structural audit.

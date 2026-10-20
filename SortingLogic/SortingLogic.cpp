@@ -5038,62 +5038,6 @@ namespace sortinglogic
 			}
 		}
 
-		void optimizedBottomUpMergePass(Recorder& r, std::size_t width, bool sourceIsAuxiliary)
-		{
-			const std::size_t n = r.state.slots.size();
-			const std::string lane = "optimized_bottom_up";
-			r.addMetric("merge_passes");
-			for (std::size_t first = 0; first < n; first += width * 2)
-			{
-				const std::size_t middle = std::min(first + width, n);
-				const std::size_t end = std::min(first + width * 2, n);
-				const std::size_t annotationBegin = r.trace.events.size();
-				std::size_t left = first, right = middle;
-				for (std::size_t out = first; out < end; ++out)
-				{
-					SortItem chosen;
-					if (left >= middle)
-						chosen = sourceIsAuxiliary ? r.auxiliaryAt(lane, right++) : r.at(right++);
-					else if (right >= end)
-						chosen = sourceIsAuxiliary ? r.auxiliaryAt(lane, left++) : r.at(left++);
-					else
-					{
-						const SortItem a = sourceIsAuxiliary ? r.auxiliaryAt(lane, left) : r.at(left);
-						const SortItem b = sourceIsAuxiliary ? r.auxiliaryAt(lane, right) : r.at(right);
-						const std::string sourceLane = sourceIsAuxiliary ? lane : "main";
-						r.compare(a, b, left, right, sourceLane, sourceLane);
-						if (compareItems(a, b, r.trace.direction) != ComparisonResult::Greater)
-							chosen = sourceIsAuxiliary ? r.auxiliaryAt(lane, left++) : r.at(left++);
-						else
-							chosen = sourceIsAuxiliary ? r.auxiliaryAt(lane, right++) : r.at(right++);
-					}
-					if (sourceIsAuxiliary) r.writeMain(out, chosen);
-					else r.writeAuxiliary(lane, out, chosen);
-				}
-				r.annotate(sourceIsAuxiliary ? "main" : lane, RegionKind::Contiguous, first, end, 1, -1,
-					"Optimized bottom-up merge width " + std::to_string(width), annotationBegin);
-			}
-		}
-
-		void optimizedBottomUpMergeSort(Recorder& r)
-		{
-			const std::size_t n = r.state.slots.size();
-			if (n < 2) return;
-			const std::size_t runSize = 16;
-			for (std::size_t first = 0; first < n; first += runSize)
-			{
-				strategies::binaryInsertionRange(r, first, std::min(first + runSize, n));
-				r.addMetric("binary_insertion_runs");
-			}
-			if (n <= runSize) return;
-			r.resizeAuxiliary("optimized_bottom_up", n);
-			for (std::size_t width = runSize; width < n; width *= 4)
-			{
-				optimizedBottomUpMergePass(r, width, false);
-				optimizedBottomUpMergePass(r, width * 2, true);
-			}
-		}
-
 		void dropMergeSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -6031,7 +5975,6 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvTim: timFamilySort(recorder, false); break;
 				case SortAlgorithm::ArrayvCocktailMerge: timFamilySort(recorder, true); break;
 				case SortAlgorithm::ArrayvImprovedInPlaceMerge: improvedInPlaceMergeSort(recorder); break;
-				case SortAlgorithm::ArrayvOptimizedBottomUpMerge: optimizedBottomUpMergeSort(recorder); break;
 			case SortAlgorithm::Stooge: stooge(recorder); break;
 				case SortAlgorithm::ArrayvBufferedStooge: bufferedStoogeSort(recorder); break;
 			case SortAlgorithm::Bogo: bogo(recorder); break;
@@ -6236,7 +6179,7 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvTimRequest, ArrayvTim)
 		SORT_REQUEST_BUILDER(buildArrayvCocktailMergeRequest, ArrayvCocktailMerge)
 		SORT_REQUEST_BUILDER(buildArrayvImprovedInPlaceMergeRequest, ArrayvImprovedInPlaceMerge)
-		SORT_REQUEST_BUILDER(buildArrayvOptimizedBottomUpMergeRequest, ArrayvOptimizedBottomUpMerge)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOptimizedBottomUpMergeRequest, ArrayvOptimizedBottomUpMerge, &strategies::optimizedBottomUpMergeStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOptimizedBubbleRequest, ArrayvOptimizedBubble, &strategies::optimizedBubble)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvUnoptimizedBubbleRequest, ArrayvUnoptimizedBubble, &strategies::unoptimizedBubble)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvSwaplessBubbleRequest, ArrayvSwaplessBubble, &strategies::swaplessBubble)
