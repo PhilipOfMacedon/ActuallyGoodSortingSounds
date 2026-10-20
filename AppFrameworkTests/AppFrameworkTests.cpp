@@ -801,6 +801,132 @@ namespace
 			"closing the browser releases its modal search and pending-selection state");
 	}
 
+	void testAlgorithmBrowserInputAndLayout()
+	{
+		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
+		if (!insertion) return;
+
+		AlgorithmBrowserModel browser;
+		browser.begin(insertion->familyId);
+		browser.layout(UiRect(540.0f, 444.0f, 80.0f, 30.0f), 640, 480);
+		check(browser.bounds.x >= 0.0f && browser.bounds.y >= 0.0f &&
+			browser.bounds.x + browser.bounds.width <= 640.0f && browser.bounds.y + browser.bounds.height <= 480.0f,
+			"algorithm browser layout clamps the modal inside the logical window");
+		check(browser.familyBounds.x >= browser.bounds.x && browser.variantBounds.x + browser.variantBounds.width <=
+			browser.bounds.x + browser.bounds.width,
+			"algorithm browser layout keeps both list panes inside the modal bounds");
+
+		browser.prepare();
+		check(browser.familyViewport.maximumOffset() > 0.0f,
+			"large family catalogs expose a scrollable family viewport");
+		const UiInputEvent wheel(UiInputType::Wheel, browser.familyBounds.x + 4.0f,
+			browser.familyBounds.y + 4.0f, -1);
+		browser.handleInput(wheel, true, static_cast<int>(insertion->id));
+		check(browser.familyScroll > 0 && browser.familyViewport.offset() > 0.0f,
+			"browser wheel input updates the family viewport scroll position");
+		const std::vector<AlgorithmFamilyEntry>& allFamilies = browser.families();
+		const AlgorithmFamilyEntry* largestFamily = allFamilies.empty() ? nullptr : &allFamilies[0];
+		for (std::size_t i = 1; i < allFamilies.size(); ++i)
+			if (!largestFamily || allFamilies[i].variants.size() > largestFamily->variants.size())
+				largestFamily = &allFamilies[i];
+		browser.layout(UiRect(540.0f, 194.0f, 80.0f, 30.0f), 640, 240);
+		browser.selectedFamily = largestFamily ? largestFamily->id : sortinglogic::FamilyId();
+		browser.variantScroll = 0;
+		browser.prepare();
+		check(browser.variantViewport.maximumOffset() > 0.0f,
+			"the largest registered family exposes a scrollable variant viewport");
+		const UiInputEvent variantWheel(UiInputType::Wheel, browser.variantBounds.x + 4.0f,
+			browser.variantBounds.y + 4.0f, -1);
+		browser.handleInput(variantWheel, true, static_cast<int>(insertion->id));
+		check(largestFamily && browser.variantScroll > 0 && browser.variantViewport.offset() > 0.0f,
+			"browser wheel input updates the selected family variant viewport");
+
+		AlgorithmBrowserModel keyboard;
+		keyboard.begin(insertion->familyId);
+		keyboard.layout(UiRect(20.0f, 20.0f, 140.0f, 30.0f), 800, 600);
+		keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), true,
+			static_cast<int>(insertion->id));
+		check(keyboard.familySelection == 1 && !keyboard.searchFocused,
+			"down arrow leaves search and moves keyboard focus to the next family");
+		keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Tab), true,
+			static_cast<int>(insertion->id));
+		check(keyboard.searchFocused,
+			"tab returns keyboard focus to the browser search field");
+		keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Tab), true,
+			static_cast<int>(insertion->id));
+		keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Right), true,
+			static_cast<int>(insertion->id));
+		check(keyboard.variantPane,
+			"right arrow opens the selected family variant pane");
+		const std::vector<const AlgorithmFamilyEntry*> keyboardFamilies = keyboard.visibleFamilies();
+		const AlgorithmFamilyEntry* keyboardFamily = keyboardFamilies[static_cast<std::size_t>(keyboard.familySelection)];
+		const std::vector<const sortinglogic::AlgorithmDescriptor*> keyboardVariants = keyboard.visibleVariants(keyboardFamily);
+		if (keyboardVariants.size() > 1)
+			keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), true,
+				static_cast<int>(insertion->id));
+		const std::size_t selectedVariant = static_cast<std::size_t>(keyboard.variantSelection);
+		const AlgorithmBrowserInputResult selected = keyboard.handleInput(
+			UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Enter), true,
+			static_cast<int>(insertion->id));
+		check(selected.selectionRequested && keyboard.pendingSelection && selectedVariant < keyboardVariants.size() &&
+			selected.familyId == keyboardVariants[selectedVariant]->familyId &&
+			selected.variantId == keyboardVariants[selectedVariant]->variantId,
+			"enter emits a typed selection for the keyboard-highlighted catalog variant");
+
+		AlgorithmBrowserModel busy;
+		busy.begin(insertion->familyId);
+		busy.layout(UiRect(20.0f, 20.0f, 140.0f, 30.0f), 800, 600);
+		busy.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), true,
+			static_cast<int>(insertion->id));
+		busy.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Right), true,
+			static_cast<int>(insertion->id));
+		const AlgorithmBrowserInputResult rejected = busy.handleInput(
+			UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Enter), false,
+			static_cast<int>(insertion->id));
+		check(!rejected.selectionRequested && !busy.pendingSelection && !busy.status.empty(),
+			"busy setup state rejects keyboard selection with visible feedback");
+		busy.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Escape), true,
+			static_cast<int>(insertion->id));
+		check(!busy.variantPane,
+			"escape backs out of the variant pane without closing the browser");
+		const AlgorithmBrowserInputResult close = busy.handleInput(
+			UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Escape), true,
+			static_cast<int>(insertion->id));
+		check(close.closeRequested,
+			"escape from the family pane requests modal dismissal");
+
+		AlgorithmBrowserModel pointer;
+		pointer.begin(insertion->familyId);
+		pointer.layout(UiRect(20.0f, 20.0f, 140.0f, 30.0f), 800, 600);
+		pointer.handleInput(UiInputEvent(UiInputType::TextInput, std::string("quick")), true,
+			static_cast<int>(insertion->id));
+		pointer.prepare();
+		const std::vector<const AlgorithmFamilyEntry*> quickFamilies = pointer.visibleFamilies();
+		check(!quickFamilies.empty(),
+			"text input filters the browser catalog before pointer selection");
+		if (!quickFamilies.empty())
+		{
+			pointer.handleInput(UiInputEvent(UiInputType::PointerDown, pointer.familyBounds.x + 4.0f,
+				pointer.familyBounds.y + 4.0f), true, static_cast<int>(insertion->id));
+			const std::vector<const sortinglogic::AlgorithmDescriptor*> quickVariants = pointer.visibleVariants(
+				quickFamilies[0]);
+			const UiRect firstVariant = pointer.variantViewport.itemBounds(0, 30.0f);
+			const AlgorithmBrowserInputResult clicked = pointer.handleInput(UiInputEvent(UiInputType::PointerDown,
+				firstVariant.x + 4.0f, firstVariant.y + 4.0f), true, static_cast<int>(insertion->id));
+			check(clicked.selectionRequested && !quickVariants.empty() && clicked.familyId == quickVariants[0]->familyId &&
+				clicked.variantId == quickVariants[0]->variantId,
+				"pointer selection emits the typed variant action through the same browser model");
+		}
+
+		AlgorithmBrowserModel outside;
+		outside.begin(insertion->familyId);
+		outside.layout(UiRect(20.0f, 20.0f, 140.0f, 30.0f), 800, 600);
+		const AlgorithmBrowserInputResult dismissed = outside.handleInput(
+			UiInputEvent(UiInputType::PointerDown, 799.0f, 599.0f), true, static_cast<int>(insertion->id));
+		check(dismissed.closeRequested,
+			"outside pointer input requests modal dismissal");
+	}
+
 	void testSettingsStore()
 	{
 		wchar_t temporary[MAX_PATH] = {};
@@ -2001,6 +2127,7 @@ int main()
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
 	testAlgorithmBrowserModel();
+	testAlgorithmBrowserInputAndLayout();
 	testSettingsStore();
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();

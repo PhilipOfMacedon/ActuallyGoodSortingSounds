@@ -171,6 +171,5 @@ private:
 	void chooseAppearanceColor();
 	void importAppearanceProfile();
 	void exportAppearanceProfile();
-	void selectAlgorithmMenuVariant(const sortinglogic::AlgorithmDescriptor& algorithm, AppAction& action);
 	float timelineFraction(float x) const;
 };

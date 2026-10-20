@@ -381,3 +381,23 @@ Verification:
 - The first model test run exposed an overly narrow test expectation: “insertion sort” also matches other insertion-family variants. The test now checks case-insensitive result equivalence and preserved catalog order instead of assuming one result.
 
 Next: separate the browser’s layout and event-to-action policy from `ControlPanel` behind a view-facing interface, keeping the common paint queue and validating scroll, keyboard, and modal behavior through the same production path.
+
+## 2026-10-19 — move browser layout and input policy behind its model
+
+Status: implementation and focused verification complete.
+
+- Moved algorithm-browser modal geometry, pane bounds, viewport configuration, keyboard navigation, pointer hit-testing, search focus, busy rejection, Escape/back, and typed variant selection into `AlgorithmBrowserModel`.
+- The model consumes the existing platform-neutral `UiInputEvent` and returns a small typed result. `ControlPanel` now translates SDL events, performs SDL text-input start/stop and modal dismissal, and adapts a selected stable family/variant ID to `AppAction`.
+- Preserved the renderer’s existing direct ordered submissions. The browser still paints in `ControlPanel`; this slice isolates layout and interaction policy without adding a second paint pipeline.
+- Added `UiKey::Backspace` so the generic event contract represents the browser’s existing search edit operation.
+- Expanded headless checks to cover window-clamped layout, family and variant wheel scrolling, keyboard focus and navigation, variant selection, busy rejection, Escape/back, pointer selection, and outside-click dismissal. The scroll fixture uses the largest family and a compact logical window to guarantee list overflow.
+- No sorting trace, audio, settings, or renderer command behavior changed. The existing UI scroll contract and variant catalog ordering remain unchanged.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
+- A focused test run initially used the Insertion family as an overflow fixture, but it did not exceed the default visible row count. The test now derives the largest registered family and uses a shorter viewport, verifying actual overflow rather than assuming it.
+
+Next: connect the browser’s real paint composition to the shared paint-command contract (or remove that unused parallel abstraction), so the same browser layout can be exercised by headless composition tests and consumed by the production renderer without duplicating widget geometry.

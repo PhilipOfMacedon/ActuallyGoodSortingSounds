@@ -13,8 +13,19 @@ struct AlgorithmFamilyEntry
 	std::vector<const sortinglogic::AlgorithmDescriptor*> variants;
 };
 
+struct AlgorithmBrowserInputResult
+{
+	bool closeRequested;
+	bool selectionRequested;
+	sortinglogic::FamilyId familyId;
+	sortinglogic::VariantId variantId;
+	AlgorithmBrowserInputResult()
+		: closeRequested(false), selectionRequested(false), familyId(), variantId() {}
+};
+
 // Owns the algorithm picker's selection/search/scroll state and catalog query
-// behavior. SDL event translation and painting remain with ControlPanel.
+// behavior. It consumes platform-neutral UI events and returns semantic
+// selection results; SDL lifecycle and painting remain with ControlPanel.
 struct AlgorithmBrowserModel
 {
 	bool open;
@@ -38,6 +49,10 @@ struct AlgorithmBrowserModel
 	AlgorithmBrowserModel();
 	void begin(const sortinglogic::FamilyId& initialFamily);
 	void close();
+	void layout(const UiRect& anchor, int logicalWidth, int logicalHeight);
+	void prepare();
+	void configureViewports();
+	AlgorithmBrowserInputResult handleInput(const UiInputEvent& event, bool setupEnabled, int selectedAlgorithm);
 	void resetSearchResults();
 	void appendSearch(const std::string& text, std::size_t maximumLength = 64);
 	void eraseSearchCharacter();

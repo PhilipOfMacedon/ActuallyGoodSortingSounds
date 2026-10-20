@@ -86,6 +86,7 @@ enum class UiKey
 	Tab,
 	Enter,
 	Space,
+	Backspace,
 	Escape,
 	Up,
 	Down,

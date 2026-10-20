@@ -35,6 +35,46 @@ namespace
 	const RenderLayer SettingsLayer = RenderLayer::SettingsPanel;
 	const RenderLayer SettingsTextLayer = RenderLayer::SettingsText;
 
+	bool translateAlgorithmBrowserEvent(const SDL_Event& event, UiInputEvent& input)
+	{
+		if (event.type == SDL_MOUSEMOTION)
+			input = UiInputEvent(UiInputType::PointerMove, static_cast<float>(event.motion.x), static_cast<float>(event.motion.y));
+		else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+			input = UiInputEvent(UiInputType::PointerDown, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
+		else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
+			input = UiInputEvent(UiInputType::PointerUp, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
+		else if (event.type == SDL_MOUSEWHEEL)
+		{
+			int mouseX = 0, mouseY = 0;
+			SDL_GetMouseState(&mouseX, &mouseY);
+			input = UiInputEvent(UiInputType::Wheel, static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y);
+		}
+		else if (event.type == SDL_TEXTINPUT)
+			input = UiInputEvent(UiInputType::TextInput, std::string(event.text.text));
+		else if (event.type == SDL_KEYDOWN)
+		{
+			UiKey key = UiKey::None;
+			switch (event.key.keysym.sym)
+			{
+			case SDLK_TAB: key = UiKey::Tab; break;
+			case SDLK_RETURN: case SDLK_KP_ENTER: key = UiKey::Enter; break;
+			case SDLK_BACKSPACE: key = UiKey::Backspace; break;
+			case SDLK_ESCAPE: key = UiKey::Escape; break;
+			case SDLK_UP: key = UiKey::Up; break;
+			case SDLK_DOWN: key = UiKey::Down; break;
+			case SDLK_LEFT: key = UiKey::Left; break;
+			case SDLK_RIGHT: key = UiKey::Right; break;
+			default: return false;
+			}
+			input = UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, key,
+				(event.key.keysym.mod & KMOD_SHIFT) != 0);
+		}
+		else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+			input = UiInputEvent(UiInputType::FocusLost);
+		else return false;
+		return true;
+	}
+
 	std::vector<std::string> paletteNames()
 	{
 		std::vector<std::string> names;
@@ -3206,216 +3246,30 @@ void ControlPanel::completeActionResult(const AppAction& action, const sortinglo
 void ControlPanel::layoutAlgorithmMenu()
 {
 	if (!algorithmBrowser_.open || width_ <= 0 || height_ <= 0) return;
-	const float menuWidth = std::min(700.0f, std::max(1.0f, static_cast<float>(width_) - 24.0f));
-	const float menuHeight = std::min(520.0f, std::max(180.0f, static_cast<float>(height_) - 24.0f));
-	const UiRect anchor = mainUi_.find("algorithm")->bounds();
-	float left = std::max(12.0f, std::min(static_cast<float>(width_) - menuWidth - 12.0f, anchor.x));
-	float top = anchor.y + anchor.height + 6.0f;
-	if (top + menuHeight > static_cast<float>(height_) - 12.0f)
-		top = std::max(12.0f, anchor.y - menuHeight - 6.0f);
-	algorithmBrowser_.bounds = UiRect(left, top, menuWidth, menuHeight);
-	algorithmBrowser_.searchBounds = UiRect(left + 12.0f, top + 12.0f, menuWidth - 24.0f, 30.0f);
-	const float paneTop = top + 52.0f;
-	const float paneHeight = std::max(64.0f, menuHeight - 96.0f);
-	const float familyWidth = (menuWidth - 36.0f) * 0.46f;
-	algorithmBrowser_.familyBounds = UiRect(left + 12.0f, paneTop, familyWidth, paneHeight);
-	algorithmBrowser_.variantBounds = UiRect(algorithmBrowser_.familyBounds.x + familyWidth + 12.0f, paneTop,
-		menuWidth - familyWidth - 36.0f, paneHeight);
-}
-
-void ControlPanel::selectAlgorithmMenuVariant(const sortinglogic::AlgorithmDescriptor& algorithm, AppAction& action)
-{
-	action = AppAction(AppActionKind::SelectAlgorithm, algorithm.familyId, algorithm.variantId);
-	algorithmBrowser_.pendingSelection = true;
-	algorithmBrowser_.status.clear();
+	algorithmBrowser_.layout(mainUi_.find("algorithm")->bounds(), width_, height_);
 }
 
 bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action)
 {
-	layoutAlgorithmMenu();
-	const std::vector<const AlgorithmFamilyEntry*> matches = algorithmBrowser_.visibleFamilies();
-	const AlgorithmFamilyEntry* selectedFamily = nullptr;
-	for (std::size_t i = 0; i < matches.size(); ++i)
-		if (matches[i]->id == algorithmBrowser_.selectedFamily) { selectedFamily = matches[i]; algorithmBrowser_.familySelection = static_cast<int>(i); break; }
-	if (!selectedFamily && !matches.empty())
-	{
-		algorithmBrowser_.familySelection = std::max(0, std::min(algorithmBrowser_.familySelection, static_cast<int>(matches.size()) - 1));
-		selectedFamily = matches[static_cast<std::size_t>(algorithmBrowser_.familySelection)];
-		algorithmBrowser_.selectedFamily = selectedFamily->id;
-		algorithmBrowser_.variantSelection = 0;
-	}
-	std::vector<const sortinglogic::AlgorithmDescriptor*> variants = algorithmBrowser_.visibleVariants(selectedFamily);
-	const int familyVisible = std::max(1, static_cast<int>(algorithmBrowser_.familyBounds.height / 30.0f));
-	const int variantVisible = std::max(1, static_cast<int>(algorithmBrowser_.variantBounds.height / 30.0f));
-	algorithmBrowser_.familyViewport.configure(algorithmBrowser_.familyBounds, static_cast<float>(matches.size()) * 30.0f, 30.0f,
-		static_cast<float>(algorithmBrowser_.familyScroll) * 30.0f);
-	algorithmBrowser_.variantViewport.configure(algorithmBrowser_.variantBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f,
-		static_cast<float>(algorithmBrowser_.variantScroll) * 30.0f);
-	algorithmBrowser_.familyScroll = static_cast<int>(algorithmBrowser_.familyViewport.offset() / 30.0f + 0.5f);
-	algorithmBrowser_.variantScroll = static_cast<int>(algorithmBrowser_.variantViewport.offset() / 30.0f + 0.5f);
-	auto keepSelectionVisible = [](int selection, int visible, int count, int& scroll)
-	{
-		if (selection < scroll) scroll = selection;
-		else if (selection >= scroll + visible) scroll = selection - visible + 1;
-		scroll = std::max(0, std::min(scroll, std::max(0, count - visible)));
-	};
-	if (event.type == SDL_TEXTINPUT && algorithmBrowser_.searchFocused)
-	{
-		algorithmBrowser_.appendSearch(event.text.text);
-		return true;
-	}
-	if (event.type == SDL_MOUSEWHEEL)
-	{
-		int mouseX = 0, mouseY = 0;
-		SDL_GetMouseState(&mouseX, &mouseY);
-		if (algorithmBrowser_.familyViewport.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
-			algorithmBrowser_.familyScroll = static_cast<int>(algorithmBrowser_.familyViewport.offset() / 30.0f + 0.5f);
-		else if (algorithmBrowser_.variantViewport.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
-			algorithmBrowser_.variantScroll = static_cast<int>(algorithmBrowser_.variantViewport.offset() / 30.0f + 0.5f);
-		return true;
-	}
-	if (event.type == SDL_KEYDOWN)
-	{
-		if (algorithmBrowser_.pendingSelection) return true;
-		const SDL_Keycode key = event.key.keysym.sym;
-		if (key == SDLK_ESCAPE)
-		{
-			if (algorithmBrowser_.variantPane) { algorithmBrowser_.variantPane = false; algorithmBrowser_.searchFocused = false; }
-			else closeAlgorithmMenu();
-			return true;
-		}
-		if (key == SDLK_BACKSPACE && algorithmBrowser_.searchFocused)
-		{
-			algorithmBrowser_.eraseSearchCharacter();
-			return true;
-		}
-		if (key == SDLK_TAB)
-		{
-			algorithmBrowser_.searchFocused = !algorithmBrowser_.searchFocused;
-			return true;
-		}
-		if (key == SDLK_UP || key == SDLK_DOWN)
-		{
-			algorithmBrowser_.searchFocused = false;
-			int& selection = algorithmBrowser_.variantPane ? algorithmBrowser_.variantSelection : algorithmBrowser_.familySelection;
-			const int count = algorithmBrowser_.variantPane ? static_cast<int>(variants.size()) : static_cast<int>(matches.size());
-			if (count > 0)
-				selection = std::max(0, std::min(count - 1, selection + (key == SDLK_DOWN ? 1 : -1)));
-			if (algorithmBrowser_.variantPane)
-			{
-				algorithmBrowser_.variantViewport.ensureItemVisible(static_cast<std::size_t>(selection), 30.0f);
-				algorithmBrowser_.variantScroll = static_cast<int>(algorithmBrowser_.variantViewport.offset() / 30.0f + 0.5f);
-				keepSelectionVisible(selection, variantVisible, count, algorithmBrowser_.variantScroll);
-			}
-			else
-			{
-				algorithmBrowser_.familyViewport.ensureItemVisible(static_cast<std::size_t>(selection), 30.0f);
-				algorithmBrowser_.familyScroll = static_cast<int>(algorithmBrowser_.familyViewport.offset() / 30.0f + 0.5f);
-				keepSelectionVisible(selection, familyVisible, count, algorithmBrowser_.familyScroll);
-				if (count > 0) algorithmBrowser_.selectedFamily = matches[static_cast<std::size_t>(selection)]->id;
-			}
-			return true;
-		}
-		if ((key == SDLK_RIGHT || key == SDLK_RETURN || key == SDLK_KP_ENTER) && !algorithmBrowser_.variantPane)
-		{
-			algorithmBrowser_.searchFocused = false;
-			if (!matches.empty())
-			{
-				algorithmBrowser_.selectedFamily = matches[static_cast<std::size_t>(algorithmBrowser_.familySelection)]->id;
-				selectedFamily = matches[static_cast<std::size_t>(algorithmBrowser_.familySelection)];
-				variants = algorithmBrowser_.visibleVariants(selectedFamily);
-				algorithmBrowser_.variantSelection = 0;
-				for (std::size_t i = 0; i < variants.size(); ++i)
-					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) algorithmBrowser_.variantSelection = static_cast<int>(i);
-				algorithmBrowser_.variantPane = true;
-				algorithmBrowser_.variantScroll = 0;
-			}
-			return true;
-		}
-		if (key == SDLK_LEFT)
-		{
-			algorithmBrowser_.variantPane = false;
-			algorithmBrowser_.searchFocused = false;
-			return true;
-		}
-		if ((key == SDLK_RETURN || key == SDLK_KP_ENTER) && algorithmBrowser_.variantPane &&
-			!variants.empty() && algorithmBrowser_.variantSelection >= 0 && static_cast<std::size_t>(algorithmBrowser_.variantSelection) < variants.size())
-		{
-			if (!screenModel_.setupEnabled)
-			{
-				algorithmBrowser_.status = "Pause playback and wait for trace preparation before changing algorithms.";
-				return true;
-			}
-			selectAlgorithmMenuVariant(*variants[static_cast<std::size_t>(algorithmBrowser_.variantSelection)], action);
-			return true;
-		}
-		return true;
-	}
-	if (event.type == SDL_MOUSEMOTION)
-		return true;
-	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
-	{
-		if (algorithmBrowser_.pendingSelection) return true;
-		const float px = static_cast<float>(event.button.x), py = static_cast<float>(event.button.y);
-		if (!algorithmBrowser_.bounds.contains(px, py))
-		{
-			closeAlgorithmMenu();
-			return true;
-		}
-		if (algorithmBrowser_.searchBounds.contains(px, py))
-		{
-			algorithmBrowser_.searchFocused = true;
-			return true;
-		}
-		algorithmBrowser_.searchFocused = false;
-		if (algorithmBrowser_.familyBounds.contains(px, py) && !matches.empty())
-		{
-			const int row = algorithmBrowser_.familyViewport.itemAt(px, py, matches.size(), 30.0f);
-			if (row >= 0 && static_cast<std::size_t>(row) < matches.size())
-			{
-				algorithmBrowser_.familySelection = row;
-				algorithmBrowser_.selectedFamily = matches[static_cast<std::size_t>(row)]->id;
-				selectedFamily = matches[static_cast<std::size_t>(row)];
-				variants = algorithmBrowser_.visibleVariants(selectedFamily);
-				algorithmBrowser_.variantSelection = 0;
-				for (std::size_t i = 0; i < variants.size(); ++i)
-					if (static_cast<int>(variants[i]->id) == settings_.simulation.algorithm) algorithmBrowser_.variantSelection = static_cast<int>(i);
-				algorithmBrowser_.variantPane = true;
-				algorithmBrowser_.variantScroll = 0;
-			}
-			return true;
-		}
-		if (algorithmBrowser_.variantBounds.contains(px, py) && !variants.empty())
-		{
-			const int row = algorithmBrowser_.variantViewport.itemAt(px, py, variants.size(), 30.0f);
-			if (row >= 0 && static_cast<std::size_t>(row) < variants.size())
-			{
-				algorithmBrowser_.variantSelection = row;
-				if (!screenModel_.setupEnabled)
-				{
-					algorithmBrowser_.status = "Pause playback and wait for trace preparation before changing algorithms.";
-					return true;
-				}
-				selectAlgorithmMenuVariant(*variants[static_cast<std::size_t>(row)], action);
-			}
-			return true;
-		}
-		return true;
-	}
+	UiInputEvent input(UiInputType::FocusLost);
+	if (!translateAlgorithmBrowserEvent(event, input)) return true;
+	const AlgorithmBrowserInputResult result = algorithmBrowser_.handleInput(
+		input, screenModel_.setupEnabled, settings_.simulation.algorithm);
+	if (result.closeRequested)
+		closeAlgorithmMenu();
+	if (result.selectionRequested)
+		action = AppAction(AppActionKind::SelectAlgorithm, result.familyId, result.variantId);
 	return true;
 }
 
 void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 {
+	algorithmBrowser_.configureViewports();
 	const std::vector<const AlgorithmFamilyEntry*> matches = algorithmBrowser_.visibleFamilies();
 	const AlgorithmFamilyEntry* selectedFamily = nullptr;
 	for (std::size_t i = 0; i < matches.size(); ++i)
 		if (matches[i]->id == algorithmBrowser_.selectedFamily) { selectedFamily = matches[i]; break; }
 	const std::vector<const sortinglogic::AlgorithmDescriptor*> variants = algorithmBrowser_.visibleVariants(selectedFamily);
-	algorithmBrowser_.familyViewport.configure(algorithmBrowser_.familyBounds, static_cast<float>(matches.size()) * 30.0f, 30.0f,
-		static_cast<float>(algorithmBrowser_.familyScroll) * 30.0f);
-	algorithmBrowser_.variantViewport.configure(algorithmBrowser_.variantBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f,
-		static_cast<float>(algorithmBrowser_.variantScroll) * 30.0f);
 	const ClipBounds screen(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
 	const ClipBounds familyClip(algorithmBrowser_.familyBounds.x, algorithmBrowser_.familyBounds.y, algorithmBrowser_.familyBounds.width, algorithmBrowser_.familyBounds.height);
 	const ClipBounds variantClip(algorithmBrowser_.variantBounds.x, algorithmBrowser_.variantBounds.y, algorithmBrowser_.variantBounds.width, algorithmBrowser_.variantBounds.height);
