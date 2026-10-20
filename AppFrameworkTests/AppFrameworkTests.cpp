@@ -7,6 +7,7 @@
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <limits>
 #include <vector>
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
@@ -20,6 +21,7 @@
 #include "../SDL2BarGraphics/RenderPipeline.h"
 #include "../SDL2BarGraphics/RenderingTypes.h"
 #include "../SDL2BarGraphics/SettingsPanelView.h"
+#include "../SDL2BarGraphics/SettingsPanelModel.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
 #include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
@@ -1106,6 +1108,41 @@ namespace
 		view.compose(chrome, palette, recorder);
 		check(recorder.commands().size() == 5,
 			"settings chrome omits an empty footer instead of emitting an invisible label");
+	}
+
+	void testSettingsPanelModel()
+	{
+		SettingsPanelModel model;
+		check(model.page() == SettingsPanelPage::Appearance && model.pageIndex() == 0 &&
+			model.audioGroup() == SettingsAudioGroup::Basic && model.scrollOffset() == 0.0f &&
+			model.selectedAudioBand() == 3,
+			"settings panel starts with the existing appearance, basic-audio, and scroll defaults");
+		model.scrollViewport().configure(UiRect(0.0f, 0.0f, 200.0f, 100.0f), 1000.0f, 48.0f);
+
+		model.setScrollOffset(144.0f);
+		model.showPage(SettingsPanelPage::Algorithm);
+		check(model.page() == SettingsPanelPage::Algorithm && model.pageIndex() == 1 && model.scrollOffset() == 0.0f,
+			"navigating to Algorithm uses a typed page and resets transient scroll");
+
+		model.setScrollOffset(96.0f);
+		model.showAudioGroup(SettingsAudioGroup::Advanced);
+		check(model.page() == SettingsPanelPage::GeneralAudio && model.pageIndex() == 2 &&
+			model.audioGroup() == SettingsAudioGroup::Advanced && model.scrollOffset() == 0.0f,
+			"audio group selection enters General Audio and resets its scroll position");
+		model.showPage(SettingsPanelPage::GeneralAudio);
+		check(model.audioGroup() == SettingsAudioGroup::Advanced,
+			"opening General Audio directly preserves its selected basic or advanced group");
+
+		model.setScrollOffset(-2.0f);
+		check(model.scrollOffset() == 0.0f, "settings scroll state clamps negative offsets");
+		model.setScrollOffset(std::numeric_limits<float>::quiet_NaN());
+		check(model.scrollOffset() == 0.0f, "settings scroll state rejects non-finite offsets");
+		model.selectAudioBand(-4, 60);
+		check(model.selectedAudioBand() == 0, "audio band selection clamps below its catalog");
+		model.selectAudioBand(80, 60);
+		check(model.selectedAudioBand() == 59, "audio band selection clamps above its catalog");
+		model.selectAudioBand(7, 0);
+		check(model.selectedAudioBand() == 0, "empty audio band catalogs resolve safely to index zero");
 	}
 
 	void testSettingsStore()
@@ -2313,6 +2350,7 @@ int main()
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();
 	testSettingsPanelPaintComposition();
+	testSettingsPanelModel();
 	testSettingsStore();
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();

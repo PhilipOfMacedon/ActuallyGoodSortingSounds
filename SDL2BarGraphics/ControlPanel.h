@@ -13,6 +13,7 @@
 #include "AlgorithmBrowserModel.h"
 #include "Renderer2D.h"
 #include "SettingsPanelView.h"
+#include "SettingsPanelModel.h"
 #include "TextLabel.h"
 #include "ThemePalette.h"
 #include "UiLayer.h"
@@ -58,7 +59,7 @@ private:
 	UIRoot mainUi_;
 	UIRoot settingsUi_;
 	UIRoot appearanceUi_;
-	UiSessionState session_;
+	SettingsPanelModel settingsPanelModel_;
 	AlgorithmBrowserModel algorithmBrowser_;
 	AlgorithmBrowserView algorithmBrowserView_;
 	SettingsPanelView settingsPanelView_;
@@ -95,7 +96,6 @@ private:
 	bool appearanceWasSettingsOpen_;
 	bool appearanceSearchFocused_;
 	bool drawingAppearanceEditor_;
-	UiScrollViewport settingsScrollViewport_;
 	UiScrollViewport algorithmProfileScrollViewport_;
 	TextBlockLayout algorithmProfileComplexityLayout_;
 	TextBlockLayout algorithmProfileDescriptionLayout_;

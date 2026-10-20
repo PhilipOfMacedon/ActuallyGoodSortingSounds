@@ -469,4 +469,20 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
 
-Next: move settings-page/session selection and scroll interaction state behind a small settings panel model. Keep SDL event translation, audio-device retry, and `AppAction` dispatch in `ControlPanel` until that state boundary is stable.
+## 2026-10-19 — isolate settings navigation and viewport state
+
+Status: implementation and focused verification complete.
+
+- Added `SettingsPanelModel` with typed Appearance, Algorithm, and General Audio pages plus Basic/Advanced audio groups. It owns the settings scroll viewport and the existing session-only audio-band selection, while saved preferences remain in `UserSettings`.
+- Replaced the loose `UiSessionState` fields in `ControlPanel` with the model. Page changes and audio-group changes preserve the existing scroll-reset rules; opening General Audio directly preserves the last selected audio group. Wheel scrolling and row layout now consume the model's single viewport instance.
+- Removed the no-op preset-change callback. The audio-band selection clamp remains at the UI adapter boundary; no persisted setting or visible control was added.
+- Added checks for defaults, typed page navigation, scroll reset, audio-group preservation, finite/nonnegative scroll offsets, and audio-band bounds.
+- No settings serialization, widget action, sorting, trace, or audio behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
+
+Next: extract settings widget composition/input setup decisions into small view helpers, keeping SDL event translation and app-action dispatch at the `ControlPanel` boundary.

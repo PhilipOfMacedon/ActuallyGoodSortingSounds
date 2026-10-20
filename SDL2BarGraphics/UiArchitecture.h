@@ -84,16 +84,6 @@ float stepDeltaWithModifiers(float baseStep, bool control, bool shift);
 // empty trace is still complete; a missing or building trace has no progress.
 int traceProgressPercent(bool hasTrace, bool complete, std::size_t cursor, std::size_t eventCount);
 
-struct UiSessionState
-{
-	int settingsPage;
-	bool audioAdvanced;
-	float settingsScroll;
-	int selectedAudioBand;
-	UiSessionState();
-	void onPresetChanged();
-};
-
 struct UiLayoutInput
 {
 	float width;

@@ -414,10 +414,10 @@ std::string formatDuration(float seconds)
 		return caption;
 	}
 
-	std::string settingsTabTitle(int tab, const UserPreferences& settings)
+	std::string settingsTabTitle(SettingsPanelPage page, const UserPreferences& settings)
 	{
-		if (tab == 0) return "Settings | Appearance";
-		if (tab == 1)
+		if (page == SettingsPanelPage::Appearance) return "Settings | Appearance";
+		if (page == SettingsPanelPage::Algorithm)
 		{
 			const sortinglogic::AlgorithmDescriptor* algorithm = sortinglogic::algorithmDescriptor(
 				static_cast<sortinglogic::SortAlgorithm>(settings.simulation.algorithm));
@@ -451,7 +451,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), settingsUi_(), appearanceUi_(), session_(), algorithmBrowser_(), algorithmBrowserView_(), settingsPanelView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+	mainUi_(), settingsUi_(), appearanceUi_(), settingsPanelModel_(), algorithmBrowser_(), algorithmBrowserView_(), settingsPanelView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
@@ -464,7 +464,6 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	timelineBounds_(), timelineControlBounds_(), timelineLeftArrowBounds_(), timelineRightArrowBounds_(),
 	headerBounds_(), gearBounds_(), settingsPanelBounds_(), settingsContentBounds_(), draggingTimeline_(false),
 	settingsOpen_(false), appearanceEditorOpen_(false), appearanceWasSettingsOpen_(false), appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
-	settingsScrollViewport_(),
 	algorithmProfileScrollViewport_(), algorithmProfileComplexityLayout_(measureLogicalTextWidth),
 	algorithmProfileDescriptionLayout_(measureLogicalTextWidth),
 	algorithmProfileScrollTrack_(), algorithmProfileScrollThumb_(),
@@ -867,7 +866,7 @@ void ControlPanel::layoutSettingsControls()
 	settingsUi_.find("audio_basic_tab")->setBounds(UiRect(x, settingsPanelBounds_.y + 77.0f, (width - 4.0f) * 0.5f, 24.0f));
 	settingsUi_.find("audio_advanced_tab")->setBounds(UiRect(x + (width + 4.0f) * 0.5f, settingsPanelBounds_.y + 77.0f,
 		(width - 4.0f) * 0.5f, 24.0f));
-	const float contentOffset = session_.settingsPage == 2 ? 112.0f : 82.0f;
+	const float contentOffset = settingsPanelModel_.isPage(SettingsPanelPage::GeneralAudio) ? 112.0f : 82.0f;
 	settingsContentBounds_ = UiRect(x, settingsPanelBounds_.y + contentOffset, width,
 		std::max(28.0f, settingsPanelBounds_.height - contentOffset - 60.0f));
 	const float footerY = settingsPanelBounds_.y + settingsPanelBounds_.height - 38.0f;
@@ -875,11 +874,11 @@ void ControlPanel::layoutSettingsControls()
 		footerY, 76.0f, 26.0f));
 	settingsUi_.find("audio_retry")->setBounds(UiRect(x, footerY, std::min(190.0f, width - 90.0f), 26.0f));
 	std::vector<std::string> active;
-	if (session_.settingsPage == 0)
+	if (settingsPanelModel_.isPage(SettingsPanelPage::Appearance))
 	{
 		active.push_back("preset"); active.push_back("palette"); active.push_back("spacing"); active.push_back("appearance_customize");
 	}
-	else if (session_.settingsPage == 1)
+	else if (settingsPanelModel_.isPage(SettingsPanelPage::Algorithm))
 	{
 		active.push_back("domain"); active.push_back("pattern");
 		active.push_back("playback_timing");
@@ -925,7 +924,7 @@ void ControlPanel::layoutSettingsControls()
 	}
 	else
 	{
-		if (!session_.audioAdvanced)
+		if (settingsPanelModel_.audioGroup() == SettingsAudioGroup::Basic)
 		{
 			const char* basicAudio[] = { "recon_enabled", "recon_master", "recon_idle_policy", "recon_release", "recon_restore" };
 			active.assign(basicAudio, basicAudio + sizeof(basicAudio) / sizeof(basicAudio[0]));
@@ -942,7 +941,7 @@ void ControlPanel::layoutSettingsControls()
 	visibleWidgetIds.insert("algorithm_tab");
 	visibleWidgetIds.insert("audio_tab");
 	visibleWidgetIds.insert("settings_close");
-	if (session_.settingsPage == 2)
+	if (settingsPanelModel_.isPage(SettingsPanelPage::GeneralAudio))
 	{
 		visibleWidgetIds.insert("audio_retry");
 		visibleWidgetIds.insert("audio_basic_tab");
@@ -951,13 +950,12 @@ void ControlPanel::layoutSettingsControls()
 	const float rowHeight = 48.0f;
 	const float contentBottom = settingsContentBounds_.y + settingsContentBounds_.height;
 	const float totalHeight = static_cast<float>(active.size()) * rowHeight;
-	settingsScrollViewport_.configure(settingsContentBounds_, totalHeight, rowHeight, session_.settingsScroll);
-	session_.settingsScroll = settingsScrollViewport_.offset();
+	settingsPanelModel_.scrollViewport().configure(settingsContentBounds_, totalHeight, rowHeight, settingsPanelModel_.scrollOffset());
 	for (std::size_t i = 0; i < active.size(); ++i)
 	{
-		const UiRect rowBounds = settingsScrollViewport_.itemBounds(i, rowHeight);
+		const UiRect rowBounds = settingsPanelModel_.scrollViewport().itemBounds(i, rowHeight);
 		const float rowY = rowBounds.y;
-		const bool visible = settingsScrollViewport_.itemIntersectsViewport(i, rowHeight) && rowY + rowHeight <= contentBottom + 0.5f;
+		const bool visible = settingsPanelModel_.scrollViewport().itemIntersectsViewport(i, rowHeight) && rowY + rowHeight <= contentBottom + 0.5f;
 		if (visible) visibleWidgetIds.insert(active[i]);
 		UiWidget* widget = settingsUi_.find(active[i]);
 		if (!widget) continue;
@@ -1261,7 +1259,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 		collapsedSummary_->setContent(nextCollapsedSummary);
 		displayedCollapsedSummary_ = nextCollapsedSummary;
 	}
-	settingsTitle_->setContent(settingsTabTitle(session_.settingsPage, settings_));
+	settingsTitle_->setContent(settingsTabTitle(settingsPanelModel_.page(), settings_));
 	const UiTokenValue requestedFont = effectiveUiTokenValue(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_), "typeface.primary");
 	const std::string saveStatus = fontFallbackActive_ && requestedFont.type == UiTokenType::Font
 		? "Font " + requestedFont.font.family + " " + requestedFont.font.style + " unavailable; using bundled Courier New."
@@ -1342,11 +1340,10 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	{
 		int mouseX = 0, mouseY = 0;
 		SDL_GetMouseState(&mouseX, &mouseY);
-		if (session_.settingsPage == 1 || session_.settingsPage == 2)
+		if (settingsPanelModel_.isPage(SettingsPanelPage::Algorithm) || settingsPanelModel_.isPage(SettingsPanelPage::GeneralAudio))
 		{
-			if (settingsScrollViewport_.scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+			if (settingsPanelModel_.scrollViewport().scrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
 			{
-				session_.settingsScroll = settingsScrollViewport_.offset();
 				layoutSettingsControls();
 			}
 		}
@@ -1545,9 +1542,8 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	if (action.viewCommand == UiAction::ViewCommand::ShowAudioBasic ||
 		action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced)
 	{
-		session_.settingsPage = 2;
-		session_.audioAdvanced = action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced;
-		session_.settingsScroll = 0.0f;
+		settingsPanelModel_.showAudioGroup(action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced
+			? SettingsAudioGroup::Advanced : SettingsAudioGroup::Basic);
 		settingsUi_.closeCombo();
 		layoutSettingsControls();
 		return;
@@ -1557,9 +1553,10 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		action.viewCommand == UiAction::ViewCommand::ShowAudioSettings ||
 		action.viewCommand == UiAction::ViewCommand::ShowGeneralAudioSettings)
 	{
-		session_.settingsPage = action.viewCommand == UiAction::ViewCommand::ShowAppearanceSettings ? 0 :
-			action.viewCommand == UiAction::ViewCommand::ShowAlgorithmSettings ? 1 : 2;
-		session_.settingsScroll = 0.0f;
+		const SettingsPanelPage page = action.viewCommand == UiAction::ViewCommand::ShowAppearanceSettings
+			? SettingsPanelPage::Appearance : action.viewCommand == UiAction::ViewCommand::ShowAlgorithmSettings
+			? SettingsPanelPage::Algorithm : SettingsPanelPage::GeneralAudio;
+		settingsPanelModel_.showPage(page);
 		settingsUi_.closeCombo();
 		layoutSettingsControls();
 		return;
@@ -1604,7 +1601,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	}
 	if (action.appAction.kind == AppActionKind::SelectAudioBand)
 	{
-		session_.selectedAudioBand = std::max(0, std::min(static_cast<int>(SoundEngine::BandCount) - 1, action.appAction.selection));
+		settingsPanelModel_.selectAudioBand(action.appAction.selection, static_cast<int>(SoundEngine::BandCount));
 		updateAudioControls();
 		layoutSettingsControls();
 	}
@@ -1632,7 +1629,6 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		cancelInlineEdit();
 		mainUi_.setInputCaptured(false);
 		settingsUi_.setInputCaptured(settingsOpen_);
-		session_.onPresetChanged();
 		layoutCacheValid_ = false;
 	}
 	output = action.appAction;
@@ -2026,7 +2022,7 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 	chromePalette.mutedText = toUiColor(palette.mutedText);
 	chromePalette.background = toUiColor(palette.background);
 	chromePalette.overlayDim = toUiColor(palette.overlayDim);
-	if (session_.settingsPage == 2)
+	if (settingsPanelModel_.isPage(SettingsPanelPage::GeneralAudio))
 	{
 		const SoundEngine::ReconstructedParameters& p = settings_.reconstructedAudio;
 		const SoundEngine::ReconstructedParameters defaults;
@@ -2070,18 +2066,18 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 	const UiWidget* tabs[] = { &appearanceTab, &algorithmTab, &audioTab };
 	for (int tab = 0; tab < 3; ++tab)
 	{
-		submitBox(tabs[tab]->bounds(), tab == session_.settingsPage ? palette.accent : palette.button, ButtonMaterial, controlLayer);
+		submitBox(tabs[tab]->bounds(), tab == settingsPanelModel_.pageIndex() ? palette.accent : palette.button, ButtonMaterial, controlLayer);
 		drawWidget(*tabs[tab], palette, controlLayer);
 	}
-	const UiRect activeTab = tabs[session_.settingsPage]->bounds();
+	const UiRect activeTab = tabs[settingsPanelModel_.pageIndex()]->bounds();
 	submitBox(UiRect(activeTab.x, activeTab.y + activeTab.height - 2.0f, activeTab.width, 2.0f),
 		palette.accent, AccentMaterial, layerOffset(controlLayer, 1));
-	if (session_.settingsPage == 2)
+	if (settingsPanelModel_.isPage(SettingsPanelPage::GeneralAudio))
 	{
 		const UiWidget* audioGroups[] = { settingsUi_.find("audio_basic_tab"), settingsUi_.find("audio_advanced_tab") };
 		for (int i = 0; i < 2; ++i)
 		{
-			submitBox(audioGroups[i]->bounds(), (session_.audioAdvanced == (i == 1)) ? palette.accent : palette.button,
+			submitBox(audioGroups[i]->bounds(), ((settingsPanelModel_.audioGroup() == SettingsAudioGroup::Advanced) == (i == 1)) ? palette.accent : palette.button,
 				ButtonMaterial, controlLayer);
 			drawWidget(*audioGroups[i], palette, controlLayer);
 		}
@@ -2095,7 +2091,7 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 		drawSettingsControl(widget, palette);
 	}
 	drawWidget(*settingsUi_.find("settings_close"), palette, RenderLayer::SettingsControls);
-	if (session_.settingsPage == 2)
+	if (settingsPanelModel_.isPage(SettingsPanelPage::GeneralAudio))
 	{
 		drawWidget(*settingsUi_.find("audio_retry"), palette, RenderLayer::SettingsControls);
 	}
@@ -2625,7 +2621,7 @@ void ControlPanel::openAppearanceEditor()
 	appearanceEditorModel_.begin(appearanceDraft_.activePreset);
 	appearanceError_.clear();
 	settingsOpen_ = true;
-	session_.settingsPage = 0;
+	settingsPanelModel_.showPage(SettingsPanelPage::Appearance);
 	appearanceEditorOpen_ = true;
 	appearanceSearchFocused_ = false;
 	mainUi_.closeCombo();
@@ -3293,7 +3289,7 @@ void ControlPanel::drawUiPaintCommand(const UiPaintCommand& command)
 	TextLabel* label = nullptr;
 	if (command.elementId == "#settings_title") label = settingsTitle_.get();
 	else if (command.elementId == "#settings_footer")
-		label = session_.settingsPage == 2 ? audioDeviceStatus_.get() : settingsSaveStatus_.get();
+		label = settingsPanelModel_.isPage(SettingsPanelPage::GeneralAudio) ? audioDeviceStatus_.get() : settingsSaveStatus_.get();
 	else
 	{
 		if (!labels_[command.elementId])

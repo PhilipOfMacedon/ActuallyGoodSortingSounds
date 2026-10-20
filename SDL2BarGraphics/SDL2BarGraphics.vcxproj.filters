@@ -20,6 +20,7 @@
     <ClCompile Include="AlgorithmBrowserModel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmBrowserView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SettingsPanelView.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SettingsPanelModel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -64,6 +65,7 @@
     <ClInclude Include="AlgorithmBrowserModel.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserView.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsPanelView.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SettingsPanelModel.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppActions.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppController.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AudioPresentationBridge.h"><Filter>Header Files</Filter></ClInclude>

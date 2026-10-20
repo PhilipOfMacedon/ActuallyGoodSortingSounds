@@ -193,17 +193,6 @@ int traceProgressPercent(bool hasTrace, bool complete, std::size_t cursor, std::
 	return std::max(0, std::min(100, static_cast<int>(std::lround(fraction * 100.0))));
 }
 
-UiSessionState::UiSessionState()
-	: settingsPage(0), audioAdvanced(false), settingsScroll(0.0f), selectedAudioBand(3)
-{
-}
-
-void UiSessionState::onPresetChanged()
-{
-	// Navigation and search are durable within a session. Only transient pointer
-	// state belongs to UIRoot, so the host closes it when applying a new layout.
-}
-
 UiLayoutInput::UiLayoutInput()
 	: width(0), height(0), expanded(true), headerHeight(42), menuHeight(0), margin(16), gap(6), controlHeight(30), railWidth(340),
 	transportHeight(88), chartInset(0), contentGap(14), timelineArrowSize(14)

@@ -25,6 +25,7 @@
     <ClCompile Include="AlgorithmBrowserModel.cpp" />
     <ClCompile Include="AlgorithmBrowserView.cpp" />
     <ClCompile Include="SettingsPanelView.cpp" />
+    <ClCompile Include="SettingsPanelModel.cpp" />
     <ClCompile Include="AudioPresentationBridge.cpp" />
     <ClCompile Include="ArrayRenderer.cpp" />
     <ClCompile Include="ControlPanel.cpp" />
@@ -53,6 +54,7 @@
     <ClInclude Include="AlgorithmBrowserModel.h" />
     <ClInclude Include="AlgorithmBrowserView.h" />
     <ClInclude Include="SettingsPanelView.h" />
+    <ClInclude Include="SettingsPanelModel.h" />
     <ClInclude Include="AppActions.h" />
     <ClInclude Include="AppController.h" />
     <ClInclude Include="AudioPresentationBridge.h" />
