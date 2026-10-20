@@ -1839,3 +1839,11 @@ Removed the temporary `SettingsPanelChrome` bundle that `ControlPanel` populated
 The full solution built in x64 Debug/Release and x86 Debug/Release, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed. No control action, clipping, painter order, settings value, renderer resource, or window behavior changed; the smoke window remained closed. This is an ownership cleanup with no performance claim.
 
 Next: continue with a measured frame-coordination or sorting-core boundary from the audit; avoid another UI extraction unless it moves a complete policy with useful headless coverage. Keep the structural refactor goal active.
+
+## 2026-10-20 — align application output directories across platforms
+
+The application project did not explicitly set its output and intermediate directories. In the x86 solution build, the executable went to the repository-root `Debug`/`Release` folder while SDL/GLEW runtime files and other projects went to `Win32\Debug`/`Win32\Release`. Added explicit `OutDir` and `IntDir` matching the solution's existing platform/configuration convention. No build configuration or dependency path changed.
+
+Verified all four solution builds and all four `AppFrameworkTests` runs. Confirmed each app output contains the executable, SDL2/SDL2_ttf/SDL2_image, GLEW, font, and shader files. `git diff --check` passed. No application window was launched. Direct project-only output behavior remains unverified.
+
+Next: continue with a high-value unresolved boundary from the audit, prioritizing a behavior-sensitive compatibility seam or an evidence-backed cleanup over another path-only change. Keep the structural refactor goal active.
