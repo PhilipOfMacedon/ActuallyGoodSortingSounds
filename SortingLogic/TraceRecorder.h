@@ -24,7 +24,6 @@ namespace sortinglogic
 				trace.variantId = algorithm ? algorithm->variantId : VariantId();
 				trace.direction = request.direction;
 				trace.domain = effectiveDomain(request);
-				trace.profile = inputProfileForDomain(trace.domain);
 				trace.pattern = request.pattern;
 				trace.configuration = request.configuration;
 				trace.shellGapSequence = trace.configuration.shellGapSequence;

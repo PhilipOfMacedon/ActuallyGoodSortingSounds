@@ -30,7 +30,6 @@ namespace sortinglogic
 				if (descriptor) { failed.familyId = descriptor->familyId; failed.variantId = descriptor->variantId; }
 				failed.direction = request.direction;
 				failed.domain = effectiveDomain(request);
-				failed.profile = inputProfileForDomain(failed.domain);
 				failed.input = request.input;
 				failed.initialState = makeInitialState(request.input);
 				failed.snapshots.insert(std::make_pair(static_cast<std::size_t>(0), failed.initialState));

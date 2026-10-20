@@ -371,7 +371,6 @@ namespace sortinglogic
 		FamilyId familyId;
 		VariantId variantId;
 		SortDirection direction;
-		InputProfile profile;
 		InputDomain domain;
 		InputPattern pattern;
 		AlgorithmConfiguration configuration;

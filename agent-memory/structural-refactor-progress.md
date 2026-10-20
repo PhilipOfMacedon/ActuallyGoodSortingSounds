@@ -1855,3 +1855,11 @@ Removed `RenderSnapshot::profile`, which duplicated `InputDomain` and had no pro
 The full solution built in x64 Debug/Release and x86 Debug/Release. SortingLogic core contracts passed 39,541 checks in each configuration, and `AppFrameworkTests` passed in all four configurations. No generated input, trace, status, settings, or audio behavior changed. The GUI remained closed.
 
 Next: audit the remaining request/settings profile mirrors and typed-versus-legacy option fields by production call site; remove only fields proven redundant at their owning boundary. Keep the structural goal active.
+
+## 2026-10-20 — remove the unused profile mirror from SortTrace
+
+Removed `SortTrace::profile`, which was only assigned during trace success/failure construction and never read. Trace consumers use the full `InputDomain`; direct `TraceBuildRequest` callers retain the two-value profile compatibility field and its existing effective-domain adapter. This removes inert trace metadata without changing builder inputs or saved settings.
+
+The full solution built in x64 Debug/Release and x86 Debug/Release. SortingLogic core contracts passed 39,541 checks in each configuration, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed. No event order, replay state, metrics, audio presentation, or user-visible behavior changed.
+
+Next: continue the finite configuration audit by tracing the remaining `TraceBuildRequest` profile/domain precedence and persisted preference mirror to their migration and direct-caller boundaries. Preserve compatibility until those consumers are explicitly migrated.
