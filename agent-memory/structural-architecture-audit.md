@@ -58,7 +58,7 @@ This is the finite status ledger for the twelve findings below. It records compl
 | 9 | Partial | Duplicate frame preparation and full snapshots for simple controller queries are removed. Snapshot copying, annotation scans, and role lookup need measurement before further caching. |
 | 10 | Deferred pending evidence | Trace bytes are explicitly an admission-budget estimate. Compact event storage remains deferred until representative memory high-water and build-time comparisons justify it. |
 | 11 | Mostly resolved | The unused Mesh/Rectangle path and legacy synth member are removed; chart inputs are narrower. Identical-state semantic material buckets remain a profiling candidate. |
-| 12 | Partial | Executable-relative assets, overridable dependency roots, a shared AppFramework target, and aligned application outputs are in place. Test-source decomposition and single-source test registration remain. |
+| 12 | Partial | Executable-relative assets, overridable dependency roots, a shared AppFramework target, and aligned application outputs are in place. Focused commands and full-suite execution now use validated central test registrations; decomposition of the large test source remains. |
 
 ### 1. The label cache can be invalidated twice for unchanged text — first priority
 

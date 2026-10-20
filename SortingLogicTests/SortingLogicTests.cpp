@@ -5377,827 +5377,390 @@ namespace
 		countingRequest.input = integers(integerValues);
 		printTraceMemoryProfileRow("Counting-800", SortTraceBuilder::build(countingRequest));
 	}
+	enum class TestCommandKind { Focused, CatalogCoverage, TraceMemoryProfile };
+	struct RegisteredTest { const char* id; const char* stage; void (*run)(); bool inFullSuite; };
+	struct TestCommand { const char* argument; const char* summary; TestCommandKind kind; const char* testIds; };
+	const char* activeStage = "test registry validation";
+
+	void runPDQVariants() { testPDQVariants(true); }
+	void runPDQVariantsSmoke() { testPDQVariants(false); }
+	void runRemainingMergeRosterBatch() { testRemainingMergeRosterBatch(0); }
+	void runNewShuffleMerge() { testRemainingMergeRosterBatch(8); }
+
+	void runCoreContracts()
+	{
+		using namespace sortinglogic;
+		activeStage = "Insertion strategy extraction";
+		const std::vector<SortItem> insertionInput = floats({ 0.7f, 0.2f, 0.7f, 0.1f, 0.2f });
+		verifyAlgorithmCase("Extracted Insertion strategy ascending", insertionInput, InputProfile::NormalizedFloat,
+			SortAlgorithm::Insertion, SortDirection::Ascending);
+		verifyAlgorithmCase("Extracted Insertion strategy descending", insertionInput, InputProfile::NormalizedFloat,
+			SortAlgorithm::Insertion, SortDirection::Descending);
+		verifyAlgorithmCase("Intro Sort small-range Insertion fallback", insertionInput, InputProfile::NormalizedFloat,
+			SortAlgorithm::ArrayvIntroSort, SortDirection::Ascending);
+		const SortAlgorithm elementaryAlgorithms[] = {
+			SortAlgorithm::Bubble, SortAlgorithm::Selection, SortAlgorithm::ArrayvBingo,
+			SortAlgorithm::ArrayvDoubleSelection, SortAlgorithm::ArrayvStableSelection,
+			SortAlgorithm::Gnome, SortAlgorithm::Cocktail, SortAlgorithm::Comb, SortAlgorithm::OddEven,
+			SortAlgorithm::ArrayvOptimizedBubble, SortAlgorithm::ArrayvUnoptimizedBubble,
+			SortAlgorithm::ArrayvSwaplessBubble, SortAlgorithm::ArrayvOptimizedCocktail,
+			SortAlgorithm::ArrayvUnoptimizedCocktail
+		};
+		const InputDomain candidateDomains[] = { InputDomain::NormalizedFloats, InputDomain::NonnegativeIntegerKeys,
+			InputDomain::SignedIntegerKeys, InputDomain::IntegerPermutation };
+		for (std::size_t algorithmIndex = 0; algorithmIndex < sizeof(elementaryAlgorithms) / sizeof(elementaryAlgorithms[0]); ++algorithmIndex)
+		{
+			const SortAlgorithm algorithm = elementaryAlgorithms[algorithmIndex];
+			InputDomain domain = InputDomain::NormalizedFloats;
+			for (std::size_t domainIndex = 0; domainIndex < sizeof(candidateDomains) / sizeof(candidateDomains[0]); ++domainIndex)
+				if (algorithmSupports(algorithm, candidateDomains[domainIndex]))
+				{
+					domain = candidateDomains[domainIndex];
+					break;
+				}
+			std::vector<SortItem> input;
+			if (domain == InputDomain::NormalizedFloats) input = floats({ 0.6f, 0.2f, 0.6f, 0.1f, 0.2f });
+			else
+			{
+				const int keys[] = { 3, 1, 3, 0, 1 };
+				for (std::size_t itemIndex = 0; itemIndex < 5; ++itemIndex)
+				{
+					const int key = domain == InputDomain::SignedIntegerKeys ? keys[itemIndex] - 2 : keys[itemIndex];
+					const float value = domain == InputDomain::SignedIntegerKeys
+						? static_cast<float>(key + 5) / 10.0f : static_cast<float>(key + 1) / 5.0f;
+					input.push_back(SortItem(itemIndex, key, value));
+				}
+				if (domain == InputDomain::IntegerPermutation)
+				{
+					const int permutationKeys[] = { 3, 1, 4, 0, 2 };
+					for (std::size_t itemIndex = 0; itemIndex < 5; ++itemIndex)
+						input[itemIndex] = SortItem(itemIndex, permutationKeys[itemIndex], static_cast<float>(permutationKeys[itemIndex] + 1) / 5.0f);
+				}
+			}
+			const InputProfile profile = inputProfileForDomain(domain);
+			const std::string label = algorithmDisplayName(algorithm);
+			verifyAlgorithmCase("Elementary " + label + " ascending", input, profile, algorithm, SortDirection::Ascending, domain);
+			verifyAlgorithmCase("Elementary " + label + " descending", input, profile, algorithm, SortDirection::Descending, domain);
+		}
+		const SortAlgorithm remainingNetworkStrategies[] = {
+			SortAlgorithm::ArrayvClassicThreeSmoothComb, SortAlgorithm::ArrayvThreeSmoothCombIterative,
+			SortAlgorithm::ArrayvThreeSmoothCombRecursive, SortAlgorithm::ArrayvThreeSmoothCombParallel,
+			SortAlgorithm::ArrayvMatrix
+		};
+		const std::vector<SortItem> networkInput = integers(std::vector<int>{ 9, 1, 7, 3, 8, 2, 5, 0, 6, 4, 4 });
+		for (std::size_t algorithmIndex = 0; algorithmIndex < sizeof(remainingNetworkStrategies) / sizeof(remainingNetworkStrategies[0]); ++algorithmIndex)
+			for (int directionIndex = 0; directionIndex < 2; ++directionIndex)
+			{
+				const SortAlgorithm algorithm = remainingNetworkStrategies[algorithmIndex];
+				const SortDirection direction = directionIndex == 0 ? SortDirection::Ascending : SortDirection::Descending;
+				verifyAlgorithmCase(std::string("Extracted ") + algorithmDisplayName(algorithm), networkInput, InputProfile::IntegerKeys,
+					algorithm, direction, InputDomain::NonnegativeIntegerKeys);
+			}
+		activeStage = "Direct distribution strategy extraction";
+		testDirectDistributionStrategies();
+		activeStage = "testDistributionAudioBaselines";
+		testDistributionAudioBaselines();
+		activeStage = "testBurntPancakeOrientation";
+		testBurntPancakeOrientation();
+		activeStage = "testSortingNetworkSchedules";
+		testSortingNetworkSchedules();
+		activeStage = "testMergeWritebackModes";
+		testMergeWritebackModes();
+		activeStage = "testSimulationAndProfiles";
+		testSimulationAndProfiles();
+		activeStage = "testSnapshotAnnotations";
+		testSnapshotAnnotations();
+		activeStage = "testTraceServiceAndPlayback";
+		testTraceServiceAndPlayback();
+		activeStage = "testStressAndValidation";
+		testStressAndValidation();
+		activeStage = "testPartialTraceBudget";
+		testPartialTraceBudget();
+		activeStage = "testDomainsAndPatterns";
+		testDomainsAndPatterns();
+		activeStage = "testSemanticProbeDiscardAndPhases";
+		testSemanticProbeDiscardAndPhases();
+		activeStage = "testTraceAudioPresentationPolicy";
+		testTraceAudioPresentationPolicy();
+		std::cout << "SortingLogic core contracts: " << checks << " checks, " << failures << " failures.\n";
+	}
+
+	const RegisteredTest registeredTests[] = {
+		{"testCoreContracts", "SortingLogic core contracts", runCoreContracts, false},
+		{"catalog-coverage", "testPinnedCatalogCoverage", testPinnedCatalogCoverage, false},
+		{"testDistributionAudioBaselines", "testDistributionAudioBaselines", testDistributionAudioBaselines, true},
+		{"testStochasticNoveltyVariants", "testStochasticNoveltyVariants", testStochasticNoveltyVariants, true},
+		{"testAdditionalBogoVariants", "testAdditionalBogoVariants", testAdditionalBogoVariants, true},
+		{"testPointerQuicksortVariants", "testPointerQuicksortVariants", testPointerQuicksortVariants, true},
+		{"testNestedBogoVariants", "testNestedBogoVariants", testNestedBogoVariants, true},
+		{"testDualPivotQuickVariants", "testDualPivotQuickVariants", testDualPivotQuickVariants, true},
+		{"testStableQuickVariants", "testStableQuickVariants", testStableQuickVariants, true},
+		{"testMergeFamilyVariants", "testMergeFamilyVariants", testMergeFamilyVariants, true},
+		{"testIterativeTopDownMergeSort", "testIterativeTopDownMergeSort", testIterativeTopDownMergeSort, true},
+		{"testInPlaceMergeSort", "testInPlaceMergeSort", testInPlaceMergeSort, true},
+		{"testParallelMergeSort", "testParallelMergeSort", testParallelMergeSort, true},
+		{"testRotateMergeSort", "testRotateMergeSort", testRotateMergeSort, true},
+		{"testParallelRotateMergeSort", "testParallelRotateMergeSort", testParallelRotateMergeSort, true},
+		{"testStacklessRotateMergeSort", "testStacklessRotateMergeSort", testStacklessRotateMergeSort, true},
+		{"testBlockSwapMergeSort", "testBlockSwapMergeSort", testBlockSwapMergeSort, true},
+		{"testWeavedMergeSort", "testWeavedMergeSort", testWeavedMergeSort, true},
+		{"testTwinSort", "testTwinSort", testTwinSort, true},
+		{"testTimMergeVariants", "testTimMergeVariants", testTimMergeVariants, true},
+		{"testImprovedInPlaceMergeSort", "testImprovedInPlaceMergeSort", testImprovedInPlaceMergeSort, true},
+		{"testBlockInsertionSort", "testBlockInsertionSort", testBlockInsertionSort, true},
+		{"testBufferedStoogeSort", "testBufferedStoogeSort", testBufferedStoogeSort, true},
+		{"testBadSort", "testBadSort", testBadSort, true},
+		{"testAsynchronousSort", "testAsynchronousSort", testAsynchronousSort, true},
+		{"testPDMergeSort", "testPDMergeSort", testPDMergeSort, true},
+		{"testStableCycleSort", "testStableCycleSort", testStableCycleSort, true},
+		{"testTournamentSorts", "testTournamentSorts", testTournamentSorts, true},
+		{"testSmoothSortVariants", "testSmoothSortVariants", testSmoothSortVariants, true},
+		{"testImprovedBlockSelectionSort", "testImprovedBlockSelectionSort", testImprovedBlockSelectionSort, true},
+		{"testStacklessHybridQuickSort", "testStacklessHybridQuickSort", testStacklessHybridQuickSort, true},
+		{"testStacklessDualPivotQuickSort", "testStacklessDualPivotQuickSort", testStacklessDualPivotQuickSort, true},
+		{"testHanoiSort", "testHanoiSort", testHanoiSort, true},
+		{"testSimplifiedLibrarySort", "testSimplifiedLibrarySort", testSimplifiedLibrarySort, true},
+		{"testLibrarySort", "testLibrarySort", testLibrarySort, true},
+		{"testWeaveMergeSort", "testWeaveMergeSort", testWeaveMergeSort, true},
+		{"testLaziestStableSort", "testLaziestStableSort", testLaziestStableSort, true},
+		{"testLazierestStableSort", "testLazierestStableSort", testLazierestStableSort, true},
+		{"testLazyStableMergeVariants", "testLazyStableMergeVariants", testLazyStableMergeVariants, true},
+		{"testFifthAndQuadMergeSorts", "testFifthAndQuadMergeSorts", testFifthAndQuadMergeSorts, true},
+		{"testBufferPartitionMergeSort", "testBufferPartitionMergeSort", testBufferPartitionMergeSort, true},
+		{"testParallelBlockMergeSort", "testParallelBlockMergeSort", testParallelBlockMergeSort, true},
+		{"testOptimizedRotateMergeSort", "testOptimizedRotateMergeSort", testOptimizedRotateMergeSort, true},
+		{"testGrailSortModes", "testGrailSortModes", testGrailSortModes, true},
+		{"testAdaptiveGrailSort", "testAdaptiveGrailSort", testAdaptiveGrailSort, true},
+		{"testPDQVariants", "testPDQVariants", runPDQVariants, true},
+		{"testSqrtMergeVariants", "testSqrtMergeVariants", testSqrtMergeVariants, true},
+		{"testEctaSort", "testEctaSort", testEctaSort, true},
+		{"testCircularAndUnstableGrailSorts", "testCircularAndUnstableGrailSorts", testCircularAndUnstableGrailSorts, true},
+		{"testDropMergeSort", "testDropMergeSort", testDropMergeSort, true},
+		{"testParallelGrailSort", "testParallelGrailSort", testParallelGrailSort, true},
+		{"testMedianMergeSort", "testMedianMergeSort", testMedianMergeSort, true},
+		{"testRemiSort", "testRemiSort", testRemiSort, true},
+		{"testRemainingMergeRosterBatch", "testRemainingMergeRosterBatch", runRemainingMergeRosterBatch, true},
+		{"testTernaryQuickVariants", "testTernaryQuickVariants", testTernaryQuickVariants, true},
+		{"testIndirectAndPermutationVariants", "testIndirectAndPermutationVariants", testIndirectAndPermutationVariants, true},
+		{"testHybridCombAndIntroCircleVariants", "testHybridCombAndIntroCircleVariants", testHybridCombAndIntroCircleVariants, true},
+		{"testDoubleInsertionVariants", "testDoubleInsertionVariants", testDoubleInsertionVariants, true},
+		{"testIntroSort", "testIntroSort", testIntroSort, true},
+		{"testPatienceSort", "testPatienceSort", testPatienceSort, true},
+		{"testParallelShellSort", "testParallelShellSort", testParallelShellSort, true},
+		{"testMergeInsertionSort", "testMergeInsertionSort", testMergeInsertionSort, true},
+		{"testStalinVariants", "testStalinVariants", testStalinVariants, true},
+		{"testUnbalancedTreeVariants", "testUnbalancedTreeVariants", testUnbalancedTreeVariants, true},
+		{"testStrandSort", "testStrandSort", testStrandSort, true},
+		{"testBalancedTreeSorts", "testBalancedTreeSorts", testBalancedTreeSorts, true},
+		{"testSplayTreeSort", "testSplayTreeSort", testSplayTreeSort, true},
+		{"verifyProfilesAndAlgorithms", "verifyProfilesAndAlgorithms", verifyProfilesAndAlgorithms, true},
+		{"testBurntPancakeOrientation", "testBurntPancakeOrientation", testBurntPancakeOrientation, true},
+		{"testSortingNetworkSchedules", "testSortingNetworkSchedules", testSortingNetworkSchedules, true},
+		{"testMatrixSortShapes", "testMatrixSortShapes", testMatrixSortShapes, true},
+		{"testIncompleteStoogeOutcome", "testIncompleteStoogeOutcome", testIncompleteStoogeOutcome, true},
+		{"testStoogeFamilyVariants", "testStoogeFamilyVariants", testStoogeFamilyVariants, true},
+		{"testRecursiveExchangeNoveltyVariants", "testRecursiveExchangeNoveltyVariants", testRecursiveExchangeNoveltyVariants, true},
+		{"testFunSortBoundedOutcome", "testFunSortBoundedOutcome", testFunSortBoundedOutcome, true},
+		{"testMergeWritebackModes", "testMergeWritebackModes", testMergeWritebackModes, true},
+		{"testSimulationAndProfiles", "testSimulationAndProfiles", testSimulationAndProfiles, true},
+		{"testSnapshotAnnotations", "testSnapshotAnnotations", testSnapshotAnnotations, true},
+		{"testTraceServiceAndPlayback", "testTraceServiceAndPlayback", testTraceServiceAndPlayback, true},
+		{"testStressAndValidation", "testStressAndValidation", testStressAndValidation, true},
+		{"testPartialTraceBudget", "testPartialTraceBudget", testPartialTraceBudget, true},
+		{"testDomainsAndPatterns", "testDomainsAndPatterns", testDomainsAndPatterns, true},
+		{"testSemanticProbeDiscardAndPhases", "testSemanticProbeDiscardAndPhases", testSemanticProbeDiscardAndPhases, true},
+		{"testTraceAudioPresentationPolicy", "testTraceAudioPresentationPolicy", testTraceAudioPresentationPolicy, true},
+		{"testBinaryInsertionStrategy", "testBinaryInsertionStrategy", testBinaryInsertionStrategy, false},
+		{"testPancakeStrategyFamily", "testPancakeStrategyFamily", testPancakeStrategyFamily, false},
+		{"testHeapStrategyFamily", "testHeapStrategyFamily", testHeapStrategyFamily, false},
+		{"testCircleStrategyFamily", "testCircleStrategyFamily", testCircleStrategyFamily, false},
+		{"testElementaryTailStrategies", "testElementaryTailStrategies", testElementaryTailStrategies, false},
+		{"testPDQVariantsSmoke", "PDQ boundary and duplicate cases", runPDQVariantsSmoke, false},
+		{"testNewShuffleMerge", "testNewShuffleMerge", runNewShuffleMerge, false},
+		{"testGapInsertionStrategyCoverage", "testGapInsertionStrategyCoverage", testGapInsertionStrategyCoverage, false},
+	};
+
+	const TestCommand testCommands[] = {
+		{"--catalog-coverage-only", "Pinned ArrayV catalog coverage: ", TestCommandKind::CatalogCoverage, "" },
+		{"--trace-memory-profile", "", TestCommandKind::TraceMemoryProfile, "" },
+		{"--binary-insertion-only", "Focused Binary Insertion tests: ", TestCommandKind::Focused, "testBinaryInsertionStrategy" },
+		{"--pancake-family-only", "Focused Pancake family tests: ", TestCommandKind::Focused, "testPancakeStrategyFamily" },
+		{"--heap-family-only", "Focused Heap family tests: ", TestCommandKind::Focused, "testHeapStrategyFamily" },
+		{"--circle-family-only", "Focused Circle family tests: ", TestCommandKind::Focused, "testCircleStrategyFamily,testHybridCombAndIntroCircleVariants" },
+		{"--elementary-tail-only", "Focused elementary exchange tests: ", TestCommandKind::Focused, "testElementaryTailStrategies,testHybridCombAndIntroCircleVariants" },
+		{"--core-contracts-only", "", TestCommandKind::Focused, "testCoreContracts" },
+		{"--bogo-only", "Focused stochastic novelty tests: ", TestCommandKind::Focused, "testStochasticNoveltyVariants,testAdditionalBogoVariants,testNestedBogoVariants" },
+		{"--recursive-novelty-only", "Focused recursive novelty tests: ", TestCommandKind::Focused, "testIncompleteStoogeOutcome,testStoogeFamilyVariants,testRecursiveExchangeNoveltyVariants,testFunSortBoundedOutcome,testBufferedStoogeSort,testSortingNetworkSchedules" },
+		{"--dual-pivot-only", "Focused dual-pivot tests: ", TestCommandKind::Focused, "testDualPivotQuickVariants" },
+		{"--stable-quick-only", "Focused stable Quick tests: ", TestCommandKind::Focused, "testStableQuickVariants" },
+		{"--merge-variants-only", "Focused merge-family tests: ", TestCommandKind::Focused, "testMergeFamilyVariants" },
+		{"--iterative-top-down-merge-only", "Focused Iterative Top-down Merge tests: ", TestCommandKind::Focused, "testIterativeTopDownMergeSort" },
+		{"--in-place-merge-only", "Focused In-Place Merge tests: ", TestCommandKind::Focused, "testInPlaceMergeSort" },
+		{"--parallel-merge-only", "Focused Parallel Merge tests: ", TestCommandKind::Focused, "testParallelMergeSort" },
+		{"--rotate-merge-only", "Focused Rotate Merge tests: ", TestCommandKind::Focused, "testRotateMergeSort" },
+		{"--parallel-rotate-merge-only", "Focused Parallel Rotate Merge tests: ", TestCommandKind::Focused, "testParallelRotateMergeSort" },
+		{"--stackless-rotate-merge-only", "Focused Stackless Rotate Merge tests: ", TestCommandKind::Focused, "testStacklessRotateMergeSort" },
+		{"--block-swap-merge-only", "Focused Block-Swap Merge tests: ", TestCommandKind::Focused, "testBlockSwapMergeSort" },
+		{"--weaved-merge-only", "Focused Weaved Merge tests: ", TestCommandKind::Focused, "testWeavedMergeSort" },
+		{"--twin-sort-only", "Focused Twin Sort tests: ", TestCommandKind::Focused, "testTwinSort" },
+		{"--tim-merge-only", "Focused Tim merge tests: ", TestCommandKind::Focused, "testTimMergeVariants" },
+		{"--improved-inplace-merge-only", "Focused Improved In-Place Merge tests: ", TestCommandKind::Focused, "testImprovedInPlaceMergeSort" },
+		{"--block-insertion-only", "Focused Block Insertion tests: ", TestCommandKind::Focused, "testBlockInsertionSort" },
+		{"--buffered-stooge-only", "Focused Buffered Stooge tests: ", TestCommandKind::Focused, "testBufferedStoogeSort" },
+		{"--bad-sort-only", "Focused Bad Sort tests: ", TestCommandKind::Focused, "testBadSort" },
+		{"--asynchronous-sort-only", "Focused Asynchronous Sort tests: ", TestCommandKind::Focused, "testAsynchronousSort" },
+		{"--pd-merge-only", "Focused Pattern-Defeating Merge tests: ", TestCommandKind::Focused, "testPDMergeSort" },
+		{"--stable-cycle-only", "Focused Stable Cycle tests: ", TestCommandKind::Focused, "testStableCycleSort" },
+		{"--tournament-only", "Focused tournament tests: ", TestCommandKind::Focused, "testTournamentSorts" },
+		{"--smooth-sort-only", "Focused Smooth Sort tests: ", TestCommandKind::Focused, "testSmoothSortVariants" },
+		{"--block-selection-only", "Focused Improved Block Selection tests: ", TestCommandKind::Focused, "testImprovedBlockSelectionSort" },
+		{"--stackless-hybrid-only", "Focused Stackless Hybrid Quick tests: ", TestCommandKind::Focused, "testStacklessHybridQuickSort" },
+		{"--stackless-dual-pivot-only", "Focused Stackless Dual-Pivot Quick tests: ", TestCommandKind::Focused, "testStacklessDualPivotQuickSort" },
+		{"--hanoi-only", "Focused Hanoi Sort tests: ", TestCommandKind::Focused, "testHanoiSort" },
+		{"--simplified-library-only", "Focused Simplified Library tests: ", TestCommandKind::Focused, "testSimplifiedLibrarySort" },
+		{"--library-only", "Focused Library Sort tests: ", TestCommandKind::Focused, "testLibrarySort" },
+		{"--weave-merge-only", "Focused Weave Merge tests: ", TestCommandKind::Focused, "testWeaveMergeSort" },
+		{"--laziest-only", "Focused Laziest Stable tests: ", TestCommandKind::Focused, "testLaziestStableSort" },
+		{"--lazierest-only", "Focused Lazierest Stable tests: ", TestCommandKind::Focused, "testLazierestStableSort" },
+		{"--lazy-grail-only", "Focused Lazy Stable merge tests: ", TestCommandKind::Focused, "testLazyStableMergeVariants" },
+		{"--multiway-merge-only", "Focused Fifth/Quad merge tests: ", TestCommandKind::Focused, "testFifthAndQuadMergeSorts" },
+		{"--buffer-partition-merge-only", "Focused Buffer Partition Merge tests: ", TestCommandKind::Focused, "testBufferPartitionMergeSort" },
+		{"--parallel-block-merge-only", "Focused Parallel Block Merge tests: ", TestCommandKind::Focused, "testParallelBlockMergeSort" },
+		{"--optimized-rotate-merge-only", "Focused Optimized Rotate Merge tests: ", TestCommandKind::Focused, "testOptimizedRotateMergeSort" },
+		{"--grail-only", "Focused Grail family tests: ", TestCommandKind::Focused, "testGrailSortModes,testAdaptiveGrailSort" },
+		{"--pdq-smoke-only", "Focused PDQ boundary tests: ", TestCommandKind::Focused, "testPDQVariantsSmoke" },
+		{"--pdq-only", "Focused PDQ tests: ", TestCommandKind::Focused, "testPDQVariants" },
+		{"--sqrt-only", "Focused Sqrt Sort tests: ", TestCommandKind::Focused, "testSqrtMergeVariants" },
+		{"--ecta-only", "Focused Ecta tests: ", TestCommandKind::Focused, "testEctaSort" },
+		{"--grail-variants-only", "Focused Circular/Unstable Grail tests: ", TestCommandKind::Focused, "testCircularAndUnstableGrailSorts" },
+		{"--drop-merge-only", "Focused Drop Merge tests: ", TestCommandKind::Focused, "testDropMergeSort" },
+		{"--parallel-grail-only", "Focused Parallel Grail tests: ", TestCommandKind::Focused, "testParallelGrailSort" },
+		{"--median-merge-only", "Focused Median Merge tests: ", TestCommandKind::Focused, "testMedianMergeSort" },
+		{"--remi-only", "Focused Remi Sort tests: ", TestCommandKind::Focused, "testRemiSort" },
+		{"--merge-roster-tail-only", "Focused merge roster tail tests: ", TestCommandKind::Focused, "testRemainingMergeRosterBatch" },
+		{"--new-shuffle-only", "Focused New Shuffle Merge tests: ", TestCommandKind::Focused, "testNewShuffleMerge" },
+		{"--stackless-partition-only", "Focused stackless partition tests: ", TestCommandKind::Focused, "testStacklessHybridQuickSort,testStacklessDualPivotQuickSort" },
+		{"--partition-quick-only", "Focused partition Quick tests: ", TestCommandKind::Focused, "testPointerQuicksortVariants,testDualPivotQuickVariants,testStableQuickVariants,testTernaryQuickVariants" },
+		{"--ternary-quick-only", "Focused ternary Quick tests: ", TestCommandKind::Focused, "testTernaryQuickVariants" },
+		{"--indirect-only", "Focused indirect and permutation tests: ", TestCommandKind::Focused, "testIndirectAndPermutationVariants" },
+		{"--hybrid-exchange-only", "Focused hybrid exchange tests: ", TestCommandKind::Focused, "testHybridCombAndIntroCircleVariants" },
+		{"--double-insertion-only", "Focused double insertion tests: ", TestCommandKind::Focused, "testDoubleInsertionVariants" },
+		{"--intro-sort-only", "Focused IntroSort tests: ", TestCommandKind::Focused, "testIntroSort" },
+		{"--patience-only", "Focused Patience Sort tests: ", TestCommandKind::Focused, "testPatienceSort" },
+		{"--gap-insertion-only", "Focused insertion/gap strategy tests: ", TestCommandKind::Focused, "testGapInsertionStrategyCoverage,testDoubleInsertionVariants,testParallelShellSort" },
+		{"--parallel-shell-only", "Focused parallel Shell tests: ", TestCommandKind::Focused, "testParallelShellSort" },
+		{"--merge-insertion-only", "Focused Merge-Insertion tests: ", TestCommandKind::Focused, "testMergeInsertionSort" },
+		{"--stalin-only", "Focused Stalin Sort tests: ", TestCommandKind::Focused, "testStalinVariants" },
+		{"--tree-family-only", "Focused tree family tests: ", TestCommandKind::Focused, "testUnbalancedTreeVariants,testBalancedTreeSorts,testSplayTreeSort,testStrandSort" },
+		{"--tree-only", "Focused unbalanced tree tests: ", TestCommandKind::Focused, "testUnbalancedTreeVariants" },
+		{"--strand-only", "Focused Strand Sort tests: ", TestCommandKind::Focused, "testStrandSort" },
+		{"--balanced-tree-only", "Focused balanced tree tests: ", TestCommandKind::Focused, "testBalancedTreeSorts" },
+		{"--splay-only", "Focused Splay Tree tests: ", TestCommandKind::Focused, "testSplayTreeSort" },
+	};
+
+	const RegisteredTest* findRegisteredTest(const std::string& id)
+	{
+		for (std::size_t i = 0; i < sizeof(registeredTests) / sizeof(registeredTests[0]); ++i)
+			if (id == registeredTests[i].id) return &registeredTests[i];
+		return nullptr;
+	}
+
+	const TestCommand* findTestCommand(const char* argument)
+	{
+		if (!argument) return nullptr;
+		for (std::size_t i = 0; i < sizeof(testCommands) / sizeof(testCommands[0]); ++i)
+			if (argument == std::string(testCommands[i].argument)) return &testCommands[i];
+		return nullptr;
+	}
+
+	void validateTestRegistry()
+	{
+		std::set<std::string> testIds;
+		for (std::size_t i = 0; i < sizeof(registeredTests) / sizeof(registeredTests[0]); ++i)
+			if (!testIds.insert(registeredTests[i].id).second)
+				throw std::logic_error(std::string("Duplicate test registration: ") + registeredTests[i].id);
+		std::set<std::string> commandIds;
+		for (std::size_t i = 0; i < sizeof(testCommands) / sizeof(testCommands[0]); ++i)
+		{
+			if (!commandIds.insert(testCommands[i].argument).second)
+				throw std::logic_error(std::string("Duplicate test command: ") + testCommands[i].argument);
+			if (testCommands[i].kind != TestCommandKind::Focused) continue;
+			const std::string ids = testCommands[i].testIds;
+			std::size_t start = 0;
+			while (start < ids.size())
+			{
+				const std::size_t comma = ids.find(',', start);
+				const std::string id = ids.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+				if (!findRegisteredTest(id)) throw std::logic_error(std::string("Unknown focused test: ") + id);
+				if (comma == std::string::npos) break;
+				start = comma + 1;
+			}
+		}
+	}
+
+	void runRegisteredTest(const RegisteredTest& test)
+	{
+		activeStage = test.stage;
+		test.run();
+	}
+
+	void runFocusedCommand(const TestCommand& command)
+	{
+		const std::string ids = command.testIds;
+		std::size_t start = 0;
+		while (start < ids.size())
+		{
+			const std::size_t comma = ids.find(',', start);
+			const std::string id = ids.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+			const RegisteredTest* test = findRegisteredTest(id);
+			if (!test) throw std::logic_error(std::string("Unknown focused test: ") + id);
+			runRegisteredTest(*test);
+			if (comma == std::string::npos) break;
+			start = comma + 1;
+		}
+	}
+
 }
 
 int main(int argc, char* argv[])
 {
-	const char* stage = "verifyProfilesAndAlgorithms";
 	try
 	{
-		stage = "testPinnedCatalogCoverage";
-		testPinnedCatalogCoverage();
-		if (argc > 1 && std::string(argv[1]) == "--catalog-coverage-only")
+		validateTestRegistry();
+		const RegisteredTest* coverage = findRegisteredTest("catalog-coverage");
+		if (!coverage) throw std::logic_error("Catalog coverage test is not registered.");
+		runRegisteredTest(*coverage);
+		const TestCommand* command = argc > 1 ? findTestCommand(argv[1]) : nullptr;
+		if (command && command->kind == TestCommandKind::CatalogCoverage)
 		{
-			std::cout << "Pinned ArrayV catalog coverage: " << checks << " checks, " << failures << " failures.\n";
+			std::cout << command->summary << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
-		if (argc > 1 && std::string(argv[1]) == "--trace-memory-profile")
+		if (command && command->kind == TestCommandKind::TraceMemoryProfile)
 		{
 			runTraceMemoryProfile();
 			return EXIT_SUCCESS;
 		}
-		if (argc > 1 && std::string(argv[1]) == "--binary-insertion-only")
+
+		if (command && command->kind == TestCommandKind::Focused)
 		{
-			stage = "testBinaryInsertionStrategy";
-			testBinaryInsertionStrategy();
-			std::cout << "Focused Binary Insertion tests: " << checks << " checks, " << failures << " failures.\n";
+			runFocusedCommand(*command);
+			if (command->summary[0] != '\0')
+				std::cout << command->summary << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
-		if (argc > 1 && std::string(argv[1]) == "--pancake-family-only")
-		{
-			stage = "testPancakeStrategyFamily";
-			testPancakeStrategyFamily();
-			std::cout << "Focused Pancake family tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--heap-family-only")
-		{
-			stage = "testHeapStrategyFamily";
-			testHeapStrategyFamily();
-			std::cout << "Focused Heap family tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--circle-family-only")
-		{
-			stage = "testCircleStrategyFamily";
-			testCircleStrategyFamily();
-			testHybridCombAndIntroCircleVariants();
-			std::cout << "Focused Circle family tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--elementary-tail-only")
-		{
-			stage = "testElementaryTailStrategies";
-			testElementaryTailStrategies();
-			testHybridCombAndIntroCircleVariants();
-			std::cout << "Focused elementary exchange tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--core-contracts-only")
-		{
-			using namespace sortinglogic;
-			stage = "Insertion strategy extraction";
-			const std::vector<SortItem> insertionInput = floats({ 0.7f, 0.2f, 0.7f, 0.1f, 0.2f });
-			verifyAlgorithmCase("Extracted Insertion strategy ascending", insertionInput, InputProfile::NormalizedFloat,
-				SortAlgorithm::Insertion, SortDirection::Ascending);
-			verifyAlgorithmCase("Extracted Insertion strategy descending", insertionInput, InputProfile::NormalizedFloat,
-				SortAlgorithm::Insertion, SortDirection::Descending);
-			verifyAlgorithmCase("Intro Sort small-range Insertion fallback", insertionInput, InputProfile::NormalizedFloat,
-				SortAlgorithm::ArrayvIntroSort, SortDirection::Ascending);
-			const SortAlgorithm elementaryAlgorithms[] = {
-				SortAlgorithm::Bubble, SortAlgorithm::Selection, SortAlgorithm::ArrayvBingo,
-				SortAlgorithm::ArrayvDoubleSelection, SortAlgorithm::ArrayvStableSelection,
-				SortAlgorithm::Gnome, SortAlgorithm::Cocktail, SortAlgorithm::Comb, SortAlgorithm::OddEven,
-				SortAlgorithm::ArrayvOptimizedBubble, SortAlgorithm::ArrayvUnoptimizedBubble,
-				SortAlgorithm::ArrayvSwaplessBubble, SortAlgorithm::ArrayvOptimizedCocktail,
-				SortAlgorithm::ArrayvUnoptimizedCocktail
-			};
-			const InputDomain candidateDomains[] = { InputDomain::NormalizedFloats, InputDomain::NonnegativeIntegerKeys,
-				InputDomain::SignedIntegerKeys, InputDomain::IntegerPermutation };
-			for (std::size_t algorithmIndex = 0; algorithmIndex < sizeof(elementaryAlgorithms) / sizeof(elementaryAlgorithms[0]); ++algorithmIndex)
-			{
-				const SortAlgorithm algorithm = elementaryAlgorithms[algorithmIndex];
-				InputDomain domain = InputDomain::NormalizedFloats;
-				for (std::size_t domainIndex = 0; domainIndex < sizeof(candidateDomains) / sizeof(candidateDomains[0]); ++domainIndex)
-					if (algorithmSupports(algorithm, candidateDomains[domainIndex]))
-					{
-						domain = candidateDomains[domainIndex];
-						break;
-					}
-				std::vector<SortItem> input;
-				if (domain == InputDomain::NormalizedFloats) input = floats({ 0.6f, 0.2f, 0.6f, 0.1f, 0.2f });
-				else
-				{
-					const int keys[] = { 3, 1, 3, 0, 1 };
-					for (std::size_t itemIndex = 0; itemIndex < 5; ++itemIndex)
-					{
-						const int key = domain == InputDomain::SignedIntegerKeys ? keys[itemIndex] - 2 : keys[itemIndex];
-						const float value = domain == InputDomain::SignedIntegerKeys
-							? static_cast<float>(key + 5) / 10.0f : static_cast<float>(key + 1) / 5.0f;
-						input.push_back(SortItem(itemIndex, key, value));
-					}
-					if (domain == InputDomain::IntegerPermutation)
-					{
-						const int permutationKeys[] = { 3, 1, 4, 0, 2 };
-						for (std::size_t itemIndex = 0; itemIndex < 5; ++itemIndex)
-							input[itemIndex] = SortItem(itemIndex, permutationKeys[itemIndex], static_cast<float>(permutationKeys[itemIndex] + 1) / 5.0f);
-					}
-				}
-				const InputProfile profile = inputProfileForDomain(domain);
-				const std::string label = algorithmDisplayName(algorithm);
-				verifyAlgorithmCase("Elementary " + label + " ascending", input, profile, algorithm, SortDirection::Ascending, domain);
-				verifyAlgorithmCase("Elementary " + label + " descending", input, profile, algorithm, SortDirection::Descending, domain);
-			}
-			const SortAlgorithm remainingNetworkStrategies[] = {
-				SortAlgorithm::ArrayvClassicThreeSmoothComb, SortAlgorithm::ArrayvThreeSmoothCombIterative,
-				SortAlgorithm::ArrayvThreeSmoothCombRecursive, SortAlgorithm::ArrayvThreeSmoothCombParallel,
-				SortAlgorithm::ArrayvMatrix
-			};
-			const std::vector<SortItem> networkInput = integers(std::vector<int>{ 9, 1, 7, 3, 8, 2, 5, 0, 6, 4, 4 });
-			for (std::size_t algorithmIndex = 0; algorithmIndex < sizeof(remainingNetworkStrategies) / sizeof(remainingNetworkStrategies[0]); ++algorithmIndex)
-				for (int directionIndex = 0; directionIndex < 2; ++directionIndex)
-				{
-					const SortAlgorithm algorithm = remainingNetworkStrategies[algorithmIndex];
-					const SortDirection direction = directionIndex == 0 ? SortDirection::Ascending : SortDirection::Descending;
-					verifyAlgorithmCase(std::string("Extracted ") + algorithmDisplayName(algorithm), networkInput, InputProfile::IntegerKeys,
-						algorithm, direction, InputDomain::NonnegativeIntegerKeys);
-				}
-			stage = "Direct distribution strategy extraction";
-			testDirectDistributionStrategies();
-			stage = "testDistributionAudioBaselines";
-			testDistributionAudioBaselines();
-			stage = "testBurntPancakeOrientation";
-			testBurntPancakeOrientation();
-			stage = "testSortingNetworkSchedules";
-			testSortingNetworkSchedules();
-			stage = "testMergeWritebackModes";
-			testMergeWritebackModes();
-			stage = "testSimulationAndProfiles";
-			testSimulationAndProfiles();
-			stage = "testSnapshotAnnotations";
-			testSnapshotAnnotations();
-			stage = "testTraceServiceAndPlayback";
-			testTraceServiceAndPlayback();
-			stage = "testStressAndValidation";
-			testStressAndValidation();
-			stage = "testPartialTraceBudget";
-			testPartialTraceBudget();
-			stage = "testDomainsAndPatterns";
-			testDomainsAndPatterns();
-			stage = "testSemanticProbeDiscardAndPhases";
-			testSemanticProbeDiscardAndPhases();
-			stage = "testTraceAudioPresentationPolicy";
-			testTraceAudioPresentationPolicy();
-			std::cout << "SortingLogic core contracts: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--bogo-only")
-		{
-			stage = "testStochasticNoveltyVariants";
-			testStochasticNoveltyVariants();
-			stage = "testAdditionalBogoVariants";
-			testAdditionalBogoVariants();
-			stage = "testNestedBogoVariants";
-			testNestedBogoVariants();
-			std::cout << "Focused stochastic novelty tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--recursive-novelty-only")
-		{
-			stage = "testIncompleteStoogeOutcome";
-			testIncompleteStoogeOutcome();
-			stage = "testStoogeFamilyVariants";
-			testStoogeFamilyVariants();
-			stage = "testRecursiveExchangeNoveltyVariants";
-			testRecursiveExchangeNoveltyVariants();
-			stage = "testFunSortBoundedOutcome";
-			testFunSortBoundedOutcome();
-			stage = "testBufferedStoogeSort";
-			testBufferedStoogeSort();
-			stage = "testSortingNetworkSchedules";
-			testSortingNetworkSchedules();
-			std::cout << "Focused recursive novelty tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--dual-pivot-only")
-		{
-			stage = "testDualPivotQuickVariants";
-			testDualPivotQuickVariants();
-			std::cout << "Focused dual-pivot tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--stable-quick-only")
-		{
-			stage = "testStableQuickVariants";
-			testStableQuickVariants();
-			std::cout << "Focused stable Quick tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--merge-variants-only")
-		{
-			stage = "testMergeFamilyVariants";
-			testMergeFamilyVariants();
-			std::cout << "Focused merge-family tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--iterative-top-down-merge-only")
-		{
-			stage = "testIterativeTopDownMergeSort";
-			testIterativeTopDownMergeSort();
-			std::cout << "Focused Iterative Top-down Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--in-place-merge-only")
-		{
-			stage = "testInPlaceMergeSort";
-			testInPlaceMergeSort();
-			std::cout << "Focused In-Place Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--parallel-merge-only")
-		{
-			stage = "testParallelMergeSort";
-			testParallelMergeSort();
-			std::cout << "Focused Parallel Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--rotate-merge-only")
-		{
-			stage = "testRotateMergeSort";
-			testRotateMergeSort();
-			std::cout << "Focused Rotate Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--parallel-rotate-merge-only")
-		{
-			stage = "testParallelRotateMergeSort";
-			testParallelRotateMergeSort();
-			std::cout << "Focused Parallel Rotate Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--stackless-rotate-merge-only")
-		{
-			stage = "testStacklessRotateMergeSort";
-			testStacklessRotateMergeSort();
-			std::cout << "Focused Stackless Rotate Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--block-swap-merge-only")
-		{
-			stage = "testBlockSwapMergeSort";
-			testBlockSwapMergeSort();
-			std::cout << "Focused Block-Swap Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--weaved-merge-only")
-		{
-			stage = "testWeavedMergeSort";
-			testWeavedMergeSort();
-			std::cout << "Focused Weaved Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--twin-sort-only")
-		{
-			stage = "testTwinSort";
-			testTwinSort();
-			std::cout << "Focused Twin Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--tim-merge-only")
-		{
-			stage = "testTimMergeVariants";
-			testTimMergeVariants();
-			std::cout << "Focused Tim merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--improved-inplace-merge-only")
-		{
-			stage = "testImprovedInPlaceMergeSort";
-			testImprovedInPlaceMergeSort();
-			std::cout << "Focused Improved In-Place Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--block-insertion-only")
-		{
-			stage = "testBlockInsertionSort";
-			testBlockInsertionSort();
-			std::cout << "Focused Block Insertion tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--buffered-stooge-only")
-		{
-			stage = "testBufferedStoogeSort";
-			testBufferedStoogeSort();
-			std::cout << "Focused Buffered Stooge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--bad-sort-only")
-		{
-			stage = "testBadSort";
-			testBadSort();
-			std::cout << "Focused Bad Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--asynchronous-sort-only")
-		{
-			stage = "testAsynchronousSort";
-			testAsynchronousSort();
-			std::cout << "Focused Asynchronous Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--pd-merge-only")
-		{
-			stage = "testPDMergeSort";
-			testPDMergeSort();
-			std::cout << "Focused Pattern-Defeating Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--stable-cycle-only")
-		{
-			stage = "testStableCycleSort";
-			testStableCycleSort();
-			std::cout << "Focused Stable Cycle tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--tournament-only")
-		{
-			stage = "testTournamentSorts";
-			testTournamentSorts();
-			std::cout << "Focused tournament tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--smooth-sort-only")
-		{
-			stage = "testSmoothSortVariants";
-			testSmoothSortVariants();
-			std::cout << "Focused Smooth Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--block-selection-only")
-		{
-			stage = "testImprovedBlockSelectionSort";
-			testImprovedBlockSelectionSort();
-			std::cout << "Focused Improved Block Selection tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--stackless-hybrid-only")
-		{
-			stage = "testStacklessHybridQuickSort";
-			testStacklessHybridQuickSort();
-			std::cout << "Focused Stackless Hybrid Quick tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--stackless-dual-pivot-only")
-		{
-			stage = "testStacklessDualPivotQuickSort";
-			testStacklessDualPivotQuickSort();
-			std::cout << "Focused Stackless Dual-Pivot Quick tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--hanoi-only")
-		{
-			stage = "testHanoiSort";
-			testHanoiSort();
-			std::cout << "Focused Hanoi Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--simplified-library-only")
-		{
-			stage = "testSimplifiedLibrarySort";
-			testSimplifiedLibrarySort();
-			std::cout << "Focused Simplified Library tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--library-only")
-		{
-			stage = "testLibrarySort";
-			testLibrarySort();
-			std::cout << "Focused Library Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--weave-merge-only")
-		{
-			stage = "testWeaveMergeSort";
-			testWeaveMergeSort();
-			std::cout << "Focused Weave Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--laziest-only")
-		{
-			stage = "testLaziestStableSort";
-			testLaziestStableSort();
-			std::cout << "Focused Laziest Stable tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--lazierest-only")
-		{
-			stage = "testLazierestStableSort";
-			testLazierestStableSort();
-			std::cout << "Focused Lazierest Stable tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--lazy-grail-only")
-		{
-			stage = "testLazyStableMergeVariants";
-			testLazyStableMergeVariants();
-			std::cout << "Focused Lazy Stable merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--multiway-merge-only")
-		{
-			stage = "testFifthAndQuadMergeSorts";
-			testFifthAndQuadMergeSorts();
-			std::cout << "Focused Fifth/Quad merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--buffer-partition-merge-only")
-		{
-			stage = "testBufferPartitionMergeSort";
-			testBufferPartitionMergeSort();
-			std::cout << "Focused Buffer Partition Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--parallel-block-merge-only")
-		{
-			stage = "testParallelBlockMergeSort";
-			testParallelBlockMergeSort();
-			std::cout << "Focused Parallel Block Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--optimized-rotate-merge-only")
-		{
-			stage = "testOptimizedRotateMergeSort";
-			testOptimizedRotateMergeSort();
-			std::cout << "Focused Optimized Rotate Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--grail-only")
-		{
-			stage = "testGrailSortModes";
-			testGrailSortModes();
-			stage = "testAdaptiveGrailSort";
-			testAdaptiveGrailSort();
-			std::cout << "Focused Grail family tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--pdq-smoke-only")
-		{
-			stage = "PDQ boundary and duplicate cases";
-			testPDQVariants(false);
-			std::cout << "Focused PDQ boundary tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--pdq-only")
-		{
-			stage = "testPDQVariants";
-			testPDQVariants();
-			std::cout << "Focused PDQ tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--sqrt-only")
-		{
-			stage = "testSqrtMergeVariants";
-			testSqrtMergeVariants();
-			std::cout << "Focused Sqrt Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--ecta-only")
-		{
-			stage = "testEctaSort";
-			testEctaSort();
-			std::cout << "Focused Ecta tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--grail-variants-only")
-		{
-			stage = "testCircularAndUnstableGrailSorts";
-			testCircularAndUnstableGrailSorts();
-			std::cout << "Focused Circular/Unstable Grail tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--drop-merge-only")
-		{
-			stage = "testDropMergeSort";
-			testDropMergeSort();
-			std::cout << "Focused Drop Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--parallel-grail-only")
-		{
-			stage = "testParallelGrailSort";
-			testParallelGrailSort();
-			std::cout << "Focused Parallel Grail tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--median-merge-only")
-		{
-			stage = "testMedianMergeSort";
-			testMedianMergeSort();
-			std::cout << "Focused Median Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--remi-only")
-		{
-			stage = "testRemiSort";
-			testRemiSort();
-			std::cout << "Focused Remi Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--merge-roster-tail-only")
-		{
-			stage = "testRemainingMergeRosterBatch";
-			testRemainingMergeRosterBatch();
-			std::cout << "Focused merge roster tail tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--new-shuffle-only")
-		{
-			stage = "testNewShuffleMerge";
-			testRemainingMergeRosterBatch(8);
-			std::cout << "Focused New Shuffle Merge tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--stackless-partition-only")
-		{
-			stage = "stackless partition strategies";
-			testStacklessHybridQuickSort();
-			testStacklessDualPivotQuickSort();
-			std::cout << "Focused stackless partition tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--partition-quick-only")
-		{
-			stage = "partition quick strategy family";
-			testPointerQuicksortVariants();
-			testDualPivotQuickVariants();
-			testStableQuickVariants();
-			testTernaryQuickVariants();
-			std::cout << "Focused partition Quick tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--ternary-quick-only")
-		{
-			stage = "testTernaryQuickVariants";
-			testTernaryQuickVariants();
-			std::cout << "Focused ternary Quick tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--indirect-only")
-		{
-			stage = "testIndirectAndPermutationVariants";
-			testIndirectAndPermutationVariants();
-			std::cout << "Focused indirect and permutation tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--hybrid-exchange-only")
-		{
-			stage = "testHybridCombAndIntroCircleVariants";
-			testHybridCombAndIntroCircleVariants();
-			std::cout << "Focused hybrid exchange tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--double-insertion-only")
-		{
-			stage = "testDoubleInsertionVariants";
-			testDoubleInsertionVariants();
-			std::cout << "Focused double insertion tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--intro-sort-only")
-		{
-			stage = "testIntroSort";
-			testIntroSort();
-			std::cout << "Focused IntroSort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--patience-only")
-		{
-			stage = "testPatienceSort";
-			testPatienceSort();
-			std::cout << "Focused Patience Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--gap-insertion-only")
-		{
-			stage = "testGapInsertionStrategyCoverage";
-			testGapInsertionStrategyCoverage();
-			stage = "testDoubleInsertionVariants";
-			testDoubleInsertionVariants();
-			stage = "testParallelShellSort";
-			testParallelShellSort();
-			std::cout << "Focused insertion/gap strategy tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}		if (argc > 1 && std::string(argv[1]) == "--parallel-shell-only")
-		{
-			stage = "testParallelShellSort";
-			testParallelShellSort();
-			std::cout << "Focused parallel Shell tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--merge-insertion-only")
-		{
-			stage = "testMergeInsertionSort";
-			testMergeInsertionSort();
-			std::cout << "Focused Merge-Insertion tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--stalin-only")
-		{
-			stage = "testStalinVariants";
-			testStalinVariants();
-			std::cout << "Focused Stalin Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--tree-family-only")
-		{
-			stage = "tree strategy family";
-			testUnbalancedTreeVariants();
-			testBalancedTreeSorts();
-			testSplayTreeSort();
-			testStrandSort();
-			std::cout << "Focused tree family tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--tree-only")
-		{
-			stage = "testUnbalancedTreeVariants";
-			testUnbalancedTreeVariants();
-			std::cout << "Focused unbalanced tree tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--strand-only")
-		{
-			stage = "testStrandSort";
-			testStrandSort();
-			std::cout << "Focused Strand Sort tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--balanced-tree-only")
-		{
-			stage = "testBalancedTreeSorts";
-			testBalancedTreeSorts();
-			std::cout << "Focused balanced tree tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		if (argc > 1 && std::string(argv[1]) == "--splay-only")
-		{
-			stage = "testSplayTreeSort";
-			testSplayTreeSort();
-			std::cout << "Focused Splay Tree tests: " << checks << " checks, " << failures << " failures.\n";
-			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-		testDistributionAudioBaselines();
-		stage = "testStochasticNoveltyVariants";
-		testStochasticNoveltyVariants();
-		stage = "testAdditionalBogoVariants";
-		testAdditionalBogoVariants();
-		stage = "testPointerQuicksortVariants";
-		testPointerQuicksortVariants();
-		stage = "testNestedBogoVariants";
-		testNestedBogoVariants();
-		stage = "testDualPivotQuickVariants";
-		testDualPivotQuickVariants();
-		stage = "testStableQuickVariants";
-		testStableQuickVariants();
-		stage = "testMergeFamilyVariants";
-		testMergeFamilyVariants();
-		stage = "testIterativeTopDownMergeSort";
-		testIterativeTopDownMergeSort();
-		stage = "testInPlaceMergeSort";
-		testInPlaceMergeSort();
-		stage = "testParallelMergeSort";
-		testParallelMergeSort();
-		stage = "testRotateMergeSort";
-		testRotateMergeSort();
-		stage = "testParallelRotateMergeSort";
-		testParallelRotateMergeSort();
-		stage = "testStacklessRotateMergeSort";
-		testStacklessRotateMergeSort();
-		stage = "testBlockSwapMergeSort";
-		testBlockSwapMergeSort();
-		stage = "testWeavedMergeSort";
-		testWeavedMergeSort();
-		stage = "testTwinSort";
-		testTwinSort();
-		stage = "testTimMergeVariants";
-		testTimMergeVariants();
-		stage = "testImprovedInPlaceMergeSort";
-		testImprovedInPlaceMergeSort();
-		stage = "testBlockInsertionSort";
-		testBlockInsertionSort();
-		stage = "testBufferedStoogeSort";
-		testBufferedStoogeSort();
-		stage = "testBadSort";
-		testBadSort();
-		stage = "testAsynchronousSort";
-		testAsynchronousSort();
-		stage = "testPDMergeSort";
-		testPDMergeSort();
-		stage = "testStableCycleSort";
-		testStableCycleSort();
-		stage = "testTournamentSorts";
-		testTournamentSorts();
-		stage = "testSmoothSortVariants";
-		testSmoothSortVariants();
-		stage = "testImprovedBlockSelectionSort";
-		testImprovedBlockSelectionSort();
-		stage = "testStacklessHybridQuickSort";
-		testStacklessHybridQuickSort();
-		stage = "testStacklessDualPivotQuickSort";
-		testStacklessDualPivotQuickSort();
-		stage = "testHanoiSort";
-		testHanoiSort();
-		stage = "testSimplifiedLibrarySort";
-		testSimplifiedLibrarySort();
-		stage = "testLibrarySort";
-		testLibrarySort();
-		stage = "testWeaveMergeSort";
-		testWeaveMergeSort();
-		stage = "testLaziestStableSort";
-		testLaziestStableSort();
-		stage = "testLazierestStableSort";
-		testLazierestStableSort();
-		stage = "testLazyStableMergeVariants";
-		testLazyStableMergeVariants();
-		stage = "testFifthAndQuadMergeSorts";
-		testFifthAndQuadMergeSorts();
-		stage = "testBufferPartitionMergeSort";
-		testBufferPartitionMergeSort();
-		stage = "testParallelBlockMergeSort";
-		testParallelBlockMergeSort();
-		stage = "testOptimizedRotateMergeSort";
-		testOptimizedRotateMergeSort();
-		stage = "testGrailSortModes";
-		testGrailSortModes();
-		stage = "testAdaptiveGrailSort";
-		testAdaptiveGrailSort();
-		stage = "testPDQVariants";
-		testPDQVariants();
-		stage = "testSqrtMergeVariants";
-		testSqrtMergeVariants();
-		stage = "testEctaSort";
-		testEctaSort();
-		stage = "testCircularAndUnstableGrailSorts";
-		testCircularAndUnstableGrailSorts();
-		stage = "testDropMergeSort";
-		testDropMergeSort();
-		stage = "testParallelGrailSort";
-		testParallelGrailSort();
-		stage = "testMedianMergeSort";
-		testMedianMergeSort();
-		stage = "testRemiSort";
-		testRemiSort();
-		stage = "testRemainingMergeRosterBatch";
-		testRemainingMergeRosterBatch();
-		stage = "testTernaryQuickVariants";
-		testTernaryQuickVariants();
-		stage = "testIndirectAndPermutationVariants";
-		testIndirectAndPermutationVariants();
-		stage = "testHybridCombAndIntroCircleVariants";
-		testHybridCombAndIntroCircleVariants();
-		stage = "testDoubleInsertionVariants";
-		testDoubleInsertionVariants();
-		stage = "testIntroSort";
-		testIntroSort();
-		stage = "testPatienceSort";
-		testPatienceSort();
-		stage = "testParallelShellSort";
-		testParallelShellSort();
-		stage = "testMergeInsertionSort";
-		testMergeInsertionSort();
-		stage = "testStalinVariants";
-		testStalinVariants();
-		stage = "testUnbalancedTreeVariants";
-		testUnbalancedTreeVariants();
-		stage = "testStrandSort";
-		testStrandSort();
-		stage = "testBalancedTreeSorts";
-		testBalancedTreeSorts();
-		stage = "testSplayTreeSort";
-		testSplayTreeSort();
-		verifyProfilesAndAlgorithms();
-		stage = "testBurntPancakeOrientation";
-		testBurntPancakeOrientation();
-		stage = "testSortingNetworkSchedules";
-		testSortingNetworkSchedules();
-		stage = "testMatrixSortShapes";
-		testMatrixSortShapes();
-		stage = "testIncompleteStoogeOutcome";
-		testIncompleteStoogeOutcome();
-		stage = "testStoogeFamilyVariants";
-		testStoogeFamilyVariants();
-		stage = "testRecursiveExchangeNoveltyVariants";
-		testRecursiveExchangeNoveltyVariants();
-		stage = "testFunSortBoundedOutcome";
-		testFunSortBoundedOutcome();
-		stage = "testMergeWritebackModes";
-		testMergeWritebackModes();
-		stage = "testSimulationAndProfiles";
-		testSimulationAndProfiles();
-		stage = "testSnapshotAnnotations";
-		testSnapshotAnnotations();
-		stage = "testTraceServiceAndPlayback";
-		testTraceServiceAndPlayback();
-		stage = "testStressAndValidation";
-		testStressAndValidation();
-		stage = "testPartialTraceBudget";
-		testPartialTraceBudget();
-		stage = "testDomainsAndPatterns";
-		testDomainsAndPatterns();
-		stage = "testSemanticProbeDiscardAndPhases";
-		testSemanticProbeDiscardAndPhases();
-		stage = "testTraceAudioPresentationPolicy";
-		testTraceAudioPresentationPolicy();
+		for (std::size_t i = 0; i < sizeof(registeredTests) / sizeof(registeredTests[0]); ++i)
+			if (registeredTests[i].inFullSuite) runRegisteredTest(registeredTests[i]);
 	}
 	catch (const std::exception& error)
 	{
-		std::cerr << "SortingLogicTests aborted during " << stage << " after " << checks
+		std::cerr << "SortingLogicTests aborted during " << activeStage << " after " << checks
 			<< " checks: " << error.what() << '\n';
 		return EXIT_FAILURE;
 	}
 	catch (...)
 	{
-		std::cerr << "SortingLogicTests aborted during " << stage << " by an unknown exception after " << checks << " checks.\n";
+		std::cerr << "SortingLogicTests aborted during " << activeStage << " by an unknown exception after " << checks << " checks.\n";
 		return EXIT_FAILURE;
 	}
 	std::cout << "SortingLogicTests: " << checks << " checks, " << failures << " failures.\n";

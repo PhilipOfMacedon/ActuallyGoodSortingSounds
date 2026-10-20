@@ -1899,3 +1899,11 @@ The remaining canonical `bucketCount` field was also removed. The direct-caller 
 The full solution again built in x64 Debug/Release and x86 Debug/Release. SortingLogic core contracts passed in all four configurations (39,535 checks on x64 and 39,543 on x86); `AppFrameworkTests` passed in all four configurations. `git diff --check` passed with normal line-ending notices. The final configurations preserve traces and replay, including legacy heap/Grail options and the new American Flag request adapter checks.
 
 Next: proceed to the remaining test-organization work in finding 12. Keep findings 7, 9, 10, and 11's performance candidates measurement-gated; a measurement that does not justify complexity closes with a documented disposition rather than another speculative optimization.
+
+## 2026-10-20 — centralize SortingLogic test registration
+
+Replaced the repeated focused-command branches and separate default-suite call list with one `RegisteredTest` table and one `TestCommand` table. The full suite and focused flags now resolve the same stable test IDs; startup validation rejects duplicate registrations, duplicate command flags, and focused commands that refer to missing tests. The core-contract mode is registered through the same runner. Catalog coverage and trace-memory profiling remain explicit utility commands rather than ordinary test cases.
+
+Verification: the full-suite registration sequence matches the prior 82-call order, and all 75 existing focused command flags remain present. The x64 Debug test target builds. SortingLogic core contracts pass 39,543 checks, PDQ boundary tests pass 88,015 checks, Lazierest passes 305,466 checks, New Shuffle Merge passes 3,165 checks, and pinned catalog coverage passes 1,741 checks; all report zero failures. `git diff --check` passes. The default full suite was started but stopped after a ten-minute cap while still consuming CPU; it produced no failure output, so its result is recorded as incomplete, not passing.
+
+Finding 12 remains partial because `SortingLogicTests.cpp` has not yet been decomposed into cohesive source files. The registration cleanup is a bounded dispatch refactor; no test assertions or algorithm code were moved or rewritten.
