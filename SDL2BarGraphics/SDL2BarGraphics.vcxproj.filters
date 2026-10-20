@@ -107,6 +107,7 @@
     <ClInclude Include="Renderer2D.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ThemePalette.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="UiLayer.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="VisualSettingsTypes.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="UiActionRouting.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="UserSettings.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RenderingTypes.h">

@@ -904,4 +904,21 @@ Verification:
 - Standalone `AudioDeviceTransportTests` built and passed in both configurations with SDL dummy audio, including 80/800-item runs.
 - `git diff --check` passed; configured line-ending notices only.
 
-Next: narrow `ArrayRenderer`'s visual input from the whole settings object to the chart preference it actually consumes, then continue the asset/source-ownership audit.
+Follow-up: the next section records the chart-input narrowing and its verification.
+
+## 2026-10-20 — narrow chart renderer preferences
+
+Status: implementation and regression verification complete.
+
+- Changed `ArrayRenderer::render` to accept `BarSpacingMode` instead of the full persisted `UserSettings`. The frame coordinator now passes `app.preferences().visual.spacing` explicitly.
+- Extracted `BarSpacingMode` into `VisualSettingsTypes.h`. `LayoutMetrics.h` now depends on that small visual type rather than including the full settings model, reducing transitive settings, sound, and simulation dependencies in layout code.
+- Preserved all layout calculations and the existing spacing enum values; this changes the ownership boundary only.
+
+Verification:
+
+- x64 Debug and Release Visual Studio solution builds passed.
+- `AppFrameworkTests` passed in both configurations.
+- `SortingLogicTests --core-contracts-only` passed in both configurations with 39,535 checks and 0 failures.
+- `git diff --check` passed; configured LF-to-CRLF notices only.
+
+Next: continue the asset/source-ownership audit, starting with executable-relative shader/font lookup and explicit asset-root ownership.

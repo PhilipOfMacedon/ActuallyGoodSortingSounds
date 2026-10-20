@@ -161,7 +161,7 @@ int main(int argc, char** argv)
 		const ThemePalette palette = paletteForAppearance(app.preferences().appearance.activePreset, activeTheme);
 		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());
 		frameCoordinator.beginFrame(palette.background);
-		arrayRenderer.render(snapshot, app.preferences(), controlPanel.chartViewport(), palette);
+		arrayRenderer.render(snapshot, app.preferences().visual.spacing, controlPanel.chartViewport(), palette);
 		controlPanel.render(snapshot, audioStatus);
 		frameCoordinator.finishFrame();
 	}

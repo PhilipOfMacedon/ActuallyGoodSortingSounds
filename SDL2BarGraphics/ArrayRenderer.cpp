@@ -36,7 +36,7 @@ bool ArrayRenderer::isReady() const
 
 void ArrayRenderer::render(
 	const sortinglogic::RenderSnapshot& snapshot,
-	const UserSettings& settings,
+	BarSpacingMode spacingMode,
 	const UiRect& chartViewport,
 	const ThemePalette& palette)
 {
@@ -62,7 +62,7 @@ void ArrayRenderer::render(
 	const float mainBottom = bottom - auxiliaryHeight - (laneCount ? 6.0f : 0.0f);
 	const float mainHeight = std::max(0.0f, mainBottom - top);
 	const float columnWidth = std::max(0.0f, right - left) / static_cast<float>(snapshot.state.slots.size());
-	const BarSlotMetrics spacing = calculateBarSlotMetrics(columnWidth, settings.visual.spacing);
+	const BarSlotMetrics spacing = calculateBarSlotMetrics(columnWidth, spacingMode);
 	// When Merge Sort's auxiliary buffer is hidden, compare/write roles still
 	// refer to the logical "merge" lane. The items being compared are visible in
 	// the primary array, so resolve those roles there rather than losing their
@@ -109,7 +109,7 @@ void ArrayRenderer::render(
 			laneGeometry[lane->first] = std::make_pair(lane->second.size(), laneNumber);
 			submitLaneLabel(lane->first, right - 112.0f, laneTop + 1.0f, palette.text);
 			const float cellWidth = lane->second.empty() ? 0.0f : (right - left) / static_cast<float>(lane->second.size());
-			const BarSlotMetrics laneSpacing = calculateBarSlotMetrics(cellWidth, settings.visual.spacing);
+			const BarSlotMetrics laneSpacing = calculateBarSlotMetrics(cellWidth, spacingMode);
 			for (std::size_t i = 0; i < lane->second.size(); ++i)
 			{
 				if (!lane->second[i].occupied) continue;
@@ -148,7 +148,7 @@ void ArrayRenderer::render(
 			laneGeometry["discard"] = std::make_pair(snapshot.state.discardedItems.size(), laneNumber);
 			submitLaneLabel("discard", right - 112.0f, laneTop + 1.0f, palette.text);
 			const float cellWidth = (right - left) / static_cast<float>(snapshot.state.discardedItems.size());
-			const BarSlotMetrics laneSpacing = calculateBarSlotMetrics(cellWidth, settings.visual.spacing);
+			const BarSlotMetrics laneSpacing = calculateBarSlotMetrics(cellWidth, spacingMode);
 			for (std::size_t i = 0; i < snapshot.state.discardedItems.size(); ++i)
 			{
 				const sortinglogic::SortItem& item = snapshot.state.discardedItems[i];

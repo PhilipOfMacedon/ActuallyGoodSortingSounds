@@ -11,7 +11,7 @@
 #include "ActiveRoleLookup.h"
 #include "ThemePalette.h"
 #include "TextLabel.h"
-#include "UserSettings.h"
+#include "VisualSettingsTypes.h"
 #include "Window.h"
 #include "UiLayer.h"
 #include "../SortingLogic/SortingLogic.h"
@@ -23,7 +23,7 @@ public:
 	bool isReady() const;
 	void render(
 		const sortinglogic::RenderSnapshot& snapshot,
-		const UserSettings& settings,
+		BarSpacingMode spacing,
 		const UiRect& chartViewport,
 		const ThemePalette& palette);
 

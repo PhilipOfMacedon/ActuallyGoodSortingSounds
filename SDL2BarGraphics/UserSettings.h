@@ -8,15 +8,9 @@
 #include "../SoundEngine/ReconstructedSound.h"
 #include "../SoundEngine/AudioTimeline.h"
 #include "UiAppearance.h"
+#include "VisualSettingsTypes.h"
 
 static const int UserSettingsCurrentVersion = 8;
-
-enum class BarSpacingMode
-{
-	None,
-	Compact,
-	Comfortable
-};
 
 struct VisualPreferences
 {

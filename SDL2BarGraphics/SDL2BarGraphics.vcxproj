@@ -97,6 +97,7 @@
     <ClInclude Include="TextSearch.h" />
     <ClInclude Include="ThemePalette.h" />
     <ClInclude Include="UiLayer.h" />
+    <ClInclude Include="VisualSettingsTypes.h" />
     <ClInclude Include="UiAppearance.h" />
     <ClInclude Include="UiArchitecture.h" />
     <ClInclude Include="UiActionRouting.h" />

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "UserSettings.h"
+#include "VisualSettingsTypes.h"
 
 struct BarSlotMetrics
 {
