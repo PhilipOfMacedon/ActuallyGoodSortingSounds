@@ -1044,6 +1044,23 @@ Verification:
 
 Next: continue moving screen/session ownership out of `ControlPanel`; prefer an owner that carries state and action handling, not just another rendering wrapper.
 
+## 2026-10-20 — extract initial selection strategies
+
+Status: implementation complete; full-catalog regression run and four-configuration builds passed.
+
+- Moved Bad Sort, Cycle Sort, and Stable Cycle Sort unchanged into `SelectionStrategies.cpp`, where they use the same internal `Recorder` interface as the existing strategy modules.
+- Registered all three with direct strategy builders and removed their now-dead cases from the fallback algorithm switch. Their descriptor facts, IDs, event order, metrics, and trace finalization remain unchanged.
+- Updated the ignored structural audit with the current SortingLogic boundaries and corrected the stale 2026-10-19 source locations.
+
+Verification:
+
+- Full x64 Debug `SortingLogicTests` passed: 16,270,491 checks, 0 failures, including catalog-wide replay reconstruction.
+- After removing the dead switch cases, x64 Debug solution build passed; focused Bad Sort and Stable Cycle suites passed 322,101 and 249,474 checks respectively, with 0 failures.
+- Full Visual Studio solution builds passed in x64 Debug/Release and x86 Debug/Release (`Win32` project configuration).
+- `git diff --check` passed; configured LF-to-CRLF notices only.
+
+Next: extract the remaining selection and heap kernels behind the same recorder contract, keeping each family batch independently reviewable; then continue through the fallback dispatch and catalog boundary.
+
 ## 2026-10-20 — remove Release framework PDB warnings
 
 Status: implementation and warning/performance verification complete.
