@@ -735,9 +735,12 @@ namespace
 			"fixed-duration playback remains the default timing mode");
 		check(defaults.version == 8 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			defaults.simulation.familyId == "insertion-methods" && defaults.simulation.variantId == "insertion" &&
-			defaults.simulation.profile == sortinglogic::InputProfile::NormalizedFloat &&
-			defaults.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Halving,
+			defaults.simulation.profile == sortinglogic::InputProfile::NormalizedFloat,
 			"new settings use stable algorithm IDs and showcase defaults");
+		const sortinglogic::AlgorithmDescriptor* defaultShell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
+		check(defaultShell && algorithmOptionValue(defaults, *defaultShell, "gap_sequence") ==
+			static_cast<int>(sortinglogic::ShellGapSequence::Halving),
+			"catalog metadata supplies the Shell option default without duplicated preference state");
 		check(defaults.audio.masterLevel == 0.5f && defaults.audio.bedLevel == 0.15f &&
 			defaults.audio.bedHarmonicExponent == 1.5f && defaults.audio.bedComb.enabled && defaults.audio.bedComb.applyPhase,
 			"missing settings use the selected preview audio profile");
@@ -773,9 +776,6 @@ namespace
 		saved.simulation.profile = sortinglogic::InputProfile::IntegerKeys;
 		saved.simulation.domain = sortinglogic::InputDomain::SignedIntegerKeys;
 		saved.simulation.pattern = sortinglogic::InputPattern::NearlySorted;
-		saved.simulation.shellGapSequence = sortinglogic::ShellGapSequence::Ciura;
-		saved.simulation.mergeWritebackMode = sortinglogic::MergeWritebackMode::AnimatedWrites;
-		saved.simulation.mergeExecutionMode = sortinglogic::MergeExecutionMode::TopDown;
 		saved.algorithmOptions[algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence")] = "ciura";
 		saved.algorithmOptions[algorithmOptionSettingsKey("merge-sort", "merge", "execution_mode")] = "top_down";
 		saved.algorithmOptions[algorithmOptionSettingsKey("merge-sort", "merge", "writeback_mode")] = "animated_writes";
@@ -851,13 +851,17 @@ namespace
 		check(loaded.simulation.algorithm == saved.simulation.algorithm, "settings round-trip selected algorithm");
 		check(loaded.simulation.familyId == saved.simulation.familyId && loaded.simulation.variantId == saved.simulation.variantId,
 			"settings round-trip stable family and variant IDs");
-		check(loaded.simulation.profile == saved.simulation.profile && loaded.simulation.shellGapSequence == saved.simulation.shellGapSequence,
-			"settings round-trip profile and Shell gap sequence");
+		check(loaded.simulation.profile == saved.simulation.profile &&
+			algorithmOptionValue(loaded, *defaultShell, "gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Ciura),
+			"settings round-trip profile and stable Shell option selection");
 		check(loaded.simulation.domain == saved.simulation.domain && loaded.simulation.pattern == saved.simulation.pattern,
 			"settings round-trip signed domain and input pattern");
-		check(loaded.simulation.mergeWritebackMode == saved.simulation.mergeWritebackMode,
+		const sortinglogic::AlgorithmDescriptor* savedMerge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
+		check(savedMerge && algorithmOptionValue(loaded, *savedMerge, "writeback_mode") ==
+			static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites),
 			"settings round-trip configurable Merge Sort writeback mode");
-		check(loaded.simulation.mergeExecutionMode == saved.simulation.mergeExecutionMode,
+		check(savedMerge && algorithmOptionValue(loaded, *savedMerge, "execution_mode") ==
+			static_cast<int>(sortinglogic::MergeExecutionMode::TopDown),
 			"settings round-trip top-down and bottom-up Merge execution mode");
 		check(loaded.algorithmOptions.find(algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence")) != loaded.algorithmOptions.end() &&
 			loaded.algorithmOptions.find(algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence"))->second == "ciura" &&
@@ -924,7 +928,7 @@ namespace
 			"older settings default to fixed-duration playback");
 		check(migrated.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			migrated.simulation.profile == sortinglogic::InputProfile::NormalizedFloat &&
-			migrated.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Halving,
+			algorithmOptionValue(migrated, *defaultShell, "gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Halving),
 			"version-1 migration establishes showcase defaults safely");
 		check(migrated.audio.masterLevel == defaults.audio.masterLevel && migrated.audio.bedComb.enabled == defaults.audio.bedComb.enabled,
 			"version-1 settings receive the selected profile audio defaults");
@@ -938,7 +942,7 @@ namespace
 		const UserPreferences unknownAlgorithm = store.load();
 		check(unknownAlgorithm.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			unknownAlgorithm.simulation.profile == sortinglogic::InputProfile::IntegerKeys &&
-			unknownAlgorithm.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Tokuda,
+			algorithmOptionValue(unknownAlgorithm, *defaultShell, "gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Tokuda),
 			"unknown saved algorithm IDs fall back while valid new settings survive");
 		writeFile(path, "version=4\npalette=cyan\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=made-up\nvariant_id=missing\nprofile=normalized_float\nshell_gap_sequence=halving\n");
 		const UserPreferences unknownStableId = store.load();
@@ -980,7 +984,8 @@ namespace
 			"later version-8 saves do not replace the one-time migration backup");
 		writeFile(path, "version=5\npalette=amber\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=merge-sort\nvariant_id=merge\nprofile=normalized_float\nmerge_execution_mode=bottom_up\noption.merge-sort.merge.execution_mode=unknown_mode\n");
 		const UserPreferences malformedOption = store.load();
-		check(malformedOption.isValid() && malformedOption.simulation.mergeExecutionMode == sortinglogic::MergeExecutionMode::BottomUp &&
+		check(malformedOption.isValid() && algorithmOptionValue(malformedOption, *savedMerge, "execution_mode") ==
+			static_cast<int>(sortinglogic::MergeExecutionMode::BottomUp) &&
 			malformedOption.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "execution_mode")) == malformedOption.algorithmOptions.end(),
 			"unknown v5 option IDs safely fall back to the catalog and typed default");
 		writeFile(path, "version=6\npalette=light\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\nfamily_audio.insertion-methods.comparison=8.5\nvariant_audio.insertion-methods.insertion.comparison=-6.5\n");
@@ -1004,8 +1009,8 @@ namespace
 		const UserPreferences migratedV7 = store.load();
 		check(migratedV7.version == 8 && migratedV7.simulation.familyId == "merge-sort" &&
 			migratedV7.simulation.variantId == "merge" &&
-			migratedV7.simulation.mergeExecutionMode == sortinglogic::MergeExecutionMode::TopDown &&
-			migratedV7.simulation.mergeWritebackMode == sortinglogic::MergeWritebackMode::AnimatedWrites,
+			algorithmOptionValue(migratedV7, *savedMerge, "execution_mode") == static_cast<int>(sortinglogic::MergeExecutionMode::TopDown) &&
+			algorithmOptionValue(migratedV7, *savedMerge, "writeback_mode") == static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites),
 			"version-7 to version-8 migration preserves the selected algorithm and stable execution options");
 		check(familyAudioLevels(migratedV7, "merge-sort").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 5.5f &&
 			variantAudioLevels(migratedV7, "merge-sort", "merge").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == -2.5f,
@@ -1653,12 +1658,13 @@ namespace
 			"unregistered family and variant IDs are rejected safely");
 		check(app.dispatch(AppAction(AppActionKind::SetShellGapSequence, 0.0f,
 			static_cast<int>(sortinglogic::ShellGapSequence::Ciura))).accepted &&
-			app.preferences().simulation.shellGapSequence == sortinglogic::ShellGapSequence::Ciura,
+			algorithmOptionValue(app.preferences(), *sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell), "gap_sequence") ==
+			static_cast<int>(sortinglogic::ShellGapSequence::Ciura),
 			"Shell sequence selection dispatches and persists");
 		const sortinglogic::AlgorithmDescriptor* shell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
 		check(shell && app.dispatch(AppAction(AppActionKind::SetAlgorithmOption, shell->familyId, shell->variantId,
 			"gap_sequence", "tokuda", static_cast<int>(sortinglogic::ShellGapSequence::Tokuda))).accepted &&
-			app.preferences().simulation.shellGapSequence == sortinglogic::ShellGapSequence::Tokuda &&
+			algorithmOptionValue(app.preferences(), *shell, "gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Tokuda) &&
 			app.preferences().algorithmOptions.find(algorithmOptionSettingsKey(shell->familyId, shell->variantId, "gap_sequence"))->second == "tokuda",
 			"catalog option dispatch applies and persists a stable Shell gap option ID");
 		const sortinglogic::CommandResult run = app.dispatch(AppAction(AppActionKind::Run));

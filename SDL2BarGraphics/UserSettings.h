@@ -36,9 +36,6 @@ struct SimulationPreferences
 	sortinglogic::InputProfile profile;
 	sortinglogic::InputDomain domain;
 	sortinglogic::InputPattern pattern;
-	sortinglogic::ShellGapSequence shellGapSequence;
-	sortinglogic::MergeWritebackMode mergeWritebackMode;
-	sortinglogic::MergeExecutionMode mergeExecutionMode;
 	bool mergeBufferVisualizationEnabled;
 	bool completionScanEnabled;
 	SimulationPreferences();

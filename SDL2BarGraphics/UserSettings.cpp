@@ -186,7 +186,14 @@ namespace
 
 	const char* gapSequenceName(sortinglogic::ShellGapSequence sequence)
 	{
-		return sortinglogic::shellGapSequenceName(sequence);
+		switch (sequence)
+		{
+		case sortinglogic::ShellGapSequence::Halving: return "halving";
+		case sortinglogic::ShellGapSequence::Knuth: return "knuth";
+		case sortinglogic::ShellGapSequence::Ciura: return "ciura";
+		case sortinglogic::ShellGapSequence::Tokuda: return "tokuda";
+		}
+		return "halving";
 	}
 
 	bool parseGapSequence(const std::string& value, sortinglogic::ShellGapSequence& result)
@@ -616,6 +623,22 @@ namespace
 			preferences.variantAudioOffsets.find(variantAudioSettingsKey(family, variant));
 		return found == preferences.variantAudioOffsets.end() ? nullptr : &found->second;
 	}
+
+	void migrateLegacyAlgorithmOption(UserPreferences& preferences, sortinglogic::SortAlgorithm algorithmId,
+		const std::string& groupId, int value)
+	{
+		const sortinglogic::AlgorithmDescriptor* algorithm = sortinglogic::algorithmDescriptor(algorithmId);
+		if (!algorithm) return;
+		for (std::size_t i = 0; i < algorithm->supportedOptions.size(); ++i)
+		{
+			const sortinglogic::AlgorithmOptionDescriptor& option = algorithm->supportedOptions[i];
+			if (std::string(option.groupId) != groupId || option.value != value) continue;
+			const std::string key = algorithmOptionSettingsKey(algorithm->familyId, algorithm->variantId, groupId);
+			if (option.isDefault) preferences.algorithmOptions.erase(key);
+			else preferences.algorithmOptions[key] = option.stableId;
+			return;
+		}
+	}
 }
 
 std::string variantAudioSettingsKey(const sortinglogic::FamilyId& family, const sortinglogic::VariantId& variant)
@@ -639,41 +662,14 @@ std::string algorithmOptionStableId(const UserPreferences& preferences,
 			if (std::string(algorithm.supportedOptions[i].groupId) == groupId &&
 				stored->second == algorithm.supportedOptions[i].stableId)
 				return stored->second;
-
-	int preferredValue = 0;
-	bool hasPreferredValue = false;
-	for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
-	{
-		const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[i];
-		if (std::string(option.groupId) != groupId) continue;
-		if (algorithm.id == sortinglogic::SortAlgorithm::Shell &&
-			option.target == sortinglogic::AlgorithmOptionTarget::ShellGapSequence)
-		{
-			preferredValue = static_cast<int>(preferences.simulation.shellGapSequence);
-			hasPreferredValue = true;
-		}
-		else if (algorithm.id == sortinglogic::SortAlgorithm::Merge &&
-			option.target == sortinglogic::AlgorithmOptionTarget::MergeExecutionMode)
-		{
-			preferredValue = static_cast<int>(preferences.simulation.mergeExecutionMode);
-			hasPreferredValue = true;
-		}
-		else if (algorithm.id == sortinglogic::SortAlgorithm::Merge &&
-			option.target == sortinglogic::AlgorithmOptionTarget::MergeWritebackMode)
-		{
-			preferredValue = static_cast<int>(preferences.simulation.mergeWritebackMode);
-			hasPreferredValue = true;
-		}
-	}
 	const sortinglogic::AlgorithmOptionDescriptor* defaultOption = nullptr;
 	for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
 	{
 		const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[i];
 		if (std::string(option.groupId) != groupId) continue;
-		if (hasPreferredValue && option.value == preferredValue) return option.stableId;
 		if (!defaultOption && option.isDefault) defaultOption = &option;
 	}
-	return hasPreferredValue || !defaultOption ? std::string() : defaultOption->stableId;
+	return defaultOption ? defaultOption->stableId : std::string();
 }
 
 int algorithmOptionValue(const UserPreferences& preferences,
@@ -791,10 +787,7 @@ SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(
 	playbackTimingMode(SoundEngine::PlaybackTimingMode::FixedDuration), descending(false),
 	algorithm(static_cast<int>(sortinglogic::SortAlgorithm::Insertion)), familyId("insertion-methods"), variantId("insertion"),
 	profile(sortinglogic::InputProfile::NormalizedFloat), domain(sortinglogic::InputDomain::NormalizedFloats),
-	pattern(sortinglogic::InputPattern::Random),
-	shellGapSequence(sortinglogic::ShellGapSequence::Halving),
-	mergeWritebackMode(sortinglogic::MergeWritebackMode::AtomicRangeWrite),
-	mergeExecutionMode(sortinglogic::MergeExecutionMode::BottomUp), mergeBufferVisualizationEnabled(true), completionScanEnabled(false) {}
+	pattern(sortinglogic::InputPattern::Random), mergeBufferVisualizationEnabled(true), completionScanEnabled(false) {}
 UserPreferences::UserPreferences() : version(CurrentVersion), visual(), appearance(), simulation(), audio(), reconstructedAudio(), familyAudioDefaults(),
 	variantAudioOffsets(), algorithmOptions() {}
 
@@ -807,9 +800,6 @@ bool UserPreferences::operator==(const UserPreferences& other) const
 		simulation.algorithm == other.simulation.algorithm && simulation.familyId == other.simulation.familyId &&
 		simulation.variantId == other.simulation.variantId && simulation.profile == other.simulation.profile &&
 		simulation.domain == other.simulation.domain && simulation.pattern == other.simulation.pattern &&
-		simulation.shellGapSequence == other.simulation.shellGapSequence &&
-		simulation.mergeWritebackMode == other.simulation.mergeWritebackMode &&
-		simulation.mergeExecutionMode == other.simulation.mergeExecutionMode &&
 		simulation.mergeBufferVisualizationEnabled == other.simulation.mergeBufferVisualizationEnabled &&
 		simulation.completionScanEnabled == other.simulation.completionScanEnabled && audio == other.audio &&
 		reconstructedAudio == other.reconstructedAudio && familyAudioDefaults == other.familyAudioDefaults &&
@@ -830,12 +820,6 @@ bool UserPreferences::isValid() const
 		static_cast<int>(simulation.domain) <= static_cast<int>(sortinglogic::InputDomain::IntegerPermutation) &&
 		simulation.profile == sortinglogic::inputProfileForDomain(simulation.domain) &&
 		sortinglogic::inputPatternCompatible(simulation.domain, simulation.pattern) &&
-		static_cast<int>(simulation.shellGapSequence) >= static_cast<int>(sortinglogic::ShellGapSequence::Halving) &&
-		static_cast<int>(simulation.shellGapSequence) <= static_cast<int>(sortinglogic::ShellGapSequence::Tokuda) &&
-		(static_cast<int>(simulation.mergeWritebackMode) == static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites) ||
-		 static_cast<int>(simulation.mergeWritebackMode) == static_cast<int>(sortinglogic::MergeWritebackMode::AtomicRangeWrite)) &&
-		(static_cast<int>(simulation.mergeExecutionMode) == static_cast<int>(sortinglogic::MergeExecutionMode::BottomUp) ||
-		 static_cast<int>(simulation.mergeExecutionMode) == static_cast<int>(sortinglogic::MergeExecutionMode::TopDown)) &&
 		(static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::FixedDuration) ||
 		 static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence)) &&
 		static_cast<int>(visual.palette) >= 0 && static_cast<int>(visual.palette) <= static_cast<int>(PaletteId::Windows95) &&
@@ -949,6 +933,12 @@ UserPreferences SettingsStore::load() const
 	found = values.find("playback_timing");
 	if (found != values.end()) defaults.simulation.playbackTimingMode = parsePlaybackTimingMode(found->second);
 	if (version <= 3 && !optionalInt(values, "algorithm", defaults.simulation.algorithm)) return UserPreferences();
+	sortinglogic::ShellGapSequence legacyShellGap = sortinglogic::ShellGapSequence::Halving;
+	sortinglogic::MergeWritebackMode legacyMergeWriteback = sortinglogic::MergeWritebackMode::AtomicRangeWrite;
+	sortinglogic::MergeExecutionMode legacyMergeExecution = sortinglogic::MergeExecutionMode::BottomUp;
+	bool hasLegacyShellGap = false;
+	bool hasLegacyMergeWriteback = false;
+	bool hasLegacyMergeExecution = false;
 	if (version < 3)
 	{
 		// v1/v2 stored the sole algorithm as catalog position zero.
@@ -956,7 +946,6 @@ UserPreferences SettingsStore::load() const
 		defaults.simulation.profile = sortinglogic::InputProfile::NormalizedFloat;
 		defaults.simulation.domain = sortinglogic::InputDomain::NormalizedFloats;
 		defaults.simulation.pattern = sortinglogic::InputPattern::Random;
-		defaults.simulation.shellGapSequence = sortinglogic::ShellGapSequence::Halving;
 	}
 	else if (version == 3)
 	{
@@ -966,11 +955,23 @@ UserPreferences SettingsStore::load() const
 			? sortinglogic::InputDomain::NormalizedFloats : sortinglogic::InputDomain::NonnegativeIntegerKeys;
 		defaults.simulation.pattern = sortinglogic::InputPattern::Random;
 		found = values.find("shell_gap_sequence");
-		if (found != values.end() && !parseGapSequence(found->second, defaults.simulation.shellGapSequence)) return UserPreferences();
+		if (found != values.end())
+		{
+			if (!parseGapSequence(found->second, legacyShellGap)) return UserPreferences();
+			hasLegacyShellGap = true;
+		}
 		found = values.find("merge_writeback_mode");
-		if (found != values.end() && !parseMergeWritebackMode(found->second, defaults.simulation.mergeWritebackMode)) return UserPreferences();
+		if (found != values.end())
+		{
+			if (!parseMergeWritebackMode(found->second, legacyMergeWriteback)) return UserPreferences();
+			hasLegacyMergeWriteback = true;
+		}
 		found = values.find("merge_execution_mode");
-		if (found != values.end() && !parseMergeExecutionMode(found->second, defaults.simulation.mergeExecutionMode)) return UserPreferences();
+		if (found != values.end())
+		{
+			if (!parseMergeExecutionMode(found->second, legacyMergeExecution)) return UserPreferences();
+			hasLegacyMergeExecution = true;
+		}
 		const sortinglogic::AlgorithmDescriptor* oldDescriptor = sortinglogic::algorithmDescriptor(
 			static_cast<sortinglogic::SortAlgorithm>(defaults.simulation.algorithm));
 		if (!oldDescriptor) oldDescriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
@@ -1010,12 +1011,30 @@ UserPreferences SettingsStore::load() const
 		found = values.find("pattern");
 		if (found != values.end() && !parsePattern(found->second, defaults.simulation.pattern)) return UserPreferences();
 		found = values.find("shell_gap_sequence");
-		if (found != values.end() && !parseGapSequence(found->second, defaults.simulation.shellGapSequence)) return UserPreferences();
+		if (found != values.end())
+		{
+			if (!parseGapSequence(found->second, legacyShellGap)) return UserPreferences();
+			hasLegacyShellGap = true;
+		}
 		found = values.find("merge_writeback_mode");
-		if (found != values.end() && !parseMergeWritebackMode(found->second, defaults.simulation.mergeWritebackMode)) return UserPreferences();
+		if (found != values.end())
+		{
+			if (!parseMergeWritebackMode(found->second, legacyMergeWriteback)) return UserPreferences();
+			hasLegacyMergeWriteback = true;
+		}
 		found = values.find("merge_execution_mode");
-		if (found != values.end() && !parseMergeExecutionMode(found->second, defaults.simulation.mergeExecutionMode)) return UserPreferences();
+		if (found != values.end())
+		{
+			if (!parseMergeExecutionMode(found->second, legacyMergeExecution)) return UserPreferences();
+			hasLegacyMergeExecution = true;
+		}
 	}
+	if (hasLegacyShellGap)
+		migrateLegacyAlgorithmOption(defaults, sortinglogic::SortAlgorithm::Shell, "gap_sequence", static_cast<int>(legacyShellGap));
+	if (hasLegacyMergeWriteback)
+		migrateLegacyAlgorithmOption(defaults, sortinglogic::SortAlgorithm::Merge, "writeback_mode", static_cast<int>(legacyMergeWriteback));
+	if (hasLegacyMergeExecution)
+		migrateLegacyAlgorithmOption(defaults, sortinglogic::SortAlgorithm::Merge, "execution_mode", static_cast<int>(legacyMergeExecution));
 	// Stable metadata keys override the compatibility fields above. Unknown or
 	// malformed option IDs are ignored so one bad option cannot discard settings.
 	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
@@ -1030,13 +1049,6 @@ UserPreferences SettingsStore::load() const
 			if (found == values.end() || found->second != option.stableId) continue;
 			const std::string preferenceKey = algorithmOptionSettingsKey(algorithm.familyId, algorithm.variantId, option.groupId);
 			defaults.algorithmOptions[preferenceKey] = option.stableId;
-			if (defaults.simulation.familyId != algorithm.familyId || defaults.simulation.variantId != algorithm.variantId) continue;
-			if (option.target == sortinglogic::AlgorithmOptionTarget::ShellGapSequence)
-				defaults.simulation.shellGapSequence = static_cast<sortinglogic::ShellGapSequence>(option.value);
-			else if (option.target == sortinglogic::AlgorithmOptionTarget::MergeExecutionMode)
-				defaults.simulation.mergeExecutionMode = static_cast<sortinglogic::MergeExecutionMode>(option.value);
-			else if (option.target == sortinglogic::AlgorithmOptionTarget::MergeWritebackMode)
-				defaults.simulation.mergeWritebackMode = static_cast<sortinglogic::MergeWritebackMode>(option.value);
 		}
 	}
 	if (version >= 2)
@@ -1080,6 +1092,17 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 		return false;
 	}
 	const std::wstring temporaryPath = path_ + L".tmp";
+	const sortinglogic::AlgorithmDescriptor* shellDescriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
+	const sortinglogic::AlgorithmDescriptor* mergeDescriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
+	const sortinglogic::ShellGapSequence shellGap = shellDescriptor
+		? static_cast<sortinglogic::ShellGapSequence>(algorithmOptionValue(settings, *shellDescriptor, "gap_sequence"))
+		: sortinglogic::ShellGapSequence::Halving;
+	const sortinglogic::MergeWritebackMode mergeWriteback = mergeDescriptor
+		? static_cast<sortinglogic::MergeWritebackMode>(algorithmOptionValue(settings, *mergeDescriptor, "writeback_mode"))
+		: sortinglogic::MergeWritebackMode::AtomicRangeWrite;
+	const sortinglogic::MergeExecutionMode mergeExecution = mergeDescriptor
+		? static_cast<sortinglogic::MergeExecutionMode>(algorithmOptionValue(settings, *mergeDescriptor, "execution_mode"))
+		: sortinglogic::MergeExecutionMode::BottomUp;
 	std::ostringstream contents;
 	contents << "version=" << CurrentVersion << "\n"
 		<< "palette=" << paletteName(settings.visual.palette) << "\n"
@@ -1107,11 +1130,9 @@ bool SettingsStore::save(const UserPreferences& settings, std::string* error) co
 		<< "profile=" << profileName(settings.simulation.profile) << "\n"
 		<< "domain=" << domainName(settings.simulation.domain) << "\n"
 		<< "pattern=" << patternName(settings.simulation.pattern) << "\n"
-		<< "shell_gap_sequence=" << (settings.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Halving ? "halving" :
-			settings.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Knuth ? "knuth" :
-			settings.simulation.shellGapSequence == sortinglogic::ShellGapSequence::Ciura ? "ciura" : "tokuda") << "\n"
-		<< "merge_writeback_mode=" << mergeWritebackModeName(settings.simulation.mergeWritebackMode) << "\n"
-		<< "merge_execution_mode=" << mergeExecutionModeName(settings.simulation.mergeExecutionMode) << "\n";
+		<< "shell_gap_sequence=" << gapSequenceName(shellGap) << "\n"
+		<< "merge_writeback_mode=" << mergeWritebackModeName(mergeWriteback) << "\n"
+		<< "merge_execution_mode=" << mergeExecutionModeName(mergeExecution) << "\n";
 	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
 	for (std::size_t algorithmIndex = 0; algorithmIndex < optionCatalog.size(); ++algorithmIndex)
 	{

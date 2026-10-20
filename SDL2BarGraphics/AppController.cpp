@@ -121,9 +121,6 @@ AppController::AppController(ISettingsPersistence& settingsPersistence)
 		preferences_.simulation.familyId, preferences_.simulation.variantId);
 	if (savedAlgorithm && sortinglogic::algorithmSupports(savedAlgorithm->id, preferences_.simulation.domain))
 		simulation_.selectAlgorithm(savedAlgorithm->id);
-	simulation_.setShellGapSequence(preferences_.simulation.shellGapSequence);
-	simulation_.setMergeWritebackMode(preferences_.simulation.mergeWritebackMode);
-	simulation_.setMergeExecutionMode(preferences_.simulation.mergeExecutionMode);
 	simulation_.setMergeBufferVisualizationEnabled(preferences_.simulation.mergeBufferVisualizationEnabled);
 	simulation_.setCompletionScanEnabled(preferences_.simulation.completionScanEnabled);
 	const sortinglogic::AlgorithmDescriptor* activeAlgorithm = sortinglogic::algorithmDescriptor(simulation_.algorithm());
@@ -484,15 +481,6 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		else
 		{
 			result = simulation_.setAlgorithmOption(action.optionGroupId, action.optionStableId);
-			if (result.accepted)
-			{
-				if (option->target == sortinglogic::AlgorithmOptionTarget::ShellGapSequence)
-					preferences_.simulation.shellGapSequence = simulation_.shellGapSequence();
-				else if (option->target == sortinglogic::AlgorithmOptionTarget::MergeExecutionMode)
-					preferences_.simulation.mergeExecutionMode = simulation_.mergeExecutionMode();
-				else if (option->target == sortinglogic::AlgorithmOptionTarget::MergeWritebackMode)
-					preferences_.simulation.mergeWritebackMode = simulation_.mergeWritebackMode();
-			}
 		}
 		if (result.accepted && previousStableId != option->stableId)
 			preferences_.algorithmOptions[algorithmOptionSettingsKey(descriptor->familyId, descriptor->variantId,
@@ -508,7 +496,6 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = simulation_.setShellGapSequence(static_cast<sortinglogic::ShellGapSequence>(action.selection));
 			if (result.accepted)
 			{
-				preferences_.simulation.shellGapSequence = static_cast<sortinglogic::ShellGapSequence>(action.selection);
 				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
 				if (descriptor) storeAlgorithmOption(preferences_, *descriptor, "gap_sequence", action.selection);
 			}
@@ -523,7 +510,6 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = simulation_.setMergeWritebackMode(static_cast<sortinglogic::MergeWritebackMode>(action.selection));
 			if (result.accepted)
 			{
-				preferences_.simulation.mergeWritebackMode = simulation_.mergeWritebackMode();
 				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
 				if (descriptor) storeAlgorithmOption(preferences_, *descriptor, "writeback_mode", action.selection);
 			}
@@ -538,7 +524,6 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = simulation_.setMergeExecutionMode(static_cast<sortinglogic::MergeExecutionMode>(action.selection));
 			if (result.accepted)
 			{
-				preferences_.simulation.mergeExecutionMode = simulation_.mergeExecutionMode();
 				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
 				if (descriptor) storeAlgorithmOption(preferences_, *descriptor, "execution_mode", action.selection);
 			}
@@ -734,9 +719,6 @@ void AppController::synchronizeSimulationPreferences()
 	preferences_.simulation.profile = simulation_.profile();
 	preferences_.simulation.domain = simulation_.domain();
 	preferences_.simulation.pattern = simulation_.pattern();
-	preferences_.simulation.shellGapSequence = simulation_.shellGapSequence();
-	preferences_.simulation.mergeWritebackMode = simulation_.mergeWritebackMode();
-	preferences_.simulation.mergeExecutionMode = simulation_.mergeExecutionMode();
 	preferences_.simulation.mergeBufferVisualizationEnabled = simulation_.mergeBufferVisualizationEnabled();
 	preferences_.simulation.completionScanEnabled = simulation_.completionScanEnabled();
 }
