@@ -227,14 +227,29 @@ namespace sortinglogic
 	struct TraceBuildRequest;
 	typedef SortTrace (*AlgorithmTraceRequestBuilder)(const TraceBuildRequest&);
 
+	enum class AlgorithmOptionTarget
+	{
+		Unbound,
+		ShellGapSequence,
+		MergeExecutionMode,
+		MergeWritebackMode,
+		BucketCount,
+		RadixBase,
+		TimeMagnitude,
+		RotateMergeBufferSize
+	};
+
 	struct AlgorithmOptionDescriptor
 	{
 		int value;
 		const char* groupId;
 		const char* stableId;
 		const char* displayName;
-		AlgorithmOptionDescriptor(int optionValue, const char* optionId, const char* name, const char* optionGroup = "primary")
-			: value(optionValue), groupId(optionGroup), stableId(optionId), displayName(name) {}
+		AlgorithmOptionTarget target;
+		bool isDefault;
+		AlgorithmOptionDescriptor(int optionValue, const char* optionId, const char* name, const char* optionGroup = "primary",
+			AlgorithmOptionTarget requestTarget = AlgorithmOptionTarget::Unbound, bool defaultOption = false)
+			: value(optionValue), groupId(optionGroup), stableId(optionId), displayName(name), target(requestTarget), isDefault(defaultOption) {}
 	};
 
 	struct AlgorithmMetricDescriptor

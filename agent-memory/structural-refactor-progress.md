@@ -233,7 +233,7 @@ Next: route stable catalog option selections through the sorting boundary and re
 
 ## 2026-10-19 — resolve stable algorithm options in SortingLogic
 
-Status: implementation and focused verification complete; pending commit.
+Status: committed and pushed as `6615885`.
 
 - Added stable option selections to `TraceBuildRequest`, keyed by catalog group ID and carrying the catalog's stable option ID.
 - `AppController` now forwards those stable selections instead of mapping group-name strings into overloaded numeric request fields.
@@ -248,4 +248,22 @@ Verification:
 - Debug and Release catalog-coverage runs: each passed 1,678 checks with 0 failures.
 - Debug and Release `AppFrameworkTests`: passed.
 
-Next: move the remaining option-group-to-field bindings into explicit catalog metadata, then derive a single effective configuration without removing compatibility adapters prematurely.
+Next: use explicit option targets and defaults as the catalog contract, then derive a single effective configuration without removing compatibility adapters prematurely.
+
+## 2026-10-19 — declare option bindings and defaults in the catalog
+
+Status: implementation and focused verification complete; pending commit.
+
+- Added `AlgorithmOptionTarget` and an explicit default marker to each current choice descriptor. All registered option groups now declare exactly one default and a trace-configuration target.
+- Replaced `TraceBuilder`'s group-name routing with target-based request resolution. App option dispatch and settings migration also use the declared target.
+- Removed the Rotate Merge default-capacity special case from settings resolution. Its 64-item default now comes from catalog metadata; Shell and Merge retain their dedicated legacy fields as compatibility adapters.
+- Added catalog checks for unique stable option IDs within each group, one default per group, and a bound target for every option. Existing settings migration and option-dispatch checks continue to cover effective values.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 39,496 checks with 0 failures.
+- Debug and Release catalog-coverage runs: each passed 1,726 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+
+Next: move the resolved choice values into a named algorithm-configuration value so strategies stop interpreting shared legacy numeric fields such as `bucketCount`; keep existing request fields as a compatibility adapter until every call site is migrated.

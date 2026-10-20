@@ -89,6 +89,22 @@ namespace
 				"catalog stable IDs are unique");
 			check(catalogVariantIds.insert(catalog[i].familyId + "\n" + catalog[i].variantId).second,
 				"catalog family and variant pairs are unique");
+			std::map<std::string, std::size_t> defaultCountByGroup;
+			std::set<std::string> optionIds;
+			for (std::size_t option = 0; option < catalog[i].supportedOptions.size(); ++option)
+			{
+				const AlgorithmOptionDescriptor& descriptor = catalog[i].supportedOptions[option];
+				const std::string group(descriptor.groupId);
+				check(descriptor.target != AlgorithmOptionTarget::Unbound,
+					"catalog options declare a trace-configuration target: " + catalog[i].variantId + "/" + group);
+				check(optionIds.insert(group + "\n" + descriptor.stableId).second,
+					"stable option IDs are unique within each catalog group");
+				if (descriptor.isDefault) ++defaultCountByGroup[group];
+				else defaultCountByGroup.insert(std::make_pair(group, 0));
+			}
+			for (std::map<std::string, std::size_t>::const_iterator group = defaultCountByGroup.begin();
+				group != defaultCountByGroup.end(); ++group)
+				check(group->second == 1, "each catalog option group declares exactly one default: " + catalog[i].variantId + "/" + group->first);
 		}
 
 		std::set<std::string> sourceClasses;

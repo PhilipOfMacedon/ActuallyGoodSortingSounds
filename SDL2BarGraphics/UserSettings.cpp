@@ -642,33 +642,38 @@ std::string algorithmOptionStableId(const UserPreferences& preferences,
 
 	int preferredValue = 0;
 	bool hasPreferredValue = false;
-	if (algorithm.id == sortinglogic::SortAlgorithm::Shell && groupId == "gap_sequence")
-	{
-		preferredValue = static_cast<int>(preferences.simulation.shellGapSequence);
-		hasPreferredValue = true;
-	}
-	else if (algorithm.id == sortinglogic::SortAlgorithm::Merge && groupId == "execution_mode")
-	{
-		preferredValue = static_cast<int>(preferences.simulation.mergeExecutionMode);
-		hasPreferredValue = true;
-	}
-	else if (algorithm.id == sortinglogic::SortAlgorithm::Merge && groupId == "writeback_mode")
-	{
-		preferredValue = static_cast<int>(preferences.simulation.mergeWritebackMode);
-		hasPreferredValue = true;
-	}
-	else if (algorithm.id == sortinglogic::SortAlgorithm::ArrayvOptimizedRotateMerge && groupId == "rotate_buffer_capacity")
-	{
-		preferredValue = 64;
-		hasPreferredValue = true;
-	}
 	for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
 	{
 		const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[i];
-		if (std::string(option.groupId) == groupId && (!hasPreferredValue || option.value == preferredValue))
-			return option.stableId;
+		if (std::string(option.groupId) != groupId) continue;
+		if (algorithm.id == sortinglogic::SortAlgorithm::Shell &&
+			option.target == sortinglogic::AlgorithmOptionTarget::ShellGapSequence)
+		{
+			preferredValue = static_cast<int>(preferences.simulation.shellGapSequence);
+			hasPreferredValue = true;
+		}
+		else if (algorithm.id == sortinglogic::SortAlgorithm::Merge &&
+			option.target == sortinglogic::AlgorithmOptionTarget::MergeExecutionMode)
+		{
+			preferredValue = static_cast<int>(preferences.simulation.mergeExecutionMode);
+			hasPreferredValue = true;
+		}
+		else if (algorithm.id == sortinglogic::SortAlgorithm::Merge &&
+			option.target == sortinglogic::AlgorithmOptionTarget::MergeWritebackMode)
+		{
+			preferredValue = static_cast<int>(preferences.simulation.mergeWritebackMode);
+			hasPreferredValue = true;
+		}
 	}
-	return std::string();
+	const sortinglogic::AlgorithmOptionDescriptor* defaultOption = nullptr;
+	for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
+	{
+		const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[i];
+		if (std::string(option.groupId) != groupId) continue;
+		if (hasPreferredValue && option.value == preferredValue) return option.stableId;
+		if (!defaultOption && option.isDefault) defaultOption = &option;
+	}
+	return hasPreferredValue || !defaultOption ? std::string() : defaultOption->stableId;
 }
 
 int algorithmOptionValue(const UserPreferences& preferences,
@@ -1026,11 +1031,11 @@ UserPreferences SettingsStore::load() const
 			const std::string preferenceKey = algorithmOptionSettingsKey(algorithm.familyId, algorithm.variantId, option.groupId);
 			defaults.algorithmOptions[preferenceKey] = option.stableId;
 			if (defaults.simulation.familyId != algorithm.familyId || defaults.simulation.variantId != algorithm.variantId) continue;
-			if (algorithm.id == sortinglogic::SortAlgorithm::Shell && std::string(option.groupId) == "gap_sequence")
+			if (option.target == sortinglogic::AlgorithmOptionTarget::ShellGapSequence)
 				defaults.simulation.shellGapSequence = static_cast<sortinglogic::ShellGapSequence>(option.value);
-			else if (algorithm.id == sortinglogic::SortAlgorithm::Merge && std::string(option.groupId) == "execution_mode")
+			else if (option.target == sortinglogic::AlgorithmOptionTarget::MergeExecutionMode)
 				defaults.simulation.mergeExecutionMode = static_cast<sortinglogic::MergeExecutionMode>(option.value);
-			else if (algorithm.id == sortinglogic::SortAlgorithm::Merge && std::string(option.groupId) == "writeback_mode")
+			else if (option.target == sortinglogic::AlgorithmOptionTarget::MergeWritebackMode)
 				defaults.simulation.mergeWritebackMode = static_cast<sortinglogic::MergeWritebackMode>(option.value);
 		}
 	}

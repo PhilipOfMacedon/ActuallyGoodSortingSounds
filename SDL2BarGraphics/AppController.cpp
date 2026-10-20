@@ -467,17 +467,17 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			? algorithmOptionStableId(preferences_, *descriptor, action.optionGroupId) : std::string();
 		if (!descriptor || !option || static_cast<sortinglogic::SortAlgorithm>(preferences_.simulation.algorithm) != descriptor->id)
 			result = sortinglogic::CommandResult(false, "The selected algorithm option is not available for the active algorithm.");
-		else if (descriptor->id == sortinglogic::SortAlgorithm::Shell && action.optionGroupId == "gap_sequence")
+		else if (option->target == sortinglogic::AlgorithmOptionTarget::ShellGapSequence)
 		{
 			result = simulation_.setShellGapSequence(static_cast<sortinglogic::ShellGapSequence>(option->value));
 			if (result.accepted) preferences_.simulation.shellGapSequence = simulation_.shellGapSequence();
 		}
-		else if (descriptor->id == sortinglogic::SortAlgorithm::Merge && action.optionGroupId == "execution_mode")
+		else if (option->target == sortinglogic::AlgorithmOptionTarget::MergeExecutionMode)
 		{
 			result = simulation_.setMergeExecutionMode(static_cast<sortinglogic::MergeExecutionMode>(option->value));
 			if (result.accepted) preferences_.simulation.mergeExecutionMode = simulation_.mergeExecutionMode();
 		}
-		else if (descriptor->id == sortinglogic::SortAlgorithm::Merge && action.optionGroupId == "writeback_mode")
+		else if (option->target == sortinglogic::AlgorithmOptionTarget::MergeWritebackMode)
 		{
 			result = simulation_.setMergeWritebackMode(static_cast<sortinglogic::MergeWritebackMode>(option->value));
 			if (result.accepted) preferences_.simulation.mergeWritebackMode = simulation_.mergeWritebackMode();

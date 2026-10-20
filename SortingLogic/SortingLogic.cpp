@@ -10021,10 +10021,14 @@ namespace sortinglogic
 				"partition-sorts", "stackless-dual-pivot", "Partition Sorts", std::vector<SemanticRole>{ SemanticRole::Pivot, SemanticRole::CurrentMaximum, SemanticRole::HeldKey }),
 			AlgorithmDescriptor(SortAlgorithm::Shell, "shell", "Shell Sort", "sequence dependent", "O(1)", false, true, true, true, &buildShellRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Halving), "halving", "Halving", "gap_sequence"),
-					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Knuth), "knuth", "Knuth", "gap_sequence"),
-					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Ciura), "ciura", "Ciura", "gap_sequence"),
-					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Tokuda), "tokuda", "Tokuda", "gap_sequence")
+					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Halving), "halving", "Halving", "gap_sequence",
+						AlgorithmOptionTarget::ShellGapSequence, true),
+					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Knuth), "knuth", "Knuth", "gap_sequence",
+						AlgorithmOptionTarget::ShellGapSequence),
+					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Ciura), "ciura", "Ciura", "gap_sequence",
+						AlgorithmOptionTarget::ShellGapSequence),
+					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Tokuda), "tokuda", "Tokuda", "gap_sequence",
+						AlgorithmOptionTarget::ShellGapSequence)
 				},
 				std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("gap_passes", "Gap passes"),
@@ -10145,11 +10149,11 @@ namespace sortinglogic
 				"merge-hybrid", "parallel-block-merge", "Merge and Hybrid Sorts", std::vector<SemanticRole>{ SemanticRole::HeldKey, SemanticRole::ComparedItem, SemanticRole::AuxiliaryCopy, SemanticRole::WriteTarget }),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvOptimizedRotateMerge, "arrayv.optimized_rotate_merge_sort", "Optimized Rotate Merge Sort", "O(n log n) buffered; O(n log² n) rotation fallback", "Configured power-of-two temporary buffer", true, false, true, true, &buildArrayvOptimizedRotateMergeRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(16, "items_16", "16 items", "rotate_buffer_capacity"),
-					AlgorithmOptionDescriptor(32, "items_32", "32 items", "rotate_buffer_capacity"),
-					AlgorithmOptionDescriptor(64, "items_64", "64 items", "rotate_buffer_capacity"),
-					AlgorithmOptionDescriptor(128, "items_128", "128 items", "rotate_buffer_capacity"),
-					AlgorithmOptionDescriptor(256, "items_256", "256 items", "rotate_buffer_capacity")
+					AlgorithmOptionDescriptor(16, "items_16", "16 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize),
+					AlgorithmOptionDescriptor(32, "items_32", "32 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize),
+					AlgorithmOptionDescriptor(64, "items_64", "64 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize, true),
+					AlgorithmOptionDescriptor(128, "items_128", "128 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize),
+					AlgorithmOptionDescriptor(256, "items_256", "256 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize)
 				}, std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("optimized_rotate_runs", "32-item insertion runs"),
 					AlgorithmMetricDescriptor("optimized_rotate_merges", "Merge ranges"),
@@ -10162,9 +10166,9 @@ namespace sortinglogic
 				"merge-hybrid", "optimized-rotate", "Merge and Hybrid Sorts", std::vector<SemanticRole>{ SemanticRole::ProbedItem, SemanticRole::AuxiliaryCopy, SemanticRole::ComparedItem, SemanticRole::WriteTarget }),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvGrail, "arrayv.grail_sort", "Grail Sort", "O(n log n)", "O(1), fixed 512-item, or O(√n) buffer", true, false, true, true, &buildArrayvGrailRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(0, "in_place", "In-place", "grail_buffer_mode"),
-					AlgorithmOptionDescriptor(1, "static_buffer", "Static buffer (up to 512 items)", "grail_buffer_mode"),
-					AlgorithmOptionDescriptor(2, "dynamic_buffer", "Dynamic √n buffer", "grail_buffer_mode")
+					AlgorithmOptionDescriptor(0, "in_place", "In-place", "grail_buffer_mode", AlgorithmOptionTarget::BucketCount, true),
+					AlgorithmOptionDescriptor(1, "static_buffer", "Static buffer (up to 512 items)", "grail_buffer_mode", AlgorithmOptionTarget::BucketCount),
+					AlgorithmOptionDescriptor(2, "dynamic_buffer", "Dynamic √n buffer", "grail_buffer_mode", AlgorithmOptionTarget::BucketCount)
 				}, std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("grail_runs", "Sixteen-item insertion runs"),
 					AlgorithmMetricDescriptor("grail_merges", "Block merge ranges"),
@@ -10494,10 +10498,14 @@ namespace sortinglogic
 				MaxItemCount, "general permutation sort", "insertion-methods", "recursive-shell", "Insertion Methods", std::vector<SemanticRole>{ SemanticRole::HeldKey }),
 			AlgorithmDescriptor(SortAlgorithm::Merge, "merge", "Merge Sort", "O(n log n)", "O(n)", true, false, true, true, &buildMergeRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(static_cast<int>(MergeExecutionMode::BottomUp), "bottom_up", "Bottom-up", "execution_mode"),
-					AlgorithmOptionDescriptor(static_cast<int>(MergeExecutionMode::TopDown), "top_down", "Top-down", "execution_mode"),
-					AlgorithmOptionDescriptor(static_cast<int>(MergeWritebackMode::AnimatedWrites), "animated_writes", "Animated item writes", "writeback_mode"),
-					AlgorithmOptionDescriptor(static_cast<int>(MergeWritebackMode::AtomicRangeWrite), "compare_then_write_range", "Compare, then write range", "writeback_mode")
+					AlgorithmOptionDescriptor(static_cast<int>(MergeExecutionMode::BottomUp), "bottom_up", "Bottom-up", "execution_mode",
+						AlgorithmOptionTarget::MergeExecutionMode, true),
+					AlgorithmOptionDescriptor(static_cast<int>(MergeExecutionMode::TopDown), "top_down", "Top-down", "execution_mode",
+						AlgorithmOptionTarget::MergeExecutionMode),
+					AlgorithmOptionDescriptor(static_cast<int>(MergeWritebackMode::AnimatedWrites), "animated_writes", "Animated item writes", "writeback_mode",
+						AlgorithmOptionTarget::MergeWritebackMode),
+					AlgorithmOptionDescriptor(static_cast<int>(MergeWritebackMode::AtomicRangeWrite), "compare_then_write_range", "Compare, then write range", "writeback_mode",
+						AlgorithmOptionTarget::MergeWritebackMode, true)
 				}, std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("merge_passes", "Merge passes")
 				}, MaxItemCount, "general permutation sort", "merge-sort", "merge", "Merge Sorts"),
@@ -10682,11 +10690,11 @@ namespace sortinglogic
 				"heap-sorts", "ternary", "Heap Sorts"),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvBaseNHeap, "arrayv.base_n_heap", "Base-N Max Heap Sort", "O(n logᵦ n)", "O(1)", false, true, true, true, &buildArrayvBaseNHeapRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(4, "base_4", "Base 4", "heap_arity"),
-					AlgorithmOptionDescriptor(2, "base_2", "Base 2", "heap_arity"),
-					AlgorithmOptionDescriptor(3, "base_3", "Base 3", "heap_arity"),
-					AlgorithmOptionDescriptor(8, "base_8", "Base 8", "heap_arity"),
-					AlgorithmOptionDescriptor(16, "base_16", "Base 16", "heap_arity")
+					AlgorithmOptionDescriptor(4, "base_4", "Base 4", "heap_arity", AlgorithmOptionTarget::BucketCount, true),
+					AlgorithmOptionDescriptor(2, "base_2", "Base 2", "heap_arity", AlgorithmOptionTarget::BucketCount),
+					AlgorithmOptionDescriptor(3, "base_3", "Base 3", "heap_arity", AlgorithmOptionTarget::BucketCount),
+					AlgorithmOptionDescriptor(8, "base_8", "Base 8", "heap_arity", AlgorithmOptionTarget::BucketCount),
+					AlgorithmOptionDescriptor(16, "base_16", "Base 16", "heap_arity", AlgorithmOptionTarget::BucketCount)
 				}, std::vector<AlgorithmMetricDescriptor>(), MaxItemCount, "general permutation sort",
 				"heap-sorts", "base-n", "Heap Sorts"),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvMinHeap, "arrayv.min_heap", "Min Heap Sort", "O(n log n)", "O(1)", false, true, true, true, &buildArrayvMinHeapRequest,

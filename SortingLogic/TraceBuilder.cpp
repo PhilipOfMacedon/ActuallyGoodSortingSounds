@@ -29,23 +29,32 @@ namespace sortinglogic
 					throw std::invalid_argument("The requested algorithm option ID is not registered for this algorithm.");
 
 				const int value = resolved->value;
-				if (selected->first == "gap_sequence")
+				switch (resolved->target)
+				{
+				case AlgorithmOptionTarget::ShellGapSequence:
 					request.shellGapSequence = static_cast<ShellGapSequence>(value);
-				else if (selected->first == "execution_mode")
+					break;
+				case AlgorithmOptionTarget::MergeExecutionMode:
 					request.mergeExecutionMode = static_cast<MergeExecutionMode>(value);
-				else if (selected->first == "writeback_mode")
+					break;
+				case AlgorithmOptionTarget::MergeWritebackMode:
 					request.mergeWritebackMode = static_cast<MergeWritebackMode>(value);
-				else if (selected->first == "heap_arity" || selected->first == "bucket_count" ||
-					selected->first == "grail_buffer_mode")
+					break;
+				case AlgorithmOptionTarget::BucketCount:
 					request.bucketCount = value;
-				else if (selected->first == "radix_base")
+					break;
+				case AlgorithmOptionTarget::RadixBase:
 					request.radixBase = value;
-				else if (selected->first == "time_magnitude")
+					break;
+				case AlgorithmOptionTarget::TimeMagnitude:
 					request.timeMagnitude = value;
-				else if (selected->first == "rotate_buffer_capacity")
+					break;
+				case AlgorithmOptionTarget::RotateMergeBufferSize:
 					request.rotateMergeBufferSize = value;
-				else
+					break;
+				case AlgorithmOptionTarget::Unbound:
 					throw std::invalid_argument("The requested algorithm option group has no trace configuration binding.");
+				}
 			}
 		}
 	}
