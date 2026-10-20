@@ -2903,79 +2903,7 @@ namespace sortinglogic
 		r.resizeAuxiliary("sqrt_buffer", 0);
 		}
 
-		void stableKWayMerge(Recorder& r, const std::vector<std::size_t>& boundaries, const std::string& lane,
-			const std::string& metricPrefix, const std::string& phaseLabel);
 
-		void ectaSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			for (const char* key : { "ecta_min_run", "ecta_insertion_runs", "ecta_four_way_groups", "ecta_four_way_merges",
-				"ecta_four_way_comparisons", "ecta_four_way_auxiliary_writes", "ecta_four_way_passes",
-				"ecta_binary_merges", "ecta_binary_passes" }) r.declareMetric(key);
-			if (count < 2) return;
-			std::size_t minRun = count;
-			while (minRun >= 32) minRun = (minRun + 1) / 2;
-			minRun = (std::max)(std::size_t(1), minRun);
-			r.setMetric("ecta_min_run", static_cast<std::uint64_t>(minRun));
-			r.resizeAuxiliary("ecta_buffer", count);
-			for (std::size_t first = 0; first < count; first += minRun)
-			{
-				strategies::binaryInsertionRange(r, first, (std::min)(count, first + minRun));
-				r.addMetric("ecta_insertion_runs");
-			}
-
-			std::size_t width = minRun;
-			while (width <= count / 4)
-			{
-				const int phase = r.beginPhase("Ecta four-way ping-pong layer width " + std::to_string(width));
-				for (std::size_t first = 0; first < count; first += width * 4)
-				{
-					std::vector<std::size_t> boundaries;
-					boundaries.reserve(5);
-					for (std::size_t part = 0; part <= 4; ++part)
-						boundaries.push_back((std::min)(count, first + width * part));
-					std::size_t active = 0;
-					for (std::size_t part = 0; part < 4; ++part)
-						if (boundaries[part] < boundaries[part + 1]) ++active;
-					if (active > 1)
-					{
-						stableKWayMerge(r, boundaries, "ecta_buffer", "ecta_four_way", "Ecta four-way block merge");
-						r.addMetric("ecta_four_way_groups");
-						r.addMetric("ecta_four_way_merges");
-					}
-				}
-				r.addMetric("ecta_four_way_passes");
-				r.endPhase(phase, "Ecta four-way ping-pong layer");
-				if (width > count / 16)
-				{
-					width *= 4;
-					break;
-				}
-				width *= 4;
-			}
-
-			r.resizeAuxiliary("merge", count);
-			while (width < count)
-			{
-				const int phase = r.beginPhase("Ecta binary merge tail width " + std::to_string(width));
-				for (std::size_t first = 0; first < count; first += width * 2)
-				{
-					const std::size_t middle = (std::min)(count, first + width);
-					const std::size_t last = (std::min)(count, middle + width);
-					if (middle < last)
-					{
-					detail::traceMergeRange(r, first, middle, last);
-						r.addMetric("ecta_binary_merges");
-					}
-				}
-				r.addMetric("ecta_binary_passes");
-				r.endPhase(phase, "Ecta binary merge tail");
-				if (width > count / 2) break;
-				width *= 2;
-			}
-			r.resizeAuxiliary("merge", 0);
-			r.resizeAuxiliary("ecta_buffer", 0);
-		}
 
 		void circularGrailSort(Recorder& r)
 		{
@@ -3210,50 +3138,6 @@ namespace sortinglogic
 			}
 		}
 
-		void stableKWayMerge(Recorder& r, const std::vector<std::size_t>& boundaries, const std::string& lane,
-			const std::string& metricPrefix, const std::string& phaseLabel)
-		{
-			if (boundaries.size() < 3 || boundaries.front() == boundaries.back()) return;
-			const std::size_t first = boundaries.front(), last = boundaries.back();
-			const std::size_t runCount = boundaries.size() - 1;
-			std::vector<std::size_t> cursors(boundaries.begin(), boundaries.end() - 1);
-			const std::string cursorLane = metricPrefix + "_run_cursors";
-			r.resizeCounters(cursorLane, runCount);
-			for (std::size_t run = 0; run < runCount; ++run)
-				r.writeCounter(cursorLane, run, static_cast<int>(cursors[run]));
-			const std::size_t begin = r.trace.events.size();
-			const int phase = r.beginPhase(phaseLabel);
-			std::size_t output = 0;
-			while (true)
-			{
-				std::size_t selected = runCount;
-				for (std::size_t run = 0; run < runCount; ++run)
-				{
-					if (cursors[run] >= boundaries[run + 1]) continue;
-					if (selected == runCount) { selected = run; continue; }
-					const SortItem candidate = r.at(cursors[run]);
-					const SortItem currentBest = r.at(cursors[selected]);
-					r.compare(candidate, currentBest, cursors[run], cursors[selected], "main", "main",
-						SemanticRole::ProbedItem, SemanticRole::ComparedItem);
-					r.addMetric(metricPrefix + "_comparisons");
-					if (compareItems(candidate, currentBest, r.trace.direction) == ComparisonResult::Less) selected = run;
-					r.chargeWork();
-				}
-				if (selected == runCount) break;
-				r.writeAuxiliary(lane, output++, r.at(cursors[selected]));
-				++cursors[selected];
-				r.writeCounter(cursorLane, selected, static_cast<int>(cursors[selected]));
-				r.addMetric(metricPrefix + "_auxiliary_writes");
-			}
-			if (output != last - first) throw std::logic_error("K-way merge did not consume every input item.");
-			for (std::size_t index = first; index < last; ++index)
-				r.writeMain(index, r.auxiliaryAt(lane, index - first), SemanticRole::WriteTarget);
-			r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, phaseLabel, begin);
-			r.addMetric(metricPrefix + "_merges");
-			r.endPhase(phase, phaseLabel);
-			r.resizeCounters(cursorLane, 0);
-		}
-
 		void stableBinaryMergeSortRange(Recorder& r, std::size_t first, std::size_t last, const std::string& metricPrefix)
 		{
 			for (std::size_t start = first; start < last; start += 8)
@@ -3313,7 +3197,7 @@ namespace sortinglogic
 						boundaries.push_back(boundary);
 					boundaries.push_back((std::min)(count, first + groupSpan));
 					if (boundaries.size() > 2)
-						stableKWayMerge(r, boundaries, "remi_buffer", "remi", "Remi run-heap merge group");
+						detail::traceStableKWayMerge(r, boundaries, "remi_buffer", "remi", "Remi run-heap merge group");
 					++nextRunCount;
 				}
 				r.endPhase(phase, "Remi multiway merge level");
@@ -3647,7 +3531,7 @@ namespace sortinglogic
 					boundaries.push_back((std::min)(count, first + groupWidth));
 					if (boundaries.size() > 2)
 					{
-						stableKWayMerge(r, boundaries, "kota_block_buffer", "kota", "Kota four-block merge");
+						detail::traceStableKWayMerge(r, boundaries, "kota_block_buffer", "kota", "Kota four-block merge");
 					}
 				}
 				r.addMetric("kota_merge_levels"); r.endPhase(phase, "Kota block merge level");
@@ -3703,7 +3587,7 @@ namespace sortinglogic
 					if (middle < last)
 					{
 						std::vector<std::size_t> pairBoundaries; pairBoundaries.push_back(first); pairBoundaries.push_back(middle); pairBoundaries.push_back(last);
-						stableKWayMerge(r, pairBoundaries, "chalice_buffer", "chalice", "Chalice block merge");
+						detail::traceStableKWayMerge(r, pairBoundaries, "chalice_buffer", "chalice", "Chalice block merge");
 					}
 					next.push_back(last);
 				}
@@ -3875,7 +3759,7 @@ namespace sortinglogic
 			}
 			r.resizeAuxiliary("merge", 0);
 			r.resizeAuxiliary("fifth_buffer", count);
-			stableKWayMerge(r, boundaries, "fifth_buffer", "fifth", "Five-part stable merge");
+			detail::traceStableKWayMerge(r, boundaries, "fifth_buffer", "fifth", "Five-part stable merge");
 			r.resizeAuxiliary("fifth_buffer", 0);
 		}
 
@@ -3905,7 +3789,7 @@ namespace sortinglogic
 						if (boundaries[part] < boundaries[part + 1]) ++activeRuns;
 					if (activeRuns > 1)
 					{
-						stableKWayMerge(r, boundaries, "quad_buffer", "quad", "Quad four-run merge");
+						detail::traceStableKWayMerge(r, boundaries, "quad_buffer", "quad", "Quad four-run merge");
 						r.addMetric("quad_merged_groups");
 					}
 				}
@@ -5943,7 +5827,6 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvAdaptiveGrail: adaptiveGrailSort(recorder); break;
 				case SortAlgorithm::ArrayvSqrt: sqrtMergeSort(recorder, false); break;
 				case SortAlgorithm::ArrayvSynchronousSqrt: sqrtMergeSort(recorder, true); break;
-				case SortAlgorithm::ArrayvEcta: ectaSort(recorder); break;
 				case SortAlgorithm::ArrayvCircularGrail: circularGrailSort(recorder); break;
 				case SortAlgorithm::ArrayvUnstableGrail: unstableGrailSort(recorder); break;
 				case SortAlgorithm::ArrayvDropMerge: dropMergeSort(recorder); break;
@@ -6075,7 +5958,7 @@ namespace sortinglogic
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvPDQBranchlessRequest, ArrayvPDQBranchless, &strategies::pdqBranchlessStrategy)
 		SORT_REQUEST_BUILDER(buildArrayvSqrtRequest, ArrayvSqrt)
 		SORT_REQUEST_BUILDER(buildArrayvSynchronousSqrtRequest, ArrayvSynchronousSqrt)
-		SORT_REQUEST_BUILDER(buildArrayvEctaRequest, ArrayvEcta)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvEctaRequest, ArrayvEcta, &strategies::ectaStrategy)
 		SORT_REQUEST_BUILDER(buildArrayvCircularGrailRequest, ArrayvCircularGrail)
 		SORT_REQUEST_BUILDER(buildArrayvUnstableGrailRequest, ArrayvUnstableGrail)
 		SORT_REQUEST_BUILDER(buildArrayvDropMergeRequest, ArrayvDropMerge)

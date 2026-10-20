@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 namespace sortinglogic
 {
@@ -249,8 +250,81 @@ namespace sortinglogic
 					optimizedBottomUpMergePass(r, width * 2, true);
 				}
 			}
+
+
+			void ectaSortInternal(Recorder& r)
+			{
+				const std::size_t count = r.state.slots.size();
+				for (const char* key : { "ecta_min_run", "ecta_insertion_runs", "ecta_four_way_groups", "ecta_four_way_merges",
+					"ecta_four_way_comparisons", "ecta_four_way_auxiliary_writes", "ecta_four_way_passes",
+					"ecta_binary_merges", "ecta_binary_passes" }) r.declareMetric(key);
+				if (count < 2) return;
+				std::size_t minRun = count;
+				while (minRun >= 32) minRun = (minRun + 1) / 2;
+				minRun = (std::max)(std::size_t(1), minRun);
+				r.setMetric("ecta_min_run", static_cast<std::uint64_t>(minRun));
+				r.resizeAuxiliary("ecta_buffer", count);
+				for (std::size_t first = 0; first < count; first += minRun)
+				{
+					strategies::binaryInsertionRange(r, first, (std::min)(count, first + minRun));
+					r.addMetric("ecta_insertion_runs");
+				}
+
+				std::size_t width = minRun;
+				while (width <= count / 4)
+				{
+					const int phase = r.beginPhase("Ecta four-way ping-pong layer width " + std::to_string(width));
+					for (std::size_t first = 0; first < count; first += width * 4)
+					{
+						std::vector<std::size_t> boundaries;
+						boundaries.reserve(5);
+						for (std::size_t part = 0; part <= 4; ++part)
+							boundaries.push_back((std::min)(count, first + width * part));
+						std::size_t active = 0;
+						for (std::size_t part = 0; part < 4; ++part)
+							if (boundaries[part] < boundaries[part + 1]) ++active;
+						if (active > 1)
+						{
+							detail::traceStableKWayMerge(r, boundaries, "ecta_buffer", "ecta_four_way", "Ecta four-way block merge");
+							r.addMetric("ecta_four_way_groups");
+							r.addMetric("ecta_four_way_merges");
+						}
+					}
+					r.addMetric("ecta_four_way_passes");
+					r.endPhase(phase, "Ecta four-way ping-pong layer");
+					if (width > count / 16)
+					{
+						width *= 4;
+						break;
+					}
+					width *= 4;
+				}
+
+				r.resizeAuxiliary("merge", count);
+				while (width < count)
+				{
+					const int phase = r.beginPhase("Ecta binary merge tail width " + std::to_string(width));
+					for (std::size_t first = 0; first < count; first += width * 2)
+					{
+						const std::size_t middle = (std::min)(count, first + width);
+						const std::size_t last = (std::min)(count, middle + width);
+						if (middle < last)
+						{
+						detail::traceMergeRange(r, first, middle, last);
+							r.addMetric("ecta_binary_merges");
+						}
+					}
+					r.addMetric("ecta_binary_passes");
+					r.endPhase(phase, "Ecta binary merge tail");
+					if (width > count / 2) break;
+					width *= 2;
+				}
+				r.resizeAuxiliary("merge", 0);
+				r.resizeAuxiliary("ecta_buffer", 0);
+			}
 		}
 
+		void ectaStrategy(Recorder& r) { ectaSortInternal(r); }
 		void mergeSortStrategy(Recorder& r) { mergeSort(r); }
 		void binaryMergeStrategy(Recorder& r) { binaryMergeSort(r); }
 		void iterativeTopDownMergeStrategy(Recorder& r) { iterativeTopDownMergeSort(r); }

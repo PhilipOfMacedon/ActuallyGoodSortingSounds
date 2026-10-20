@@ -76,6 +76,7 @@ namespace sortinglogic
 		void parallelRotateMergeStrategy(detail::Recorder& recorder);
 		void stacklessRotateMergeStrategy(detail::Recorder& recorder);
 		void optimizedBottomUpMergeStrategy(detail::Recorder& recorder);
+		void ectaStrategy(detail::Recorder& recorder);
 		void optimizedBubble(detail::Recorder& recorder);
 		void optimizedCocktail(detail::Recorder& recorder);
 		void selection(detail::Recorder& recorder);

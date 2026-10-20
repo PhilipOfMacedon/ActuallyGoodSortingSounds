@@ -1345,3 +1345,17 @@ Verification:
 - `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
 
 Next: continue auditing remaining cross-family merge helpers, then resume the settings/configuration, UI ownership, and measured rendering items in the structural audit.
+
+## 2026-10-20 — extract ECTA and shared stable k-way merge
+
+ECTA Sort now lives in `SortingLogic/MergeStrategies.cpp` and is registered through its direct strategy builder. The stable k-way merge recorder moved into `MergeTraceUtilities` and is shared by ECTA, Remi, Kota, Chalice, Fifth, and Quad merge paths. The fallback switch no longer owns ECTA dispatch.
+
+The extraction preserves the existing cursor-counter lane, comparison/probe roles, work charges, phase markers, annotations, metrics, workspace writes, and event order. It is an ownership refactor, not a claim of faster execution.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x86/x64 Debug and Release.
+- In every configuration, focused ECTA tests passed 120,305 checks; Remi passed 3,789; Fifth/Quad multiway merge passed 189,394; merge-roster tail passed 17,048; core contracts passed 39,535; and pinned-catalog coverage passed 1,741. All suites reported 0 failures.
+- `git diff --check` passed.
+
+Next: continue with the remaining sorting-core concentration only where a cohesive ownership boundary exists; otherwise move to the audit's settings/configuration and UI ownership findings rather than splitting files mechanically.
