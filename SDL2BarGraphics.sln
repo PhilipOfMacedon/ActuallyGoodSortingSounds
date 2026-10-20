@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31912.275
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SDL2BarGraphics", "SDL2BarGraphics\SDL2BarGraphics.vcxproj", "{FC9A201F-2391-4593-911B-145EFD1B51FA}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AppFramework", "SDL2BarGraphics\AppFramework.vcxproj", "{72B4D829-70E0-4A0F-87C0-35D502D92A81}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SortingLogic", "SortingLogic\SortingLogic.vcxproj", "{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SortingLogicTests", "SortingLogicTests\SortingLogicTests.vcxproj", "{42CB9D8C-0876-4C60-8FD8-6BA3C1EE30A5}"
@@ -33,6 +35,14 @@ Global
 		{FC9A201F-2391-4593-911B-145EFD1B51FA}.Release|x64.Build.0 = Release|x64
 		{FC9A201F-2391-4593-911B-145EFD1B51FA}.Release|x86.ActiveCfg = Release|Win32
 		{FC9A201F-2391-4593-911B-145EFD1B51FA}.Release|x86.Build.0 = Release|Win32
+		{72B4D829-70E0-4A0F-87C0-35D502D92A81}.Debug|x64.ActiveCfg = Debug|x64
+		{72B4D829-70E0-4A0F-87C0-35D502D92A81}.Debug|x64.Build.0 = Debug|x64
+		{72B4D829-70E0-4A0F-87C0-35D502D92A81}.Debug|x86.ActiveCfg = Debug|Win32
+		{72B4D829-70E0-4A0F-87C0-35D502D92A81}.Debug|x86.Build.0 = Debug|Win32
+		{72B4D829-70E0-4A0F-87C0-35D502D92A81}.Release|x64.ActiveCfg = Release|x64
+		{72B4D829-70E0-4A0F-87C0-35D502D92A81}.Release|x64.Build.0 = Release|x64
+		{72B4D829-70E0-4A0F-87C0-35D502D92A81}.Release|x86.ActiveCfg = Release|Win32
+		{72B4D829-70E0-4A0F-87C0-35D502D92A81}.Release|x86.Build.0 = Release|Win32
 		{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}.Debug|x64.ActiveCfg = Debug|x64
 		{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}.Debug|x64.Build.0 = Debug|x64
 		{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}.Debug|x86.ActiveCfg = Debug|Win32

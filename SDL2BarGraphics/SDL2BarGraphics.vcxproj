@@ -19,44 +19,19 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AppearanceEditorLayout.cpp" />
-    <ClCompile Include="AppearanceEditorModel.cpp" />
-    <ClCompile Include="ActiveRoleLookup.cpp" />
-    <ClCompile Include="AppController.cpp" />
-    <ClCompile Include="AudioSettingsActions.cpp" />
-    <ClCompile Include="AlgorithmBrowserModel.cpp" />
-    <ClCompile Include="AlgorithmBrowserView.cpp" />
-    <ClCompile Include="SettingsPanelView.cpp" />
-    <ClCompile Include="SettingsPanelModel.cpp" />
-    <ClCompile Include="SettingsPanelControls.cpp" />
-    <ClCompile Include="SettingsPanelLayout.cpp" />
-    <ClCompile Include="AudioPresentationBridge.cpp" />
-    <ClCompile Include="PlaybackCoordinator.cpp" />
     <ClCompile Include="PlaybackFrameCoordinator.cpp" />
-    <ClCompile Include="PlaybackTimebase.cpp" />
     <ClCompile Include="ArrayRenderer.cpp" />
     <ClCompile Include="AssetPaths.cpp" />
     <ClCompile Include="ControlPanel.cpp" />
     <ClCompile Include="FrameCoordinator.cpp" />
-    <ClCompile Include="LayoutMetrics.cpp" />
     <ClCompile Include="Renderer2D.cpp" />
     <ClCompile Include="SDL2BarGraphics.cpp" />
     <ClCompile Include="SdlAudioOutput.cpp" />
     <ClCompile Include="SdlUiEventAdapter.cpp" />
+    <ClCompile Include="WindowsFontCatalog.cpp" />
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="TextLabel.cpp" />
-    <ClCompile Include="TextBlockLayout.cpp" />
     <ClCompile Include="ThemePalette.cpp" />
-    <ClCompile Include="UiLayer.cpp" />
-    <ClCompile Include="UiAppearance.cpp" />
-    <ClCompile Include="UiArchitecture.cpp" />
-    <ClCompile Include="UiActionRouting.cpp" />
-    <ClCompile Include="AlgorithmAudioPreferences.cpp" />
-    <ClCompile Include="SettingsFileStorage.cpp" />
-    <ClCompile Include="SettingsIniCodec.cpp" />
-    <ClCompile Include="UserSettingsValidation.cpp" />
-    <ClCompile Include="WindowsFontCatalog.cpp" />
-    <ClCompile Include="UserSettings.cpp" />
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -246,6 +221,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ProjectReference Include="AppFramework.vcxproj">
+      <Project>{72B4D829-70E0-4A0F-87C0-35D502D92A81}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\SortingLogic\SortingLogic.vcxproj">
       <Project>{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}</Project>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>

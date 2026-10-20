@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -15,38 +15,16 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AppearanceEditorLayout.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="AppearanceEditorModel.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="ActiveRoleLookup.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="AlgorithmBrowserModel.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="AlgorithmBrowserView.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SettingsPanelView.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SettingsPanelModel.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SettingsPanelControls.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SettingsPanelLayout.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AppController.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="AudioSettingsActions.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="AudioPresentationBridge.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="PlaybackCoordinator.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="PlaybackFrameCoordinator.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="PlaybackTimebase.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ControlPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="FrameCoordinator.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="LayoutMetrics.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Renderer2D.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ThemePalette.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="UiLayer.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="UiActionRouting.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="AlgorithmAudioPreferences.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SettingsFileStorage.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SettingsIniCodec.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="UserSettingsValidation.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="UserSettings.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Shader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -59,10 +37,10 @@
     </ClCompile>
     <ClCompile Include="SdlAudioOutput.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SdlUiEventAdapter.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WindowsFontCatalog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="TextLabel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TextBlockLayout.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AppearanceEditorLayout.h"><Filter>Header Files</Filter></ClInclude>

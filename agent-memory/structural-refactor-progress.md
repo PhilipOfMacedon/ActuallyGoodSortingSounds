@@ -939,4 +939,24 @@ Verification:
 - `SortingLogicTests --core-contracts-only` passed in both configurations with 39,535 checks and 0 failures.
 - `git diff --check` passed; configured LF-to-CRLF notices only.
 
-Next: review the external dependency-root override and application/test source ownership, then continue narrowing UI and rendering boundaries from measured evidence.
+Follow-up: the next section records the shared app-framework target and test ownership change.
+
+## 2026-10-20 — share app framework sources between app and tests
+
+Status: implementation and four-configuration regression verification complete.
+
+- Added one C++14 `AppFramework` static library for reusable application coordination, settings, UI models/presentation, audio presentation, and layout code. The app and `AppFrameworkTests` now consume the same compiled objects.
+- Removed 27 duplicated application source entries from `AppFrameworkTests.vcxproj`; it now compiles its test harness and the two platform adapters it directly tests. The SDL/OpenGL application target no longer recompiles the shared framework sources.
+- Kept SDL event translation and DirectWrite font enumeration with the application/test hosts. `AppFramework` imports no SDL/GLEW/GLM property sheet and requires none of those headers. SortingLogic and SoundEngine remain explicit project dependencies and are linked by each final executable.
+- Preserved the four existing solution configurations and moved the shared source filter entries to the framework project.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64 Debug/Release and Win32 Debug/Release.
+- `AppFrameworkTests` passed in all four configurations.
+- `SortingLogicTests --core-contracts-only` passed in all four configurations with 39,535 checks and 0 failures.
+- The x64 Debug app launched from `%TEMP%`, remained active after three seconds, and emitted no asset errors.
+- Release links emit `LNK4020` warnings about type records in static-library PDBs; linking succeeds and the resulting app/test executables pass. Debug-symbol type data remains a separate build-quality issue.
+- `git diff --check` passed; configured LF-to-CRLF notices only.
+
+Next: make the external library root locally overridable without changing the current fallback, then review remaining UI/rendering ownership and measured duplication.

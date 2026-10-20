@@ -30,35 +30,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AppFrameworkTests.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\ActiveRoleLookup.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\AppearanceEditorLayout.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\AppearanceEditorModel.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\AlgorithmBrowserModel.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\AlgorithmBrowserView.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\SettingsPanelView.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\SettingsPanelModel.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\SettingsPanelControls.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\SettingsPanelLayout.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\AudioPresentationBridge.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\PlaybackCoordinator.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\PlaybackTimebase.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\AppController.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\AudioSettingsActions.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\SdlUiEventAdapter.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\LayoutMetrics.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\UiLayer.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\UiAppearance.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\UiArchitecture.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\UiActionRouting.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\TextBlockLayout.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\WindowsFontCatalog.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\AlgorithmAudioPreferences.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\SettingsFileStorage.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\SettingsIniCodec.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\UserSettingsValidation.cpp" />
-    <ClCompile Include="..\SDL2BarGraphics\UserSettings.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\SDL2BarGraphics\AppFramework.vcxproj">
+      <Project>{72B4D829-70E0-4A0F-87C0-35D502D92A81}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\SortingLogic\SortingLogic.vcxproj">
       <Project>{2C6F0D1F-0E2B-4F4F-B144-CA9D6E0EA053}</Project>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
