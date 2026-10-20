@@ -16,8 +16,8 @@ namespace sortinglogic
 		request.direction = direction;
 		request.inputSeed = inputSeed;
 		request.algorithm = SortAlgorithm::Insertion;
-		request.profile = input.empty() || !input[0].hasIntegerKey ? InputProfile::NormalizedFloat : InputProfile::IntegerKeys;
-		request.domain = request.profile == InputProfile::NormalizedFloat ? InputDomain::NormalizedFloats : InputDomain::NonnegativeIntegerKeys;
+		request.domain = input.empty() || !input[0].hasIntegerKey
+			? InputDomain::NormalizedFloats : InputDomain::NonnegativeIntegerKeys;
 		return build(request);
 	}
 
@@ -31,14 +31,14 @@ namespace sortinglogic
 			throw std::invalid_argument("The requested family and variant IDs do not match the registered algorithm.");
 		TraceBuildRequest resolvedRequest = request;
 		resolvedRequest.configuration = detail::resolveAlgorithmConfiguration(request, *descriptor);
-		detail::projectAlgorithmConfigurationToLegacyFields(resolvedRequest, resolvedRequest.configuration, *descriptor);
+		resolvedRequest.domain = effectiveDomain(request);
 		if (resolvedRequest.configuration.mergeWritebackMode != MergeWritebackMode::AnimatedWrites &&
 			resolvedRequest.configuration.mergeWritebackMode != MergeWritebackMode::AtomicRangeWrite)
 			throw std::invalid_argument("The requested Merge Sort writeback mode is invalid.");
 		if (resolvedRequest.configuration.mergeExecutionMode != MergeExecutionMode::BottomUp &&
 			resolvedRequest.configuration.mergeExecutionMode != MergeExecutionMode::TopDown)
 			throw std::invalid_argument("The requested Merge Sort execution mode is invalid.");
-		const InputDomain domain = effectiveDomain(resolvedRequest);
+		const InputDomain domain = resolvedRequest.domain;
 		if (!inputPatternCompatible(domain, resolvedRequest.pattern))
 			throw std::invalid_argument("The selected input pattern is incompatible with this data domain.");
 		if (resolvedRequest.input.size() > descriptor->safeMaxItemCount)

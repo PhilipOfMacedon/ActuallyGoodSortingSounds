@@ -4127,8 +4127,7 @@ namespace
 		}
 		check(app.snapshot().hasTrace, "Shell trace completes through the existing single-job service");
 		const std::shared_ptr<const sortinglogic::SortTrace> shellTrace = app.simulation().currentTrace();
-		check(shellTrace && shellTrace->shellGapSequence == sortinglogic::ShellGapSequence::Tokuda &&
-			shellTrace->configuration.shellGapSequence == sortinglogic::ShellGapSequence::Tokuda,
+		check(shellTrace && shellTrace->configuration.shellGapSequence == sortinglogic::ShellGapSequence::Tokuda,
 			"stable Shell option selection is resolved into the built trace");
 		check(app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted, "showcase trace starts playback");
 		const int writesBeforeBusyProfile = persistence.writes;
@@ -4198,9 +4197,7 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> mergeTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(mergeTrace && mergeTrace->mergeExecutionMode == sortinglogic::MergeExecutionMode::TopDown &&
-			mergeTrace->mergeWritebackMode == sortinglogic::MergeWritebackMode::AnimatedWrites &&
-			mergeTrace->configuration.mergeExecutionMode == sortinglogic::MergeExecutionMode::TopDown &&
+		check(mergeTrace && mergeTrace->configuration.mergeExecutionMode == sortinglogic::MergeExecutionMode::TopDown &&
 			mergeTrace->configuration.mergeWritebackMode == sortinglogic::MergeWritebackMode::AnimatedWrites,
 			"stable Merge option selections resolve into the trace independently");
 
@@ -4222,7 +4219,7 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> baseNTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(baseNTrace && baseNTrace->bucketCount == 8 && baseNTrace->configuration.heapArity == 8 &&
+		check(baseNTrace && baseNTrace->configuration.heapArity == 8 &&
 			app.simulation().algorithmConfiguration().heapArity == 8,
 			"AppController routes catalog-selected heap arity into the immutable trace request");
 
@@ -4247,8 +4244,7 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> rotateTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(rotateTrace && rotateTrace->rotateMergeBufferSize == 16 &&
-			rotateTrace->configuration.rotateMergeBufferSize == 16,
+		check(rotateTrace && rotateTrace->configuration.rotateMergeBufferSize == 16,
 			"AppController routes configured temporary-buffer capacity into the immutable trace request");
 
 		const sortinglogic::AlgorithmDescriptor* grail = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::ArrayvGrail);
@@ -4266,8 +4262,7 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> grailTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(grailTrace && grailTrace->bucketCount == 1 &&
-			grailTrace->configuration.grailBufferMode == sortinglogic::GrailBufferMode::StaticBuffer,
+		check(grailTrace && grailTrace->configuration.grailBufferMode == sortinglogic::GrailBufferMode::StaticBuffer,
 			"AppController routes Grail's selected buffer mode into the immutable trace request");
 	}
 

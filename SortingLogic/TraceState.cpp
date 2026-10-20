@@ -25,9 +25,7 @@ SemanticEvent::SemanticEvent()
 	SortTrace::SortTrace()
 		: algorithm(SortAlgorithm::Insertion), familyId("insertion"), variantId("standard"),
 		direction(SortDirection::Ascending), domain(InputDomain::NormalizedFloats),
-		pattern(InputPattern::Random), configuration(), shellGapSequence(ShellGapSequence::Halving),
-		mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite), mergeExecutionMode(MergeExecutionMode::BottomUp),
-		mergeBufferVisualizationEnabled(true), radixBase(0), bucketCount(0), timeMagnitude(10), rotateMergeBufferSize(64),
+		pattern(InputPattern::Random), configuration(), mergeBufferVisualizationEnabled(true),
 		inputSeed(0), input(), initialState(), events(),
 		comparisonEventIndices(), probeEventIndices(), audioEventIndices(), annotations(), snapshots(), operationCount(0), workSteps(0),
 		accountedBytes(0), complete(true), outcome(AlgorithmOutcome::SortedPermutation), completionReason()

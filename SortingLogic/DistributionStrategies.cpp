@@ -130,11 +130,6 @@ namespace sortinglogic
 			return direction == SortDirection::Ascending ? key : ~key;
 		}
 
-		std::size_t boundedRadix(const TraceBuildRequest& request, std::size_t fallback)
-		{
-			return static_cast<std::size_t>(request.configuration.bucketCount >= 2 ? std::min(request.configuration.bucketCount, 256) : fallback);
-		}
-
 		std::size_t maxKeyBits(const Recorder& r)
 		{
 			std::uint32_t maximum = 0;
@@ -149,7 +144,7 @@ namespace sortinglogic
 		{
 			const std::size_t n = r.state.slots.size();
 			if (n < 2) return;
-			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.bucketCount >= 2 ? std::min(r.trace.configuration.bucketCount, 256) : 128);
+			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 256) : 128);
 			std::size_t bitsPerDigit = 0;
 			while ((static_cast<std::size_t>(1) << bitsPerDigit) < base) ++bitsPerDigit;
 			const std::size_t actualBase = static_cast<std::size_t>(1) << bitsPerDigit;
@@ -308,7 +303,7 @@ namespace sortinglogic
 		{
 			const std::size_t n = r.state.slots.size();
 			if (n < 2) return;
-			const std::size_t requested = static_cast<std::size_t>(r.trace.configuration.bucketCount >= 2 ? std::min(r.trace.configuration.bucketCount, 256) : 16);
+			const std::size_t requested = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 256) : 16);
 			std::size_t bits = 0;
 			while ((static_cast<std::size_t>(1) << bits) < requested) ++bits;
 			const std::size_t base = static_cast<std::size_t>(1) << bits;

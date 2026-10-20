@@ -412,10 +412,7 @@ namespace sortinglogic
 		const AlgorithmDescriptor* selected = algorithmDescriptor(algorithm_);
 		request.familyId = selected ? selected->familyId : FamilyId();
 		request.variantId = selected ? selected->variantId : VariantId();
-		request.profile = inputProfileForDomain(domain_); request.domain = domain_; request.pattern = pattern_;
-		request.shellGapSequence = algorithmConfiguration_.shellGapSequence;
-		request.mergeWritebackMode = algorithmConfiguration_.mergeWritebackMode;
-		request.mergeExecutionMode = algorithmConfiguration_.mergeExecutionMode;
+		request.domain = domain_; request.pattern = pattern_;
 		request.setConfiguration(algorithmConfiguration_);
 		request.completionScanEnabled = completionScanEnabled_;
 		request.mergeBufferVisualizationEnabled = mergeBufferVisualizationEnabled_;

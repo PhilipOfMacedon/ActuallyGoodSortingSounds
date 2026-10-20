@@ -382,9 +382,7 @@ namespace
 		stableOptionRequest.optionSelections["execution_mode"] = "top_down";
 		stableOptionRequest.optionSelections["writeback_mode"] = "animated_writes";
 		const SortTrace stableOptionTrace = SortTraceBuilder::build(stableOptionRequest);
-		check(stableOptionTrace.mergeExecutionMode == MergeExecutionMode::TopDown &&
-			stableOptionTrace.mergeWritebackMode == MergeWritebackMode::AnimatedWrites &&
-			stableOptionTrace.configuration.mergeExecutionMode == MergeExecutionMode::TopDown &&
+		check(stableOptionTrace.configuration.mergeExecutionMode == MergeExecutionMode::TopDown &&
 			stableOptionTrace.configuration.mergeWritebackMode == MergeWritebackMode::AnimatedWrites &&
 			stableOptionTrace.events.size() == topDownAnimated.events.size(),
 			"stable Merge option IDs override legacy request fields and resolve to the same configured trace");
@@ -393,8 +391,7 @@ namespace
 		AlgorithmConfiguration explicitConfiguration;
 		explicitConfigurationRequest.setConfiguration(explicitConfiguration);
 		const SortTrace explicitConfigurationTrace = SortTraceBuilder::build(explicitConfigurationRequest);
-		check(explicitConfigurationTrace.configuration.mergeExecutionMode == MergeExecutionMode::BottomUp &&
-			explicitConfigurationTrace.mergeExecutionMode == MergeExecutionMode::BottomUp,
+		check(explicitConfigurationTrace.configuration.mergeExecutionMode == MergeExecutionMode::BottomUp,
 			"explicit typed configuration takes precedence over a conflicting legacy request field, including its default value");
 		TraceBuildRequest typedHeapRequest;
 		typedHeapRequest.input = floats({ 0.8f, 0.1f, 0.6f, 0.2f, 0.4f, 0.3f });
@@ -406,9 +403,23 @@ namespace
 		const SortTrace typedHeapTrace = SortTraceBuilder::build(typedHeapRequest);
 		SortState typedHeapEnd = typedHeapTrace.initialState;
 		for (std::size_t i = 0; i < typedHeapTrace.events.size(); ++i) applyEventForward(typedHeapEnd, typedHeapTrace.events[i]);
-		check(typedHeapTrace.configuration.heapArity == 8 && typedHeapTrace.bucketCount == 8 &&
+		check(typedHeapTrace.configuration.heapArity == 8 &&
 			isSorted(typedHeapEnd, SortDirection::Ascending),
-			"typed Base-N heap arity drives the strategy and projects the effective value to the legacy trace field");
+			"typed Base-N heap arity drives the strategy without duplicating it in trace metadata");
+		const SortAlgorithm legacyBucketRadixAlgorithms[] = {
+			SortAlgorithm::ArrayvAmericanFlag, SortAlgorithm::ArrayvStacklessAmericanFlag
+		};
+		for (std::size_t i = 0; i < sizeof(legacyBucketRadixAlgorithms) / sizeof(legacyBucketRadixAlgorithms[0]); ++i)
+		{
+			TraceBuildRequest legacyBucketRequest;
+			legacyBucketRequest.algorithm = legacyBucketRadixAlgorithms[i];
+			legacyBucketRequest.domain = InputDomain::NonnegativeIntegerKeys;
+			legacyBucketRequest.bucketCount = 4;
+			legacyBucketRequest.input = integers({ 3, 0, 2, 1 });
+			const SortTrace legacyBucketTrace = SortTraceBuilder::build(legacyBucketRequest);
+			check(legacyBucketTrace.configuration.radixBase == 4,
+				"legacy bucket count resolves to the typed radix base for " + std::string(algorithmDisplayName(legacyBucketRadixAlgorithms[i])));
+		}
 		TraceBuildRequest invalidTypedHeapRequest = typedHeapRequest;
 		AlgorithmConfiguration invalidTypedHeapConfiguration;
 		invalidTypedHeapConfiguration.heapArity = 1;
@@ -445,7 +456,7 @@ namespace
 		SortState topDownAtomicEnd = topDownAtomic.initialState, topDownAnimatedEnd = topDownAnimated.initialState;
 		for (std::size_t i = 0; i < topDownAtomic.events.size(); ++i) applyEventForward(topDownAtomicEnd, topDownAtomic.events[i]);
 		for (std::size_t i = 0; i < topDownAnimated.events.size(); ++i) applyEventForward(topDownAnimatedEnd, topDownAnimated.events[i]);
-		check(topDownAtomic.mergeExecutionMode == MergeExecutionMode::TopDown &&
+		check(topDownAtomic.configuration.mergeExecutionMode == MergeExecutionMode::TopDown &&
 			isSorted(topDownAtomicEnd, SortDirection::Ascending) && isSorted(topDownAnimatedEnd, SortDirection::Ascending) &&
 			sameSlots(topDownAtomicEnd.slots, topDownAnimatedEnd.slots),
 			"top-down Merge supports both independent writeback styles and reaches the same result");
@@ -596,7 +607,7 @@ namespace
 				for (std::size_t event = 0; event < trace.events.size(); ++event)
 					applyEventForward(replay, trace.events[event]);
 				std::string reason;
-				check(trace.complete && trace.bucketCount == arities[arityIndex] &&
+				check(trace.complete && trace.configuration.heapArity == arities[arityIndex] &&
 					isSorted(replay, request.direction) && validateState(replay, request.input.size(), &reason),
 					"Base-N Heap arity " + std::to_string(arities[arityIndex]) + " sorts and preserves identities");
 				for (std::size_t event = trace.events.size(); event > 0; --event)
@@ -3414,13 +3425,13 @@ namespace
 				const std::uint64_t bufferMerges = replay.metrics.algorithm.find("optimized_rotate_buffer_merges")->second;
 				const std::uint64_t fallbackMerges = replay.metrics.algorithm.find("optimized_rotate_in_place_merges")->second;
 				const bool hasExpectedBufferedPath = request.rotateMergeBufferSize == 16 || bufferMerges > 0;
-				if (!trace.complete || trace.rotateMergeBufferSize != request.rotateMergeBufferSize || !isSorted(replay, request.direction) ||
+				if (!trace.complete || trace.configuration.rotateMergeBufferSize != request.rotateMergeBufferSize || !isSorted(replay, request.direction) ||
 					!hasExpectedBufferedPath || fallbackMerges == 0)
 					std::cerr << "Optimized Rotate diagnostic: capacity=" << request.rotateMergeBufferSize << " direction=" << direction
-						<< " complete=" << trace.complete << " traceCapacity=" << trace.rotateMergeBufferSize
+						<< " complete=" << trace.complete << " traceCapacity=" << trace.configuration.rotateMergeBufferSize
 						<< " sorted=" << isSorted(replay, request.direction) << " bufferMerges=" << bufferMerges
 						<< " fallbackMerges=" << fallbackMerges << " events=" << trace.events.size() << '\n';
-				check(trace.complete && trace.rotateMergeBufferSize == request.rotateMergeBufferSize && isSorted(replay, request.direction) &&
+				check(trace.complete && trace.configuration.rotateMergeBufferSize == request.rotateMergeBufferSize && isSorted(replay, request.direction) &&
 					hasExpectedBufferedPath && fallbackMerges > 0,
 					"Optimized Rotate Merge sorts 800 duplicate-heavy items with both configured merge paths");
 				if (direction == 0)
@@ -3475,7 +3486,7 @@ namespace
 					request.direction = direction == 0 ? SortDirection::Ascending : SortDirection::Descending;
 					request.input = integers(values);
 					const SortTrace trace = SortTraceBuilder::build(request);
-					check(trace.bucketCount == static_cast<int>(mode), "Grail Sort retains its selected buffer mode in the trace");
+					check(trace.configuration.grailBufferMode == static_cast<GrailBufferMode>(mode), "Grail Sort retains its selected buffer mode in the trace");
 					verifyAlgorithmCase("Grail Sort option mode boundary case", integers(values), InputProfile::IntegerKeys,
 						SortAlgorithm::ArrayvGrail, request.direction, InputDomain::NonnegativeIntegerKeys);
 				}
@@ -4800,8 +4811,7 @@ namespace
 		catch (const std::exception& e) { check(false, std::string("configured Shell trace builds: ") + e.what()); }
 		configured.completeTraceBuild(shellResult);
 		const std::shared_ptr<const SortTrace> configuredShellTrace = configured.currentTrace();
-		check(configuredShellTrace && configuredShellTrace->configuration.shellGapSequence == ShellGapSequence::Ciura &&
-			configuredShellTrace->shellGapSequence == ShellGapSequence::Ciura,
+		check(configuredShellTrace && configuredShellTrace->configuration.shellGapSequence == ShellGapSequence::Ciura,
 			"simulation's named algorithm configuration reaches both typed trace state and its compatibility field");
 		check(configured.selectAlgorithm(SortAlgorithm::ArrayvGrail).accepted &&
 			configured.setAlgorithmOption("grail_buffer_mode", "static_buffer").accepted,
@@ -4815,7 +4825,7 @@ namespace
 		configured.completeTraceBuild(grailResult);
 		const std::shared_ptr<const SortTrace> configuredGrailTrace = configured.currentTrace();
 		check(configuredGrailTrace && configuredGrailTrace->configuration.grailBufferMode == GrailBufferMode::StaticBuffer &&
-			configuredGrailTrace->bucketCount == static_cast<int>(GrailBufferMode::StaticBuffer),
+			configuredGrailTrace->configuration.grailBufferMode == GrailBufferMode::StaticBuffer,
 			"Simulation request preserves typed Grail mode and its legacy trace projection without controller patch-up");
 		if (configuredGrailTrace)
 		{

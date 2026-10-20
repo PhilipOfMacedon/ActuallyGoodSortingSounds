@@ -17,9 +17,11 @@ namespace sortinglogic
 				configuration.mergeWritebackMode = request.mergeWritebackMode;
 				configuration.mergeExecutionMode = request.mergeExecutionMode;
 				configuration.radixBase = request.radixBase;
-				configuration.bucketCount = request.bucketCount;
 				configuration.timeMagnitude = request.timeMagnitude;
 				configuration.rotateMergeBufferSize = request.rotateMergeBufferSize;
+				if (request.bucketCount >= 2 &&
+					(descriptor.id == SortAlgorithm::ArrayvAmericanFlag || descriptor.id == SortAlgorithm::ArrayvStacklessAmericanFlag))
+					configuration.radixBase = request.bucketCount;
 				if (descriptor.id == SortAlgorithm::ArrayvBaseNHeap && request.bucketCount >= 2)
 					configuration.heapArity = request.bucketCount;
 				if (descriptor.id == SortAlgorithm::ArrayvGrail)
@@ -86,24 +88,6 @@ namespace sortinglogic
 
 			if (request.hasExplicitConfiguration) validateExplicitChoiceOptions(configuration, descriptor);
 			return configuration;
-		}
-
-		void projectAlgorithmConfigurationToLegacyFields(TraceBuildRequest& request,
-			const AlgorithmConfiguration& configuration, const AlgorithmDescriptor& descriptor)
-		{
-			request.configuration = configuration;
-			request.hasExplicitConfiguration = true;
-			request.shellGapSequence = configuration.shellGapSequence;
-			request.mergeWritebackMode = configuration.mergeWritebackMode;
-			request.mergeExecutionMode = configuration.mergeExecutionMode;
-			request.radixBase = configuration.radixBase;
-			request.timeMagnitude = configuration.timeMagnitude;
-			request.rotateMergeBufferSize = configuration.rotateMergeBufferSize;
-			if (descriptor.id == SortAlgorithm::ArrayvBaseNHeap)
-				request.bucketCount = configuration.heapArity;
-			else if (descriptor.id == SortAlgorithm::ArrayvGrail)
-				request.bucketCount = static_cast<int>(configuration.grailBufferMode);
-			else request.bucketCount = configuration.bucketCount;
 		}
 	}
 }

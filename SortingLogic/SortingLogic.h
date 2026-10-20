@@ -234,7 +234,6 @@ namespace sortinglogic
 		ShellGapSequence,
 		MergeExecutionMode,
 		MergeWritebackMode,
-		BucketCount,
 		HeapArity,
 		GrailBufferMode,
 		RadixBase,
@@ -249,14 +248,13 @@ namespace sortinglogic
 		MergeExecutionMode mergeExecutionMode;
 		GrailBufferMode grailBufferMode;
 		int radixBase;
-		int bucketCount;
 		int heapArity;
 		int timeMagnitude;
 		int rotateMergeBufferSize;
 		AlgorithmConfiguration()
 			: shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
 			mergeExecutionMode(MergeExecutionMode::BottomUp), grailBufferMode(GrailBufferMode::InPlace),
-			radixBase(0), bucketCount(0), heapArity(4), timeMagnitude(10), rotateMergeBufferSize(64) {}
+			radixBase(0), heapArity(4), timeMagnitude(10), rotateMergeBufferSize(64) {}
 		bool optionValue(AlgorithmOptionTarget target, int& value) const
 		{
 			switch (target)
@@ -264,7 +262,6 @@ namespace sortinglogic
 			case AlgorithmOptionTarget::ShellGapSequence: value = static_cast<int>(shellGapSequence); return true;
 			case AlgorithmOptionTarget::MergeExecutionMode: value = static_cast<int>(mergeExecutionMode); return true;
 			case AlgorithmOptionTarget::MergeWritebackMode: value = static_cast<int>(mergeWritebackMode); return true;
-			case AlgorithmOptionTarget::BucketCount: value = bucketCount; return true;
 			case AlgorithmOptionTarget::HeapArity: value = heapArity; return true;
 			case AlgorithmOptionTarget::GrailBufferMode: value = static_cast<int>(grailBufferMode); return true;
 			case AlgorithmOptionTarget::RadixBase: value = radixBase; return true;
@@ -281,7 +278,6 @@ namespace sortinglogic
 			case AlgorithmOptionTarget::ShellGapSequence: shellGapSequence = static_cast<ShellGapSequence>(value); return true;
 			case AlgorithmOptionTarget::MergeExecutionMode: mergeExecutionMode = static_cast<MergeExecutionMode>(value); return true;
 			case AlgorithmOptionTarget::MergeWritebackMode: mergeWritebackMode = static_cast<MergeWritebackMode>(value); return true;
-			case AlgorithmOptionTarget::BucketCount: bucketCount = value; return true;
 			case AlgorithmOptionTarget::HeapArity: heapArity = value; return true;
 			case AlgorithmOptionTarget::GrailBufferMode: grailBufferMode = static_cast<GrailBufferMode>(value); return true;
 			case AlgorithmOptionTarget::RadixBase: radixBase = value; return true;
@@ -374,11 +370,7 @@ namespace sortinglogic
 		InputDomain domain;
 		InputPattern pattern;
 		AlgorithmConfiguration configuration;
-		ShellGapSequence shellGapSequence;
-		MergeWritebackMode mergeWritebackMode;
-		MergeExecutionMode mergeExecutionMode;
 		bool mergeBufferVisualizationEnabled;
-		int radixBase, bucketCount, timeMagnitude, rotateMergeBufferSize;
 		std::uint32_t inputSeed;
 		std::vector<SortItem> input;
 		SortState initialState;
@@ -411,9 +403,13 @@ namespace sortinglogic
 		VariantId variantId;
 		SortAlgorithm algorithm;
 		SortDirection direction;
+		// Compatibility input for callers predating InputDomain. SortingLogic
+		// resolves this once into domain when domain remains at its default.
 		InputProfile profile;
 		InputDomain domain;
 		InputPattern pattern;
+		// Canonical option values when hasExplicitConfiguration is true. The named
+		// fields below are compatibility inputs and are never written back from it.
 		AlgorithmConfiguration configuration;
 		bool hasExplicitConfiguration;
 		ShellGapSequence shellGapSequence;
@@ -426,6 +422,8 @@ namespace sortinglogic
 		std::size_t maxWorkSteps;
 		// Approximate accounted trace-payload budget, not a hard resident-memory limit.
 		std::size_t maxTraceBytes;
+		// Legacy direct-caller selector. The resolver maps it to radixBase,
+		// heapArity, or grailBufferMode according to the selected algorithm.
 		int radixBase;
 		int bucketCount;
 		int timeMagnitude;
