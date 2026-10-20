@@ -4238,170 +4238,7 @@ namespace sortinglogic
 
 
 
-		void stacklessRotateMergeSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			if (count < 2) return;
-			r.declareMetric("merge_passes");
-			r.declareMetric("partition_merges");
-			r.declareMetric("partition_merge_comparisons");
-			r.declareMetric("rotate_block_swaps");
-			r.declareMetric("rotate_item_swaps");
-			const auto readMain = [&r, count](std::size_t index, const std::string& source) -> SortItem
-			{
-				if (index >= count)
-					throw std::logic_error(std::string("Stackless Rotate Merge ") + source + " read index " +
-						std::to_string(index) + " outside primary size " + std::to_string(count) + ".");
-				return r.at(index);
-			};
 
-			const auto swapBlocks = [&r](std::size_t first, std::size_t second, std::size_t length)
-			{
-				for (std::size_t offset = 0; offset < length; ++offset)
-				{
-					r.chargeWork();
-					r.swap(first + offset, second + offset, SemanticRole::WriteTarget);
-					r.addMetric("rotate_item_swaps");
-				}
-				r.addMetric("rotate_block_swaps");
-			};
-			const auto rotate = [&r, &swapBlocks](std::size_t first, std::size_t middle, std::size_t last)
-			{
-				std::size_t leftLength = middle - first, rightLength = last - middle;
-				while (leftLength != 0 && rightLength != 0)
-				{
-					r.chargeWork();
-					if (rightLength < leftLength)
-					{
-						swapBlocks(middle - rightLength, middle, rightLength);
-						last -= rightLength;
-						middle -= rightLength;
-						leftLength -= rightLength;
-					}
-					else
-					{
-						swapBlocks(first, middle, leftLength);
-						first += leftLength;
-						middle += leftLength;
-						rightLength -= leftLength;
-					}
-				}
-			};
-
-			const auto partitionMerge = [&r, &rotate, &readMain](std::size_t first, std::size_t middle,
-				std::size_t last, std::size_t selectedCount)
-			{
-				std::size_t leftLength = middle - first, rightLength = last - middle;
-				if (leftLength == 0 || rightLength == 0 || selectedCount == 0) return;
-				if (selectedCount > leftLength + rightLength)
-					throw std::logic_error("Stackless Rotate Merge partition exceeds its input range.");
-				const std::size_t annotationBegin = r.trace.events.size();
-				r.addMetric("partition_merges");
-				if (rightLength < leftLength)
-				{
-					selectedCount = leftLength + rightLength - selectedCount;
-					std::size_t low = selectedCount > leftLength ? selectedCount - leftLength : 0;
-					std::size_t high = (std::min)(selectedCount, rightLength);
-					while (low < high)
-					{
-						r.chargeWork();
-						const std::size_t probe = low + (high - low) / 2;
-						const std::size_t leftIndex = middle - (selectedCount - probe);
-						const std::size_t rightIndex = last - probe - 1;
-						const std::string context = "left partition search [" + std::to_string(first) + ", " +
-							std::to_string(middle) + ", " + std::to_string(last) + "; c=" +
-							std::to_string(selectedCount) + "; probe=" + std::to_string(probe) + "]";
-						const SortItem left = readMain(leftIndex, context), right = readMain(rightIndex, "right partition search");
-						r.compare(left, right, leftIndex, rightIndex, "main", "main",
-							SemanticRole::ComparedItem, SemanticRole::ProbedItem);
-						r.addMetric("partition_merge_comparisons");
-						if (compareItems(left, right, r.trace.direction) == ComparisonResult::Greater) high = probe;
-						else low = probe + 1;
-					}
-					rotate(middle - (selectedCount - low), middle, last - low);
-				}
-				else
-				{
-					std::size_t low = selectedCount > rightLength ? selectedCount - rightLength : 0;
-					std::size_t high = (std::min)(selectedCount, leftLength);
-					while (low < high)
-					{
-						r.chargeWork();
-						const std::size_t probe = low + (high - low) / 2;
-						const std::size_t leftIndex = first + probe;
-						const std::size_t rightIndex = middle + (selectedCount - probe) - 1;
-						const std::string context = "right partition search [" + std::to_string(first) + ", " +
-							std::to_string(middle) + ", " + std::to_string(last) + "; c=" +
-							std::to_string(selectedCount) + "; probe=" + std::to_string(probe) + "]";
-						const SortItem left = readMain(leftIndex, context), right = readMain(rightIndex, "left partition search");
-						r.compare(left, right, leftIndex, rightIndex, "main", "main",
-							SemanticRole::ComparedItem, SemanticRole::ProbedItem);
-						r.addMetric("partition_merge_comparisons");
-						if (compareItems(left, right, r.trace.direction) == ComparisonResult::Greater) high = probe;
-						else low = probe + 1;
-					}
-					rotate(first + low, middle, middle + (selectedCount - low));
-				}
-				r.annotate("main", RegionKind::Contiguous, first, last, 1, -1,
-					"Stackless partition merge", annotationBegin);
-			};
-
-			const int initialPairs = r.beginPhase("Stackless merge initial pairs");
-			for (std::size_t i = 1; i < count; i += 2)
-			{
-				r.chargeWork();
-				const SortItem left = readMain(i - 1, "initial pair"), right = readMain(i, "initial pair");
-				r.compare(left, right, i - 1, i);
-				if (compareItems(left, right, r.trace.direction) == ComparisonResult::Greater)
-				{
-					r.swap(i - 1, i, SemanticRole::WriteTarget);
-					r.addMetric("rotate_item_swaps");
-				}
-			}
-			r.endPhase(initialPairs, "Stackless merge initial pairs");
-
-		for (std::size_t width = 2; width < count; width *= 2)
-		{
-			const int phase = r.beginPhase("Stackless partition merge width " + std::to_string(width));
-			std::size_t lastCovered = 0;
-			for (std::size_t first = 0; first + width < count; first += width * 2)
-			{
-				r.chargeWork();
-				lastCovered = (std::min)(first + width * 2, count);
-				partitionMerge(first, first + width, lastCovered, width);
-			}
-			for (std::size_t subWidth = width / 2; subWidth > 1; subWidth /= 2)
-				for (std::size_t first = 0; first + subWidth < lastCovered; first += subWidth * 2)
-				{
-					r.chargeWork();
-					const std::size_t last = (std::min)(first + subWidth * 2, count);
-					std::size_t prefix = first + 1;
-					while (prefix < last)
-					{
-						r.chargeWork();
-						const SortItem before = readMain(prefix - 1, "sorted-prefix scan"), after = readMain(prefix, "sorted-prefix scan");
-						r.compare(before, after, prefix - 1, prefix);
-						if (compareItems(before, after, r.trace.direction) == ComparisonResult::Greater) break;
-						++prefix;
-					}
-					if (prefix < last) partitionMerge(first, prefix, last, subWidth);
-				}
-			for (std::size_t i = 1; i < lastCovered; i += 2)
-			{
-				r.chargeWork();
-				const SortItem left = readMain(i - 1, "pass pair"), right = readMain(i, "pass pair");
-				r.compare(left, right, i - 1, i);
-				if (compareItems(left, right, r.trace.direction) == ComparisonResult::Greater)
-				{
-					r.swap(i - 1, i, SemanticRole::WriteTarget);
-					r.addMetric("rotate_item_swaps");
-				}
-			}
-			r.endPhase(phase, "Stackless partition merge width " + std::to_string(width));
-			r.addMetric("merge_passes");
-			if (width > count / 2) break;
-		}
-		}
 
 		void blockSwapMergeSort(Recorder& r)
 		{
@@ -6188,7 +6025,6 @@ namespace sortinglogic
 				case SortAlgorithm::CanonicalStalinFilter: canonicalStalinFilter(recorder); break;
 				case SortAlgorithm::ArrayvStrand: strandSort(recorder); break;
 				case SortAlgorithm::ArrayvRecursiveShell: recursiveShell(recorder); break;
-				case SortAlgorithm::ArrayvStacklessRotateMerge: stacklessRotateMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvBlockSwapMerge: blockSwapMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvWeavedMerge: weavedMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvTwinMerge: twinMergeSort(recorder); break;
@@ -6393,7 +6229,7 @@ namespace sortinglogic
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvParallelMergeRequest, ArrayvParallelMerge, &strategies::parallelMergeStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvRotateMergeRequest, ArrayvRotateMerge, &strategies::rotateMergeStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvRotateMergeParallelRequest, ArrayvRotateMergeParallel, &strategies::parallelRotateMergeStrategy)
-		SORT_REQUEST_BUILDER(buildArrayvStacklessRotateMergeRequest, ArrayvStacklessRotateMerge)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvStacklessRotateMergeRequest, ArrayvStacklessRotateMerge, &strategies::stacklessRotateMergeStrategy)
 		SORT_REQUEST_BUILDER(buildArrayvBlockSwapMergeRequest, ArrayvBlockSwapMerge)
 		SORT_REQUEST_BUILDER(buildArrayvWeavedMergeRequest, ArrayvWeavedMerge)
 		SORT_REQUEST_BUILDER(buildArrayvTwinMergeRequest, ArrayvTwinMerge)

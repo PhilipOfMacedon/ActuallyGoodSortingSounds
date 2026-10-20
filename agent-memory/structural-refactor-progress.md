@@ -1315,3 +1315,18 @@ Verification:
 - `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
 
 Next: extract Stackless Rotate Merge with its dedicated suite, then review remaining merge modules and return to the UI/configuration ownership findings.
+
+## 2026-10-20 — extract Stackless Rotate Merge
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved Stackless Rotate Merge and its partition search, block rotation, and pass workers into `SortingLogic/RotationMergeStrategies.cpp` alongside the related rotate variants.
+- Registered its stable catalog ID directly and removed the fallback-switch case. The implementation remains separate from recursive Rotate Merge and retains its own partition trace, work accounting, metrics, and annotation schedule.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- In each configuration: Stackless Rotate Merge passed 386,074 checks; core contracts passed 39,535; pinned catalog coverage passed 1,741. All reported 0 failures.
+- `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
+
+Next: audit remaining merge implementations for the next cohesive extraction, then return to settings/configuration and UI ownership work from the structural audit.
