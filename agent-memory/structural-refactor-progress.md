@@ -325,3 +325,23 @@ Verification:
 - No audio or rendering code changed; no unrelated sound suite was rerun.
 
 Next: isolate settings compatibility and option resolution so the INI migration fields do not also serve as runtime configuration state.
+
+## 2026-10-19 — make stable algorithm options authoritative in settings
+
+Status: implementation and focused verification complete.
+
+- Removed Shell gap and Merge execution/writeback duplicates from `SimulationPreferences`. The stable family.variant.group option map is now the only persisted in-memory preference for algorithm options; catalog metadata supplies defaults.
+- Kept the v8 INI compatibility keys. Loading converts legacy Shell/Merge keys to stable option IDs before reading explicit `option.*` entries, allowing stable entries to override them. Saving projects the catalog selections back to the old keys in the lowercase format older settings files use.
+- Removed AppController's synchronization between stable options and duplicate preference fields. Legacy typed actions still update Simulation and persist the equivalent stable catalog ID.
+- Updated defaults, round-trip, v3/v5/v7 migration, and controller dispatch assertions to check effective catalog selections.
+- A first verification run exposed a serializer mismatch between the display label `Ciura` and the legacy parser token `ciura`; the writer now emits the stable lowercase token.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 39,520 checks with 0 failures.
+- Debug and Release pinned catalog-coverage runs: each passed 1,741 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed.
+
+Next: extract view-level UI state and action binding from the `ControlPanel`/controller facade, starting with the smallest view seam that can share behavior between runtime and tests.
