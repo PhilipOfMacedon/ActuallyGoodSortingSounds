@@ -279,7 +279,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
+	mainControlsView_(), mainUi_(mainControlsView_.controls()), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
 		paletteIndex(activeTheme(settings).palette)), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), algorithmProfileView_(measureLogicalTextWidth), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
@@ -312,51 +312,9 @@ bool ControlPanel::isReady() const
 
 void ControlPanel::createWidgets()
 {
-	mainUi_.addButton("panel_toggle", ">>", AppAction(AppActionKind::TogglePanelExpanded));
-	mainUi_.addButton("settings", "[=]", AppAction(), UiAction::ViewCommand::OpenSettings);
-	mainUi_.addComboBox("menu_file", std::vector<std::string>{ "File", "Build Trace", "Generate & Play", "Reset" }, 0);
-	mainUi_.addComboBox("menu_view", std::vector<std::string>{ "View", "Toggle Setup", "Borderless Fullscreen" }, 0);
-	mainUi_.addComboBox("menu_tools", std::vector<std::string>{ "Tools", "Algorithm Browser...", "Settings...", "Appearance..." }, 0);
-	mainUi_.find("menu_file")->setOptionEnabled(0, false);
-	mainUi_.find("menu_view")->setOptionEnabled(0, false);
-	mainUi_.find("menu_tools")->setOptionEnabled(0, false);
-	mainUi_.find("menu_file")->setPopupAbove(false);
-	mainUi_.find("menu_view")->setPopupAbove(false);
-	mainUi_.find("menu_tools")->setPopupAbove(false);
-	mainUi_.addButton("shuffle", "Shuffle", AppAction(AppActionKind::Shuffle));
-	mainUi_.addButton("insta_sort", "Insta-sort", AppAction(AppActionKind::InstaSort));
-	mainUi_.addButton("insta_invert", "Insta-invert", AppAction(AppActionKind::InstaInvert));
-	mainUi_.addButton("algorithm", algorithmLabel(static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm)),
-		AppAction(), UiAction::ViewCommand::OpenAlgorithmMenu);
-	mainUi_.addComboBox("direction", std::vector<std::string>{ "Ascending", "Descending" }, settings_.simulation.descending ? 1 : 0,
-		AppAction(AppActionKind::SetDirection));
-	mainUi_.addButton("run", "Build Trace", AppAction(AppActionKind::BuildTrace));
-	mainUi_.addButton("play", "Generate & Play", AppAction(AppActionKind::GenerateAndPlay));
-	mainUi_.addButton("reset", "Reset", AppAction(AppActionKind::Reset));
-	mainUi_.addButton("previous", "< Event", AppAction(AppActionKind::PreviousEvent));
-	mainUi_.addButton("next", "Event >", AppAction(AppActionKind::NextEvent));
-	mainUi_.addButton("bars_down", "Bars --", AppAction(AppActionKind::AdjustItemCount, -10.0f));
-	mainUi_.addButton("bars_value", "80 bars");
-	mainUi_.addButton("bars_up", "Bars ++", AppAction(AppActionKind::AdjustItemCount, 10.0f));
-	mainUi_.addButton("time_down", "Time --", AppAction(AppActionKind::AdjustDuration, -1.0f));
-	mainUi_.addButton("time_value", "10 sec");
-	mainUi_.addButton("time_up", "Time ++", AppAction(AppActionKind::AdjustDuration, 1.0f));
-	mainUi_.addComboBox("domain", settingsInputDomainOptions(), static_cast<int>(settings_.simulation.domain), AppAction(AppActionKind::SetInputDomain));
-	mainUi_.addComboBox("pattern", settingsInputPatternOptions(), static_cast<int>(settings_.simulation.pattern), AppAction(AppActionKind::SetInputPattern));
-	mainUi_.addButton("seed_readout", "Seed");
-	mainUi_.addButton("start_overlay", "Generate & Play", AppAction(AppActionKind::GenerateAndPlay));
+	mainControlsView_.initializeControls(settings_,
+		algorithmLabel(static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm)));
 	settingsPanelView_.initializeControls(settings_);
-	mainUi_.find("panel_toggle")->setRole(UiControlRole::PanelToggle);
-	mainUi_.find("settings")->setRole(UiControlRole::Settings);
-	mainUi_.find("algorithm")->setRole(UiControlRole::AlgorithmChoice);
-	mainUi_.find("run")->setRole(UiControlRole::BuildTrace);
-	mainUi_.find("play")->setRole(UiControlRole::Playback);
-	mainUi_.find("reset")->setRole(UiControlRole::Reset);
-	mainUi_.find("bars_value")->setRole(UiControlRole::EditableValue);
-	mainUi_.find("time_value")->setRole(UiControlRole::EditableValue);
-	mainUi_.find("start_overlay")->setRole(UiControlRole::Playback);
-	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
-		if (mainUi_.widgets()[i]->kind() == UiWidgetKind::ComboBox) mainUi_.widgets()[i]->setRole(UiControlRole::Choice);
 	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 	{
 		const UiWidget& widget = *mainUi_.widgets()[i];

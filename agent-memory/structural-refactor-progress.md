@@ -1506,3 +1506,11 @@ Next: rerun the four-configuration matrix for the combined settings-view change,
 Added view composition checks for Appearance control order/clipping and active-tab state, popup routing, and General Audio control visibility. Full solution builds and `AppFrameworkTests` passed in Win32/x64 Debug and Release. Live inspection confirmed the Algorithm settings controls and Appearance palette popup still render. No layout or painter-order change is intended and no performance gain is claimed.
 
 Next: extract main-control state/composition behind the same view and command boundaries.
+
+## 2026-10-20 — move main widget construction into a view
+
+Added `MainControlsView` as the owner of the retained main-control `UIRoot`, initial controls, typed app actions, and semantic widget roles. `ControlPanel` now initializes that view and still owns renderer `TextLabel` resources, SDL event translation, layout, and painting. A temporary non-owning `mainUi_` alias keeps the existing input/layout/paint paths stable while those responsibilities move incrementally.
+
+Added headless checks for selected algorithm label/action, direction and input selections, typed domain/pattern commands, shuffle routing, build-trace role, and disabled menu heading. `AppFrameworkTests` passed in x64 Debug and Release. The full x64 Release solution build passed. The x64 Debug solution compiled all targets but the final app link hit LNK1168 because the currently running app held the normal output executable open; rebuilding the app project into a separate verification directory linked successfully. `git diff --check` passed. No visible behavior or performance change is claimed.
+
+Next: move main-control state synchronization and visibility behind `MainControlsView`, then submit its ordered control composition through `UiPaintCommand`.

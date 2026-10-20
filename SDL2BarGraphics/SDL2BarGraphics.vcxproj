@@ -44,6 +44,7 @@
     <ClInclude Include="AlgorithmBrowserModel.h" />
     <ClInclude Include="AlgorithmBrowserCatalog.h" />
     <ClInclude Include="AlgorithmBrowserView.h" />
+    <ClInclude Include="MainControlsView.h" />
     <ClInclude Include="SettingsPanelView.h" />
     <ClInclude Include="SettingsPanelModel.h" />
     <ClInclude Include="SettingsPanelControls.h" />

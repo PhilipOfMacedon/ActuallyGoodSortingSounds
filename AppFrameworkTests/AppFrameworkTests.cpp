@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
+#include "../SDL2BarGraphics/MainControlsView.h"
 #include "../SDL2BarGraphics/InlineEditModel.h"
 #include "../SDL2BarGraphics/ActiveRoleLookup.h"
 #include "../SDL2BarGraphics/AlgorithmProfileView.h"
@@ -2409,6 +2410,37 @@ namespace
 			"settings view builds one option widget per catalog variant option group");
 	}
 
+	void testMainControlsViewInitializesTypedControls()
+	{
+		UserPreferences preferences;
+		preferences.simulation.descending = true;
+		preferences.simulation.domain = sortinglogic::InputDomain::SignedIntegerKeys;
+		preferences.simulation.pattern = sortinglogic::InputPattern::NearlySorted;
+		MainControlsView view;
+		view.initializeControls(preferences, "Fixture Sort");
+
+		const UIRoot& controls = view.controls();
+		const UiWidget* algorithm = controls.find("algorithm");
+		const UiWidget* direction = controls.find("direction");
+		const UiWidget* domain = controls.find("domain");
+		const UiWidget* pattern = controls.find("pattern");
+		const UiWidget* shuffle = controls.find("shuffle");
+		const UiWidget* run = controls.find("run");
+		const UiWidget* fileMenu = controls.find("menu_file");
+		check(algorithm && algorithm->label() == "Fixture Sort" && algorithm->viewCommand() == UiAction::ViewCommand::OpenAlgorithmMenu,
+			"main controls view owns the algorithm menu item and its selected label");
+		check(direction && direction->selectedIndex() == 1 && direction->action().kind == AppActionKind::SetDirection,
+			"main controls view initializes direction state and typed command");
+		check(domain && domain->selectedIndex() == static_cast<int>(preferences.simulation.domain) &&
+			domain->action().kind == AppActionKind::SetInputDomain && pattern &&
+			pattern->selectedIndex() == static_cast<int>(preferences.simulation.pattern) &&
+			pattern->action().kind == AppActionKind::SetInputPattern,
+			"main controls view initializes domain and pattern selectors from simulation preferences");
+		check(shuffle && shuffle->action().kind == AppActionKind::Shuffle && run &&
+			run->role() == UiControlRole::BuildTrace && fileMenu && !fileMenu->optionEnabled(0),
+			"main controls view keeps action routing, semantic roles, and menu heading behavior in its tree");
+	}
+
 	void testSettingsPanelViewSynchronizesControlState()
 	{
 		const sortinglogic::AlgorithmDescriptor* merge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
@@ -3928,6 +3960,7 @@ int main(int argc, char* argv[])
 	testSettingsPanelModel();
 	testSettingsPanelViewOwnsNavigationAndScrolling();
 	testSettingsPanelViewInitializesItsControls();
+	testMainControlsViewInitializesTypedControls();
 	testSettingsPanelViewSynchronizesControlState();
 	testSettingsPanelControlCatalog();
 	testSettingsPanelLayout();

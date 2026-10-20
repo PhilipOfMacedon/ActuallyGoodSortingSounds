@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "AppearanceEditorView.h"
+#include "MainControlsView.h"
 #include "InlineEditModel.h"
 #include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
@@ -63,7 +64,8 @@ private:
 	Window& window_;
 	Renderer2D& renderer_;
 	const UserPreferences& settings_;
-	UIRoot mainUi_;
+	MainControlsView mainControlsView_;
+	UIRoot& mainUi_; // Temporary access alias while input, layout, and paint move behind the view boundary.
 	AppearanceEditorView appearanceEditorView_;
 	UiOverlayState overlayState_;
 	AlgorithmBrowserModel algorithmBrowser_;
