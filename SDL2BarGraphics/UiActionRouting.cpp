@@ -99,4 +99,36 @@ namespace ui
 		}
 		return AppAction();
 	}
+
+	SettingsNavigation settingsNavigationFor(UiAction::ViewCommand command)
+	{
+		SettingsNavigation navigation;
+		switch (command)
+		{
+		case UiAction::ViewCommand::ShowAudioBasic:
+			navigation.kind = SettingsNavigationKind::AudioGroup;
+			navigation.audioGroup = SettingsAudioGroup::Basic;
+			break;
+		case UiAction::ViewCommand::ShowAudioAdvanced:
+			navigation.kind = SettingsNavigationKind::AudioGroup;
+			navigation.audioGroup = SettingsAudioGroup::Advanced;
+			break;
+		case UiAction::ViewCommand::ShowAppearanceSettings:
+			navigation.kind = SettingsNavigationKind::Page;
+			navigation.page = SettingsPanelPage::Appearance;
+			break;
+		case UiAction::ViewCommand::ShowAlgorithmSettings:
+			navigation.kind = SettingsNavigationKind::Page;
+			navigation.page = SettingsPanelPage::Algorithm;
+			break;
+		case UiAction::ViewCommand::ShowAudioSettings:
+		case UiAction::ViewCommand::ShowGeneralAudioSettings:
+			navigation.kind = SettingsNavigationKind::Page;
+			navigation.page = SettingsPanelPage::GeneralAudio;
+			break;
+		default:
+			break;
+		}
+		return navigation;
+	}
 }

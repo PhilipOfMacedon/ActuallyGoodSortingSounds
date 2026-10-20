@@ -895,6 +895,29 @@ namespace
 			"unknown menu IDs and invalid selection indices produce an empty command");
 	}
 
+	void testSettingsNavigationRouting()
+	{
+		const ui::SettingsNavigation appearance = ui::settingsNavigationFor(UiAction::ViewCommand::ShowAppearanceSettings);
+		const ui::SettingsNavigation algorithm = ui::settingsNavigationFor(UiAction::ViewCommand::ShowAlgorithmSettings);
+		const ui::SettingsNavigation audio = ui::settingsNavigationFor(UiAction::ViewCommand::ShowGeneralAudioSettings);
+		const ui::SettingsNavigation legacyAudio = ui::settingsNavigationFor(UiAction::ViewCommand::ShowAudioSettings);
+		check(appearance.kind == ui::SettingsNavigationKind::Page && appearance.page == SettingsPanelPage::Appearance &&
+			algorithm.kind == ui::SettingsNavigationKind::Page && algorithm.page == SettingsPanelPage::Algorithm &&
+			audio.kind == ui::SettingsNavigationKind::Page && audio.page == SettingsPanelPage::GeneralAudio &&
+			legacyAudio.kind == ui::SettingsNavigationKind::Page && legacyAudio.page == SettingsPanelPage::GeneralAudio,
+			"settings page commands resolve to their current page, including the legacy audio alias");
+
+		const ui::SettingsNavigation basic = ui::settingsNavigationFor(UiAction::ViewCommand::ShowAudioBasic);
+		const ui::SettingsNavigation advanced = ui::settingsNavigationFor(UiAction::ViewCommand::ShowAudioAdvanced);
+		check(basic.kind == ui::SettingsNavigationKind::AudioGroup && basic.audioGroup == SettingsAudioGroup::Basic &&
+			advanced.kind == ui::SettingsNavigationKind::AudioGroup && advanced.audioGroup == SettingsAudioGroup::Advanced,
+			"audio group commands resolve to the existing Basic and Advanced settings groups");
+
+		const ui::SettingsNavigation unrelated = ui::settingsNavigationFor(UiAction::ViewCommand::OpenSettings);
+		check(unrelated.kind == ui::SettingsNavigationKind::None,
+			"modal opening commands are not mistaken for settings navigation");
+	}
+
 	void testUiCatalogActionNormalization()
 	{
 		const sortinglogic::AlgorithmDescriptor* insertion =
@@ -2656,6 +2679,7 @@ int main()
 	testAlgorithmBrowserModel();
 	testUiOverlayState();
 	testMainMenuSelectionActions();
+	testSettingsNavigationRouting();
 	testUiCatalogActionNormalization();
 	testSdlUiEventAdapter();
 	testAlgorithmBrowserInputAndLayout();

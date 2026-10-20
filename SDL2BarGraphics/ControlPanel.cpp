@@ -1344,24 +1344,13 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		closeSettings();
 		return;
 	}
-	if (action.viewCommand == UiAction::ViewCommand::ShowAudioBasic ||
-		action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced)
+	const ui::SettingsNavigation navigation = ui::settingsNavigationFor(action.viewCommand);
+	if (navigation.kind != ui::SettingsNavigationKind::None)
 	{
-		settingsPanelModel_.showAudioGroup(action.viewCommand == UiAction::ViewCommand::ShowAudioAdvanced
-			? SettingsAudioGroup::Advanced : SettingsAudioGroup::Basic);
-		settingsUi_.closeCombo();
-		layoutSettingsControls();
-		return;
-	}
-	if (action.viewCommand == UiAction::ViewCommand::ShowAppearanceSettings ||
-		action.viewCommand == UiAction::ViewCommand::ShowAlgorithmSettings ||
-		action.viewCommand == UiAction::ViewCommand::ShowAudioSettings ||
-		action.viewCommand == UiAction::ViewCommand::ShowGeneralAudioSettings)
-	{
-		const SettingsPanelPage page = action.viewCommand == UiAction::ViewCommand::ShowAppearanceSettings
-			? SettingsPanelPage::Appearance : action.viewCommand == UiAction::ViewCommand::ShowAlgorithmSettings
-			? SettingsPanelPage::Algorithm : SettingsPanelPage::GeneralAudio;
-		settingsPanelModel_.showPage(page);
+		if (navigation.kind == ui::SettingsNavigationKind::AudioGroup)
+			settingsPanelModel_.showAudioGroup(navigation.audioGroup);
+		else
+			settingsPanelModel_.showPage(navigation.page);
 		settingsUi_.closeCombo();
 		layoutSettingsControls();
 		return;

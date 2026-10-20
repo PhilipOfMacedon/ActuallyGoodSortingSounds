@@ -607,3 +607,21 @@ Verification:
 - `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
 
 Next: separate settings and audio widget interpretation from `ControlPanel::processAction`, then continue with controller/persistence boundaries.
+
+## 2026-10-19 — route settings navigation through typed intents
+
+Status: implementation and focused verification complete.
+
+- Added a typed `SettingsNavigation` result that maps view commands to a settings page or audio subgroup. The mapping now lives with the other UI action routing rules instead of being reconstructed in `ControlPanel` conditionals.
+- Preserved Appearance, Algorithm, and General Audio page selection; both legacy and current General Audio commands still resolve to the same page. Basic and Advanced remain separate audio groups.
+- `ControlPanel` still owns the effects of navigation: updating its session model, closing a popup, and recalculating settings layout. The router only classifies the command and does not mutate view state.
+- Added checks for each page/group mapping, the legacy audio alias, and unrelated modal commands.
+- No settings content, selected preference, action payload, persistence, simulation, trace, or audio behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
+
+Next: isolate per-variant/general audio widget dispatch from app preference dispatch, then continue with the duplicated settings equality and normalization paths.
