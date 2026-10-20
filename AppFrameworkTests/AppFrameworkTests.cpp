@@ -2481,6 +2481,49 @@ namespace
 			"collapsed classic layout synchronizes its start overlay and preset-specific transport label");
 	}
 
+	void testMainControlsViewComposesControlPaintCommands()
+	{
+		UserPreferences preferences;
+		MainControlsView view;
+		view.initializeControls(preferences, "Fixture Sort");
+		view.controls().setWidgetVisible("start_overlay", false);
+		const UiRect screen(0.0f, 0.0f, 800.0f, 600.0f);
+		RecordingUiPaintContext paint;
+
+		view.compose(MainControlsPaintSection::HeaderButtons, screen, paint);
+		check(paint.commands().size() == 2 && paint.commands()[0].elementId == "panel_toggle" &&
+			paint.commands()[1].elementId == "settings" && paint.commands()[0].layer == UiPaintLayer::MainControls,
+			"main control paint composition preserves header button order and layer");
+		paint.clear();
+		view.compose(MainControlsPaintSection::Menus, screen, paint);
+		check(paint.commands().size() == 3 && paint.commands()[0].elementId == "menu_file" &&
+			paint.commands()[1].elementId == "menu_view" && paint.commands()[2].elementId == "menu_tools",
+			"main control paint composition preserves menu order");
+		paint.clear();
+		view.compose(MainControlsPaintSection::ExpandedControls, screen, paint);
+		check(!paint.commands().empty() && paint.commands()[0].elementId == "shuffle" &&
+			std::find_if(paint.commands().begin(), paint.commands().end(), [](const UiPaintCommand& command)
+			{
+				return command.elementId == "menu_tools" || command.elementId == "panel_toggle" || command.elementId == "settings";
+			}) == paint.commands().end(),
+			"expanded main paint commands include only visible content controls in retained order");
+		paint.clear();
+		view.controls().setWidgetVisible("start_overlay", true);
+		view.compose(MainControlsPaintSection::CollapsedStart, screen, paint);
+		check(paint.commands().size() == 1 && paint.commands()[0].elementId == "start_overlay",
+			"collapsed main paint composition emits the start overlay only when visible");
+
+		paint.clear();
+		view.controls().find("domain")->setBounds(UiRect(32.0f, 48.0f, 180.0f, 26.0f));
+		UiAction action;
+		view.controls().handleEvent(UiInputEvent(UiInputType::PointerDown, 40.0f, 54.0f), action);
+		view.compose(MainControlsPaintSection::Popups, screen, paint);
+		check(view.controls().hasOpenCombo() && paint.commands().size() == 1 &&
+			paint.commands()[0].elementId == "domain" && paint.commands()[0].popup &&
+			paint.commands()[0].layer == UiPaintLayer::MainDropdown && paint.commands()[0].hasClip,
+			"expanded main dropdowns use clipped popup commands on the dropdown layer");
+	}
+
 	void testSettingsPanelViewSynchronizesControlState()
 	{
 		const sortinglogic::AlgorithmDescriptor* merge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
@@ -4002,6 +4045,7 @@ int main(int argc, char* argv[])
 	testSettingsPanelViewInitializesItsControls();
 	testMainControlsViewInitializesTypedControls();
 	testMainControlsViewSynchronizesPresentationState();
+	testMainControlsViewComposesControlPaintCommands();
 	testSettingsPanelViewSynchronizesControlState();
 	testSettingsPanelControlCatalog();
 	testSettingsPanelLayout();

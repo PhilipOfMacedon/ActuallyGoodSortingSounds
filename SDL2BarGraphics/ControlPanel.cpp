@@ -31,8 +31,6 @@ namespace
 	const MaterialId PopupMaterial = MaterialId::Popup;
 	const RenderLayer UiLayer = RenderLayer::MainControls;
 	const RenderLayer TextLayer = RenderLayer::MainText;
-	const RenderLayer DropdownLayer = RenderLayer::Dropdown;
-	const RenderLayer DropdownTextLayer = RenderLayer::DropdownText;
 	const RenderLayer DimLayer = RenderLayer::ModalDim;
 	const RenderLayer SettingsLayer = RenderLayer::SettingsPanel;
 	const RenderLayer SettingsTextLayer = RenderLayer::SettingsText;
@@ -71,6 +69,7 @@ namespace
 		case UiPaintLayer::SettingsText: return RenderLayer::SettingsText;
 		case UiPaintLayer::MainControls: return RenderLayer::MainControls;
 		case UiPaintLayer::MainControlsOverlay: return layerOffset(RenderLayer::MainControls, 1);
+		case UiPaintLayer::MainDropdown: return RenderLayer::Dropdown;
 		case UiPaintLayer::MainText: return RenderLayer::MainText;
 		}
 		return RenderLayer::SettingsDropdown;
@@ -893,6 +892,12 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	const bool classicVga = preset == UiPresetId::FlatVgaDos || preset == UiPresetId::ClassicWindows95;
 	const bool windows95 = preset == UiPresetId::ClassicWindows95;
 	algorithmProfileView_.beginFrame();
+	const UiRect screen(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
+	auto renderMainControl = [this, &palette](const UiPaintCommand& command)
+	{
+		drawMainControlPaintCommand(command, palette);
+	};
+	DispatchingUiPaintContext<decltype(renderMainControl)> paintContext(renderMainControl);
 	submitBox(headerBounds_, windows95 ? palette.accent : palette.panel, PanelMaterial, UiLayer);
 	if (layoutResult_.menuBar.height > 0.0f)
 	{
@@ -933,8 +938,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 			}
 		}
 	}
-	if (mainUi_.find("panel_toggle")->visible()) drawWidget(*mainUi_.find("panel_toggle"), palette, UiLayer);
-	if (mainUi_.find("settings")->visible()) drawWidget(*mainUi_.find("settings"), palette, UiLayer);
+	mainControlsView_.compose(MainControlsPaintSection::HeaderButtons, screen, paintContext);
 	float titleLeft = 48.0f;
 	float titleRight = static_cast<float>(width_) - 54.0f;
 	if (classicVga && !windows95 && mainUi_.find("menu_tools")->visible())
@@ -942,9 +946,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	if (!mainUi_.find("settings")->visible()) titleRight = static_cast<float>(width_) - 12.0f;
 	UiRect titleBounds(titleLeft, 5.0f, std::max(1.0f, titleRight - titleLeft), 22.0f);
 	if (!windows95) drawText(*title_, titleBounds, 17.0f, palette.text, TextLayer, ClipBounds(), TextOverflowPolicy::Marquee);
-	const char* menuIds[] = { "menu_file", "menu_view", "menu_tools" };
-	for (std::size_t i = 0; i < sizeof(menuIds) / sizeof(menuIds[0]); ++i)
-		drawWidget(*mainUi_.find(menuIds[i]), palette, UiLayer);
+	mainControlsView_.compose(MainControlsPaintSection::Menus, screen, paintContext);
 	if (!settings_.visual.panelExpanded)
 	{
 		const UiRect chart = chartViewport_;
@@ -990,25 +992,14 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 				16.0f, palette.text, TextLayer);
 			drawText(*labels_["#collapsed_empty_hint"], UiRect(card.x + 8.0f, card.y + 42.0f, card.width - 16.0f, 18.0f),
 				12.0f, palette.mutedText, TextLayer);
-			drawWidget(*mainUi_.find("start_overlay"), palette, UiLayer);
+			mainControlsView_.compose(MainControlsPaintSection::CollapsedStart, screen, paintContext);
 		}
 		// The collapsed branch returns before the full control composition. Keep
 		// menu popups in the upper overlay pass so the chart cannot hide them.
-		for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
-			if (mainUi_.widgets()[i]->visible() && mainUi_.widgets()[i]->expanded())
-				drawWidget(*mainUi_.widgets()[i], palette, DropdownLayer, true);
+		mainControlsView_.compose(MainControlsPaintSection::Popups, screen, paintContext);
 		return;
 	}
-	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
-	{
-		const UiWidget& widget = *mainUi_.widgets()[i];
-		if (widget.id() != "panel_toggle" && widget.id() != "settings" &&
-			widget.id() != "menu_file" && widget.id() != "menu_view" && widget.id() != "menu_tools" &&
-			widget.visible())
-		{
-			drawWidget(widget, palette, UiLayer);
-		}
-	}
+	mainControlsView_.compose(MainControlsPaintSection::ExpandedControls, screen, paintContext);
 	if (classicVga && width_ >= 900 && layoutResult_.setupRail.height > 220.0f)
 	{
 		AlgorithmProfilePalette profilePalette;
@@ -1094,9 +1085,15 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 		drawText(*status_, UiRect(16.0f, detailY + 19.0f, static_cast<float>(width_) - 32.0f, 18.0f), 13.0f, palette.mutedText, TextLayer);
 	}
 	// Open combo options are submitted last within the UI layer, preserving their painter order over the chart.
-	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
-		if (mainUi_.widgets()[i]->visible() && mainUi_.widgets()[i]->expanded())
-			drawWidget(*mainUi_.widgets()[i], palette, DropdownLayer, true);
+	mainControlsView_.compose(MainControlsPaintSection::Popups, screen, paintContext);
+}
+
+void ControlPanel::drawMainControlPaintCommand(const UiPaintCommand& command, const ThemePalette& palette)
+{
+	if (command.primitive != UiPaintPrimitive::Control) return;
+	const UiWidget* widget = mainControlsView_.controls().find(command.elementId);
+	if (!widget || !widget->visible()) return;
+	drawWidget(*widget, palette, renderLayerForUiPaint(command.layer), command.popup);
 }
 
 void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::string& audioStatus)

@@ -1522,3 +1522,11 @@ Next: move main-control state synchronization and visibility behind `MainControl
 Added checks for busy setup versus available transport, selected algorithm/direction and run readouts, reference-cadence timing controls, and the collapsed Classic Windows 95 start/step presentation. `AppFrameworkTests` passed in x64 Debug and Release; the app linked in x64 Debug to an isolated output and the full x64 Release solution built. `git diff --check` passed. The state-only move does not change geometry or painter order; no performance gain is claimed.
 
 Next: move main-control paint ordering through `UiPaintCommand`, preserving `ControlPanel`'s theme-specific widget renderer and text resources.
+
+## 2026-10-20 — route main control composition through paint commands
+
+`MainControlsView::compose` now emits control commands in explicit header-button, menu, expanded-control, collapsed-start, and popup sections. Each command carries a stable widget ID, screen clip, semantic UI layer, and popup flag. `ControlPanel` adapts these commands through its existing `drawWidget` path, preserving preset-specific style, label resources, and the existing chart/timeline/profile draw order. Main dropdowns use a distinct shared-paint layer mapped to the established renderer dropdown layer.
+
+Headless checks cover section ordering, visibility filtering, clipped popup commands, and dropdown layer selection. `AppFrameworkTests` passed in x64 Debug and Release; the app linked in x64 Debug to a separate output, and the full x64 Release solution built. A live Release smoke view showed the main panel and chart rendering without an obvious layering regression. `git diff --check` passed. This is a testability/ownership change, not a measured render optimization.
+
+Next: move the remaining main-panel composition decisions (title/telemetry/profile/timeline section metadata where useful) behind the view without relocating renderer-specific drawing, then continue the structural audit's sorting and configuration boundaries.

@@ -8,6 +8,18 @@
 #include "UserSettings.h"
 #include "../SortingLogic/SortingLogic.h"
 
+namespace
+{
+	void submitControl(const UIRoot& controls, UiPaintContext& paintContext, const std::string& id,
+		UiPaintLayer layer, UiPaintMaterial material, const UiRect& screen, bool popup = false)
+	{
+		const UiWidget* widget = controls.find(id);
+		if (!widget || !widget->visible()) return;
+		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Control, widget->bounds(), UiColor(), std::string(),
+			id, material, layer, screen, true, 0.0f, popup));
+	}
+}
+
 void MainControlsView::initializeControls(const UserPreferences& preferences, const std::string& algorithmLabel)
 {
 	controls_.addButton("panel_toggle", ">>", AppAction(AppActionKind::TogglePanelExpanded));
@@ -112,4 +124,52 @@ void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetI
 	controls_.setWidgetEnabled("time_down", !busy && !referenceCadence);
 	controls_.setWidgetEnabled("time_up", !busy && !referenceCadence);
 	controls_.find("next")->setLabel(activePreset == UiPresetId::ClassicWindows95 ? "Step" : "Event >");
+}
+
+void MainControlsView::compose(MainControlsPaintSection section, const UiRect& screen,
+	UiPaintContext& paintContext) const
+{
+	if (screen.width <= 0.0f || screen.height <= 0.0f) return;
+	const char* headerButtons[] = { "panel_toggle", "settings" };
+	const char* menus[] = { "menu_file", "menu_view", "menu_tools" };
+	if (section == MainControlsPaintSection::HeaderButtons)
+	{
+		for (std::size_t i = 0; i < sizeof(headerButtons) / sizeof(headerButtons[0]); ++i)
+			submitControl(controls_, paintContext, headerButtons[i], UiPaintLayer::MainControls,
+				UiPaintMaterial::Button, screen);
+		return;
+	}
+	if (section == MainControlsPaintSection::Menus)
+	{
+		for (std::size_t i = 0; i < sizeof(menus) / sizeof(menus[0]); ++i)
+			submitControl(controls_, paintContext, menus[i], UiPaintLayer::MainControls,
+				UiPaintMaterial::Button, screen);
+		return;
+	}
+	if (section == MainControlsPaintSection::CollapsedStart)
+	{
+		submitControl(controls_, paintContext, "start_overlay", UiPaintLayer::MainControls,
+			UiPaintMaterial::Button, screen);
+		return;
+	}
+	if (section == MainControlsPaintSection::ExpandedControls)
+	{
+		for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+		{
+			const UiWidget& widget = *controls_.widgets()[i];
+			const std::string& id = widget.id();
+			if (id == "panel_toggle" || id == "settings" || id == "menu_file" ||
+				id == "menu_view" || id == "menu_tools") continue;
+			submitControl(controls_, paintContext, id, UiPaintLayer::MainControls,
+				UiPaintMaterial::Button, screen);
+		}
+		return;
+	}
+	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+	{
+		const UiWidget& widget = *controls_.widgets()[i];
+		if (widget.visible() && widget.expanded())
+			submitControl(controls_, paintContext, widget.id(), UiPaintLayer::MainDropdown,
+				UiPaintMaterial::Popup, screen, true);
+	}
 }
