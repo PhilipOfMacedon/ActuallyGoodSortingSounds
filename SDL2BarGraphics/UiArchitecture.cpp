@@ -158,6 +158,56 @@ UiAction mainMenuSelectionAction(const std::string& menuId, int selection)
 	return UiAction();
 }
 
+AppAction normalizeUiCatalogAction(const AppAction& action)
+{
+	if (action.kind == AppActionKind::SelectAlgorithm)
+	{
+		const sortinglogic::AlgorithmDescriptor* descriptor = nullptr;
+		if (!action.familyId.empty() || !action.variantId.empty())
+			descriptor = sortinglogic::algorithmDescriptorById(
+				sortinglogic::FamilyId(action.familyId), sortinglogic::VariantId(action.variantId));
+		else if (action.selection >= 0 && static_cast<std::size_t>(action.selection) < sortinglogic::algorithmCatalog().size())
+			descriptor = &sortinglogic::algorithmCatalog()[static_cast<std::size_t>(action.selection)];
+		return descriptor
+			? AppAction(AppActionKind::SelectAlgorithm, descriptor->familyId, descriptor->variantId)
+			: AppAction();
+	}
+
+	if (action.kind == AppActionKind::SetShellGapSequence)
+	{
+		AppAction normalized = action;
+		const sortinglogic::AlgorithmDescriptor* shell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
+		if (shell && action.selection >= 0 && static_cast<std::size_t>(action.selection) < shell->supportedOptions.size())
+			normalized.selection = shell->supportedOptions[static_cast<std::size_t>(action.selection)].value;
+		else
+			normalized.selection = static_cast<int>(sortinglogic::ShellGapSequence::Halving);
+		return normalized;
+	}
+
+	if (action.kind == AppActionKind::SetAlgorithmOption)
+	{
+		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(
+			sortinglogic::FamilyId(action.familyId), sortinglogic::VariantId(action.variantId));
+		if (!descriptor) return AppAction();
+
+		int optionIndex = 0;
+		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
+		{
+			const sortinglogic::AlgorithmOptionDescriptor& option = descriptor->supportedOptions[i];
+			if (action.optionGroupId != option.groupId) continue;
+			const bool stableIdMatches = !action.optionStableId.empty() && action.optionStableId == option.stableId;
+			const bool selectionMatches = action.optionStableId.empty() && optionIndex == action.selection;
+			if (stableIdMatches || selectionMatches)
+				return AppAction(AppActionKind::SetAlgorithmOption, descriptor->familyId, descriptor->variantId,
+					action.optionGroupId, option.stableId, option.value);
+			++optionIndex;
+		}
+		return AppAction();
+	}
+
+	return action;
+}
+
 UiScreenModel::UiScreenModel()
 	: preset(UiPresetId::Current), transport(UiTransportState::NoTrace), setupEnabled(true), runEnabled(false), playEnabled(false),
 		countEditable(true), durationEditable(true), descending(false), hasTrace(false), buildingTrace(false), playing(false), completed(false),

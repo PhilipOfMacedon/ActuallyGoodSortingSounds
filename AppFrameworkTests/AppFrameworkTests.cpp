@@ -871,6 +871,62 @@ namespace
 			"unknown menu IDs and invalid selection indices produce an empty command");
 	}
 
+	void testUiCatalogActionNormalization()
+	{
+		const sortinglogic::AlgorithmDescriptor* insertion =
+			sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
+		const sortinglogic::AlgorithmDescriptor* shell =
+			sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
+		const sortinglogic::AlgorithmDescriptor* merge =
+			sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
+		check(insertion && shell && merge && !shell->supportedOptions.empty() && !merge->supportedOptions.empty(),
+			"catalog action fixtures resolve insertion and option-bearing Shell/Merge descriptors");
+		if (!insertion || !shell || !merge || shell->supportedOptions.empty() || merge->supportedOptions.empty()) return;
+
+		int insertionIndex = -1;
+		const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
+		for (std::size_t i = 0; i < catalog.size(); ++i)
+			if (&catalog[i] == insertion) insertionIndex = static_cast<int>(i);
+		const AppAction numericSelection = normalizeUiCatalogAction(
+			AppAction(AppActionKind::SelectAlgorithm, 0.0f, insertionIndex));
+		const AppAction stableSelection = normalizeUiCatalogAction(
+			AppAction(AppActionKind::SelectAlgorithm, insertion->familyId, insertion->variantId));
+		const AppAction invalidSelection = normalizeUiCatalogAction(
+			AppAction(AppActionKind::SelectAlgorithm, 0.0f, static_cast<int>(catalog.size())));
+		check(numericSelection.familyId == insertion->familyId && numericSelection.variantId == insertion->variantId &&
+			stableSelection.familyId == insertion->familyId && stableSelection.variantId == insertion->variantId &&
+			invalidSelection.kind == AppActionKind::None,
+			"algorithm selection converts legacy catalog indices to stable IDs and rejects invalid selections");
+
+		AppAction shellSelection(AppActionKind::SetShellGapSequence, 0.0f, 2);
+		const AppAction normalizedShell = normalizeUiCatalogAction(shellSelection);
+		AppAction invalidShell(AppActionKind::SetShellGapSequence, 0.0f, 99);
+		const AppAction fallbackShell = normalizeUiCatalogAction(invalidShell);
+		check(normalizedShell.selection == shell->supportedOptions[2].value &&
+			fallbackShell.selection == static_cast<int>(sortinglogic::ShellGapSequence::Halving),
+			"Shell option indices resolve through catalog values with the established safe fallback");
+
+		const sortinglogic::AlgorithmOptionDescriptor& option = merge->supportedOptions[0];
+		int groupIndex = 0;
+		for (std::size_t i = 0; i < merge->supportedOptions.size(); ++i)
+		{
+			if (&merge->supportedOptions[i] == &option) break;
+			if (merge->supportedOptions[i].groupId == option.groupId) ++groupIndex;
+		}
+		AppAction indexedOption(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId, option.groupId);
+		indexedOption.selection = groupIndex;
+		const AppAction normalizedOption = normalizeUiCatalogAction(indexedOption);
+		const AppAction stableOption(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId,
+			option.groupId, option.stableId, option.value + 1);
+		const AppAction normalizedStableOption = normalizeUiCatalogAction(stableOption);
+		AppAction invalidOption(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId, option.groupId);
+		invalidOption.selection = 999;
+		check(normalizedOption.optionStableId == option.stableId && normalizedOption.selection == option.value &&
+			normalizedStableOption.optionStableId == option.stableId && normalizedStableOption.selection == option.value &&
+			normalizeUiCatalogAction(invalidOption).kind == AppActionKind::None,
+			"algorithm option indices and stable IDs resolve to catalog values and invalid options are rejected");
+	}
+
 	void testSdlUiEventAdapter()
 	{
 		SDL_Event event = {};
@@ -2576,6 +2632,7 @@ int main()
 	testAlgorithmBrowserModel();
 	testUiOverlayState();
 	testMainMenuSelectionActions();
+	testUiCatalogActionNormalization();
 	testSdlUiEventAdapter();
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();

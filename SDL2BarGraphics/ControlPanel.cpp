@@ -390,14 +390,6 @@ std::string formatDuration(float seconds)
 		return "Settings | General Audio";
 	}
 
-	int shellGapValue(int selectedIndex)
-	{
-		const sortinglogic::AlgorithmDescriptor* shell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
-		if (shell && selectedIndex >= 0 && static_cast<std::size_t>(selectedIndex) < shell->supportedOptions.size())
-			return shell->supportedOptions[static_cast<std::size_t>(selectedIndex)].value;
-		return static_cast<int>(sortinglogic::ShellGapSequence::Halving);
-	}
-
 	glm::vec4 brighter(glm::vec4 color)
 	{
 		color.r = std::min(1.0f, color.r * 1.18f + 0.025f);
@@ -1373,42 +1365,11 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		layoutSettingsControls();
 		return;
 	}
-	if (action.appAction.kind == AppActionKind::SelectAlgorithm)
+	if (action.appAction.kind == AppActionKind::SelectAlgorithm ||
+		action.appAction.kind == AppActionKind::SetShellGapSequence ||
+		action.appAction.kind == AppActionKind::SetAlgorithmOption)
 	{
-		const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
-		if (action.appAction.selection >= 0 && static_cast<std::size_t>(action.appAction.selection) < catalog.size())
-		{
-			const sortinglogic::AlgorithmDescriptor& descriptor = catalog[static_cast<std::size_t>(action.appAction.selection)];
-			output = AppAction(AppActionKind::SelectAlgorithm, descriptor.familyId, descriptor.variantId);
-		}
-		return;
-	}
-	if (action.appAction.kind == AppActionKind::SetShellGapSequence)
-	{
-		output = action.appAction;
-		output.selection = shellGapValue(action.appAction.selection);
-		return;
-	}
-	if (action.appAction.kind == AppActionKind::SetAlgorithmOption)
-	{
-		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(
-			action.appAction.familyId, action.appAction.variantId);
-		if (descriptor)
-		{
-			int optionIndex = 0;
-			for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
-			{
-				const sortinglogic::AlgorithmOptionDescriptor& option = descriptor->supportedOptions[i];
-				if (action.appAction.optionGroupId != option.groupId) continue;
-				if (optionIndex == action.appAction.selection)
-				{
-					output = AppAction(AppActionKind::SetAlgorithmOption, descriptor->familyId, descriptor->variantId,
-						action.appAction.optionGroupId, option.stableId, option.value);
-					break;
-				}
-				++optionIndex;
-			}
-		}
+		output = normalizeUiCatalogAction(action.appAction);
 		return;
 	}
 	if (action.appAction.kind == AppActionKind::SelectAudioBand)

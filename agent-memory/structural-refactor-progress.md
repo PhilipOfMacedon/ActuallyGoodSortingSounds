@@ -571,3 +571,21 @@ Verification:
 - `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
 
 Next: extract catalog-backed AppAction normalization for algorithm selection, option selection, and Shell sequence values from `ControlPanel::processAction`, then continue separating settings/audio dispatch from widget interpretation.
+
+## 2026-10-19 — normalize catalog-backed UI actions
+
+Status: implementation and focused verification complete.
+
+- Added `normalizeUiCatalogAction` to resolve legacy numeric algorithm choices into stable family/variant IDs and resolve algorithm option indices or stable option IDs into catalog-owned values.
+- Moved Shell gap sequence selection and its established Halving fallback out of `ControlPanel` and into the same catalog adapter.
+- `ControlPanel::processAction` now delegates these catalog-facing action kinds as a group; the application controller continues to receive the same stable action payloads.
+- Added checks for numeric and stable algorithm identity, invalid algorithm IDs, valid/fallback Shell sequences, grouped Merge option indices, stable option IDs, and invalid option selections.
+- No algorithm behavior, catalog order, menu option values, settings persistence, or controller dispatch rules changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
+
+Next: separate audio/settings command handling from widget interpretation and reduce the remaining event-ID string routing in `ControlPanel::processAction`.
