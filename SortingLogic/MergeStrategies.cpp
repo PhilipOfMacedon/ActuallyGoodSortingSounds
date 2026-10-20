@@ -1,6 +1,7 @@
 #include "AlgorithmStrategies.h"
 #include "TraceRecorder.h"
 #include "MergeTraceUtilities.h"
+#include "GrailTraceUtilities.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -322,6 +323,115 @@ namespace sortinglogic
 				r.resizeAuxiliary("merge", 0);
 				r.resizeAuxiliary("ecta_buffer", 0);
 			}
+		static void lazyStableSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "lazy_pair_comparisons", "lazy_pair_swaps", "lazy_merge_comparisons", "lazy_rotation_swaps", "lazy_merge_passes" })
+				r.declareMetric(key);
+			for (std::size_t index = 1; index < count; index += 2)
+			{
+				const SortItem left = r.at(index - 1), right = r.at(index);
+				r.compare(left, right, index - 1, index, "main", "main");
+				r.addMetric("lazy_pair_comparisons");
+				if (compareItems(left, right, r.trace.direction) == ComparisonResult::Greater)
+				{
+					r.swap(index - 1, index);
+					r.addMetric("lazy_pair_swaps");
+				}
+			}
+			for (std::size_t part = 2; part < count;)
+			{
+				const int phase = r.beginPhase("Lazy stable merge pass");
+				std::size_t left = 0;
+				while (left + 2 * part <= count)
+				{
+					detail::grailMergeWithoutBuffer(r, left, part, part, "lazy");
+					left += 2 * part;
+				}
+				const std::size_t remainder = count - left;
+				if (remainder > part) detail::grailMergeWithoutBuffer(r, left, part, remainder - part, "lazy");
+				r.addMetric("lazy_merge_passes");
+				r.endPhase(phase, "Lazy stable merge pass");
+				if (part > count / 2) break;
+				part *= 2;
+			}
+		}
+
+		static void optimizedLazyStableSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "optimized_lazy_runs", "optimized_lazy_run_reversals", "optimized_lazy_insertion_comparisons",
+				"optimized_lazy_shifts", "optimized_lazy_merge_comparisons", "optimized_lazy_rotation_swaps", "optimized_lazy_merge_passes" })
+				r.declareMetric(key);
+			const auto compareAt = [&r](std::size_t first, std::size_t second)
+			{
+				const SortItem left = r.at(first), right = r.at(second);
+				r.compare(left, right, first, second, "main", "main");
+				r.addMetric("optimized_lazy_insertion_comparisons");
+				return compareItems(left, right, r.trace.direction);
+			};
+			const auto insertionRun = [&r, &compareAt](std::size_t first, std::size_t last)
+			{
+				if (last - first < 2) return;
+				std::size_t index = first + 1;
+				if (compareAt(first, index) == ComparisonResult::Greater)
+				{
+					while (index < last && compareAt(index - 1, index) == ComparisonResult::Greater) ++index;
+					for (std::size_t left = first, right = index; left < right && left < --right; ++left)
+					{
+						r.swap(left, right, SemanticRole::WriteTarget);
+						r.addMetric("optimized_lazy_run_reversals");
+					}
+				}
+				else
+				{
+					while (index < last && compareAt(index - 1, index) != ComparisonResult::Greater) ++index;
+				}
+				for (; index < last; ++index)
+				{
+					const SortItem key = r.at(index);
+					r.hold(index);
+					std::size_t position = index;
+					while (position > first)
+					{
+						const SortItem previous = r.at(position - 1);
+						r.compare(key, previous, index, position - 1, "main", "main", SemanticRole::HeldKey, SemanticRole::ComparedItem);
+						r.addMetric("optimized_lazy_insertion_comparisons");
+						if (compareItems(key, previous, r.trace.direction) != ComparisonResult::Less) break;
+						r.shift(position - 1, position);
+						r.addMetric("optimized_lazy_shifts");
+						--position;
+					}
+					r.place(position, key);
+				}
+				r.addMetric("optimized_lazy_runs");
+			};
+
+			for (std::size_t first = 0; first < count; first += 16)
+			{
+				const std::size_t last = (std::min)(count, first + 16);
+				const std::size_t begin = r.trace.events.size();
+				insertionRun(first, last);
+				r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "Optimized lazy insertion run", begin);
+			}
+			for (std::size_t part = 16; part < count;)
+			{
+				const int phase = r.beginPhase("Optimized lazy merge pass");
+				std::size_t left = 0;
+				while (left + 2 * part <= count)
+				{
+					detail::grailMergeWithoutBuffer(r, left, part, part, "optimized_lazy");
+					left += 2 * part;
+				}
+				const std::size_t remainder = count - left;
+				if (remainder > part) detail::grailMergeWithoutBuffer(r, left, part, remainder - part, "optimized_lazy");
+				r.addMetric("optimized_lazy_merge_passes");
+				r.endPhase(phase, "Optimized lazy merge pass");
+				if (part > count / 2) break;
+				part *= 2;
+			}
+		}
+
 		static void weaveMergeRange(Recorder& r, std::size_t first, std::size_t last)
 		{
 			if (last <= first) return;
@@ -389,6 +499,8 @@ namespace sortinglogic
 
 		}
 
+		void lazyStableSortStrategy(Recorder& r) { lazyStableSort(r); }
+		void optimizedLazyStableSortStrategy(Recorder& r) { optimizedLazyStableSort(r); }
 		void weaveMergeSortStrategy(Recorder& r) { weaveMergeSort(r); }
 		void ectaStrategy(Recorder& r) { ectaSortInternal(r); }
 		void mergeSortStrategy(Recorder& r) { mergeSort(r); }

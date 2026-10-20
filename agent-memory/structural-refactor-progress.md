@@ -1641,3 +1641,10 @@ Moved the standalone Weave Merge recursion and range kernel into MergeStrategies
 The x64 Debug and Release solution builds passed. The focused Weave Merge suite passed in both configurations with 6,290 checks and zero failures. git diff --check passed. SortingLogic.cpp is now 4310 lines. No runtime-performance change is claimed.
 
 Next: continue extracting remaining merge and hybrid implementation clusters, then reassess the residual fallback dispatch.
+## 2026-10-20 — move Lazy Stable variants into the merge module
+
+Moved Lazy Stable Sort and Optimized Lazy Stable Sort into MergeStrategies.cpp. They retain their existing Grail no-buffer merge kernel dependency, now included explicitly at the strategy boundary. The catalog builders bind to named merge strategies and the central fallback cases are removed.
+
+The x64 Debug and Release solution builds passed. The existing focused Lazy Stable suite passed in both configurations with 450,132 checks and zero failures. git diff --check passed. SortingLogic.cpp is now 4202 lines; no runtime-performance change is claimed.
+
+Next: move the related Laziest/Lazierest variants and their private merge operations, then continue through the remaining merge kernels.
