@@ -975,4 +975,21 @@ Verification:
 - Release links still report `LNK4020` static-library PDB type-record warnings; executables link successfully. This issue is tracked separately from dependency path resolution.
 - `git diff --check` passed; configured LF-to-CRLF notices only.
 
-Next: review the Release PDB warnings and continue the remaining UI/rendering ownership items with small, behavior-preserving changes.
+Follow-up: the next section records the Release PDB warning fix and profile comparison.
+
+## 2026-10-20 — remove Release framework PDB warnings
+
+Status: implementation and warning/performance verification complete.
+
+- Disabled whole-program/LTCG compilation only for the `AppFramework` Release static library. Release compiler optimization remains enabled; the app's own translation units and the sorting/audio libraries retain their existing optimization settings.
+- This prevents the final linker from consuming the framework's LTCG PDB type records, which triggered repeated `LNK4020` warnings. x64 Release and Win32 Release now link without those warnings.
+- The tradeoff is no cross-module LTCG optimization across the AppFramework boundary. The existing 800-item x64 Release render-cost profile showed no measurable regression: fresh snapshot median 41.030 -> 36.268 us; reused snapshot 15.426 -> 15.440 us; role scan/index medians 0.897/0.142 -> 0.686/0.103 ms per 800 items.
+
+Verification:
+
+- x64 Release and Win32 Release solution builds passed without `LNK4020` output.
+- `AppFrameworkTests` and `SortingLogicTests --core-contracts-only` passed in both Release configurations; SortingLogic reported 39,535 checks and 0 failures.
+- `AppFrameworkTests --render-cost-profile` completed successfully in x64 Release.
+- `git diff --check` passed; configured LF-to-CRLF notices only.
+
+Next: continue the remaining UI/rendering ownership items, then revisit any performance boundary only when a representative profile shows meaningful cost.
