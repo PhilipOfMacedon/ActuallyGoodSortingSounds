@@ -28,6 +28,10 @@ namespace sortinglogic
 		void shove(detail::Recorder& recorder);
 		void slope(detail::Recorder& recorder);
 		void hybridComb(detail::Recorder& recorder);
+		void circleSortIterative(detail::Recorder& recorder);
+		void circleSortRecursive(detail::Recorder& recorder);
+		void introCircleSortIterative(detail::Recorder& recorder);
+		void introCircleSortRecursive(detail::Recorder& recorder);
 		void optimizedBubble(detail::Recorder& recorder);
 		void optimizedCocktail(detail::Recorder& recorder);
 		void selection(detail::Recorder& recorder);

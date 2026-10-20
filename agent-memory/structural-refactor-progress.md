@@ -1143,3 +1143,19 @@ Verification:
 - `git diff --check` passed.
 
 Next: move Circle and Intro Circle with their shared recursion helper now that their binary-insertion dependency is an explicit strategy API; then continue the remaining exchange and heap boundaries.
+
+## 2026-10-20 — extract Circle Sort variants
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved the shared power-of-two and recursive-pass helpers, iterative/recursive Circle Sort, and both Intro Circle variants into `CircleStrategies.cpp`.
+- Added thin strategy entry points for the four catalog variants, routed their stable IDs directly, and removed their fallback cases. Intro Circle uses the shared Binary Insertion range kernel through the new strategy API.
+- Kept the existing schedules, comparison order, swap order, metrics, and fallback threshold unchanged.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86 Debug/Release and x64 Debug/Release.
+- Focused Circle family tests passed 37,093 checks; pinned catalog coverage passed 1,741 checks; SortingLogic core contracts passed 39,535 checks. All reported 0 failures.
+- `git diff --check` passed.
+
+Next: continue extracting recorder-only algorithm groups while preserving their shared helpers and direct registration boundaries; the central implementation still contains substantial heap, tree, merge, and partition code.

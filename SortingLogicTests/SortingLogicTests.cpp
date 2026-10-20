@@ -4194,6 +4194,23 @@ namespace
 		}
 	}
 
+	void testCircleStrategyFamily()
+	{
+		using namespace sortinglogic;
+		const SortAlgorithm algorithms[] = { SortAlgorithm::ArrayvCircleIterative, SortAlgorithm::ArrayvCircleRecursive,
+			SortAlgorithm::ArrayvIntroCircleIterative, SortAlgorithm::ArrayvIntroCircleRecursive };
+		const std::vector<std::vector<float> > cases = {
+			{}, { 0.5f }, { 0.4f, 0.2f, 0.4f, 0.2f }, { 0.3f, 0.3f, 0.3f, 0.3f },
+			{ 0.1f, 0.2f, 0.3f, 0.4f }, { 0.5f, 0.4f, 0.3f, 0.2f }, { 0.6f, 0.1f, 0.8f, 0.2f, 0.7f, 0.3f }
+		};
+		for (std::size_t algorithm = 0; algorithm < sizeof(algorithms) / sizeof(algorithms[0]); ++algorithm)
+			for (std::size_t input = 0; input < cases.size(); ++input)
+				for (int direction = 0; direction < 2; ++direction)
+					verifyAlgorithmCase(std::string(algorithmDisplayName(algorithms[algorithm])) + " circle case " + std::to_string(input),
+						floats(cases[input]), InputProfile::NormalizedFloat, algorithms[algorithm],
+						direction == 0 ? SortDirection::Ascending : SortDirection::Descending);
+	}
+
 	void testElementaryTailStrategies()
 	{
 		using namespace sortinglogic;
@@ -5212,6 +5229,14 @@ int main(int argc, char* argv[])
 			stage = "testPancakeStrategyFamily";
 			testPancakeStrategyFamily();
 			std::cout << "Focused Pancake family tests: " << checks << " checks, " << failures << " failures.\n";
+			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+		if (argc > 1 && std::string(argv[1]) == "--circle-family-only")
+		{
+			stage = "testCircleStrategyFamily";
+			testCircleStrategyFamily();
+			testHybridCombAndIntroCircleVariants();
+			std::cout << "Focused Circle family tests: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 		if (argc > 1 && std::string(argv[1]) == "--elementary-tail-only")
