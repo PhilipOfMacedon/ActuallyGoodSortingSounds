@@ -42,12 +42,9 @@
     <ClCompile Include="SDL2BarGraphics.cpp" />
     <ClCompile Include="SdlAudioOutput.cpp" />
     <ClCompile Include="SdlUiEventAdapter.cpp" />
-    <ClCompile Include="Mesh.cpp" />
-    <ClCompile Include="Rectangle.cpp" />
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="TextLabel.cpp" />
     <ClCompile Include="TextBlockLayout.cpp" />
-    <ClCompile Include="Texture.cpp" />
     <ClCompile Include="ThemePalette.cpp" />
     <ClCompile Include="UiLayer.cpp" />
     <ClCompile Include="UiAppearance.cpp" />
@@ -84,8 +81,6 @@
     <ClInclude Include="ControlPanel.h" />
     <ClInclude Include="FrameCoordinator.h" />
     <ClInclude Include="LayoutMetrics.h" />
-    <ClInclude Include="Mesh.h" />
-    <ClInclude Include="Rectangle.h" />
     <ClInclude Include="RenderingTypes.h" />
     <ClInclude Include="RenderPipeline.h" />
     <ClInclude Include="Renderer2D.h" />
@@ -100,7 +95,6 @@
     <ClInclude Include="TextLabel.h" />
     <ClInclude Include="TextBlockLayout.h" />
     <ClInclude Include="TextSearch.h" />
-    <ClInclude Include="Texture.h" />
     <ClInclude Include="ThemePalette.h" />
     <ClInclude Include="UiLayer.h" />
     <ClInclude Include="UiAppearance.h" />

@@ -886,3 +886,22 @@ Verification:
 - `git diff --check` passed; configured LF-to-CRLF notices only.
 
 Next: continue with the audit's remaining UI view/action ownership and measured text/raster invalidation concerns; do not add annotation caches absent a larger representative trace showing material cost.
+
+## 2026-10-20 — remove inactive rendering and audio objects
+
+Status: implementation and regression verification complete.
+
+- Whole-tree call-site search confirmed `Mesh`, `Rectangle`, and their `Texture` wrapper were referenced only by their own legacy implementation. Removed those six files from the application and removed their Visual Studio project/filter entries.
+- Removed the unused `SoundEngine::Synthesizer` member from `SdlAudioOutput`. It was constructed but never read or written; the callback uses the two reconstructed synthesizers and the immutable timeline/seek state. The reusable synthesizer remains in `SoundEngine` and the independent audio tests/previews.
+- Kept `Renderer2D`, `Shader`, and `TextLabel` resources, which do have live callers. UI rectangle paint commands are unrelated to the deleted `Rectangle` mesh class.
+
+Verification:
+
+- x64 Debug and Release solution builds passed.
+- `AppFrameworkTests` passed in both configurations.
+- `SortingLogicTests --core-contracts-only` passed in both configurations with 39,535 checks and 0 failures.
+- `SoundEngineTests` passed in both configurations with 417,376 assertions.
+- Standalone `AudioDeviceTransportTests` built and passed in both configurations with SDL dummy audio, including 80/800-item runs.
+- `git diff --check` passed; configured line-ending notices only.
+
+Next: narrow `ArrayRenderer`'s visual input from the whole settings object to the chart preference it actually consumes, then continue the asset/source-ownership audit.

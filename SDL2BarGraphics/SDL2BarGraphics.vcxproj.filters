@@ -50,13 +50,7 @@
     <ClCompile Include="Shader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Mesh.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="ArrayRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Rectangle.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SDL2BarGraphics.cpp">
@@ -68,9 +62,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TextBlockLayout.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="Texture.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AppearanceEditorLayout.h"><Filter>Header Files</Filter></ClInclude>
@@ -105,9 +96,6 @@
     <ClInclude Include="SettingsFileStorage.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsIniCodec.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="UserSettingsValidation.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="Mesh.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="ArrayRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -125,18 +113,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RenderPipeline.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="Rectangle.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="TextLabel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TextBlockLayout.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="TextSearch.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="resource.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Texture.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

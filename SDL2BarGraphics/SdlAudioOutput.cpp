@@ -34,7 +34,7 @@ namespace
 
 SdlAudioOutput::SdlAudioOutput(LatestAudioStateMailbox& mailbox)
 	: mailbox_(mailbox), device_(0), obtained_(), subsystemInitialized_(false),
-	  status_("Audio device is not initialized."), synthesizer_(), reconstructedSynthesizers_(), activeReconstructedSynthesizer_(0),
+	  status_("Audio device is not initialized."), reconstructedSynthesizers_(), activeReconstructedSynthesizer_(0),
 	  seekCrossfading_(false), seekCrossfadeProgress_(0), seekCrossfadeFrames_(0), crossfadeOldScratch_(), crossfadeNewScratch_(),
 	  appliedRevision_(0),
 	  appliedTimelineGeneration_(0), appliedTimeline_(nullptr), appliedTransportRevision_(0), acknowledgedTimelineGeneration_(0),

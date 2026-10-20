@@ -71,7 +71,6 @@ private:
 	SDL_AudioSpec obtained_;
 	bool subsystemInitialized_;
 	std::string status_;
-	SoundEngine::Synthesizer synthesizer_;
 	SoundEngine::ReconstructedSynthesizer reconstructedSynthesizers_[2];
 	unsigned int activeReconstructedSynthesizer_;
 	bool seekCrossfading_;
