@@ -348,6 +348,35 @@ namespace sortinglogic
 		return CommandResult(true, status_);
 	}
 
+	CommandResult Simulation::setAlgorithmOption(const std::string& groupId, const std::string& stableId)
+	{
+		const CommandResult allowed = checkPreparationAllowed();
+		if (!allowed.accepted) { status_ = allowed.message; return allowed; }
+		const AlgorithmDescriptor* descriptor = algorithmDescriptor(algorithm_);
+		if (!descriptor) return CommandResult(false, "The active algorithm has no registered option catalog.");
+
+		const AlgorithmOptionDescriptor* selected = nullptr;
+		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
+			if (groupId == descriptor->supportedOptions[i].groupId && stableId == descriptor->supportedOptions[i].stableId)
+			{
+				selected = &descriptor->supportedOptions[i];
+				break;
+			}
+		if (!selected) return CommandResult(false, "The selected algorithm option is not registered for the active algorithm.");
+
+		int currentValue = 0;
+		if (!algorithmConfiguration_.optionValue(selected->target, currentValue))
+			return CommandResult(false, "The selected algorithm option has no configuration binding.");
+		if (currentValue == selected->value)
+			return CommandResult(true, std::string(selected->displayName) + " is already selected.");
+		if (!algorithmConfiguration_.setOptionValue(selected->target, selected->value))
+			return CommandResult(false, "The selected algorithm option has no configuration binding.");
+
+		replaceTraceWithBaseline();
+		status_ = std::string(descriptor->displayName) + " option set to " + selected->displayName + ".";
+		return CommandResult(true, status_);
+	}
+
 	CommandResult Simulation::setCompletionScanEnabled(bool enabled)
 	{
 		const CommandResult allowed = checkPreparationAllowed();
@@ -402,6 +431,7 @@ namespace sortinglogic
 		if (!buildingTrace_) return;
 		buildingTrace_ = false;
 		if (!completed.succeeded) { status_ = "Trace build failed: " + (completed.error.empty() ? "Unknown error." : completed.error); return; }
+		algorithmConfiguration_ = completed.trace.configuration;
 		trace_ = std::make_shared<SortTrace>(std::move(completed.trace)); currentState_ = trace_->initialState;
 		cursor_ = 0; elapsedSeconds_ = 0.0f; playing_ = false;
 		status_ = trace_->complete

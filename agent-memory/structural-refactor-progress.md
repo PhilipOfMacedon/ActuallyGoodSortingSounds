@@ -290,7 +290,7 @@ Next: move simulation and app request construction toward the resolved configura
 
 ## 2026-10-19 — consolidate Simulation's stored algorithm choices
 
-Status: implementation and focused verification complete.
+Status: committed and pushed as `0806c10`.
 
 - Replaced Simulation's three independent Shell/Merge option members with one `AlgorithmConfiguration` value. Existing accessors and snapshot fields remain stable views of that value.
 - Trace request construction still projects those choices through the legacy scalar adapter while other external request fields are being migrated. The builder resolves that adapter into the immutable typed trace configuration.
@@ -304,4 +304,24 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - SoundEngine was untouched in this slice; its 417,371-assertion Debug and Release runs passed in the preceding typed-configuration slice.
 
-Next: define one app-to-sorting request path that carries stable option IDs plus the prepared simulation configuration, then retire duplicated named settings values only after their migration adapters are proven.
+Next: completed in the following entry.
+
+## 2026-10-19 — route application options through typed configuration
+
+Status: implementation and focused verification complete.
+
+- Added shared option-value accessors to `AlgorithmConfiguration`; catalog targets now have one read/write mapping instead of separate switches in trace validation, app dispatch, and simulation.
+- Added `Simulation::setAlgorithmOption(group, stableId)`. It resolves against the active algorithm's catalog, enforces the existing build/play lock, updates the typed value, and clears an old trace only when the effective choice changes.
+- Routed AppController option actions through that method. Stable family/variant/group/choice IDs remain the persisted representation, while Shell/Merge compatibility preference fields are updated as before.
+- App trace requests now carry the Simulation's typed configuration alongside stable option IDs. Startup hydrates the active algorithm's stored choices; successful build publication copies the effective resolved configuration back into Simulation.
+- Added an integration check that the effective Base-N arity reaches both the trace and the Simulation state after publication.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 39,520 checks with 0 failures.
+- Debug and Release pinned catalog-coverage runs: each passed 1,741 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed, including option dispatch and settings persistence checks.
+- No audio or rendering code changed; no unrelated sound suite was rerun.
+
+Next: isolate settings compatibility and option resolution so the INI migration fields do not also serve as runtime configuration state.

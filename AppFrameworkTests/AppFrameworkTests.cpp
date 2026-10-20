@@ -1766,7 +1766,8 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> baseNTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(baseNTrace && baseNTrace->bucketCount == 8 && baseNTrace->configuration.heapArity == 8,
+		check(baseNTrace && baseNTrace->bucketCount == 8 && baseNTrace->configuration.heapArity == 8 &&
+			app.simulation().algorithmConfiguration().heapArity == 8,
 			"AppController routes catalog-selected heap arity into the immutable trace request");
 
 		const sortinglogic::AlgorithmDescriptor* rotateMerge = sortinglogic::algorithmDescriptor(

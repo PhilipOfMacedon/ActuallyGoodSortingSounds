@@ -126,6 +126,19 @@ AppController::AppController(ISettingsPersistence& settingsPersistence)
 	simulation_.setMergeExecutionMode(preferences_.simulation.mergeExecutionMode);
 	simulation_.setMergeBufferVisualizationEnabled(preferences_.simulation.mergeBufferVisualizationEnabled);
 	simulation_.setCompletionScanEnabled(preferences_.simulation.completionScanEnabled);
+	const sortinglogic::AlgorithmDescriptor* activeAlgorithm = sortinglogic::algorithmDescriptor(simulation_.algorithm());
+	if (activeAlgorithm)
+	{
+		std::set<std::string> configuredGroups;
+		for (std::size_t i = 0; i < activeAlgorithm->supportedOptions.size(); ++i)
+		{
+			const sortinglogic::AlgorithmOptionDescriptor& option = activeAlgorithm->supportedOptions[i];
+			const std::string group(option.groupId);
+			if (!configuredGroups.insert(group).second) continue;
+			const std::string stableId = algorithmOptionStableId(preferences_, *activeAlgorithm, group);
+			if (!stableId.empty()) simulation_.setAlgorithmOption(group, stableId);
+		}
+	}
 }
 
 AppController::~AppController() = default;
@@ -136,6 +149,7 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 	sortinglogic::TraceBuildRequest request;
 	sortinglogic::CommandResult result = simulation_.beginTraceBuild(request);
 	if (!result.accepted) return result;
+	request.setConfiguration(simulation_.algorithmConfiguration());
 	const sortinglogic::AlgorithmDescriptor* traceAlgorithm = sortinglogic::algorithmDescriptor(request.algorithm);
 	if (traceAlgorithm)
 	{
@@ -467,28 +481,18 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			? algorithmOptionStableId(preferences_, *descriptor, action.optionGroupId) : std::string();
 		if (!descriptor || !option || static_cast<sortinglogic::SortAlgorithm>(preferences_.simulation.algorithm) != descriptor->id)
 			result = sortinglogic::CommandResult(false, "The selected algorithm option is not available for the active algorithm.");
-		else if (option->target == sortinglogic::AlgorithmOptionTarget::ShellGapSequence)
-		{
-			result = simulation_.setShellGapSequence(static_cast<sortinglogic::ShellGapSequence>(option->value));
-			if (result.accepted) preferences_.simulation.shellGapSequence = simulation_.shellGapSequence();
-		}
-		else if (option->target == sortinglogic::AlgorithmOptionTarget::MergeExecutionMode)
-		{
-			result = simulation_.setMergeExecutionMode(static_cast<sortinglogic::MergeExecutionMode>(option->value));
-			if (result.accepted) preferences_.simulation.mergeExecutionMode = simulation_.mergeExecutionMode();
-		}
-		else if (option->target == sortinglogic::AlgorithmOptionTarget::MergeWritebackMode)
-		{
-			result = simulation_.setMergeWritebackMode(static_cast<sortinglogic::MergeWritebackMode>(option->value));
-			if (result.accepted) preferences_.simulation.mergeWritebackMode = simulation_.mergeWritebackMode();
-		}
 		else
 		{
-			const sortinglogic::RenderSnapshot snapshot = simulation_.snapshot();
-			if (snapshot.buildingTrace || snapshot.playing)
-				result = sortinglogic::CommandResult(false, "Algorithm options are locked while a trace is building or playing.");
-			else
-				result = sortinglogic::CommandResult(true, "The selected option will be used for the next trace.");
+			result = simulation_.setAlgorithmOption(action.optionGroupId, action.optionStableId);
+			if (result.accepted)
+			{
+				if (option->target == sortinglogic::AlgorithmOptionTarget::ShellGapSequence)
+					preferences_.simulation.shellGapSequence = simulation_.shellGapSequence();
+				else if (option->target == sortinglogic::AlgorithmOptionTarget::MergeExecutionMode)
+					preferences_.simulation.mergeExecutionMode = simulation_.mergeExecutionMode();
+				else if (option->target == sortinglogic::AlgorithmOptionTarget::MergeWritebackMode)
+					preferences_.simulation.mergeWritebackMode = simulation_.mergeWritebackMode();
+			}
 		}
 		if (result.accepted && previousStableId != option->stableId)
 			preferences_.algorithmOptions[algorithmOptionSettingsKey(descriptor->familyId, descriptor->variantId,

@@ -257,6 +257,40 @@ namespace sortinglogic
 			: shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
 			mergeExecutionMode(MergeExecutionMode::BottomUp), grailBufferMode(GrailBufferMode::InPlace),
 			radixBase(0), bucketCount(0), heapArity(4), timeMagnitude(10), rotateMergeBufferSize(64) {}
+		bool optionValue(AlgorithmOptionTarget target, int& value) const
+		{
+			switch (target)
+			{
+			case AlgorithmOptionTarget::ShellGapSequence: value = static_cast<int>(shellGapSequence); return true;
+			case AlgorithmOptionTarget::MergeExecutionMode: value = static_cast<int>(mergeExecutionMode); return true;
+			case AlgorithmOptionTarget::MergeWritebackMode: value = static_cast<int>(mergeWritebackMode); return true;
+			case AlgorithmOptionTarget::BucketCount: value = bucketCount; return true;
+			case AlgorithmOptionTarget::HeapArity: value = heapArity; return true;
+			case AlgorithmOptionTarget::GrailBufferMode: value = static_cast<int>(grailBufferMode); return true;
+			case AlgorithmOptionTarget::RadixBase: value = radixBase; return true;
+			case AlgorithmOptionTarget::TimeMagnitude: value = timeMagnitude; return true;
+			case AlgorithmOptionTarget::RotateMergeBufferSize: value = rotateMergeBufferSize; return true;
+			case AlgorithmOptionTarget::Unbound: return false;
+			}
+			return false;
+		}
+		bool setOptionValue(AlgorithmOptionTarget target, int value)
+		{
+			switch (target)
+			{
+			case AlgorithmOptionTarget::ShellGapSequence: shellGapSequence = static_cast<ShellGapSequence>(value); return true;
+			case AlgorithmOptionTarget::MergeExecutionMode: mergeExecutionMode = static_cast<MergeExecutionMode>(value); return true;
+			case AlgorithmOptionTarget::MergeWritebackMode: mergeWritebackMode = static_cast<MergeWritebackMode>(value); return true;
+			case AlgorithmOptionTarget::BucketCount: bucketCount = value; return true;
+			case AlgorithmOptionTarget::HeapArity: heapArity = value; return true;
+			case AlgorithmOptionTarget::GrailBufferMode: grailBufferMode = static_cast<GrailBufferMode>(value); return true;
+			case AlgorithmOptionTarget::RadixBase: radixBase = value; return true;
+			case AlgorithmOptionTarget::TimeMagnitude: timeMagnitude = value; return true;
+			case AlgorithmOptionTarget::RotateMergeBufferSize: rotateMergeBufferSize = value; return true;
+			case AlgorithmOptionTarget::Unbound: return false;
+			}
+			return false;
+		}
 	};
 
 	struct AlgorithmOptionDescriptor
@@ -496,6 +530,7 @@ namespace sortinglogic
 		CommandResult setShellGapSequence(ShellGapSequence sequence);
 		CommandResult setMergeWritebackMode(MergeWritebackMode mode);
 		CommandResult setMergeExecutionMode(MergeExecutionMode mode);
+		CommandResult setAlgorithmOption(const std::string& groupId, const std::string& stableId);
 		CommandResult setMergeBufferVisualizationEnabled(bool enabled);
 		CommandResult setCompletionScanEnabled(bool enabled);
 		CommandResult beginTraceBuild(TraceBuildRequest& request);
@@ -523,6 +558,7 @@ namespace sortinglogic
 		ShellGapSequence shellGapSequence() const { return algorithmConfiguration_.shellGapSequence; }
 		MergeWritebackMode mergeWritebackMode() const { return algorithmConfiguration_.mergeWritebackMode; }
 		MergeExecutionMode mergeExecutionMode() const { return algorithmConfiguration_.mergeExecutionMode; }
+		AlgorithmConfiguration algorithmConfiguration() const { return algorithmConfiguration_; }
 		bool mergeBufferVisualizationEnabled() const { return mergeBufferVisualizationEnabled_; }
 		bool completionScanEnabled() const { return completionScanEnabled_; }
 		bool isBuildingTrace() const { return buildingTrace_; }

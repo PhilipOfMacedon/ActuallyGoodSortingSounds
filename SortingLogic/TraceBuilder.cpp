@@ -10,24 +10,6 @@ namespace sortinglogic
 
 	namespace
 	{
-		int configuredOptionValue(const AlgorithmConfiguration& configuration, AlgorithmOptionTarget target)
-		{
-			switch (target)
-			{
-			case AlgorithmOptionTarget::ShellGapSequence: return static_cast<int>(configuration.shellGapSequence);
-			case AlgorithmOptionTarget::MergeExecutionMode: return static_cast<int>(configuration.mergeExecutionMode);
-			case AlgorithmOptionTarget::MergeWritebackMode: return static_cast<int>(configuration.mergeWritebackMode);
-			case AlgorithmOptionTarget::BucketCount: return configuration.bucketCount;
-			case AlgorithmOptionTarget::HeapArity: return configuration.heapArity;
-			case AlgorithmOptionTarget::GrailBufferMode: return static_cast<int>(configuration.grailBufferMode);
-			case AlgorithmOptionTarget::RadixBase: return configuration.radixBase;
-			case AlgorithmOptionTarget::TimeMagnitude: return configuration.timeMagnitude;
-			case AlgorithmOptionTarget::RotateMergeBufferSize: return configuration.rotateMergeBufferSize;
-			case AlgorithmOptionTarget::Unbound: break;
-			}
-			throw std::invalid_argument("The requested algorithm option group has no trace configuration binding.");
-		}
-
 		void validateExplicitChoiceOptions(const AlgorithmConfiguration& configuration,
 			const AlgorithmDescriptor& descriptor)
 		{
@@ -37,7 +19,9 @@ namespace sortinglogic
 				const AlgorithmOptionDescriptor& option = descriptor.supportedOptions[i];
 				if (!validatedGroups.insert(option.groupId).second) continue;
 
-				const int selectedValue = configuredOptionValue(configuration, option.target);
+				int selectedValue = 0;
+				if (!configuration.optionValue(option.target, selectedValue))
+					throw std::invalid_argument("The requested algorithm option group has no trace configuration binding.");
 				bool registeredValue = false;
 				for (std::size_t candidateIndex = 0; candidateIndex < descriptor.supportedOptions.size(); ++candidateIndex)
 				{
@@ -75,9 +59,6 @@ namespace sortinglogic
 					else if (request.bucketCount == 2) configuration.grailBufferMode = GrailBufferMode::DynamicBuffer;
 				}
 			}
-			bool bucketCountSelected = false;
-			bool heapAritySelected = false;
-			bool grailBufferModeSelected = false;
 			for (std::map<std::string, std::string>::const_iterator selected = request.optionSelections.begin();
 				selected != request.optionSelections.end(); ++selected)
 			{
@@ -95,41 +76,8 @@ namespace sortinglogic
 					throw std::invalid_argument("The requested algorithm option ID is not registered for this algorithm.");
 
 				const int value = resolved->value;
-				switch (resolved->target)
-				{
-				case AlgorithmOptionTarget::ShellGapSequence:
-					configuration.shellGapSequence = static_cast<ShellGapSequence>(value);
-					break;
-				case AlgorithmOptionTarget::MergeExecutionMode:
-					configuration.mergeExecutionMode = static_cast<MergeExecutionMode>(value);
-					break;
-				case AlgorithmOptionTarget::MergeWritebackMode:
-					configuration.mergeWritebackMode = static_cast<MergeWritebackMode>(value);
-					break;
-				case AlgorithmOptionTarget::BucketCount:
-					configuration.bucketCount = value;
-					bucketCountSelected = true;
-					break;
-				case AlgorithmOptionTarget::HeapArity:
-					configuration.heapArity = value;
-					heapAritySelected = true;
-					break;
-				case AlgorithmOptionTarget::GrailBufferMode:
-					configuration.grailBufferMode = static_cast<GrailBufferMode>(value);
-					grailBufferModeSelected = true;
-					break;
-				case AlgorithmOptionTarget::RadixBase:
-					configuration.radixBase = value;
-					break;
-				case AlgorithmOptionTarget::TimeMagnitude:
-					configuration.timeMagnitude = value;
-					break;
-				case AlgorithmOptionTarget::RotateMergeBufferSize:
-					configuration.rotateMergeBufferSize = value;
-					break;
-				case AlgorithmOptionTarget::Unbound:
+				if (!configuration.setOptionValue(resolved->target, value))
 					throw std::invalid_argument("The requested algorithm option group has no trace configuration binding.");
-				}
 			}
 			if (explicitConfiguration) validateExplicitChoiceOptions(configuration, descriptor);
 			request.configuration = configuration;
@@ -140,10 +88,9 @@ namespace sortinglogic
 			request.radixBase = configuration.radixBase;
 			request.timeMagnitude = configuration.timeMagnitude;
 			request.rotateMergeBufferSize = configuration.rotateMergeBufferSize;
-			if (bucketCountSelected) request.bucketCount = configuration.bucketCount;
-			else if (heapAritySelected || descriptor.id == SortAlgorithm::ArrayvBaseNHeap)
+			if (descriptor.id == SortAlgorithm::ArrayvBaseNHeap)
 				request.bucketCount = configuration.heapArity;
-			else if (grailBufferModeSelected || descriptor.id == SortAlgorithm::ArrayvGrail)
+			else if (descriptor.id == SortAlgorithm::ArrayvGrail)
 				request.bucketCount = static_cast<int>(configuration.grailBufferMode);
 			else request.bucketCount = configuration.bucketCount;
 		}
