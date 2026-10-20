@@ -51,6 +51,8 @@
     <ClCompile Include="ElementaryStrategies.cpp" />
     <ClCompile Include="CircleStrategies.cpp" />
     <ClCompile Include="HeapStrategies.cpp" />
+    <ClCompile Include="TreeStrategies.cpp" />
+    <ClCompile Include="PermutationTraceUtilities.cpp" />
     <ClCompile Include="SelectionStrategies.cpp" />
     <ClCompile Include="PancakeStrategies.cpp" />
     <ClCompile Include="DistributionStrategies.cpp" />
@@ -68,6 +70,7 @@
     <ClInclude Include="SortingLogic.h" />
     <ClInclude Include="SortingLogicInternal.h" />
     <ClInclude Include="TraceRecorder.h" />
+    <ClInclude Include="PermutationTraceUtilities.h" />
     <ClInclude Include="TraceBuildService.h" />
     <ClInclude Include="TracePresentationPolicy.h" />
   </ItemGroup>

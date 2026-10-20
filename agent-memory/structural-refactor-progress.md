@@ -1175,3 +1175,19 @@ Verification:
 - `git diff --check` passed.
 
 Next: continue extracting tree and partition families; keep shared fallbacks explicit and avoid turning the strategy header into a dumping ground for unrelated implementation details.
+
+## 2026-10-20 — extract tree strategies and shared permutation emission
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved unbalanced, AA, AVL, Splay, and Red-Black tree variants plus their private node/link/rotation helpers into `TreeStrategies.cpp`.
+- Moved the shared sorted-index-to-replayable-permutation emitter into `PermutationTraceUtilities` because both tree extraction and Strand Sort use it. Tree/Strand event order, lane operations, and mutation behavior remain unchanged.
+- Routed the six tree catalog IDs through direct strategy builders and removed their fallback cases. Strand Sort keeps its existing registration and now calls the shared detail utility.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86 Debug/Release and x64 Debug/Release.
+- Focused tree/Strand tests passed 22,786 checks; pinned catalog coverage passed 1,741 checks; SortingLogic core contracts passed 39,535 checks. All reported 0 failures.
+- `git diff --check` passed.
+
+Next: continue with partition and merge ownership boundaries; keep the generic recorder helper surface narrow and split the strategy declarations by family if the shared header begins to obscure dependencies.

@@ -45,6 +45,12 @@ namespace sortinglogic
 		void triangularHeapSort(detail::Recorder& recorder);
 		void weakHeapSort(detail::Recorder& recorder);
 		void poplarHeapSort(detail::Recorder& recorder);
+		void classicTreeSort(detail::Recorder& recorder);
+		void treeSort(detail::Recorder& recorder);
+		void aaTreeSort(detail::Recorder& recorder);
+		void avlTreeSort(detail::Recorder& recorder);
+		void splayTreeSort(detail::Recorder& recorder);
+		void redBlackTreeSort(detail::Recorder& recorder);
 		void optimizedBubble(detail::Recorder& recorder);
 		void optimizedCocktail(detail::Recorder& recorder);
 		void selection(detail::Recorder& recorder);

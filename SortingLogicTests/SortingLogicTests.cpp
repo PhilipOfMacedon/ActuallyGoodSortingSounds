@@ -5775,6 +5775,16 @@ int main(int argc, char* argv[])
 			std::cout << "Focused Stalin Sort tests: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
+		if (argc > 1 && std::string(argv[1]) == "--tree-family-only")
+		{
+			stage = "tree strategy family";
+			testUnbalancedTreeVariants();
+			testBalancedTreeSorts();
+			testSplayTreeSort();
+			testStrandSort();
+			std::cout << "Focused tree family tests: " << checks << " checks, " << failures << " failures.\n";
+			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
 		if (argc > 1 && std::string(argv[1]) == "--tree-only")
 		{
 			stage = "testUnbalancedTreeVariants";
