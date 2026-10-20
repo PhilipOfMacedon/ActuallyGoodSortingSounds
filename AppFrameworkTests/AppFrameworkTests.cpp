@@ -6,12 +6,18 @@
 #include <cstring>
 #include <string>
 #include <chrono>
+#include <algorithm>
+#include <iomanip>
 #include <thread>
 #include <atomic>
 #include <limits>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
+#include "../SDL2BarGraphics/ActiveRoleLookup.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
 #include "../SDL2BarGraphics/AppearanceEditorModel.h"
 #include "../SDL2BarGraphics/AudioSettingsActions.h"
@@ -49,6 +55,181 @@ namespace
 			std::cerr << "FAIL: " << message << '\n';
 			++failures;
 		}
+	}
+
+	void testActiveRoleLookup()
+	{
+		using sortinglogic::ActiveRole;
+		using sortinglogic::SemanticRole;
+		const std::vector<ActiveRole> roles = {
+			ActiveRole(SemanticRole::ComparedItem, 11, 0, "main"),
+			ActiveRole(SemanticRole::Pivot, 11, 0, "main"),
+			ActiveRole(SemanticRole::DiscardedItem, 11, 0, "main"),
+			ActiveRole(SemanticRole::WriteTarget, 12, 2, "auxiliary"),
+			ActiveRole(SemanticRole::AuxiliaryCopy, 13, 3, "auxiliary"),
+			ActiveRole(SemanticRole::Gap, 11, 0, "main")
+		};
+		SemanticRole selected = SemanticRole::Gap;
+		check(findDominantActiveRole(roles, 11, "main", selected) && selected == SemanticRole::Pivot,
+			"dominant active-role lookup preserves priority and first-role tie behavior");
+		check(findDominantActiveRole(roles, 12, "auxiliary", selected) && selected == SemanticRole::WriteTarget,
+			"active-role lookup qualifies stable IDs by workspace lane");
+		check(!findDominantActiveRole(roles, 12, "main", selected),
+			"active-role lookup ignores matches from another lane");
+
+		std::vector<ActiveRole> manyRoles;
+		for (std::uint64_t itemId = 0; itemId < 20; ++itemId)
+		{
+			manyRoles.push_back(ActiveRole(SemanticRole::ComparedItem, itemId, static_cast<std::size_t>(itemId), "main"));
+			manyRoles.push_back(ActiveRole(SemanticRole::WriteTarget, itemId, static_cast<std::size_t>(itemId), "auxiliary"));
+		}
+		manyRoles.push_back(ActiveRole(SemanticRole::ComparedItem, 7, 7, "main"));
+		manyRoles.push_back(ActiveRole(SemanticRole::HeldKey, 7, 7, "main"));
+		manyRoles.push_back(ActiveRole(SemanticRole::Pivot, 7, 7, "main"));
+		manyRoles.push_back(ActiveRole(SemanticRole::DiscardedItem, 7, 7, "main"));
+		ActiveRoleLookup lookup;
+		lookup.rebuild(manyRoles);
+		for (std::uint64_t itemId = 0; itemId < 22; ++itemId)
+			for (const char* lane : { "main", "auxiliary", "missing" })
+			{
+				SemanticRole linearRole = SemanticRole::Gap;
+				SemanticRole indexedRole = SemanticRole::Gap;
+				const bool linearFound = findDominantActiveRole(manyRoles, itemId, lane, linearRole);
+				const bool indexedFound = lookup.find(itemId, lane, indexedRole);
+				check(linearFound == indexedFound && (!linearFound || linearRole == indexedRole),
+					"indexed active-role lookup matches the linear reference across lanes and duplicate roles");
+			}
+		lookup.release();
+	}
+
+	double medianSnapshotMicros(sortinglogic::Simulation& simulation, std::size_t cursor, std::size_t iterations,
+		std::size_t& sink)
+	{
+		if (!simulation.seekTo(cursor).accepted) throw std::runtime_error("could not position simulation for snapshot profiling");
+		for (std::size_t i = 0; i < 50; ++i)
+		{
+			const sortinglogic::RenderSnapshot warmup = simulation.snapshot();
+			sink += warmup.state.slots.size() + warmup.activeRoles.size() + warmup.activeRegions.size();
+		}
+		std::vector<double> samples;
+		for (std::size_t batch = 0; batch < 7; ++batch)
+		{
+			const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+			for (std::size_t i = 0; i < iterations; ++i)
+			{
+				const sortinglogic::RenderSnapshot value = simulation.snapshot();
+				sink += value.state.slots.size() + value.activeRoles.size() + value.activeRegions.size();
+			}
+			const double elapsed = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
+			samples.push_back(elapsed / static_cast<double>(iterations));
+		}
+		std::sort(samples.begin(), samples.end());
+		return samples[samples.size() / 2];
+	}
+
+	double medianRoleProjectionMillis(const sortinglogic::RenderSnapshot& snapshot, std::size_t passes,
+		std::size_t& sink)
+	{
+		std::vector<std::uint64_t> itemIds;
+		for (std::size_t i = 0; i < snapshot.state.slots.size(); ++i)
+			if (snapshot.state.slots[i].occupied) itemIds.push_back(snapshot.state.slots[i].item.stableId);
+		std::vector<double> samples;
+		for (std::size_t batch = 0; batch < 5; ++batch)
+		{
+			const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+			for (std::size_t pass = 0; pass < passes; ++pass)
+				for (std::size_t i = 0; i < itemIds.size(); ++i)
+				{
+					sortinglogic::SemanticRole role;
+					if (findDominantActiveRole(snapshot.activeRoles, itemIds[i], "main", role))
+						sink += static_cast<std::size_t>(role) + 1;
+				}
+			const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+			samples.push_back(elapsed / static_cast<double>(passes));
+		}
+		std::sort(samples.begin(), samples.end());
+		return samples[samples.size() / 2];
+	}
+
+	double medianIndexedRoleProjectionMillis(const sortinglogic::RenderSnapshot& snapshot, std::size_t passes,
+		std::size_t& sink)
+	{
+		std::vector<std::uint64_t> itemIds;
+		for (std::size_t i = 0; i < snapshot.state.slots.size(); ++i)
+			if (snapshot.state.slots[i].occupied) itemIds.push_back(snapshot.state.slots[i].item.stableId);
+		ActiveRoleLookup lookup;
+		std::vector<double> samples;
+		for (std::size_t batch = 0; batch < 5; ++batch)
+		{
+			const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+			for (std::size_t pass = 0; pass < passes; ++pass)
+			{
+				lookup.rebuild(snapshot.activeRoles);
+				for (std::size_t i = 0; i < itemIds.size(); ++i)
+				{
+					sortinglogic::SemanticRole role;
+					if (lookup.find(itemIds[i], "main", role)) sink += static_cast<std::size_t>(role) + 1;
+				}
+				lookup.release();
+			}
+			const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+			samples.push_back(elapsed / static_cast<double>(passes));
+		}
+		std::sort(samples.begin(), samples.end());
+		return samples[samples.size() / 2];
+	}
+
+	void runRenderCostProfile()
+	{
+		using namespace sortinglogic;
+		Simulation simulation(800, 0xA61u);
+		if (!simulation.selectAlgorithm(SortAlgorithm::Merge).accepted ||
+			!simulation.setMergeWritebackMode(MergeWritebackMode::AtomicRangeWrite).accepted)
+			throw std::runtime_error("could not configure Merge for the render-cost profile");
+		TraceBuildRequest request;
+		if (!simulation.beginTraceBuild(request).accepted) throw std::runtime_error("could not begin the profiling trace");
+		TraceBuildResult completed;
+		completed.succeeded = true;
+		completed.trace = SortTraceBuilder::build(request);
+		simulation.completeTraceBuild(std::move(completed));
+		const std::shared_ptr<const SortTrace> trace = simulation.currentTrace();
+		if (!trace) throw std::runtime_error("profiling trace was not published");
+
+		std::size_t largestRangeCursor = 0;
+		std::size_t largestRangeRoleCount = 0;
+		std::size_t comparisonCursor = 0;
+		for (std::size_t i = 0; i < trace->events.size(); ++i)
+		{
+			const SemanticEvent& event = trace->events[i];
+			if (comparisonCursor == 0 && event.type == SemanticEventType::Compare) comparisonCursor = i + 1;
+			if (event.type == SemanticEventType::WriteRange && event.afterSlots.size() > largestRangeRoleCount)
+			{
+				largestRangeRoleCount = event.afterSlots.size();
+				largestRangeCursor = i + 1;
+			}
+		}
+		if (largestRangeRoleCount == 0 || comparisonCursor == 0)
+			throw std::runtime_error("Merge trace did not contain comparison and range-write profile points");
+
+		std::size_t sink = 0;
+		const double comparisonSnapshotMicros = medianSnapshotMicros(simulation, comparisonCursor, 1000, sink);
+		const RenderSnapshot comparison = simulation.snapshot();
+		const double rangeSnapshotMicros = medianSnapshotMicros(simulation, largestRangeCursor, 1000, sink);
+		const RenderSnapshot range = simulation.snapshot();
+		const double roleProjectionMillis = medianRoleProjectionMillis(range, 25, sink);
+		const double indexedRoleProjectionMillis = medianIndexedRoleProjectionMillis(range, 25, sink);
+		std::cout << std::fixed << std::setprecision(3)
+			<< "render-cost-profile items=800 events=" << trace->events.size()
+			<< " annotations=" << trace->annotations.size()
+			<< " comparison_roles=" << comparison.activeRoles.size()
+			<< " comparison_regions=" << comparison.activeRegions.size()
+			<< " comparison_snapshot_median_us=" << comparisonSnapshotMicros
+			<< " range_roles=" << range.activeRoles.size()
+			<< " range_regions=" << range.activeRegions.size()
+			<< " range_snapshot_median_us=" << rangeSnapshotMicros
+			<< " role_scan_median_ms_per_800_items=" << roleProjectionMillis
+			<< " role_index_median_ms_per_800_items=" << indexedRoleProjectionMillis
+			<< " sink=" << sink << '\n';
 	}
 
 	void waitForAudioTimeline(AudioPresentationBridge& bridge, const sortinglogic::Simulation& simulation,
@@ -2814,8 +2995,18 @@ namespace
 	}
 }
 
-int main()
+int main(int argc, char* argv[])
 {
+	if (argc == 2 && std::string(argv[1]) == "--render-cost-profile")
+	{
+		try { runRenderCostProfile(); return 0; }
+		catch (const std::exception& error)
+		{
+			std::cerr << "Render cost profile failed: " << error.what() << '\n';
+			return 1;
+		}
+	}
+	testActiveRoleLookup();
 	testSpacing();
 	testPreferenceValueEquality();
 	testBarCountSteps();

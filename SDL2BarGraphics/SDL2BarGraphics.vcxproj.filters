@@ -17,6 +17,7 @@
   <ItemGroup>
     <ClCompile Include="AppearanceEditorLayout.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AppearanceEditorModel.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ActiveRoleLookup.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmBrowserModel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmBrowserView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SettingsPanelView.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -74,6 +75,7 @@
   <ItemGroup>
     <ClInclude Include="AppearanceEditorLayout.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppearanceEditorModel.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ActiveRoleLookup.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserModel.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserView.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsPanelView.h"><Filter>Header Files</Filter></ClInclude>

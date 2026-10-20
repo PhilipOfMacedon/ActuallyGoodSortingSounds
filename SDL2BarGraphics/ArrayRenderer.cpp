@@ -1,5 +1,7 @@
 #include "ArrayRenderer.h"
 
+#include "ActiveRoleLookup.h"
+
 #include <algorithm>
 #include <map>
 
@@ -22,7 +24,8 @@ namespace
 }
 
 ArrayRenderer::ArrayRenderer(Window& window, Renderer2D& renderer)
-	: window_(window), renderer_(renderer), materialBuckets_(), gapMarkers_(), laneLabels_(), laneLabelPositions_()
+	: window_(window), renderer_(renderer), materialBuckets_(), gapMarkers_(), mainRoleLookup_(),
+	  workspaceRoleLookup_(), laneLabels_(), laneLabelPositions_()
 {
 }
 
@@ -65,6 +68,8 @@ void ArrayRenderer::render(
 	// the primary array, so resolve those roles there rather than losing their
 	// highlight because the buffer lane was omitted from the chart.
 	const std::vector<sortinglogic::ActiveRole> mainRoles = rolesVisibleOnMainArray(snapshot);
+	mainRoleLookup_.rebuild(mainRoles);
+	workspaceRoleLookup_.rebuild(snapshot.activeRoles);
 	for (std::size_t i = 0; i < materialBuckets_.size(); ++i)
 		materialBuckets_[i].clear();
 	gapMarkers_.clear();
@@ -82,7 +87,7 @@ void ArrayRenderer::render(
 		}
 		const sortinglogic::SortItem& item = snapshot.state.slots[index].item;
 		const float barHeight = std::max(1.0f, item.value * mainHeight);
-		const RenderDescriptor descriptor = descriptorForItem(item.stableId, mainRoles, palette, "main");
+		const RenderDescriptor descriptor = descriptorForItem(item.stableId, mainRoleLookup_, palette, "main");
 		materialBuckets_[materialBucket(descriptor.materialId)].push_back(QuadInstance(
 			glm::vec2(x, mainBottom - barHeight), glm::vec2(spacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars, chartClip));
 	}
@@ -110,7 +115,7 @@ void ArrayRenderer::render(
 				if (!lane->second[i].occupied) continue;
 				const sortinglogic::SortItem& item = lane->second[i].item;
 				const float barHeight = std::max(1.0f, item.value * std::max(4.0f, laneHeight - 2.0f));
-				const RenderDescriptor descriptor = descriptorForItem(item.stableId, snapshot.activeRoles, palette, lane->first);
+				const RenderDescriptor descriptor = descriptorForItem(item.stableId, workspaceRoleLookup_, palette, lane->first);
 				materialBuckets_[materialBucket(descriptor.materialId)].push_back(QuadInstance(
 					glm::vec2(left + static_cast<float>(i) * cellWidth + laneSpacing.sidePadding, laneBottom - barHeight),
 					glm::vec2(laneSpacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars, chartClip));
@@ -148,7 +153,7 @@ void ArrayRenderer::render(
 			{
 				const sortinglogic::SortItem& item = snapshot.state.discardedItems[i];
 				const float barHeight = std::max(1.0f, item.value * std::max(4.0f, laneHeight - 2.0f));
-				const RenderDescriptor descriptor = descriptorForItem(item.stableId, snapshot.activeRoles, palette, "discard");
+				const RenderDescriptor descriptor = descriptorForItem(item.stableId, workspaceRoleLookup_, palette, "discard");
 				materialBuckets_[materialBucket(descriptor.materialId)].push_back(QuadInstance(
 					glm::vec2(left + static_cast<float>(i) * cellWidth + laneSpacing.sidePadding, laneBottom - barHeight),
 					glm::vec2(laneSpacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars, chartClip));
@@ -179,7 +184,7 @@ void ArrayRenderer::render(
 		const float lift = std::min(18.0f, mainHeight * 0.12f);
 		renderer_.submit(QuadInstance(
 			glm::vec2(x, mainBottom - barHeight - lift), glm::vec2(spacing.barWidth, barHeight),
-			descriptorForItem(snapshot.state.heldItem.stableId, mainRoles, palette, "main"), RenderLayer::HeldItem, chartClip));
+			descriptorForItem(snapshot.state.heldItem.stableId, mainRoleLookup_, palette, "main"), RenderLayer::HeldItem, chartClip));
 	}
 
 	for (std::size_t regionIndex = 0; regionIndex < snapshot.activeRegions.size(); ++regionIndex)
@@ -221,6 +226,8 @@ void ArrayRenderer::render(
 	}
 	for (std::size_t i = 0; i < gapMarkers_.size(); ++i)
 		renderer_.submit(gapMarkers_[i]);
+	mainRoleLookup_.release();
+	workspaceRoleLookup_.release();
 }
 
 void ArrayRenderer::submitLaneLabel(const std::string& lane, float x, float y, const glm::vec4& color)
@@ -278,39 +285,12 @@ RenderDescriptor ArrayRenderer::descriptorForRole(
 
 RenderDescriptor ArrayRenderer::descriptorForItem(
 	std::uint64_t itemId,
-	const std::vector<sortinglogic::ActiveRole>& roles,
+	const ActiveRoleLookup& roles,
 	const ThemePalette& palette,
 	const std::string& lane) const
 {
-	int priority = 0;
-	sortinglogic::SemanticRole selectedRole = sortinglogic::SemanticRole::ComparedItem;
-	for (std::size_t i = 0; i < roles.size(); ++i)
-	{
-		if (roles[i].itemId != itemId || roles[i].lane != lane)
-			continue;
-		int candidatePriority = 0;
-		switch (roles[i].role)
-		{
-		case sortinglogic::SemanticRole::ComparedItem: candidatePriority = 1; break;
-		case sortinglogic::SemanticRole::ShiftedItem: candidatePriority = 2; break;
-		case sortinglogic::SemanticRole::WriteTarget: candidatePriority = 3; break;
-		case sortinglogic::SemanticRole::HeldKey: candidatePriority = 4; break;
-		case sortinglogic::SemanticRole::Gap: candidatePriority = 0; break;
-		case sortinglogic::SemanticRole::Pivot: candidatePriority = 5; break;
-		case sortinglogic::SemanticRole::CurrentMinimum:
-		case sortinglogic::SemanticRole::CurrentMaximum: candidatePriority = 3; break;
-		case sortinglogic::SemanticRole::AuxiliaryCopy:
-		case sortinglogic::SemanticRole::ProcessedItem:
-		case sortinglogic::SemanticRole::ProbedItem: candidatePriority = 2; break;
-		case sortinglogic::SemanticRole::DiscardedItem: candidatePriority = 5; break;
-		}
-		if (candidatePriority > priority)
-		{
-			priority = candidatePriority;
-			selectedRole = roles[i].role;
-		}
-	}
-	return priority == 0
-		? RenderDescriptor(palette.bar, 0, MaterialId::Bar)
-		: descriptorForRole(selectedRole, palette);
+	sortinglogic::SemanticRole selectedRole;
+	return roles.find(itemId, lane, selectedRole)
+		? descriptorForRole(selectedRole, palette)
+		: RenderDescriptor(palette.bar, 0, MaterialId::Bar);
 }

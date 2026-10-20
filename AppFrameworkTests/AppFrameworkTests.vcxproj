@@ -30,6 +30,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AppFrameworkTests.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\ActiveRoleLookup.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AppearanceEditorLayout.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AppearanceEditorModel.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AlgorithmBrowserModel.cpp" />

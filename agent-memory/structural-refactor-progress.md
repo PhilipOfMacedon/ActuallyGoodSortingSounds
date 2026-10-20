@@ -830,3 +830,20 @@ Verification:
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
 Next: measure the remaining full-snapshot and role/region projection costs from audit item 9 before adding caches or changing frame snapshot ownership.
+
+## 2026-10-20 — profile and index active render roles
+
+Status: measured implementation complete; snapshot work remains open.
+
+- Added `ActiveRoleLookup` for per-frame role sets of 12 or more entries. It sorts `(lane, stableId)` keys, compacts duplicate keys to the dominant role while preserving the linear scan's first-role tie behavior, and resolves each chart item with binary search. Smaller sets retain the scan path.
+- Wired the chart's main-array and workspace role projections through reusable lookup buffers. The renderer drops borrowed vector references at the end of the frame while retaining index capacity for the next frame.
+- Added equivalence checks against the original linear role selector across lanes, missing items, duplicate roles, priority order, and ties. Added a deterministic profile mode to `AppFrameworkTests` using an 800-item Merge trace with atomic range writes.
+- Median CPU role projection per 800 items, including index rebuild: x64 Debug 5.611 ms scan vs. 2.653 ms indexed; x64 Release 0.897 ms scan vs. 0.142 ms indexed. The profile measures CPU projection rather than GPU submission or complete frame time.
+- At the largest range-write cursor, snapshot medians measured 2,521.968 us in Debug and 36.909 us in Release. Snapshot copying/annotation work is the next optimization candidate; do not add cached snapshots until ownership and invalidation are measured.
+
+Verification:
+
+- x64 Debug and Release Visual Studio solution builds passed.
+- x64 Debug and Release `AppFrameworkTests` passed.
+- `AppFrameworkTests --render-cost-profile` completed in both configurations and reported the figures above.
+- `git diff --check` passed; Git reported only the configured LF-to-CRLF working-tree notices.
