@@ -50,6 +50,7 @@
   <ItemGroup>
     <ClCompile Include="ElementaryStrategies.cpp" />
     <ClCompile Include="CircleStrategies.cpp" />
+    <ClCompile Include="HeapStrategies.cpp" />
     <ClCompile Include="SelectionStrategies.cpp" />
     <ClCompile Include="PancakeStrategies.cpp" />
     <ClCompile Include="DistributionStrategies.cpp" />

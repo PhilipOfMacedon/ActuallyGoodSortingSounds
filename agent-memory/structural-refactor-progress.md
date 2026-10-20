@@ -1159,3 +1159,19 @@ Verification:
 - `git diff --check` passed.
 
 Next: continue extracting recorder-only algorithm groups while preserving their shared helpers and direct registration boundaries; the central implementation still contains substantial heap, tree, merge, and partition code.
+
+## 2026-10-20 — extract heap strategy family
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved the 13 heap catalog variants and their private heap helpers into `HeapStrategies.cpp`.
+- Added thin entry points for ternary, configurable Base-N, min-heap, and flipped min-heap modes. Base-N reads `heapArity` from the replay trace configuration, preserving the existing typed-option behavior.
+- Routed every heap stable ID through direct strategy builders and removed the heap cases from the central fallback switch. Auxiliary lanes, metrics, comparison order, and mutation behavior were retained.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86 Debug/Release and x64 Debug/Release.
+- Focused Heap family tests passed 14,105 checks; pinned catalog coverage passed 1,741 checks; SortingLogic core contracts passed 39,535 checks. All reported 0 failures; core contracts include all five Base-N arities.
+- `git diff --check` passed.
+
+Next: continue extracting tree and partition families; keep shared fallbacks explicit and avoid turning the strategy header into a dumping ground for unrelated implementation details.
