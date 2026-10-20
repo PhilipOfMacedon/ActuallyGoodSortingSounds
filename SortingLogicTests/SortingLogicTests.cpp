@@ -1,5 +1,6 @@
 #include "../SortingLogic/SortingLogic.h"
 #include "../SortingLogic/TraceBuildService.h"
+#include "../SortingLogic/TracePresentationPolicy.h"
 
 #include <algorithm>
 #include <chrono>
@@ -5043,6 +5044,99 @@ namespace
 		applyEventBackward(state, discard);
 		check(sameState(state, initial), "discard mutation rewinds to the exact active array");
 	}
+
+	void testTraceAudioPresentationPolicy()
+	{
+		using namespace sortinglogic;
+		SortTrace counting;
+		counting.algorithm = SortAlgorithm::Counting;
+		SemanticEvent probe;
+		probe.type = SemanticEventType::Probe;
+		probe.firstItemId = 23;
+		SemanticEvent auxiliaryWrite;
+		auxiliaryWrite.type = SemanticEventType::AuxiliaryItemWrite;
+		auxiliaryWrite.workspaceName = "output";
+		SemanticEvent counterUpdate;
+		counterUpdate.type = SemanticEventType::CounterWrite;
+		SemanticEvent discard;
+		discard.type = SemanticEventType::DiscardItem;
+		counting.events.push_back(probe);
+		counting.events.push_back(auxiliaryWrite);
+		counting.events.push_back(counterUpdate);
+		counting.events.push_back(discard);
+
+		const TraceAudioPresentationPolicy countingPolicy(counting);
+		check(countingPolicy.classify(counting.events[0]) == TraceAudioEventKind::ProbeAsComparison,
+			"distribution-only traces route meaningful probes through the comparison voice");
+		check(countingPolicy.classify(counting.events[1]) == TraceAudioEventKind::AuxiliaryItemWrite &&
+			countingPolicy.classify(counting.events[2]) == TraceAudioEventKind::DistributionUpdate,
+			"auxiliary item writes and counter bookkeeping have distinct shared presentation routes");
+		check(countingPolicy.classify(counting.events[3]) == TraceAudioEventKind::DiscardAccent,
+			"discard events receive the discard presentation route");
+		TraceAudioOperandProjection probeOperands;
+		check(countingPolicy.projectOperands(counting.events[0], probeOperands) && !probeOperands.hasSecondOperand &&
+			probeOperands.firstItemId == 23 && probeOperands.firstRole == SemanticRole::ProbedItem,
+			"single-item probes share the same stable-ID and semantic-role projection");
+		const std::vector<std::size_t> countingIndices = collectAudioEventIndices(counting);
+		check(countingIndices.size() == 2 && countingIndices[0] == 0 && countingIndices[1] == 1,
+			"reference cadence includes audible probes and auxiliary writes but excludes bookkeeping and discards");
+		check(supportsAudioControlCategory(*algorithmDescriptor(SortAlgorithm::Counting), AudioControlCategory::Probe) &&
+			supportsAudioControlCategory(*algorithmDescriptor(SortAlgorithm::Counting), AudioControlCategory::Auxiliary),
+			"shared presentation policy exposes Counting's supported operation gain categories");
+
+		SortTrace comparisonTrace;
+		comparisonTrace.algorithm = SortAlgorithm::Insertion;
+		SemanticEvent compare;
+		compare.type = SemanticEventType::Compare;
+		SemanticEvent movement;
+		movement.type = SemanticEventType::ShiftItem;
+		comparisonTrace.events.push_back(compare);
+		comparisonTrace.events.push_back(movement);
+		comparisonTrace.comparisonEventIndices.push_back(0);
+		const TraceAudioPresentationPolicy comparisonPolicy(comparisonTrace);
+		check(comparisonPolicy.hasAlgorithmComparisons() &&
+			comparisonPolicy.classify(comparisonTrace.events[0]) == TraceAudioEventKind::Comparison &&
+			comparisonPolicy.classify(comparisonTrace.events[1]) == TraceAudioEventKind::MainChangeAccent,
+			"comparison methods share comparison and main-change semantic classification");
+		check(collectAudioEventIndices(comparisonTrace).size() == 1,
+			"main-array accents do not alter reference-cadence event counts");
+		TraceAudioOperandProjection comparisonOperands;
+		check(comparisonPolicy.projectOperands(comparisonTrace.events[0], comparisonOperands) &&
+			comparisonOperands.hasSecondOperand && comparisonOperands.firstItemId == comparisonTrace.events[0].firstItemId &&
+			comparisonOperands.secondItemId == comparisonTrace.events[0].secondItemId &&
+			comparisonOperands.firstRole == comparisonTrace.events[0].firstRole,
+			"paired comparison projections preserve event operand order and roles");
+
+		SortTrace hiddenMerge;
+		hiddenMerge.algorithm = SortAlgorithm::Merge;
+		hiddenMerge.mergeBufferVisualizationEnabled = false;
+		SemanticEvent mergeWrite = auxiliaryWrite;
+		mergeWrite.workspaceName = "merge";
+		SemanticEvent mergeMutation;
+		mergeMutation.type = SemanticEventType::WriteRange;
+		SemanticEvent completionCompare = compare;
+		completionCompare.completionScan = true;
+		hiddenMerge.events.push_back(mergeWrite);
+		hiddenMerge.events.push_back(mergeMutation);
+		hiddenMerge.events.push_back(completionCompare);
+		hiddenMerge.comparisonEventIndices.push_back(2);
+		const TraceAudioPresentationPolicy hiddenMergePolicy(hiddenMerge);
+		check(hiddenMergePolicy.classify(mergeWrite) == TraceAudioEventKind::Silent &&
+			!hiddenMergePolicy.contributesToReferenceCadence(mergeWrite) &&
+			!hiddenMergePolicy.frameAccentVisible(mergeMutation),
+			"hidden Merge buffer policy consistently suppresses its buffer and live operation accents");
+		check(hiddenMergePolicy.classify(completionCompare) == TraceAudioEventKind::Comparison &&
+			hiddenMergePolicy.contributesToReferenceCadence(completionCompare) &&
+			hiddenMergePolicy.frameAccentVisible(completionCompare),
+			"completion scans stay audible when Merge buffer visualization is disabled");
+		check(!isWorkspaceVisible(SortAlgorithm::Merge, false, "merge") &&
+			isWorkspaceVisible(SortAlgorithm::Merge, false, "counts") &&
+			isWorkspaceVisible(SortAlgorithm::Merge, true, "merge") &&
+			visibleRoleWorkspace(SortAlgorithm::Merge, false, "merge") == "main",
+			"audio and chart consumers share Merge lane visibility and main-array role projection");
+		check(supportsAudioControlCategory(*algorithmDescriptor(SortAlgorithm::CanonicalStalinFilter), AudioControlCategory::Discard),
+			"catalog behavior labels declare discard audio controls");
+	}
 }
 
 int main(int argc, char* argv[])
@@ -5150,6 +5244,8 @@ int main(int argc, char* argv[])
 			testDomainsAndPatterns();
 			stage = "testSemanticProbeDiscardAndPhases";
 			testSemanticProbeDiscardAndPhases();
+			stage = "testTraceAudioPresentationPolicy";
+			testTraceAudioPresentationPolicy();
 			std::cout << "SortingLogic core contracts: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
@@ -5744,6 +5840,8 @@ int main(int argc, char* argv[])
 		testDomainsAndPatterns();
 		stage = "testSemanticProbeDiscardAndPhases";
 		testSemanticProbeDiscardAndPhases();
+		stage = "testTraceAudioPresentationPolicy";
+		testTraceAudioPresentationPolicy();
 	}
 	catch (const std::exception& error)
 	{

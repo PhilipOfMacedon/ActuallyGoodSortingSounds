@@ -5,6 +5,7 @@
 
 #include "LayoutMetrics.h"
 #include "UiArchitecture.h"
+#include "../SortingLogic/TracePresentationPolicy.h"
 
 namespace
 {
@@ -16,8 +17,7 @@ namespace
 
 	bool hiddenMergeBuffer(const sortinglogic::RenderSnapshot& snapshot, const std::string& lane)
 	{
-		return lane == "merge" && snapshot.algorithm == sortinglogic::SortAlgorithm::Merge &&
-			!snapshot.mergeBufferVisualizationEnabled;
+		return !sortinglogic::isWorkspaceVisible(snapshot.algorithm, snapshot.mergeBufferVisualizationEnabled, lane);
 	}
 }
 

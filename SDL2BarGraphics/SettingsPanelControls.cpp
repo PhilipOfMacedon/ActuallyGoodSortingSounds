@@ -4,6 +4,7 @@
 #include <cctype>
 #include <set>
 
+#include "../SortingLogic/TracePresentationPolicy.h"
 #include "UserSettings.h"
 
 std::string settingsAlgorithmOptionControlId(const sortinglogic::AlgorithmDescriptor& algorithm,
@@ -66,16 +67,20 @@ std::vector<std::string> settingsPanelControlIds(SettingsPanelPage page, Setting
 				visible = true;
 				break;
 			case AlgorithmAudioChannel::ProbeAccent:
-				visible = selectedAlgorithm && (selectedAlgorithm->id == sortinglogic::SortAlgorithm::Counting ||
-					selectedAlgorithm->id == sortinglogic::SortAlgorithm::Radix);
+				visible = selectedAlgorithm && sortinglogic::supportsAudioControlCategory(*selectedAlgorithm,
+					sortinglogic::AudioControlCategory::Probe);
+				break;
+			case AlgorithmAudioChannel::MainChangeAccent:
+				visible = selectedAlgorithm && sortinglogic::supportsAudioControlCategory(*selectedAlgorithm,
+					sortinglogic::AudioControlCategory::MainChange);
 				break;
 			case AlgorithmAudioChannel::AuxiliaryAccent:
-				visible = selectedAlgorithm && (selectedAlgorithm->id == sortinglogic::SortAlgorithm::Merge ||
-					selectedAlgorithm->id == sortinglogic::SortAlgorithm::Counting ||
-					selectedAlgorithm->id == sortinglogic::SortAlgorithm::Radix);
+				visible = selectedAlgorithm && sortinglogic::supportsAudioControlCategory(*selectedAlgorithm,
+					sortinglogic::AudioControlCategory::Auxiliary);
 				break;
 			case AlgorithmAudioChannel::DiscardAccent:
-				visible = selectedAlgorithm && std::string(selectedAlgorithm->behavior).find("discard") != std::string::npos;
+				visible = selectedAlgorithm && sortinglogic::supportsAudioControlCategory(*selectedAlgorithm,
+					sortinglogic::AudioControlCategory::Discard);
 				break;
 			default:
 				for (std::size_t role = 0; role < roleChannels.size(); ++role)

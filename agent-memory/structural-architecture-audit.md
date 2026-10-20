@@ -106,13 +106,17 @@ Acceptance: a layout/paint regression in a real settings pane affects a meaningf
 
 ### 6. Audio eligibility and semantic visibility are repeated across layers — high priority
 
-Evidence: `SortingLogic.cpp:12161` populates audio-event indices, `AudioPresentationBridge.cpp:91` independently converts eligible events into a prepared timeline, and the live bridge update classifies probes/movement/distribution again. Merge's hidden-buffer rule appears in the trace policy, bridge, `ArrayRenderer.cpp:15`, and main-array role projection in `UiArchitecture.cpp`.
+Evidence at the audit baseline: `SortingLogic.cpp` populated audio-event indices, `AudioPresentationBridge.cpp` independently converted eligible events into a prepared timeline, and the live bridge update classified probes/movement/distribution again. Merge's hidden-buffer rule also appeared in the trace policy, bridge, `ArrayRenderer.cpp`, and main-array role projection in `UiArchitecture.cpp`.
 
 These are decisions about which semantic operations are presented. Repeating them risks different reference-cadence duration, audible operations, UI controls, and lane visibility for the same run.
 
-Define one deterministic presentation policy at the sorting-to-app boundary. It should describe event eligibility, operand IDs/order/roles, visible lanes, and role projection without generating PCM or pixels. Separate visibility policy from gain/mute preferences so changing a live gain does not alter timing. The trace cadence index, prepared audio input, and offered operation controls should consume the same decisions.
+Current status (2026-10-20): the repeated decisions now live in `SortingLogic/TracePresentationPolicy.h/.cpp`. `TraceAudioPresentationPolicy` classifies comparisons, probes, main changes, auxiliary writes, distribution bookkeeping, and discards; derives the reference-cadence index; projects operand IDs, semantic roles, and configured operand order; and preserves the existing completion-scan and hidden-Merge rules. `AudioPresentationBridge` uses that policy for prepared timelines, live comparison state, and accents. Contextual audio controls query the same operation-category capabilities. `ArrayRenderer` and `UiArchitecture` share the policy's workspace visibility and role-lane projection. Gain inheritance and mute settings remain separate, so live gain changes do not change event timing.
+
+The bridge still translates semantic roles to SoundEngine roles and normalized pitches at its adapter boundary. No PCM generation, DSP, envelope, gain, or mailbox code was changed.
 
 Acceptance: existing Counting/Radix event eligibility, paired/single operands, pitch positions, gains, timing, and PCM fixtures remain unchanged, including the established `2e-6` PCM tolerance. Preserve the hidden-Merge behavior and all current reconstructed-audio formulas. This is a policy extraction, not sound redesign.
+
+Verification (2026-10-20): x64 Debug/Release solution builds and `AppFrameworkTests` pass; `SortingLogicTests --core-contracts-only` passes with 39,535 checks in both configurations, including Counting/Radix audio signatures; standalone `AudioDeviceTransportTests` builds and passes in both configurations with the SDL dummy backend, including fixed/reference cadence and 80/800-item runs. `git diff --check` passes; only configured LF-to-CRLF notices remain.
 
 ### 7. Playback coordination is distributed across the main loop, controller, bridge, and device — high priority, higher risk
 

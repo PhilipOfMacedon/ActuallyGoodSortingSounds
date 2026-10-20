@@ -719,8 +719,6 @@ Verification:
 - Debug and Release `SortingLogicTests --core-contracts-only`: passed (39,522 checks each).
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
-Next: centralize deterministic semantic presentation eligibility, operands/roles, and lane visibility across the trace cadence index, audio adapter, and UI controls.
-
 ## 2026-10-20 — isolate settings validation and INI codec
 
 Status: implementation and focused verification complete.
@@ -738,3 +736,25 @@ Verification:
 - Standalone `AudioDeviceTransportTests` x64 Debug and Release builds: passed.
 - Standalone transport integration tests passed in both configurations with the SDL dummy backend, including both timing modes and 800-item cases.
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+The next boundary identified after the settings extraction was deterministic semantic presentation policy; its implementation and verification are recorded below.
+
+## 2026-10-20 — centralize trace presentation policy
+
+Status: implementation and focused verification complete.
+
+- Added `TraceAudioPresentationPolicy` as the shared semantic-to-presentation decision point. It classifies comparison/probe events, operation accents, distribution bookkeeping, discards, and hidden Merge-buffer writes; the core now uses it to populate the existing reference-cadence index.
+- The policy also projects trace operand IDs, semantic roles, and configured operand order for the bridge. Prepared timelines, live comparison state, and frame accents now consume the same classification and projection rules.
+- Moved operation-category visibility out of `SettingsPanelControls` into the shared policy. Chart rendering and main-array role projection now use the same Merge workspace visibility rule.
+- Preserved the existing behavior: Comparison and Probe timeline eligibility, auxiliary-write cadence, hidden Merge buffer behavior, role IDs, operand reversal, completion scans, and operation accent categories. No synthesis, PCM, envelope, gain, or mailbox implementation changed.
+- Added focused policy checks for event categories, cadence indices, single/paired operands, role projection, discard settings, completion-scan behavior, and shared Merge-lane visibility.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `SortingLogicTests --core-contracts-only`: passed (39,535 checks each), including Counting/Radix audio signature baselines.
+- Debug and Release `AppFrameworkTests`: passed.
+- Standalone `AudioDeviceTransportTests` x64 Debug and Release builds and runs: passed with SDL dummy audio, including fixed/reference cadence, pause/step/seek, and 80/800-item scenarios.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+Next: isolate playback orchestration state transitions from the main loop, controller, audio bridge, and device adapter without changing callback ownership or generation/revision fencing.

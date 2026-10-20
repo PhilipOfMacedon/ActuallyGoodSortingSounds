@@ -13,6 +13,7 @@
 #include "../SoundEngine/SoundEngine.h"
 #include "../SoundEngine/ReconstructedSound.h"
 #include "../SortingLogic/SortingLogic.h"
+#include "../SortingLogic/TracePresentationPolicy.h"
 
 struct AudioPresentationState
 {
@@ -84,6 +85,7 @@ public:
 
 private:
 	const sortinglogic::SortTrace* lastTrace_;
+	sortinglogic::TraceAudioPresentationPolicy tracePolicy_;
 	std::size_t lastCursor_;
 	SoundEngine::AudioComparison lastComparison_;
 	SoundEngine::EventAccentSummary lastEventAccents_;

@@ -61,8 +61,7 @@ namespace
 		std::string& error)
 	{
 		(void)parameters;
-		const bool hasComparisons = !trace.comparisonEventIndices.empty() &&
-			!trace.events[trace.comparisonEventIndices.front()].completionScan;
+		const sortinglogic::TraceAudioPresentationPolicy policy(trace);
 		std::map<std::uint64_t, double> normalizedById;
 		double minimum = trace.input.empty() ? 0.0 : trace.input.front().value;
 		double maximum = minimum;
@@ -76,50 +75,50 @@ namespace
 			const double value = trace.input[i].value;
 			normalizedById[trace.input[i].stableId] = maximum == minimum ? 0.5 : (value - minimum) / (maximum - minimum);
 		}
-		const sortinglogic::AlgorithmDescriptor* descriptor =
-			sortinglogic::algorithmDescriptorById(trace.familyId, trace.variantId);
 		std::vector<SoundEngine::AudioTimelineInputEvent> events(trace.events.size());
 		for (std::size_t i = 0; i < trace.events.size(); ++i)
 		{
 			const sortinglogic::SemanticEvent& source = trace.events[i];
 			SoundEngine::AudioTimelineInputEvent& event = events[i];
 			event.sourceCursor = i + 1;
-			if (source.type == sortinglogic::SemanticEventType::Compare && (hasComparisons || source.completionScan))
+			const sortinglogic::TraceAudioEventKind kind = policy.classify(source);
+			sortinglogic::TraceAudioOperandProjection operands;
+			if (policy.projectOperands(source, operands))
 			{
-				const auto first = normalizedById.find(source.firstItemId);
-				const auto second = normalizedById.find(source.secondItemId);
-				if (first == normalizedById.end() || second == normalizedById.end()) continue;
-				event.kind = SoundEngine::TimelineEventKind::Comparison;
-				event.firstPosition = first->second;
-				event.secondPosition = second->second;
-				event.firstRole = static_cast<std::uint8_t>(audioRole(source.firstRole));
-				event.secondRole = static_cast<std::uint8_t>(audioRole(source.secondRole));
-				if (descriptor && descriptor->reverseAudioOperandOrder)
+				const auto first = normalizedById.find(operands.firstItemId);
+				if (first == normalizedById.end()) continue;
+				if (operands.hasSecondOperand)
 				{
-					std::swap(event.firstPosition, event.secondPosition);
-					std::swap(event.firstRole, event.secondRole);
+					const auto second = normalizedById.find(operands.secondItemId);
+					if (second == normalizedById.end()) continue;
+					event.kind = SoundEngine::TimelineEventKind::Comparison;
+					event.firstPosition = first->second;
+					event.secondPosition = second->second;
+					event.firstRole = static_cast<std::uint8_t>(audioRole(operands.firstRole));
+					event.secondRole = static_cast<std::uint8_t>(audioRole(operands.secondRole));
+					if (operands.reverseOrder)
+					{
+						std::swap(event.firstPosition, event.secondPosition);
+						std::swap(event.firstRole, event.secondRole);
+					}
+					event.firstGain = event.secondGain = 1.0;
 				}
-				event.firstGain = event.secondGain = 1.0;
+				else
+				{
+					event.kind = SoundEngine::TimelineEventKind::Probe;
+					event.firstPosition = event.secondPosition = first->second;
+					event.firstRole = static_cast<std::uint8_t>(audioRole(operands.firstRole));
+					event.firstGain = 1.0;
+					event.secondGain = 0.0;
+				}
 			}
-			else if (source.type == sortinglogic::SemanticEventType::AuxiliaryItemWrite &&
-				!(trace.algorithm == sortinglogic::SortAlgorithm::Merge && !trace.mergeBufferVisualizationEnabled &&
-				 source.workspaceName == "merge"))
+			else if (kind == sortinglogic::TraceAudioEventKind::AuxiliaryItemWrite)
 			{
 				const auto item = normalizedById.find(source.firstItemId);
 				if (item == normalizedById.end()) continue;
 				event.kind = SoundEngine::TimelineEventKind::Auxiliary;
 				event.firstPosition = item->second;
 				event.secondPosition = item->second;
-				event.firstGain = 1.0;
-				event.secondGain = 0.0;
-			}
-			else if (!hasComparisons && source.type == sortinglogic::SemanticEventType::Probe)
-			{
-				const auto item = normalizedById.find(source.firstItemId);
-				if (item == normalizedById.end()) continue;
-				event.kind = SoundEngine::TimelineEventKind::Probe;
-				event.firstPosition = event.secondPosition = item->second;
-				event.firstRole = static_cast<std::uint8_t>(SoundEngine::ComparisonRole::ProbedItem);
 				event.firstGain = 1.0;
 				event.secondGain = 0.0;
 			}
@@ -156,7 +155,7 @@ bool LatestAudioStateMailbox::consumeLatest(AudioPresentationState& state)
 }
 
 AudioPresentationBridge::AudioPresentationBridge()
-	: lastTrace_(nullptr), lastCursor_(0), lastComparison_(), lastEventAccents_(), hasComparison_(false), lastComparisonIsProbe_(false), valuesById_(),
+	: lastTrace_(nullptr), tracePolicy_(), lastCursor_(0), lastComparison_(), lastEventAccents_(), hasComparison_(false), lastComparisonIsProbe_(false), valuesById_(),
 	  workspaceSizes_(), minimumValue_(0.0f), maximumValue_(0.0f), lastPublished_(), hasPublished_(false), revision_(0),
 	  timelines_(), currentTimeline_(nullptr), timelineGeneration_(0), seekRevision_(0), audioParameterRevision_(1),
 	  transportRevision_(0), lastTransportCursor_(0),
@@ -215,6 +214,9 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 			}
 		}
 		lastTrace_ = rawTrace;
+		tracePolicy_ = rawTrace
+			? sortinglogic::TraceAudioPresentationPolicy(*rawTrace)
+			: sortinglogic::TraceAudioPresentationPolicy();
 		lastCursor_ = 0;
 		lastComparison_ = SoundEngine::AudioComparison();
 		lastEventAccents_ = SoundEngine::EventAccentSummary();
@@ -252,7 +254,8 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		for (std::size_t i = lastCursor_; i < end; ++i)
 		{
 			const sortinglogic::SemanticEvent& event = rawTrace->events[i];
-			if (event.type == sortinglogic::SemanticEventType::Compare)
+			const sortinglogic::TraceAudioEventKind kind = tracePolicy_.classify(event);
+			if (kind == sortinglogic::TraceAudioEventKind::Comparison)
 			{
 				SoundEngine::AudioComparison comparison;
 				if (makeComparison(*rawTrace, event, comparison))
@@ -262,9 +265,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 					lastComparisonIsProbe_ = false;
 				}
 			}
-			else if (event.type == sortinglogic::SemanticEventType::Probe &&
-				(rawTrace->comparisonEventIndices.empty() ||
-				 rawTrace->events[rawTrace->comparisonEventIndices.front()].completionScan))
+			else if (kind == sortinglogic::TraceAudioEventKind::ProbeAsComparison)
 			{
 				SoundEngine::AudioComparison comparison;
 				if (makeComparison(*rawTrace, event, comparison))
@@ -276,26 +277,16 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 			}
 			else
 			{
-				if (rawTrace->algorithm == sortinglogic::SortAlgorithm::Merge &&
-					!rawTrace->mergeBufferVisualizationEnabled)
-					continue;
+				if (!tracePolicy_.frameAccentVisible(event)) continue;
 				SoundEngine::AccentCategory category;
 				bool routed = true;
-				switch (event.type)
+				switch (kind)
 				{
-				case sortinglogic::SemanticEventType::Probe: category = SoundEngine::AccentCategory::Probe; break;
-				case sortinglogic::SemanticEventType::HoldKey:
-				case sortinglogic::SemanticEventType::ShiftItem:
-				case sortinglogic::SemanticEventType::PlaceKey:
-				case sortinglogic::SemanticEventType::Swap:
-				case sortinglogic::SemanticEventType::WriteItem:
-				case sortinglogic::SemanticEventType::WriteRange: category = SoundEngine::AccentCategory::Movement; break;
-				case sortinglogic::SemanticEventType::CarryWrite: category = SoundEngine::AccentCategory::Movement; break;
-				case sortinglogic::SemanticEventType::AuxiliaryItemWrite:
-				case sortinglogic::SemanticEventType::CounterWrite:
-				case sortinglogic::SemanticEventType::ResizeAuxiliary:
-				case sortinglogic::SemanticEventType::ResizeCounterWorkspace: category = SoundEngine::AccentCategory::Distribution; break;
-				case sortinglogic::SemanticEventType::DiscardItem: category = SoundEngine::AccentCategory::Discard; break;
+				case sortinglogic::TraceAudioEventKind::ProbeAccent: category = SoundEngine::AccentCategory::Probe; break;
+				case sortinglogic::TraceAudioEventKind::MainChangeAccent: category = SoundEngine::AccentCategory::Movement; break;
+				case sortinglogic::TraceAudioEventKind::AuxiliaryItemWrite:
+				case sortinglogic::TraceAudioEventKind::DistributionUpdate: category = SoundEngine::AccentCategory::Distribution; break;
+				case sortinglogic::TraceAudioEventKind::DiscardAccent: category = SoundEngine::AccentCategory::Discard; break;
 				default: routed = false; category = SoundEngine::AccentCategory::Probe; break;
 				}
 				if (routed)
@@ -349,9 +340,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		reconstructedParameters.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
 	current.comparison = lastComparison_;
 	SoundEngine::AudioComparison burstOrder = lastComparison_;
-	const sortinglogic::AlgorithmDescriptor* audioDescriptor = rawTrace
-		? sortinglogic::algorithmDescriptorById(rawTrace->familyId, rawTrace->variantId) : nullptr;
-	if (!lastComparisonIsProbe_ && audioDescriptor && audioDescriptor->reverseAudioOperandOrder)
+	if (!lastComparisonIsProbe_ && tracePolicy_.reverseAudioOperandOrder())
 	{
 		std::swap(burstOrder.firstPosition, burstOrder.secondPosition);
 		std::swap(burstOrder.firstRole, burstOrder.secondRole);
@@ -653,12 +642,16 @@ void AudioPresentationBridge::recomputeComparison(const sortinglogic::SortTrace*
 		const std::size_t eventIndex = *candidate;
 		if (eventIndex < trace->events.size())
 		{
+			const sortinglogic::TraceAudioEventKind kind = tracePolicy_.classify(trace->events[eventIndex]);
+			if (kind != sortinglogic::TraceAudioEventKind::Comparison &&
+				kind != sortinglogic::TraceAudioEventKind::ProbeAsComparison)
+				continue;
 			SoundEngine::AudioComparison previous;
 			if (makeComparison(*trace, trace->events[eventIndex], previous))
 			{
 				comparison = previous;
 				hasComparison = true;
-				isProbe = trace->events[eventIndex].type == sortinglogic::SemanticEventType::Probe;
+				isProbe = kind == sortinglogic::TraceAudioEventKind::ProbeAsComparison;
 				return;
 			}
 		}
@@ -668,22 +661,22 @@ void AudioPresentationBridge::recomputeComparison(const sortinglogic::SortTrace*
 bool AudioPresentationBridge::makeComparison(const sortinglogic::SortTrace& trace,
 	const sortinglogic::SemanticEvent& event, SoundEngine::AudioComparison& comparison) const
 {
-	(void)trace;
-	if (event.type == sortinglogic::SemanticEventType::Probe)
+	sortinglogic::TraceAudioOperandProjection operands;
+	if (!sortinglogic::projectAudioOperands(trace, event, operands)) return false;
+	const std::map<std::uint64_t, float>::const_iterator first = valuesById_.find(operands.firstItemId);
+	if (first == valuesById_.end()) return false;
+	if (!operands.hasSecondOperand)
 	{
-		const std::map<std::uint64_t, float>::const_iterator probed = valuesById_.find(event.firstItemId);
-		if (probed == valuesById_.end()) return false;
-		const float position = SoundEngine::normalizeValue(probed->second, minimumValue_, maximumValue_);
+		const float position = SoundEngine::normalizeValue(first->second, minimumValue_, maximumValue_);
 		comparison = SoundEngine::AudioComparison(position, position,
-			SoundEngine::ComparisonRole::ProbedItem, SoundEngine::ComparisonRole::None);
+		audioRole(operands.firstRole), SoundEngine::ComparisonRole::None);
 		return true;
 	}
-	const std::map<std::uint64_t, float>::const_iterator first = valuesById_.find(event.firstItemId);
-	const std::map<std::uint64_t, float>::const_iterator second = valuesById_.find(event.secondItemId);
+	const std::map<std::uint64_t, float>::const_iterator second = valuesById_.find(operands.secondItemId);
 	if (first == valuesById_.end() || second == valuesById_.end()) return false;
 	comparison = SoundEngine::AudioComparison(
 		SoundEngine::normalizeValue(first->second, minimumValue_, maximumValue_),
 		SoundEngine::normalizeValue(second->second, minimumValue_, maximumValue_),
-		audioRole(event.firstRole), audioRole(event.secondRole));
+		audioRole(operands.firstRole), audioRole(operands.secondRole));
 	return true;
 }

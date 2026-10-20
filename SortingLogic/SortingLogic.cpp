@@ -1,4 +1,5 @@
 #include "SortingLogic.h"
+#include "TracePresentationPolicy.h"
 #include "AlgorithmStrategies.h"
 #include "SortingLogicInternal.h"
 #include "TraceRecorder.h"
@@ -9439,24 +9440,6 @@ namespace sortinglogic
 		}
 	}
 
-		void populateAudioEventIndices(SortTrace& trace)
-		{
-			const bool hasAlgorithmComparisons = !trace.comparisonEventIndices.empty() &&
-				!trace.events[trace.comparisonEventIndices.front()].completionScan;
-			for (std::size_t i = 0; i < trace.events.size(); ++i)
-			{
-				const SemanticEvent& event = trace.events[i];
-				const SemanticEventType type = event.type;
-				const bool hiddenMergeBufferWrite = trace.algorithm == SortAlgorithm::Merge &&
-					!trace.mergeBufferVisualizationEnabled && type == SemanticEventType::AuxiliaryItemWrite &&
-					event.workspaceName == "merge";
-				if ((!hiddenMergeBufferWrite && type == SemanticEventType::AuxiliaryItemWrite) ||
-					(type == SemanticEventType::Compare && (hasAlgorithmComparisons || event.completionScan)) ||
-					(!hasAlgorithmComparisons && type == SemanticEventType::Probe))
-					trace.audioEventIndices.push_back(i);
-			}
-		}
-
 		typedef void (*AlgorithmStrategy)(Recorder&);
 
 		SortTrace buildSelectedAlgorithm(const TraceBuildRequest& request, SortAlgorithm algorithm,
@@ -9661,7 +9644,7 @@ namespace sortinglogic
 					}
 				if (!ordered) recorder.trace.outcome = AlgorithmOutcome::IncompleteDemonstration;
 			}
-			populateAudioEventIndices(recorder.trace);
+			sortinglogic::populateAudioEventIndices(recorder.trace);
 			std::string reason;
 			if (!validateState(recorder.state, request.input.size(), &reason)) throw std::logic_error(reason.c_str());
 			return recorder.trace;

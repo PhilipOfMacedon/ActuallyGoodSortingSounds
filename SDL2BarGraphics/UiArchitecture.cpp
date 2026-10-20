@@ -1,4 +1,5 @@
 #include "UiArchitecture.h"
+#include "../SortingLogic/TracePresentationPolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -225,9 +226,9 @@ UiScreenModel buildUiScreenModel(const sortinglogic::RenderSnapshot& snapshot,
 std::vector<sortinglogic::ActiveRole> rolesVisibleOnMainArray(const sortinglogic::RenderSnapshot& snapshot)
 {
 	std::vector<sortinglogic::ActiveRole> roles = snapshot.activeRoles;
-	if (snapshot.algorithm == sortinglogic::SortAlgorithm::Merge && !snapshot.mergeBufferVisualizationEnabled)
-		for (std::size_t i = 0; i < roles.size(); ++i)
-			if (roles[i].lane == "merge") roles[i].lane = "main";
+	for (std::size_t i = 0; i < roles.size(); ++i)
+		roles[i].lane = sortinglogic::visibleRoleWorkspace(snapshot.algorithm,
+			snapshot.mergeBufferVisualizationEnabled, roles[i].lane);
 	return roles;
 }
 
