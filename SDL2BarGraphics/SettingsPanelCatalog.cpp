@@ -15,6 +15,52 @@ namespace
 	}
 }
 
+std::vector<std::string> settingsPaletteOptions()
+{
+	std::vector<std::string> names;
+	const std::vector<PaletteId>& catalog = paletteCatalog();
+	for (std::size_t i = 0; i < catalog.size(); ++i)
+		names.push_back(paletteDisplayName(catalog[i]));
+	return names;
+}
+
+std::vector<std::string> settingsUiPresetOptions()
+{
+	std::vector<std::string> names;
+	const std::vector<UiPresetId>& catalog = uiPresetCatalog();
+	for (std::size_t i = 0; i < catalog.size(); ++i)
+		names.push_back(uiPresetDefinition(catalog[i]).displayName);
+	return names;
+}
+
+std::vector<std::string> settingsBarSpacingOptions()
+{
+	return std::vector<std::string>{ "None", "Compact", "Comfortable" };
+}
+
+std::vector<std::string> settingsInputDomainOptions()
+{
+	std::vector<std::string> names;
+	for (int domain = static_cast<int>(sortinglogic::InputDomain::NormalizedFloats);
+		domain <= static_cast<int>(sortinglogic::InputDomain::IntegerPermutation); ++domain)
+		names.push_back(sortinglogic::inputDomainName(static_cast<sortinglogic::InputDomain>(domain)));
+	return names;
+}
+
+std::vector<std::string> settingsInputPatternOptions()
+{
+	std::vector<std::string> names;
+	for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
+		pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
+		names.push_back(sortinglogic::inputPatternName(static_cast<sortinglogic::InputPattern>(pattern)));
+	return names;
+}
+
+std::vector<std::string> settingsBooleanOptions()
+{
+	return std::vector<std::string>{ "Off", "On" };
+}
+
 SettingsPanelAlgorithmPresentation settingsPanelAlgorithmPresentation(
 	const sortinglogic::AlgorithmDescriptor* algorithm)
 {

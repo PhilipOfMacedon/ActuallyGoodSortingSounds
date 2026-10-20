@@ -8,6 +8,8 @@
 #include "UiArchitecture.h"
 #include "SettingsPanelModel.h"
 
+struct UserPreferences;
+
 struct SettingsPanelChrome
 {
 	int screenWidth;
@@ -35,6 +37,7 @@ struct SettingsPanelPalette
 class SettingsPanelView
 {
 public:
+	void initializeControls(const UserPreferences& preferences);
 	UIRoot& controls() { return controls_; }
 	const UIRoot& controls() const { return controls_; }
 	std::map<std::string, std::string>& captions() { return captions_; }

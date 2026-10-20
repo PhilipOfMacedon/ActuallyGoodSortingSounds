@@ -248,6 +248,34 @@ namespace
 	}
 }
 
+const char* paletteDisplayName(PaletteId id)
+{
+	switch (id)
+	{
+	case PaletteId::Cyan: return "Current Cyan";
+	case PaletteId::Amber: return "Amber Terminal";
+	case PaletteId::Monochrome: return "High Contrast";
+	case PaletteId::Light: return "Paper Light";
+	case PaletteId::VgaClassic: return "VGA 95";
+	case PaletteId::Windows95: return "Windows 95 Classic";
+	}
+	return "Current Cyan";
+}
+
+const std::vector<PaletteId>& paletteCatalog()
+{
+	static const std::vector<PaletteId> catalog =
+	{
+		PaletteId::Cyan,
+		PaletteId::Amber,
+		PaletteId::Monochrome,
+		PaletteId::Light,
+		PaletteId::VgaClassic,
+		PaletteId::Windows95
+	};
+	return catalog;
+}
+
 UiTokenValue::UiTokenValue() : type(UiTokenType::Number), color(), number(0.0), boolean(false), text(), font() {}
 UiTokenValue UiTokenValue::fromColor(const UiColor& value) { UiTokenValue result; result.type = UiTokenType::Color; result.color = value; return result; }
 UiTokenValue UiTokenValue::fromNumber(double value) { UiTokenValue result; result.type = UiTokenType::Number; result.number = value; return result; }

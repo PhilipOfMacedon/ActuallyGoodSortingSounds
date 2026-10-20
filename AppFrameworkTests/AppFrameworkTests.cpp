@@ -12,6 +12,7 @@
 #include <atomic>
 #include <limits>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -2269,6 +2270,59 @@ namespace
 			"settings view leaves modal opening to the app-level overlay coordinator");
 	}
 
+	void testSettingsPanelViewInitializesItsControls()
+	{
+		UserPreferences preferences;
+		preferences.visual.spacing = BarSpacingMode::Comfortable;
+		preferences.appearance.themes[preferences.appearance.activePreset].palette = PaletteId::Amber;
+		SettingsPanelView view;
+		view.initializeControls(preferences);
+
+		const UiWidget* palette = view.controls().find("palette");
+		const UiWidget* spacing = view.controls().find("spacing");
+		const UiWidget* inputDomain = view.controls().find("domain");
+		const UiWidget* reconstructedMaster = view.controls().find("recon_master");
+		const UiWidget* variantGain = view.controls().find("algorithm_audio_00");
+		check(palette && palette->selectedIndex() == static_cast<int>(PaletteId::Amber),
+			"settings view initializes the palette selection from the active appearance preset");
+		bool paletteLabelsMatchCatalog = palette && palette->options().size() == paletteCatalog().size();
+		for (std::size_t i = 0; paletteLabelsMatchCatalog && i < paletteCatalog().size(); ++i)
+			paletteLabelsMatchCatalog = palette->options()[i] == paletteDisplayName(paletteCatalog()[i]);
+		check(paletteLabelsMatchCatalog,
+			"settings palette labels and order come from the renderer-independent appearance catalog");
+		check(spacing && spacing->selectedIndex() == static_cast<int>(BarSpacingMode::Comfortable),
+			"settings view initializes visual preferences without platform adapter setup");
+		check(inputDomain && inputDomain->action().kind == AppActionKind::SetInputDomain,
+			"settings view builds simulation settings as typed app actions");
+		check(reconstructedMaster && reconstructedMaster->action().kind == AppActionKind::SetReconstructedAudioParameter &&
+			reconstructedMaster->action().reconstructedAudioParameter == ReconstructedAudioParameterId::MasterLevel,
+			"settings view builds reconstructed-audio controls with their parameter identity");
+		check(variantGain && variantGain->action().kind == AppActionKind::SetVariantAudioLevel &&
+			variantGain->action().familyId == preferences.simulation.familyId &&
+			variantGain->action().variantId == preferences.simulation.variantId,
+			"settings view scopes variant audio controls to the currently selected stable algorithm identity");
+		check(view.captions().find("playback_timing") != view.captions().end() &&
+			view.controls().find("settings_close") && view.controls().findContainer("settings_panel"),
+			"settings view constructs its captions, close action, and retained panel container");
+
+		const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
+		bool everyOptionWasBuilt = true;
+		for (std::size_t algorithmIndex = 0; algorithmIndex < catalog.size(); ++algorithmIndex)
+		{
+			std::set<std::string> groups;
+			for (std::size_t optionIndex = 0; optionIndex < catalog[algorithmIndex].supportedOptions.size(); ++optionIndex)
+			{
+				const std::string groupId = catalog[algorithmIndex].supportedOptions[optionIndex].groupId;
+				if (!groups.insert(groupId).second) continue;
+				const std::string id = settingsAlgorithmOptionControlId(catalog[algorithmIndex].familyId,
+					catalog[algorithmIndex].variantId, groupId);
+				if (!view.controls().find(id)) everyOptionWasBuilt = false;
+			}
+		}
+		check(everyOptionWasBuilt,
+			"settings view builds one option widget per catalog variant option group");
+	}
+
 	void testSettingsPanelControlCatalog()
 	{
 		const std::vector<std::string> appearance = settingsPanelControlIds(
@@ -3700,6 +3754,7 @@ int main(int argc, char* argv[])
 	testSettingsPanelPaintComposition();
 	testSettingsPanelModel();
 	testSettingsPanelViewOwnsNavigationAndScrolling();
+	testSettingsPanelViewInitializesItsControls();
 	testSettingsPanelControlCatalog();
 	testSettingsPanelLayout();
 	testSettingsStore();

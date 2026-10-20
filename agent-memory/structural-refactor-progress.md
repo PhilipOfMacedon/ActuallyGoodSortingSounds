@@ -1477,4 +1477,14 @@ Verification:
 - `AppFrameworkTests` passed in all four configurations.
 - `git diff --check` passed. No performance improvement is claimed; frame/layout cost has not been benchmarked.
 
-Next: move settings control creation and value/enabled-state synchronization behind `SettingsPanelView`, then submit settings tab/content paint through the existing `UiPaintCommand` path.
+Next: move settings-control value/enabled-state synchronization behind `SettingsPanelView`, then submit settings tab/content paint through the existing `UiPaintCommand` path.
+
+## 2026-10-20 — move settings control construction into the view
+
+`SettingsPanelView::initializeControls` now creates the settings tabs, appearance and simulation selectors, catalog-derived algorithm option controls, reconstructed-audio controls, per-variant audio controls, captions, and retained panel container from `UserPreferences`. `ControlPanel::createWidgets` now initializes the view rather than constructing its widget tree. Renderer-owned `TextLabel` resources remain in the host adapter and are created from the completed view tree.
+
+Centralized palette, preset, spacing, domain, pattern, and boolean option labels in `SettingsPanelCatalog`. Palette names and order now come from renderer-independent `UiAppearance` metadata, keeping GLM out of the headless settings catalog and avoiding a rendering-header dependency for UI choices.
+
+Added headless checks for initialized selection values, typed action payloads, algorithm option coverage, and palette label order. The full Visual Studio solution built in x64 Debug/Release and x86-mapped Win32 Debug/Release. `AppFrameworkTests` passed in all four configurations. The initial x64 Debug compile caught the GLM dependency leak; the pure appearance catalog extraction fixed it. `git diff --check` passes. No visual or performance change is claimed.
+
+Next: move settings widget value/enabled-state synchronization into `SettingsPanelView`, then submit settings tab/content widget paint through the existing `UiPaintCommand` contract. Continue with main-control ownership after those view paths are headless.

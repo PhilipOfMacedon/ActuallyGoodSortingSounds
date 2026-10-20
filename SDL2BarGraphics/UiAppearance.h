@@ -13,6 +13,9 @@ enum class UiTokenType { Color, Number, Boolean, Choice, Font };
 enum class UiTokenCategory { Colors, Typography, Metrics, Decorations };
 enum class UiInvalidation { Paint = 1, Layout = 2, Typography = 4 };
 
+const char* paletteDisplayName(PaletteId id);
+const std::vector<PaletteId>& paletteCatalog();
+
 struct UiColor
 {
 	float r, g, b, a;

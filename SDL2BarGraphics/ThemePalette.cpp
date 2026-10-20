@@ -5,7 +5,6 @@ namespace
 	const ThemePalette palettes[] =
 	{
 		{
-			"cyan", "Current Cyan",
 			glm::vec4(0.10f, 0.10f, 0.10f, 1.0f),
 			glm::vec4(0.22f, 0.71f, 0.84f, 1.0f),
 			glm::vec4(0.98f, 0.62f, 0.26f, 1.0f),
@@ -29,7 +28,6 @@ namespace
 			glm::vec4(0.25f, 0.38f, 0.43f, 1.0f)
 		},
 		{
-			"amber", "Amber Terminal",
 			glm::vec4(0.075f, 0.055f, 0.035f, 1.0f),
 			glm::vec4(0.90f, 0.48f, 0.16f, 1.0f),
 			glm::vec4(1.0f, 0.66f, 0.23f, 1.0f),
@@ -53,7 +51,6 @@ namespace
 			glm::vec4(0.52f, 0.34f, 0.16f, 1.0f)
 		},
 		{
-			"monochrome", "High Contrast",
 			glm::vec4(0.015f, 0.015f, 0.015f, 1.0f),
 			glm::vec4(0.88f, 0.88f, 0.88f, 1.0f),
 			glm::vec4(0.60f, 0.60f, 0.60f, 1.0f),
@@ -77,7 +74,6 @@ namespace
 			glm::vec4(0.63f, 0.63f, 0.63f, 1.0f)
 		},
 		{
-			"light", "Paper Light",
 			glm::vec4(0.91f, 0.93f, 0.94f, 1.0f),
 			glm::vec4(0.08f, 0.47f, 0.63f, 1.0f),
 			glm::vec4(0.86f, 0.37f, 0.09f, 1.0f),
@@ -101,7 +97,6 @@ namespace
 			glm::vec4(0.35f, 0.43f, 0.45f, 1.0f)
 		},
 		{
-			"vga-classic", "VGA 95",
 			glm::vec4(0.035f, 0.040f, 0.052f, 1.0f),
 			glm::vec4(0.00f, 0.79f, 0.86f, 1.0f),
 			glm::vec4(1.00f, 0.55f, 0.05f, 1.0f),
@@ -125,7 +120,6 @@ namespace
 			glm::vec4(0.60f, 0.68f, 0.79f, 1.0f)
 		},
 		{
-			"windows-95", "Windows 95 Classic",
 			glm::vec4(0.025f, 0.035f, 0.055f, 1.0f),
 			glm::vec4(0.00f, 0.88f, 0.90f, 1.0f),
 			glm::vec4(1.00f, 0.58f, 0.04f, 1.0f),
@@ -186,23 +180,4 @@ ThemePalette paletteForAppearance(UiPresetId preset, const UiThemeCustomization&
 	}
 	(void)preset;
 	return result;
-}
-
-const char* paletteDisplayName(PaletteId id)
-{
-	return paletteFor(id).displayName;
-}
-
-const std::vector<PaletteId>& paletteCatalog()
-{
-	static const std::vector<PaletteId> catalog =
-	{
-		PaletteId::Cyan,
-		PaletteId::Amber,
-		PaletteId::Monochrome,
-		PaletteId::Light,
-		PaletteId::VgaClassic,
-		PaletteId::Windows95
-	};
-	return catalog;
 }

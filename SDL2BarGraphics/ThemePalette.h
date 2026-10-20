@@ -1,16 +1,11 @@
 #pragma once
 
-#include <string>
-#include <vector>
-
 #include <glm/glm.hpp>
 
-#include "UserSettings.h"
+#include "UiAppearance.h"
 
 struct ThemePalette
 {
-	const char* id;
-	const char* displayName;
 	glm::vec4 background;
 	glm::vec4 bar;
 	glm::vec4 compared;
@@ -36,5 +31,3 @@ struct ThemePalette
 
 const ThemePalette& paletteFor(PaletteId id);
 ThemePalette paletteForAppearance(UiPresetId preset, const UiThemeCustomization& customization);
-const char* paletteDisplayName(PaletteId id);
-const std::vector<PaletteId>& paletteCatalog();

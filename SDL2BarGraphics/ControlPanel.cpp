@@ -118,23 +118,6 @@ namespace
 		return context;
 	}
 
-	std::vector<std::string> paletteNames()
-	{
-		std::vector<std::string> names;
-		const std::vector<PaletteId>& catalog = paletteCatalog();
-		for (std::size_t i = 0; i < catalog.size(); ++i)
-			names.push_back(paletteDisplayName(catalog[i]));
-		return names;
-	}
-
-	std::vector<std::string> uiPresetNames()
-	{
-		std::vector<std::string> names;
-		const std::vector<UiPresetId>& catalog = uiPresetCatalog();
-		for (std::size_t i = 0; i < catalog.size(); ++i) names.push_back(uiPresetDefinition(catalog[i]).displayName);
-		return names;
-	}
-
 	const WindowsFontCatalog& uiFontCatalog()
 	{
 		static const WindowsFontCatalog catalog;
@@ -157,63 +140,6 @@ namespace
 		for (std::size_t i = 0; i < faces.size(); ++i)
 			if (faces[i].family == family && std::find(names.begin(), names.end(), faces[i].style) == names.end()) names.push_back(faces[i].style);
 		return names;
-	}
-
-	std::vector<std::string> spacingNames()
-	{
-		std::vector<std::string> names;
-		names.push_back("None");
-		names.push_back("Compact");
-		names.push_back("Comfortable");
-		return names;
-	}
-
-	std::vector<std::string> domainNames()
-	{
-		std::vector<std::string> names;
-		for (int domain = static_cast<int>(sortinglogic::InputDomain::NormalizedFloats);
-			domain <= static_cast<int>(sortinglogic::InputDomain::IntegerPermutation); ++domain)
-			names.push_back(sortinglogic::inputDomainName(static_cast<sortinglogic::InputDomain>(domain)));
-		return names;
-	}
-
-	std::vector<std::string> inputPatternNames()
-	{
-		std::vector<std::string> names;
-		for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
-			pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
-			names.push_back(sortinglogic::inputPatternName(static_cast<sortinglogic::InputPattern>(pattern)));
-		return names;
-	}
-
-	std::vector<std::string> booleanNames()
-	{
-		return std::vector<std::string>{ "Off", "On" };
-	}
-
-	std::vector<std::string> bandNames()
-	{
-		std::vector<std::string> names;
-		const std::array<SoundEngine::FrequencyBand, SoundEngine::BandCount>& bands = SoundEngine::frequencyBank();
-		for (std::size_t i = 0; i < bands.size(); ++i)
-		{
-			std::ostringstream name;
-			if (bands[i].frequencyHz >= 1000.0)
-				name << std::fixed << std::setprecision(bands[i].frequencyHz < 10000.0 ? 1 : 0) << bands[i].frequencyHz / 1000.0 << " kHz";
-			else name << static_cast<int>(bands[i].frequencyHz) << " Hz";
-			names.push_back(name.str());
-		}
-		return names;
-	}
-
-	AppAction audioAction(AudioParameterId parameter, int index = 0)
-	{
-		return AppAction(AppActionKind::SetAudioParameter, 0.0f, 0, parameter, index);
-	}
-
-	AppAction reconstructedAction(ReconstructedAudioParameterId parameter, float value = 0.0f, int selection = 0)
-	{
-		return AppAction(AppActionKind::SetReconstructedAudioParameter, parameter, value, selection);
 	}
 
 	bool inRect(const UiRect& rect, int x, int y)
@@ -355,7 +281,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), appearanceEditorView_(uiPresetNames(), paletteNames(), settings.appearance,
+	mainUi_(), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
 		paletteIndex(activeTheme(settings).palette)), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), algorithmProfileView_(measureLogicalTextWidth), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
@@ -417,110 +343,11 @@ void ControlPanel::createWidgets()
 	mainUi_.addButton("time_down", "Time --", AppAction(AppActionKind::AdjustDuration, -1.0f));
 	mainUi_.addButton("time_value", "10 sec");
 	mainUi_.addButton("time_up", "Time ++", AppAction(AppActionKind::AdjustDuration, 1.0f));
-	mainUi_.addComboBox("domain", domainNames(), static_cast<int>(settings_.simulation.domain), AppAction(AppActionKind::SetInputDomain));
-	mainUi_.addComboBox("pattern", inputPatternNames(), static_cast<int>(settings_.simulation.pattern), AppAction(AppActionKind::SetInputPattern));
+	mainUi_.addComboBox("domain", settingsInputDomainOptions(), static_cast<int>(settings_.simulation.domain), AppAction(AppActionKind::SetInputDomain));
+	mainUi_.addComboBox("pattern", settingsInputPatternOptions(), static_cast<int>(settings_.simulation.pattern), AppAction(AppActionKind::SetInputPattern));
 	mainUi_.addButton("seed_readout", "Seed");
 	mainUi_.addButton("start_overlay", "Generate & Play", AppAction(AppActionKind::GenerateAndPlay));
-	settingsPanelView_.controls().addButton("appearance_tab", "Appearance", AppAction(), UiAction::ViewCommand::ShowAppearanceSettings);
-	settingsPanelView_.controls().addButton("algorithm_tab", "Algorithm", AppAction(), UiAction::ViewCommand::ShowAlgorithmSettings);
-	settingsPanelView_.controls().addButton("audio_tab", "General Audio", AppAction(), UiAction::ViewCommand::ShowGeneralAudioSettings);
-	settingsPanelView_.controls().addButton("audio_basic_tab", "Basic", AppAction(), UiAction::ViewCommand::ShowAudioBasic);
-	settingsPanelView_.controls().addButton("audio_advanced_tab", "Advanced", AppAction(), UiAction::ViewCommand::ShowAudioAdvanced);
-	settingsPanelView_.controls().addComboBox("preset", uiPresetNames(), static_cast<int>(settings_.appearance.activePreset), AppAction(AppActionKind::SetUiPreset));
-	settingsPanelView_.controls().addComboBox("palette", paletteNames(), paletteIndex(activeTheme(settings_).palette), AppAction(AppActionKind::SetPalette));
-	settingsPanelView_.controls().addComboBox("spacing", spacingNames(), spacingIndex(settings_.visual.spacing), AppAction(AppActionKind::SetSpacing));
-	settingsPanelView_.controls().addButton("appearance_customize", "Customize appearance...", AppAction(), UiAction::ViewCommand::OpenAppearanceEditor);
-	settingsPanelView_.controls().addComboBox("domain", domainNames(), static_cast<int>(settings_.simulation.domain), AppAction(AppActionKind::SetInputDomain));
-	settingsPanelView_.controls().addComboBox("pattern", inputPatternNames(), static_cast<int>(settings_.simulation.pattern), AppAction(AppActionKind::SetInputPattern));
-	settingsPanelView_.controls().addComboBox("playback_timing", std::vector<std::string>{ "Fixed duration", "Reference cadence" },
-		static_cast<int>(settings_.simulation.playbackTimingMode), AppAction(AppActionKind::SetPlaybackTimingMode));
-	settingsPanelView_.controls().addComboBox("merge_buffer_visualization", booleanNames(),
-		settings_.simulation.mergeBufferVisualizationEnabled ? 1 : 0, AppAction(AppActionKind::SetMergeBufferVisualization));
-	settingsPanelView_.controls().addComboBox("completion_scan", booleanNames(), settings_.simulation.completionScanEnabled ? 1 : 0,
-		AppAction(AppActionKind::SetCompletionScan));
-	settingsPanelView_.captions()["preset"] = "Interface preset";
-	settingsPanelView_.captions()["palette"] = "Palette";
-	settingsPanelView_.captions()["spacing"] = "Bar spacing";
-	settingsPanelView_.captions()["appearance_customize"] = "";
-	settingsPanelView_.captions()["domain"] = "Input domain";
-	settingsPanelView_.captions()["pattern"] = "Input pattern";
-	settingsPanelView_.captions()["playback_timing"] = "Playback timing";
-	settingsPanelView_.captions()["merge_buffer_visualization"] = "Merge buffer visualization";
-	settingsPanelView_.captions()["completion_scan"] = "Completion scan";
-	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
-	for (std::size_t algorithmIndex = 0; algorithmIndex < optionCatalog.size(); ++algorithmIndex)
-	{
-		const sortinglogic::AlgorithmDescriptor& algorithm = optionCatalog[algorithmIndex];
-		std::set<std::string> groups;
-		for (std::size_t optionIndex = 0; optionIndex < algorithm.supportedOptions.size(); ++optionIndex)
-		{
-			const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[optionIndex];
-			const std::string groupId(option.groupId);
-			if (!groups.insert(groupId).second) continue;
-			std::vector<std::string> optionNames;
-			int selectedIndex = 0;
-			const std::string selectedId = algorithmOptionStableId(settings_, algorithm, groupId);
-			for (std::size_t candidateIndex = 0; candidateIndex < algorithm.supportedOptions.size(); ++candidateIndex)
-			{
-				const sortinglogic::AlgorithmOptionDescriptor& candidate = algorithm.supportedOptions[candidateIndex];
-				if (groupId != candidate.groupId) continue;
-				if (candidate.stableId == selectedId) selectedIndex = static_cast<int>(optionNames.size());
-				optionNames.push_back(candidate.displayName);
-			}
-			const std::string id = settingsAlgorithmOptionControlId(algorithm.familyId, algorithm.variantId, groupId);
-			settingsPanelView_.controls().addComboBox(id, optionNames, selectedIndex,
-				AppAction(AppActionKind::SetAlgorithmOption, algorithm.familyId, algorithm.variantId, groupId));
-			settingsPanelView_.captions()[id] = settingsAlgorithmOptionCaption(groupId);
-		}
-	}
-	const SoundEngine::ReconstructedParameters& audio = settings_.reconstructedAudio;
-	settingsPanelView_.controls().addComboBox("recon_enabled", booleanNames(), audio.audioEnabled ? 1 : 0,
-		reconstructedAction(ReconstructedAudioParameterId::Enabled));
-	settingsPanelView_.controls().addSlider("recon_master", "Master volume", 0.0f, 1.0f, 0.01f, static_cast<float>(audio.masterLevel),
-		reconstructedAction(ReconstructedAudioParameterId::MasterLevel));
-	settingsPanelView_.controls().addComboBox("recon_idle_policy", std::vector<std::string>{ "Hold selection", "Release selection" },
-		static_cast<int>(audio.idlePolicy), reconstructedAction(ReconstructedAudioParameterId::IdlePolicy));
-	settingsPanelView_.controls().addSlider("recon_release", "Special release (ms)", 0.0f, 2000.0f, 10.0f,
-		static_cast<float>(audio.specialReleaseMilliseconds), reconstructedAction(ReconstructedAudioParameterId::SpecialReleaseMilliseconds));
-	settingsPanelView_.controls().addButton("recon_restore", "Restore reconstructed defaults", AppAction(AppActionKind::RestoreReconstructedDefaults));
-	settingsPanelView_.controls().addSlider("recon_min_pitch", "Minimum pitch (Hz)", 50.0f, 1000.0f, 1.0f,
-		static_cast<float>(audio.minimumFrequencyHz), reconstructedAction(ReconstructedAudioParameterId::MinimumFrequencyHz));
-	settingsPanelView_.controls().addSlider("recon_max_pitch", "Maximum pitch (Hz)", 1000.0f, 8000.0f, 1.0f,
-		static_cast<float>(audio.maximumFrequencyHz), reconstructedAction(ReconstructedAudioParameterId::MaximumFrequencyHz));
-	settingsPanelView_.controls().addComboBox("recon_mapping", std::vector<std::string>{ "Linear Hz", "Log frequency" },
-		static_cast<int>(audio.mapping), reconstructedAction(ReconstructedAudioParameterId::Mapping));
-	settingsPanelView_.controls().addSlider("recon_clock", "Excitation clock (Hz)", 100.0f, 600.0f, 1.0f,
-		static_cast<float>(audio.excitationClockHz), reconstructedAction(ReconstructedAudioParameterId::ExcitationClockHz));
-	settingsPanelView_.controls().addSlider("recon_cycles", "Carrier cycles", 1.0f, 16.0f, 0.1f,
-		static_cast<float>(audio.carrierCycles), reconstructedAction(ReconstructedAudioParameterId::CarrierCycles));
-	settingsPanelView_.controls().addSlider("recon_tukey", "Tukey taper", 0.0f, 1.0f, 0.01f,
-		static_cast<float>(audio.tukeyFraction), reconstructedAction(ReconstructedAudioParameterId::TukeyFraction));
-	settingsPanelView_.controls().addSlider("recon_delay", "Second operand delay (us)", 0.0f, 2000.0f, 1.0f,
-		static_cast<float>(audio.secondOperandDelayMicroseconds), reconstructedAction(ReconstructedAudioParameterId::SecondOperandDelayMicroseconds));
-	settingsPanelView_.controls().addComboBox("recon_lowpass", booleanNames(), audio.lowPassEnabled ? 1 : 0,
-		reconstructedAction(ReconstructedAudioParameterId::LowPassEnabled));
-	settingsPanelView_.controls().addSlider("recon_cutoff", "Low-pass cutoff (Hz)", 500.0f, 20000.0f, 10.0f,
-		static_cast<float>(audio.lowPassCutoffHz), reconstructedAction(ReconstructedAudioParameterId::LowPassCutoffHz));
-	const char* audioIds[] = { "recon_enabled", "recon_master", "recon_idle_policy", "recon_release", "recon_min_pitch",
-		"recon_max_pitch", "recon_mapping", "recon_clock", "recon_cycles", "recon_tukey", "recon_delay", "recon_lowpass", "recon_cutoff" };
-	const char* audioNames[] = { "Audio enabled", "Master volume", "Idle selection", "Special release (ms)", "Minimum pitch (Hz)",
-		"Maximum pitch (Hz)", "Value mapping", "Excitation clock (Hz)", "Carrier cycles", "Tukey taper", "Second operand delay (us)",
-		"Tone low-pass filter", "Low-pass cutoff (Hz)" };
-	for (std::size_t i = 0; i < sizeof(audioIds) / sizeof(audioIds[0]); ++i) settingsPanelView_.captions()[audioIds[i]] = audioNames[i];
-	for (int channel = 0; channel < static_cast<int>(AlgorithmAudioChannel::Count); ++channel)
-	{
-		const AlgorithmAudioChannel level = static_cast<AlgorithmAudioChannel>(channel);
-		const std::string id = std::string("algorithm_audio_") + (channel < 10 ? "0" : "") + std::to_string(channel);
-		settingsPanelView_.controls().addSlider(id, algorithmAudioChannelName(level), -60.0f, 12.0f, 1.0f, 0.0f,
-			AppAction(AppActionKind::SetVariantAudioLevel, settings_.simulation.familyId,
-				settings_.simulation.variantId, 0.0f, channel));
-		settingsPanelView_.captions()[id] = algorithmAudioChannelName(level);
-	}
-	settingsPanelView_.controls().addButton("algorithm_audio_reset", "Reset to family defaults",
-		AppAction(AppActionKind::ResetVariantAudioLevels, settings_.simulation.familyId, settings_.simulation.variantId));
-	settingsPanelView_.controls().addButton("audio_retry", "Retry audio device", AppAction(AppActionKind::RetryAudioDevice));
-	settingsPanelView_.controls().addButton("settings_close", "Done", AppAction(), UiAction::ViewCommand::CloseSettings);
-	settingsPanelView_.controls().addContainer("settings_panel", UiContainerKind::Panel);
+	settingsPanelView_.initializeControls(settings_);
 	mainUi_.find("panel_toggle")->setRole(UiControlRole::PanelToggle);
 	mainUi_.find("settings")->setRole(UiControlRole::Settings);
 	mainUi_.find("algorithm")->setRole(UiControlRole::AlgorithmChoice);
@@ -532,9 +359,6 @@ void ControlPanel::createWidgets()
 	mainUi_.find("start_overlay")->setRole(UiControlRole::Playback);
 	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 		if (mainUi_.widgets()[i]->kind() == UiWidgetKind::ComboBox) mainUi_.widgets()[i]->setRole(UiControlRole::Choice);
-	for (std::size_t i = 0; i < settingsPanelView_.controls().widgets().size(); ++i)
-		if (settingsPanelView_.controls().widgets()[i]->kind() == UiWidgetKind::ComboBox) settingsPanelView_.controls().widgets()[i]->setRole(UiControlRole::Choice);
-
 	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
 	{
 		const UiWidget& widget = *mainUi_.widgets()[i];
