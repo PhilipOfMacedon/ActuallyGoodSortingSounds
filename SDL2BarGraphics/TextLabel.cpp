@@ -1,4 +1,5 @@
 #include "TextLabel.h"
+#include "AssetPaths.h"
 
 #include <SDL_ttf.h>
 
@@ -102,7 +103,7 @@ void TextLabel::setText(std::string text, std::string fontFace, int fontSize)
 
 void TextLabel::setText(std::string text, std::string fontFace, int fontSize, SDL_Color color)
 {
-	setResolvedText(text, fontFace, "Resources/" + fontFace + ".ttf", 0, fontSize, 0, 0, color, false);
+	setResolvedText(text, fontFace, applicationAssetPath("Resources/" + fontFace + ".ttf"), 0, fontSize, 0, 0, color, false);
 }
 
 void TextLabel::setContent(std::string text)
@@ -118,7 +119,7 @@ void TextLabel::setContent(std::string text)
 void TextLabel::setText(std::string text, const UiFontReference& font, int fontSize, SDL_Color color, int dpi)
 {
 	std::string identity = font.family + "|" + font.style;
-	std::string path = "Resources/Courier New Bold.ttf";
+	std::string path = applicationAssetPath("Resources/Courier New Bold.ttf");
 	int index = 0;
 	bool fallback = false;
 	const bool factoryFace = font.family == "Courier New" && font.style == "Bold";
@@ -171,7 +172,7 @@ void TextLabel::createTextLabel()
 		textureId_ = 0;
 	}
 	dimensions_ = glm::vec2(0.0f);
-	const std::string bundledPath = "Resources/Courier New Bold.ttf";
+	const std::string bundledPath = applicationAssetPath("Resources/Courier New Bold.ttf");
 	TTF_Font* font = findFont(fontPath_, fontIndex_, fontSize_, dpiX_, dpiY_);
 	if (!font && fontPath_ != bundledPath)
 	{
@@ -234,7 +235,7 @@ void TextLabel::clearFontCache()
 
 glm::vec2 TextLabel::measureText(const std::string& text, const UiFontReference& requestedFont, int fontSize, int dpi)
 {
-	const std::string bundledPath = "Resources/Courier New Bold.ttf";
+	const std::string bundledPath = applicationAssetPath("Resources/Courier New Bold.ttf");
 	std::string path = bundledPath;
 	int index = 0;
 	if (!(requestedFont.family == "Courier New" && requestedFont.style == "Bold"))

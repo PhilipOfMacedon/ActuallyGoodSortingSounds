@@ -922,3 +922,21 @@ Verification:
 - `git diff --check` passed; configured LF-to-CRLF notices only.
 
 Next: continue the asset/source-ownership audit, starting with executable-relative shader/font lookup and explicit asset-root ownership.
+
+## 2026-10-20 — resolve bundled assets beside the executable
+
+Status: implementation and launch verification complete.
+
+- Added `applicationAssetPath` backed by `SDL_GetBasePath`, resolving bundled assets beside the executable rather than relative to the caller's current working directory.
+- Updated shader file reads to use `SDL_RWFromFile`, which accepts the UTF-8 path returned by SDL. Updated bundled font loading and measurement to use the same executable-relative path.
+- Kept the current runtime-copy target and asset folder layout. No asset contents or rendering behavior changed.
+
+Verification:
+
+- x64 Debug and Release Visual Studio solution builds passed.
+- Launching the Debug app with `%TEMP%` as its working directory remained active after three seconds and produced no shader/font errors.
+- `AppFrameworkTests` passed in both configurations.
+- `SortingLogicTests --core-contracts-only` passed in both configurations with 39,535 checks and 0 failures.
+- `git diff --check` passed; configured LF-to-CRLF notices only.
+
+Next: review the external dependency-root override and application/test source ownership, then continue narrowing UI and rendering boundaries from measured evidence.

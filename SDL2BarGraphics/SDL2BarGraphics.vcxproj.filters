@@ -53,6 +53,7 @@
     <ClCompile Include="ArrayRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="AssetPaths.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SDL2BarGraphics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -99,6 +100,7 @@
     <ClInclude Include="ArrayRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AssetPaths.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ControlPanel.h">
       <Filter>Header Files</Filter>
     </ClInclude>

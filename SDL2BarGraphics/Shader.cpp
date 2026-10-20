@@ -1,8 +1,9 @@
 #include "Shader.h"
+#include "AssetPaths.h"
 
-#include <fstream>
 #include <iostream>
-#include <iterator>
+
+#include <SDL.h>
 
 Shader::Shader()
 	: shaderID(0),
@@ -137,14 +138,19 @@ std::string Shader::readFile(const char* file)
 	if (!file)
 		return std::string();
 
-	std::ifstream fileStream(file, std::ios::in | std::ios::binary);
+	const std::string resolvedPath = applicationAssetPath(file);
+	SDL_RWops* fileStream = SDL_RWFromFile(resolvedPath.c_str(), "rb");
 	if (!fileStream)
 	{
-		std::cerr << "Could not open shader file '" << file << "'.\n";
+		std::cerr << "Could not open shader file '" << resolvedPath << "': " << SDL_GetError() << '\n';
 		return std::string();
 	}
 
-	return std::string(
-		std::istreambuf_iterator<char>(fileStream),
-		std::istreambuf_iterator<char>());
+	std::string contents;
+	char buffer[4096];
+	std::size_t bytesRead = 0;
+	while ((bytesRead = SDL_RWread(fileStream, buffer, 1, sizeof(buffer))) > 0)
+		contents.append(buffer, bytesRead);
+	SDL_RWclose(fileStream);
+	return contents;
 }

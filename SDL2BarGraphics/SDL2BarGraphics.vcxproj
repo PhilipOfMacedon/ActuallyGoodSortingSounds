@@ -35,6 +35,7 @@
     <ClCompile Include="PlaybackFrameCoordinator.cpp" />
     <ClCompile Include="PlaybackTimebase.cpp" />
     <ClCompile Include="ArrayRenderer.cpp" />
+    <ClCompile Include="AssetPaths.cpp" />
     <ClCompile Include="ControlPanel.cpp" />
     <ClCompile Include="FrameCoordinator.cpp" />
     <ClCompile Include="LayoutMetrics.cpp" />
@@ -78,6 +79,7 @@
     <ClInclude Include="PlaybackTimebase.h" />
     <ClInclude Include="BarCountSteps.h" />
     <ClInclude Include="ArrayRenderer.h" />
+    <ClInclude Include="AssetPaths.h" />
     <ClInclude Include="ControlPanel.h" />
     <ClInclude Include="FrameCoordinator.h" />
     <ClInclude Include="LayoutMetrics.h" />
