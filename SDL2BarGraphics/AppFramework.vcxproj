@@ -50,6 +50,7 @@
     <ClCompile Include="AppearanceEditorLayout.cpp" />
     <ClCompile Include="AppearanceEditorModel.cpp" />
     <ClCompile Include="AlgorithmBrowserModel.cpp" />
+    <ClCompile Include="AlgorithmBrowserCatalog.cpp" />
     <ClCompile Include="AlgorithmBrowserView.cpp" />
     <ClCompile Include="SettingsPanelView.cpp" />
     <ClCompile Include="SettingsPanelModel.cpp" />

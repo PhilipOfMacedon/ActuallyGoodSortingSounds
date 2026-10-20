@@ -3,22 +3,27 @@
 #include <string>
 #include <vector>
 
-#include "../SortingLogic/SortingLogic.h"
 #include "UiLayer.h"
+
+struct AlgorithmBrowserVariant
+{
+	std::string variantId;
+	std::string displayName;
+};
 
 struct AlgorithmFamilyEntry
 {
-	sortinglogic::FamilyId id;
+	std::string id;
 	std::string name;
-	std::vector<const sortinglogic::AlgorithmDescriptor*> variants;
+	std::vector<AlgorithmBrowserVariant> variants;
 };
 
 struct AlgorithmBrowserInputResult
 {
 	bool closeRequested;
 	bool selectionRequested;
-	sortinglogic::FamilyId familyId;
-	sortinglogic::VariantId variantId;
+	std::string familyId;
+	std::string variantId;
 	AlgorithmBrowserInputResult()
 		: closeRequested(false), selectionRequested(false), familyId(), variantId() {}
 };
@@ -33,7 +38,7 @@ struct AlgorithmBrowserModel
 	bool pendingSelection;
 	std::string status;
 	std::string search;
-	sortinglogic::FamilyId selectedFamily;
+	std::string selectedFamily;
 	int familySelection;
 	int variantSelection;
 	int familyScroll;
@@ -44,19 +49,21 @@ struct AlgorithmBrowserModel
 	UiRect variantBounds;
 	UiScrollViewport familyViewport;
 	UiScrollViewport variantViewport;
+	std::vector<AlgorithmFamilyEntry> catalog;
 
-	AlgorithmBrowserModel();
-	void begin(const sortinglogic::FamilyId& initialFamily);
+	explicit AlgorithmBrowserModel(const std::vector<AlgorithmFamilyEntry>& algorithmCatalog);
+	void begin(const std::string& initialFamily);
 	void reset();
 	void layout(const UiRect& anchor, int logicalWidth, int logicalHeight);
 	void prepare();
 	void configureViewports();
-	AlgorithmBrowserInputResult handleInput(const UiInputEvent& event, bool setupEnabled, int selectedAlgorithm);
+	AlgorithmBrowserInputResult handleInput(const UiInputEvent& event, bool setupEnabled,
+		const std::string& selectedFamilyId, const std::string& selectedVariantId);
 	void resetSearchResults();
 	void appendSearch(const std::string& text, std::size_t maximumLength = 64);
 	void eraseSearchCharacter();
 
 	const std::vector<AlgorithmFamilyEntry>& families() const;
 	std::vector<const AlgorithmFamilyEntry*> visibleFamilies() const;
-	std::vector<const sortinglogic::AlgorithmDescriptor*> visibleVariants(const AlgorithmFamilyEntry* family) const;
+	std::vector<const AlgorithmBrowserVariant*> visibleVariants(const AlgorithmFamilyEntry* family) const;
 };

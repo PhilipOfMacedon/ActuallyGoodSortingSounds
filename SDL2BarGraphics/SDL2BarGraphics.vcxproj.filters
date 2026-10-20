@@ -49,6 +49,7 @@
     <ClInclude Include="AppearanceDialogAdapter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ActiveRoleLookup.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserModel.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="AlgorithmBrowserCatalog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlgorithmBrowserView.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsPanelView.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsPanelModel.h"><Filter>Header Files</Filter></ClInclude>

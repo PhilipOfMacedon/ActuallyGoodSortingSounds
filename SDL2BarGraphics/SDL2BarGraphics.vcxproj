@@ -41,6 +41,7 @@
     <ClInclude Include="AppearanceDialogAdapter.h" />
     <ClInclude Include="ActiveRoleLookup.h" />
     <ClInclude Include="AlgorithmBrowserModel.h" />
+    <ClInclude Include="AlgorithmBrowserCatalog.h" />
     <ClInclude Include="AlgorithmBrowserView.h" />
     <ClInclude Include="SettingsPanelView.h" />
     <ClInclude Include="SettingsPanelModel.h" />

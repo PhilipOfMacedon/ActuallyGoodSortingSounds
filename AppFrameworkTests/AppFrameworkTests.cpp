@@ -22,6 +22,7 @@
 #include "../SDL2BarGraphics/AppearanceEditorModel.h"
 #include "../SDL2BarGraphics/AudioSettingsActions.h"
 #include "../SDL2BarGraphics/BarCountSteps.h"
+#include "../SDL2BarGraphics/AlgorithmBrowserCatalog.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserModel.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserView.h"
 #include "../SDL2BarGraphics/AppController.h"
@@ -1078,9 +1079,29 @@ namespace
 
 	void testAlgorithmBrowserModel()
 	{
-		AlgorithmBrowserModel browser;
+		AlgorithmBrowserModel browser(algorithmBrowserCatalog());
 		const std::vector<AlgorithmFamilyEntry>& catalog = browser.families();
 		check(!catalog.empty(), "algorithm browser model exposes the registered family catalog");
+		const std::vector<sortinglogic::AlgorithmDescriptor>& registry = sortinglogic::algorithmCatalog();
+		std::size_t mappedVariants = 0;
+		bool allVariantsMapped = true;
+		for (std::size_t algorithm = 0; algorithm < registry.size(); ++algorithm)
+		{
+			bool found = false;
+			for (std::size_t family = 0; family < catalog.size() && !found; ++family)
+				if (catalog[family].id == registry[algorithm].familyId)
+					for (std::size_t variant = 0; variant < catalog[family].variants.size(); ++variant)
+						if (catalog[family].variants[variant].variantId == registry[algorithm].variantId &&
+							catalog[family].variants[variant].displayName == registry[algorithm].displayName)
+						{
+							found = true;
+							++mappedVariants;
+							break;
+						}
+			if (!found) allVariantsMapped = false;
+		}
+		check(allVariantsMapped && mappedVariants == registry.size(),
+			"the presentation catalog maps every registered variant by stable family and variant ID");
 		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
 		check(insertion != nullptr, "algorithm browser fixture resolves the registered insertion method");
 		if (!insertion) return;
@@ -1099,27 +1120,29 @@ namespace
 			check(false, "the insertion family is present in the browser catalog");
 			return;
 		}
-		const std::vector<const sortinglogic::AlgorithmDescriptor*> insertionVariants = browser.visibleVariants(insertionFamily);
-		check(insertionFamily && !insertionVariants.empty() && insertionVariants[0] == insertion,
+		const std::vector<const AlgorithmBrowserVariant*> insertionVariants = browser.visibleVariants(insertionFamily);
+		check(insertionFamily && !insertionVariants.empty() && insertionVariants[0]->variantId == insertion->variantId &&
+			insertionVariants[0]->displayName == insertion->displayName,
 			"the selected family exposes its registered variants in catalog order");
 
 		browser.search = "insertion sort";
 		const std::vector<const AlgorithmFamilyEntry*> lowercaseFamilies = browser.visibleFamilies();
-		const std::vector<const sortinglogic::AlgorithmDescriptor*> lowercaseVariants = browser.visibleVariants(insertionFamily);
+		const std::vector<const AlgorithmBrowserVariant*> lowercaseVariants = browser.visibleVariants(insertionFamily);
 		browser.search = "INSERTION SORT";
 		const std::vector<const AlgorithmFamilyEntry*> filteredFamilies = browser.visibleFamilies();
 		const AlgorithmFamilyEntry* filteredFamily = nullptr;
 		for (std::size_t i = 0; i < filteredFamilies.size(); ++i)
 			if (filteredFamilies[i]->id == insertion->familyId) filteredFamily = filteredFamilies[i];
-		const std::vector<const sortinglogic::AlgorithmDescriptor*> filteredVariants = browser.visibleVariants(filteredFamily);
+		const std::vector<const AlgorithmBrowserVariant*> filteredVariants = browser.visibleVariants(filteredFamily);
 		bool insertionFound = false;
 		bool variantsRemainInCatalogOrder = true;
 		std::size_t previousCatalogIndex = 0;
 		for (std::size_t i = 0; i < filteredVariants.size(); ++i)
 		{
-			if (filteredVariants[i] == insertion) insertionFound = true;
+			if (filteredVariants[i]->variantId == insertion->variantId) insertionFound = true;
 			std::size_t catalogIndex = 0;
-			while (catalogIndex < insertionFamily->variants.size() && insertionFamily->variants[catalogIndex] != filteredVariants[i])
+			while (catalogIndex < insertionFamily->variants.size() &&
+				insertionFamily->variants[catalogIndex].variantId != filteredVariants[i]->variantId)
 				++catalogIndex;
 			if (catalogIndex == insertionFamily->variants.size() || (i > 0 && catalogIndex <= previousCatalogIndex))
 				variantsRemainInCatalogOrder = false;
@@ -1482,7 +1505,7 @@ namespace
 		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
 		if (!insertion) return;
 
-		AlgorithmBrowserModel browser;
+		AlgorithmBrowserModel browser(algorithmBrowserCatalog());
 		browser.begin(insertion->familyId);
 		browser.layout(UiRect(540.0f, 444.0f, 80.0f, 30.0f), 640, 480);
 		check(browser.bounds.x >= 0.0f && browser.bounds.y >= 0.0f &&
@@ -1497,7 +1520,7 @@ namespace
 			"large family catalogs expose a scrollable family viewport");
 		const UiInputEvent wheel(UiInputType::Wheel, browser.familyBounds.x + 4.0f,
 			browser.familyBounds.y + 4.0f, -1);
-		browser.handleInput(wheel, true, static_cast<int>(insertion->id));
+		browser.handleInput(wheel, true, insertion->familyId, insertion->variantId);
 		check(browser.familyScroll > 0 && browser.familyViewport.offset() > 0.0f,
 			"browser wheel input updates the family viewport scroll position");
 		const std::vector<AlgorithmFamilyEntry>& allFamilies = browser.families();
@@ -1506,76 +1529,76 @@ namespace
 			if (!largestFamily || allFamilies[i].variants.size() > largestFamily->variants.size())
 				largestFamily = &allFamilies[i];
 		browser.layout(UiRect(540.0f, 194.0f, 80.0f, 30.0f), 640, 240);
-		browser.selectedFamily = largestFamily ? largestFamily->id : sortinglogic::FamilyId();
+		browser.selectedFamily = largestFamily ? largestFamily->id : std::string();
 		browser.variantScroll = 0;
 		browser.prepare();
 		check(browser.variantViewport.maximumOffset() > 0.0f,
 			"the largest registered family exposes a scrollable variant viewport");
 		const UiInputEvent variantWheel(UiInputType::Wheel, browser.variantBounds.x + 4.0f,
 			browser.variantBounds.y + 4.0f, -1);
-		browser.handleInput(variantWheel, true, static_cast<int>(insertion->id));
+		browser.handleInput(variantWheel, true, insertion->familyId, insertion->variantId);
 		check(largestFamily && browser.variantScroll > 0 && browser.variantViewport.offset() > 0.0f,
 			"browser wheel input updates the selected family variant viewport");
 
-		AlgorithmBrowserModel keyboard;
+		AlgorithmBrowserModel keyboard(algorithmBrowserCatalog());
 		keyboard.begin(insertion->familyId);
 		keyboard.layout(UiRect(20.0f, 20.0f, 140.0f, 30.0f), 800, 600);
 		keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		check(keyboard.familySelection == 1 && !keyboard.searchFocused,
 			"down arrow leaves search and moves keyboard focus to the next family");
 		keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Tab), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		check(keyboard.searchFocused,
 			"tab returns keyboard focus to the browser search field");
 		keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Tab), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Right), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		check(keyboard.variantPane,
 			"right arrow opens the selected family variant pane");
 		const std::vector<const AlgorithmFamilyEntry*> keyboardFamilies = keyboard.visibleFamilies();
 		const AlgorithmFamilyEntry* keyboardFamily = keyboardFamilies[static_cast<std::size_t>(keyboard.familySelection)];
-		const std::vector<const sortinglogic::AlgorithmDescriptor*> keyboardVariants = keyboard.visibleVariants(keyboardFamily);
+		const std::vector<const AlgorithmBrowserVariant*> keyboardVariants = keyboard.visibleVariants(keyboardFamily);
 		if (keyboardVariants.size() > 1)
 			keyboard.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), true,
-				static_cast<int>(insertion->id));
+				insertion->familyId, insertion->variantId);
 		const std::size_t selectedVariant = static_cast<std::size_t>(keyboard.variantSelection);
 		const AlgorithmBrowserInputResult selected = keyboard.handleInput(
 			UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Enter), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		check(selected.selectionRequested && keyboard.pendingSelection && selectedVariant < keyboardVariants.size() &&
-			selected.familyId == keyboardVariants[selectedVariant]->familyId &&
+			selected.familyId == keyboardFamily->id &&
 			selected.variantId == keyboardVariants[selectedVariant]->variantId,
 			"enter emits a typed selection for the keyboard-highlighted catalog variant");
 
-		AlgorithmBrowserModel busy;
+		AlgorithmBrowserModel busy(algorithmBrowserCatalog());
 		busy.begin(insertion->familyId);
 		busy.layout(UiRect(20.0f, 20.0f, 140.0f, 30.0f), 800, 600);
 		busy.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		busy.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Right), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		const AlgorithmBrowserInputResult rejected = busy.handleInput(
 			UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Enter), false,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		check(!rejected.selectionRequested && !busy.pendingSelection && !busy.status.empty(),
 			"busy setup state rejects keyboard selection with visible feedback");
 		busy.handleInput(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Escape), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		check(!busy.variantPane,
 			"escape backs out of the variant pane without closing the browser");
 		const AlgorithmBrowserInputResult close = busy.handleInput(
 			UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Escape), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		check(close.closeRequested,
 			"escape from the family pane requests modal dismissal");
 
-		AlgorithmBrowserModel pointer;
+		AlgorithmBrowserModel pointer(algorithmBrowserCatalog());
 		pointer.begin(insertion->familyId);
 		pointer.layout(UiRect(20.0f, 20.0f, 140.0f, 30.0f), 800, 600);
 		pointer.handleInput(UiInputEvent(UiInputType::TextInput, std::string("quick")), true,
-			static_cast<int>(insertion->id));
+			insertion->familyId, insertion->variantId);
 		pointer.prepare();
 		const std::vector<const AlgorithmFamilyEntry*> quickFamilies = pointer.visibleFamilies();
 		check(!quickFamilies.empty(),
@@ -1583,22 +1606,23 @@ namespace
 		if (!quickFamilies.empty())
 		{
 			pointer.handleInput(UiInputEvent(UiInputType::PointerDown, pointer.familyBounds.x + 4.0f,
-				pointer.familyBounds.y + 4.0f), true, static_cast<int>(insertion->id));
-			const std::vector<const sortinglogic::AlgorithmDescriptor*> quickVariants = pointer.visibleVariants(
+				pointer.familyBounds.y + 4.0f), true, insertion->familyId, insertion->variantId);
+			const std::vector<const AlgorithmBrowserVariant*> quickVariants = pointer.visibleVariants(
 				quickFamilies[0]);
 			const UiRect firstVariant = pointer.variantViewport.itemBounds(0, 30.0f);
 			const AlgorithmBrowserInputResult clicked = pointer.handleInput(UiInputEvent(UiInputType::PointerDown,
-				firstVariant.x + 4.0f, firstVariant.y + 4.0f), true, static_cast<int>(insertion->id));
-			check(clicked.selectionRequested && !quickVariants.empty() && clicked.familyId == quickVariants[0]->familyId &&
+				firstVariant.x + 4.0f, firstVariant.y + 4.0f), true, insertion->familyId, insertion->variantId);
+			check(clicked.selectionRequested && !quickVariants.empty() && clicked.familyId == quickFamilies[0]->id &&
 				clicked.variantId == quickVariants[0]->variantId,
 				"pointer selection emits the typed variant action through the same browser model");
 		}
 
-		AlgorithmBrowserModel outside;
+		AlgorithmBrowserModel outside(algorithmBrowserCatalog());
 		outside.begin(insertion->familyId);
 		outside.layout(UiRect(20.0f, 20.0f, 140.0f, 30.0f), 800, 600);
 		const AlgorithmBrowserInputResult dismissed = outside.handleInput(
-			UiInputEvent(UiInputType::PointerDown, 799.0f, 599.0f), true, static_cast<int>(insertion->id));
+			UiInputEvent(UiInputType::PointerDown, 799.0f, 599.0f), true,
+			insertion->familyId, insertion->variantId);
 		check(dismissed.closeRequested,
 			"outside pointer input requests modal dismissal");
 	}
@@ -1608,7 +1632,7 @@ namespace
 		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
 		check(insertion != nullptr, "browser paint fixture uses a registered algorithm");
 		if (!insertion) return;
-		AlgorithmBrowserModel browser;
+		AlgorithmBrowserModel browser(algorithmBrowserCatalog());
 		browser.begin(insertion->familyId);
 		browser.layout(UiRect(20.0f, 20.0f, 120.0f, 30.0f), 800, 600);
 		browser.prepare();
@@ -1625,7 +1649,7 @@ namespace
 
 		AlgorithmBrowserView view;
 		RecordingUiPaintContext recorder;
-		view.compose(browser, palette, true, static_cast<int>(insertion->id), 800, 600, recorder);
+		view.compose(browser, palette, true, insertion->familyId, insertion->variantId, 800, 600, recorder);
 		const std::vector<UiPaintCommand>& commands = recorder.commands();
 		check(commands.size() > 8 && commands[0].primitive == UiPaintPrimitive::Rectangle &&
 			commands[0].material == UiPaintMaterial::ModalDim && commands[0].layer == UiPaintLayer::Backdrop,
@@ -1649,7 +1673,7 @@ namespace
 		browser.search = "no-such-algorithm";
 		browser.configureViewports();
 		recorder.clear();
-		view.compose(browser, palette, false, static_cast<int>(insertion->id), 800, 600, recorder);
+		view.compose(browser, palette, false, insertion->familyId, insertion->variantId, 800, 600, recorder);
 		bool hasEmptyFamilyMessage = false;
 		bool hasBusyStatus = false;
 		for (std::size_t i = 0; i < recorder.commands().size(); ++i)

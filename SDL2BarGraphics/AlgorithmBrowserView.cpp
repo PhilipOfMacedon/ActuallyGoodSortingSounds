@@ -20,13 +20,14 @@ namespace
 }
 
 void AlgorithmBrowserView::compose(const AlgorithmBrowserModel& browser, const AlgorithmBrowserPalette& palette,
-	bool setupEnabled, int selectedAlgorithm, int logicalWidth, int logicalHeight, UiPaintContext& paintContext) const
+	bool setupEnabled, const std::string& selectedFamilyId, const std::string& selectedVariantId,
+	int logicalWidth, int logicalHeight, UiPaintContext& paintContext) const
 {
 	const std::vector<const AlgorithmFamilyEntry*> families = browser.visibleFamilies();
 	const AlgorithmFamilyEntry* selectedFamily = nullptr;
 	for (std::size_t i = 0; i < families.size(); ++i)
 		if (families[i]->id == browser.selectedFamily) { selectedFamily = families[i]; break; }
-	const std::vector<const sortinglogic::AlgorithmDescriptor*> variants = browser.visibleVariants(selectedFamily);
+	const std::vector<const AlgorithmBrowserVariant*> variants = browser.visibleVariants(selectedFamily);
 	const UiRect screen(0.0f, 0.0f, static_cast<float>(logicalWidth), static_cast<float>(logicalHeight));
 	const UiRect familyClip(browser.familyBounds.x, browser.familyBounds.y, browser.familyBounds.width, browser.familyBounds.height);
 	const UiRect variantClip(browser.variantBounds.x, browser.variantBounds.y, browser.variantBounds.width, browser.variantBounds.height);
@@ -73,9 +74,9 @@ void AlgorithmBrowserView::compose(const AlgorithmBrowserModel& browser, const A
 		{
 			const std::size_t variantIndex = variantFirst + row;
 			if (variantIndex >= variants.size()) break;
-			const sortinglogic::AlgorithmDescriptor* variant = variants[variantIndex];
+			const AlgorithmBrowserVariant* variant = variants[variantIndex];
 			const UiRect rowBounds = browser.variantViewport.itemBounds(variantIndex, BrowserRowHeight);
-			const bool selected = static_cast<int>(variant->id) == selectedAlgorithm;
+			const bool selected = selectedFamily->id == selectedFamilyId && variant->variantId == selectedVariantId;
 			const bool keyboardSelected = browser.variantPane && static_cast<int>(variantIndex) == browser.variantSelection;
 			const UiColor fill = setupEnabled
 				? (keyboardSelected || selected ? palette.accent : palette.button) : palette.disabledButton;

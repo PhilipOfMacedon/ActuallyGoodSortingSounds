@@ -4,43 +4,14 @@
 
 #include "TextSearch.h"
 
-namespace
-{
-	const std::vector<AlgorithmFamilyEntry>& algorithmFamilyCatalog()
-	{
-		static const std::vector<AlgorithmFamilyEntry> families = []()
-		{
-			std::vector<AlgorithmFamilyEntry> result;
-			const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
-			for (std::size_t i = 0; i < catalog.size(); ++i)
-			{
-				std::size_t familyIndex = 0;
-				for (; familyIndex < result.size(); ++familyIndex)
-					if (result[familyIndex].id == catalog[i].familyId) break;
-				if (familyIndex == result.size())
-				{
-					AlgorithmFamilyEntry entry;
-					entry.id = catalog[i].familyId;
-					entry.name = catalog[i].familyDisplayName;
-					result.push_back(entry);
-				}
-				result[familyIndex].variants.push_back(&catalog[i]);
-			}
-			return result;
-		}();
-		return families;
-	}
-
-}
-
-AlgorithmBrowserModel::AlgorithmBrowserModel()
+AlgorithmBrowserModel::AlgorithmBrowserModel(const std::vector<AlgorithmFamilyEntry>& algorithmCatalog)
 	: variantPane(false), searchFocused(false), pendingSelection(false), status(), search(), selectedFamily(),
 	familySelection(0), variantSelection(0), familyScroll(0), variantScroll(0), bounds(), searchBounds(), familyBounds(),
-	variantBounds(), familyViewport(), variantViewport()
+	variantBounds(), familyViewport(), variantViewport(), catalog(algorithmCatalog)
 {
 }
 
-void AlgorithmBrowserModel::begin(const sortinglogic::FamilyId& initialFamily)
+void AlgorithmBrowserModel::begin(const std::string& initialFamily)
 {
 	variantPane = false;
 	searchFocused = true;
@@ -111,7 +82,7 @@ void AlgorithmBrowserModel::configureViewports()
 	const AlgorithmFamilyEntry* selected = nullptr;
 	for (std::size_t i = 0; i < matches.size(); ++i)
 		if (matches[i]->id == selectedFamily) { selected = matches[i]; break; }
-	const std::vector<const sortinglogic::AlgorithmDescriptor*> variants = visibleVariants(selected);
+	const std::vector<const AlgorithmBrowserVariant*> variants = visibleVariants(selected);
 	familyViewport.configure(familyBounds, static_cast<float>(matches.size()) * 30.0f, 30.0f,
 		static_cast<float>(familyScroll) * 30.0f);
 	variantViewport.configure(variantBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f,
@@ -143,37 +114,36 @@ void AlgorithmBrowserModel::eraseSearchCharacter()
 
 const std::vector<AlgorithmFamilyEntry>& AlgorithmBrowserModel::families() const
 {
-	return algorithmFamilyCatalog();
+	return catalog;
 }
 
 std::vector<const AlgorithmFamilyEntry*> AlgorithmBrowserModel::visibleFamilies() const
 {
 	std::vector<const AlgorithmFamilyEntry*> visible;
-	const std::vector<AlgorithmFamilyEntry>& catalog = algorithmFamilyCatalog();
 	for (std::size_t i = 0; i < catalog.size(); ++i)
 	{
 		bool matches = containsTextInsensitive(catalog[i].name, search);
 		for (std::size_t variant = 0; !matches && variant < catalog[i].variants.size(); ++variant)
-			matches = containsTextInsensitive(catalog[i].variants[variant]->displayName, search);
+			matches = containsTextInsensitive(catalog[i].variants[variant].displayName, search);
 		if (matches) visible.push_back(&catalog[i]);
 	}
 	return visible;
 }
 
-std::vector<const sortinglogic::AlgorithmDescriptor*> AlgorithmBrowserModel::visibleVariants(
+std::vector<const AlgorithmBrowserVariant*> AlgorithmBrowserModel::visibleVariants(
 	const AlgorithmFamilyEntry* family) const
 {
-	std::vector<const sortinglogic::AlgorithmDescriptor*> visible;
+	std::vector<const AlgorithmBrowserVariant*> visible;
 	if (!family) return visible;
 	for (std::size_t i = 0; i < family->variants.size(); ++i)
-		if (search.empty() || containsTextInsensitive(family->variants[i]->displayName, search) ||
+		if (search.empty() || containsTextInsensitive(family->variants[i].displayName, search) ||
 			containsTextInsensitive(family->name, search))
-			visible.push_back(family->variants[i]);
+			visible.push_back(&family->variants[i]);
 	return visible;
 }
 
 AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEvent& event, bool setupEnabled,
-	int selectedAlgorithm)
+	const std::string& selectedFamilyId, const std::string& selectedVariantId)
 {
 	AlgorithmBrowserInputResult result;
 	prepare();
@@ -181,7 +151,7 @@ AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEven
 	const AlgorithmFamilyEntry* selected = nullptr;
 	for (std::size_t i = 0; i < matches.size(); ++i)
 		if (matches[i]->id == selectedFamily) { selected = matches[i]; break; }
-	std::vector<const sortinglogic::AlgorithmDescriptor*> variants = visibleVariants(selected);
+	std::vector<const AlgorithmBrowserVariant*> variants = visibleVariants(selected);
 	const int familyVisible = std::max(1, static_cast<int>(familyBounds.height / 30.0f));
 	const int variantVisible = std::max(1, static_cast<int>(variantBounds.height / 30.0f));
 	auto keepSelectionVisible = [](int selection, int visible, int count, int& scroll)
@@ -255,7 +225,8 @@ AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEven
 				variants = visibleVariants(selected);
 				variantSelection = 0;
 				for (std::size_t i = 0; i < variants.size(); ++i)
-					if (static_cast<int>(variants[i]->id) == selectedAlgorithm) { variantSelection = static_cast<int>(i); break; }
+					if (selected->id == selectedFamilyId && variants[i]->variantId == selectedVariantId)
+					{ variantSelection = static_cast<int>(i); break; }
 				variantPane = true;
 				variantScroll = 0;
 				variantViewport.configure(variantBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f, 0.0f);
@@ -276,7 +247,7 @@ AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEven
 			else
 			{
 				result.selectionRequested = true;
-				result.familyId = variants[static_cast<std::size_t>(variantSelection)]->familyId;
+				result.familyId = selected->id;
 				result.variantId = variants[static_cast<std::size_t>(variantSelection)]->variantId;
 				pendingSelection = true;
 				status.clear();
@@ -310,7 +281,8 @@ AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEven
 				variants = visibleVariants(selected);
 				variantSelection = 0;
 				for (std::size_t i = 0; i < variants.size(); ++i)
-					if (static_cast<int>(variants[i]->id) == selectedAlgorithm) { variantSelection = static_cast<int>(i); break; }
+					if (selected->id == selectedFamilyId && variants[i]->variantId == selectedVariantId)
+					{ variantSelection = static_cast<int>(i); break; }
 				variantPane = true;
 				variantScroll = 0;
 				variantViewport.configure(variantBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f, 0.0f);
@@ -328,7 +300,7 @@ AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEven
 				else
 				{
 					result.selectionRequested = true;
-					result.familyId = variants[static_cast<std::size_t>(row)]->familyId;
+					result.familyId = selected->id;
 					result.variantId = variants[static_cast<std::size_t>(row)]->variantId;
 					pendingSelection = true;
 					status.clear();

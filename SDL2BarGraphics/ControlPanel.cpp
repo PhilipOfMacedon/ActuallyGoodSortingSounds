@@ -12,6 +12,7 @@
 #include <SDL.h>
 
 #include "AppearanceDialogAdapter.h"
+#include "AlgorithmBrowserCatalog.h"
 #include "LayoutMetrics.h"
 #include "Renderer2D.h"
 #include "Window.h"
@@ -368,7 +369,7 @@ std::string formatDuration(float seconds)
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	mainUi_(), settingsUi_(), appearanceUi_(), settingsPanelModel_(), overlayState_(), algorithmBrowser_(), algorithmBrowserView_(), settingsPanelView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+	mainUi_(), settingsUi_(), appearanceUi_(), settingsPanelModel_(), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), settingsCaptions_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
@@ -2921,7 +2922,7 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 	UiInputEvent input(UiInputType::FocusLost);
 	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Search, sdlUiEventContext(event))) return true;
 	const AlgorithmBrowserInputResult result = algorithmBrowser_.handleInput(
-		input, screenModel_.setupEnabled, settings_.simulation.algorithm);
+		input, screenModel_.setupEnabled, settings_.simulation.familyId, settings_.simulation.variantId);
 	if (result.closeRequested)
 		closeAlgorithmMenu();
 	if (result.selectionRequested)
@@ -2973,5 +2974,5 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
 	algorithmBrowserView_.compose(algorithmBrowser_, viewPalette, screenModel_.setupEnabled,
-		settings_.simulation.algorithm, width_, height_, paintContext);
+		settings_.simulation.familyId, settings_.simulation.variantId, width_, height_, paintContext);
 }

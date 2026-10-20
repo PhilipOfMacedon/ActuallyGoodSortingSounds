@@ -1010,6 +1010,23 @@ Verification:
 
 Next: extract one remaining `ControlPanel` state/composition owner. The platform dialog, SDL event, and font-enumeration adapters are now explicit; avoid merely moving drawing statements into a second facade.
 
+## 2026-10-20 — isolate algorithm browser catalog from SortingLogic
+
+Status: implementation and four-configuration regression verification complete.
+
+- Added `AlgorithmBrowserCatalog` as the only adapter from SortingLogic algorithm descriptors to UI-owned family and variant records. The browser model owns the presentation catalog it receives; its model and paint view contain no SortingLogic descriptor, catalog, or numeric algorithm-ID dependency.
+- Browser selection and selected-row styling now use the stable `(familyId, variantId)` pair. Catalog order, display names, filtering, scrolling, focus, busy rejection, and selection actions remain unchanged.
+- Added a contract check mapping every registered descriptor to its stable family/variant IDs and display name in the browser catalog.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64 Debug/Release and Win32 Debug/Release.
+- `AppFrameworkTests` passed in all four configurations, including browser search/input/paint checks and the new complete catalog mapping assertion.
+- x64 Debug `AppFrameworkTests` also passed on the first focused build before the four-configuration sweep.
+- `git diff --check` passed; only configured LF-to-CRLF notices were reported.
+
+Next: continue decomposing `ControlPanel`'s session state and main/settings composition, keeping platform services and algorithm catalog data behind their current adapters.
+
 ## 2026-10-20 — remove Release framework PDB warnings
 
 Status: implementation and warning/performance verification complete.

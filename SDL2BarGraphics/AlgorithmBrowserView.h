@@ -22,6 +22,7 @@ class AlgorithmBrowserView
 {
 public:
 	void compose(const AlgorithmBrowserModel& browser, const AlgorithmBrowserPalette& palette,
-		bool setupEnabled, int selectedAlgorithm, int logicalWidth, int logicalHeight,
+		bool setupEnabled, const std::string& selectedFamilyId, const std::string& selectedVariantId,
+		int logicalWidth, int logicalHeight,
 		UiPaintContext& paintContext) const;
 };
