@@ -655,10 +655,10 @@ sortinglogic::RenderSnapshot AppController::snapshot() const
 }
 
 void AppController::applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
-	std::uint64_t currentTimelineGeneration, std::uint64_t currentTransportRevision)
+	const AudioPlaybackRevision& currentRevision)
 {
 	if (!playbackCoordinator_.acceptsAudioPlayhead(simulation_.isPlaying(), feedback.generation,
-		feedback.transportRevision, currentTimelineGeneration, currentTransportRevision, feedback.durationFrames))
+		feedback.transportRevision, feedback.durationFrames, currentRevision))
 		return;
 	const double duration = preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
 		? playbacktimebase::secondsFromReferenceFrames(feedback.durationFrames)

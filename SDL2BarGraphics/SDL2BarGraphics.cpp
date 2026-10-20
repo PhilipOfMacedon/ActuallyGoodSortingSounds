@@ -148,8 +148,8 @@ int main(int argc, char** argv)
 			: 0.0f;
 		previousCounter = currentCounter;
 
-		const bool audioClockAvailable = audioOutput.available() && audioBridge.playheadReady(
-			audioOutput.acknowledgedTimelineGeneration(), audioOutput.acknowledgedSeekRevision());
+		const bool audioClockAvailable = audioOutput.available() &&
+			audioBridge.playheadReady(audioOutput.timelineAcknowledgement());
 		app.update(deltaSeconds, audioClockAvailable);
 		handleEvents(mainWindow, controlPanel, app, audioOutput, audioBridge, audioMailbox);
 		audioOutput.serviceDiagnosticCapture();
@@ -158,15 +158,14 @@ int main(int argc, char** argv)
 		audioBridge.update(app.simulation(), snapshot, app.effectiveAudio(), audioMailbox,
 			app.effectiveReconstructedAudio(), app.preferences().simulation.playbackTimingMode,
 			audioOutput.available());
-		const bool audioPlayheadReady = audioBridge.playheadReady(audioOutput.acknowledgedTimelineGeneration(),
-			audioOutput.acknowledgedSeekRevision());
+		const AudioTimelineAcknowledgement timelineAcknowledgement = audioOutput.timelineAcknowledgement();
+		const bool audioPlayheadReady = audioBridge.playheadReady(timelineAcknowledgement);
 		app.setAudioPreparationPending(audioBridge.timelinePreparing() ||
 			(audioOutput.available() && audioBridge.timelineReady() && !audioPlayheadReady));
-		audioBridge.collectRetiredTimelines(audioOutput.acknowledgedTimelineGeneration(), audioOutput.available(),
-			audioOutput.acknowledgedSeekRevision());
+		audioBridge.collectRetiredTimelines(timelineAcknowledgement, audioOutput.available());
 		SoundEngine::AudioPlayheadFeedback playhead;
 		if (audioOutput.available() && audioPlayheadReady && audioOutput.readPlayheadFeedback(playhead))
-			app.applyAudioPlayhead(playhead, audioBridge.timelineGeneration(), audioBridge.transportRevision());
+			app.applyAudioPlayhead(playhead, audioBridge.playbackRevision());
 		snapshot = app.snapshot();
 		const UiThemeCustomization& activeTheme = app.preferences().appearance.themes.find(app.preferences().appearance.activePreset)->second;
 		const ThemePalette palette = paletteForAppearance(app.preferences().appearance.activePreset, activeTheme);

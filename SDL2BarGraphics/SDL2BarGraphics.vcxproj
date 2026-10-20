@@ -72,6 +72,7 @@
     <ClInclude Include="AppController.h" />
     <ClInclude Include="AudioSettingsActions.h" />
     <ClInclude Include="AudioPresentationBridge.h" />
+    <ClInclude Include="AudioPlaybackRevision.h" />
     <ClInclude Include="PlaybackCoordinator.h" />
     <ClInclude Include="PlaybackTimebase.h" />
     <ClInclude Include="BarCountSteps.h" />

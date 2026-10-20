@@ -41,16 +41,17 @@ public:
     void frame() {
         const auto now = std::chrono::steady_clock::now();
         const float elapsed = std::chrono::duration<float>(now-last).count(); last=now;
-        app.update(elapsed, output.available() && bridge.playheadReady(output.acknowledgedTimelineGeneration(), output.acknowledgedSeekRevision()));
+        app.update(elapsed, output.available() && bridge.playheadReady(output.timelineAcknowledgement()));
         bridge.update(app.simulation(), app.snapshot(), app.effectiveAudio(), mailbox,
             app.effectiveReconstructedAudio(), app.preferences().simulation.playbackTimingMode,
             output.available());
-        const bool ready=bridge.playheadReady(output.acknowledgedTimelineGeneration(),output.acknowledgedSeekRevision());
+        const AudioTimelineAcknowledgement acknowledgement=output.timelineAcknowledgement();
+        const bool ready=bridge.playheadReady(acknowledgement);
         app.setAudioPreparationPending(bridge.timelinePreparing() || (output.available() && bridge.timelineReady() && !ready));
-        bridge.collectRetiredTimelines(output.acknowledgedTimelineGeneration(), output.available(), output.acknowledgedSeekRevision());
+        bridge.collectRetiredTimelines(acknowledgement, output.available());
         SoundEngine::AudioPlayheadFeedback feedback;
         if (output.available() && ready && output.readPlayheadFeedback(feedback))
-            app.applyAudioPlayhead(feedback, bridge.timelineGeneration(), bridge.transportRevision());
+            app.applyAudioPlayhead(feedback, bridge.playbackRevision());
         const bool preparing=bridge.timelinePreparing();
         if (preparing && !wasPreparing) ++preparations;
         wasPreparing=preparing;
@@ -65,7 +66,7 @@ public:
         auto stableSince=std::chrono::steady_clock::now();
         do {
             frame();
-            if (!bridge.playheadReady(output.acknowledgedTimelineGeneration(),output.acknowledgedSeekRevision())) stableSince=std::chrono::steady_clock::now();
+            if (!bridge.playheadReady(output.timelineAcknowledgement())) stableSince=std::chrono::steady_clock::now();
             else if (std::chrono::steady_clock::now()-stableSince>std::chrono::milliseconds(60)) return;
         } while(std::chrono::steady_clock::now()<deadline);
         std::cerr << "preparations=" << preparations << " transport_revision=" << bridge.transportRevision() << '\n';

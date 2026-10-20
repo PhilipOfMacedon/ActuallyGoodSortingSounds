@@ -451,28 +451,27 @@ void AudioPresentationBridge::republish(LatestAudioStateMailbox& mailbox)
 	mailbox.publish(lastPublished_);
 }
 
-bool AudioPresentationBridge::playheadReady(std::uint64_t acknowledgedGeneration,
-	std::uint64_t acknowledgedSeekRevision) const
+bool AudioPresentationBridge::playheadReady(const AudioTimelineAcknowledgement& acknowledgement) const
 {
-	return timelineReady() && acknowledgedGeneration == timelineGeneration_ &&
-		(!currentSeekState_ || acknowledgedSeekRevision >= seekRevision_);
+	return timelineReady() && acknowledgement.timelineGeneration == timelineGeneration_ &&
+		(!currentSeekState_ || acknowledgement.seekRevision >= seekRevision_);
 }
 
-void AudioPresentationBridge::collectRetiredTimelines(std::uint64_t acknowledgedGeneration, bool callbackAvailable,
-	std::uint64_t acknowledgedSeekRevision)
+void AudioPresentationBridge::collectRetiredTimelines(const AudioTimelineAcknowledgement& acknowledgement,
+	bool callbackAvailable)
 {
 	if (timelinePreparing_ || seekPreparing_) return;
 	for (std::vector<std::unique_ptr<SoundEngine::PreparedAudioTimeline> >::iterator i = timelines_.begin(); i != timelines_.end();)
 	{
 		const bool current = i->get() == currentTimeline_;
-		if (!current && (!callbackAvailable || acknowledgedGeneration >= timelineGeneration_))
+		if (!current && (!callbackAvailable || acknowledgement.timelineGeneration >= timelineGeneration_))
 			i = timelines_.erase(i);
 		else ++i;
 	}
 	for (std::vector<std::unique_ptr<SoundEngine::PreparedAudioSeekState> >::iterator i = seekStates_.begin(); i != seekStates_.end();)
 	{
 		const bool current = i->get() == currentSeekState_;
-		if (!current && (!callbackAvailable || acknowledgedSeekRevision >= seekRevision_))
+		if (!current && (!callbackAvailable || acknowledgement.seekRevision >= seekRevision_))
 			i = seekStates_.erase(i);
 		else ++i;
 	}

@@ -61,11 +61,11 @@ void PlaybackCoordinator::setAudioPreparationPending(bool pending)
 }
 
 bool PlaybackCoordinator::acceptsAudioPlayhead(bool simulationPlaying, std::uint64_t feedbackGeneration,
-	std::uint64_t feedbackTransportRevision, std::uint64_t currentGeneration,
-	std::uint64_t currentTransportRevision, std::uint64_t durationFrames) const
+	std::uint64_t feedbackTransportRevision, std::uint64_t durationFrames,
+	const AudioPlaybackRevision& currentRevision) const
 {
-	return simulationPlaying && feedbackGeneration != 0 && feedbackGeneration == currentGeneration &&
-		feedbackTransportRevision == currentTransportRevision && durationFrames != 0;
+	return simulationPlaying && feedbackGeneration != 0 && feedbackGeneration == currentRevision.timelineGeneration &&
+		feedbackTransportRevision == currentRevision.transportRevision && durationFrames != 0;
 }
 
 bool PlaybackCoordinator::observeAudioClockAvailability(bool available)

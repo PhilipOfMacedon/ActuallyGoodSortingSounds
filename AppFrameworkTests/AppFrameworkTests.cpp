@@ -2113,14 +2113,14 @@ namespace
 		waitForAudioTimeline(bridge, simulation, parameters, mailbox, reconstructed, mode, true);
 		simulation.seekTo(simulation.snapshot().eventCount / 2);
 		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
-		check(!bridge.playheadReady(bridge.timelineGeneration(), ~std::uint64_t(0)),
+		check(!bridge.playheadReady(AudioTimelineAcknowledgement(bridge.timelineGeneration(), ~std::uint64_t(0))),
 			"a preparing seek rejects playhead feedback even with an older callback acknowledgement");
 		waitForAudioTimeline(bridge, simulation, parameters, mailbox, reconstructed, mode, true);
 		AudioPresentationState prepared;
 		check(mailbox.consumeLatest(prepared) && prepared.seekState && prepared.seekRevision > 0,
 			"mid-trace inspection produces one prepared seek snapshot");
-		check(!bridge.playheadReady(prepared.timelineGeneration, prepared.seekRevision - 1) &&
-			bridge.playheadReady(prepared.timelineGeneration, prepared.seekRevision),
+		check(!bridge.playheadReady(AudioTimelineAcknowledgement(prepared.timelineGeneration, prepared.seekRevision - 1)) &&
+			bridge.playheadReady(AudioTimelineAcknowledgement(prepared.timelineGeneration, prepared.seekRevision)),
 			"temporary stopped feedback stays fenced until the callback acknowledges the installed seek");
 		const auto revision = bridge.transportRevision();
 		for (unsigned frame = 0; frame < 100; ++frame)
@@ -2710,11 +2710,12 @@ namespace
 		coordinator.advanceReferenceClock(0.25);
 		check(std::fabs(coordinator.referenceElapsedSeconds() - 2.75) < 1e-12,
 			"host fallback clock ignores negative deltas and advances by positive frame time");
-		check(coordinator.acceptsAudioPlayhead(true, 7, 11, 7, 11, 44100) &&
-			!coordinator.acceptsAudioPlayhead(false, 7, 11, 7, 11, 44100) &&
-			!coordinator.acceptsAudioPlayhead(true, 6, 11, 7, 11, 44100) &&
-			!coordinator.acceptsAudioPlayhead(true, 7, 10, 7, 11, 44100) &&
-			!coordinator.acceptsAudioPlayhead(true, 7, 11, 7, 11, 0),
+		const AudioPlaybackRevision currentRevision(7, 11);
+		check(coordinator.acceptsAudioPlayhead(true, 7, 11, 44100, currentRevision) &&
+			!coordinator.acceptsAudioPlayhead(false, 7, 11, 44100, currentRevision) &&
+			!coordinator.acceptsAudioPlayhead(true, 6, 11, 44100, currentRevision) &&
+			!coordinator.acceptsAudioPlayhead(true, 7, 10, 44100, currentRevision) &&
+			!coordinator.acceptsAudioPlayhead(true, 7, 11, 0, currentRevision),
 			"audio playhead acceptance requires the active timeline and transport fence");
 	}
 
@@ -2788,7 +2789,8 @@ namespace
 		stalePause.transportRevision = 10;
 		stalePause.durationFrames = 44100 * 10;
 		stalePause.playing = false;
-		app.applyAudioPlayhead(stalePause, 7, 11);
+		const AudioPlaybackRevision currentRevision(7, 11);
+		app.applyAudioPlayhead(stalePause, currentRevision);
 		check(app.snapshot().playing,
 			"an older paused feedback snapshot cannot cancel a newer Play transport revision");
 
@@ -2799,14 +2801,14 @@ namespace
 		currentPlayhead.timelineFrame = 4410;
 		currentPlayhead.sourceCursor = 12;
 		currentPlayhead.playing = true;
-		app.applyAudioPlayhead(currentPlayhead, 7, 11);
+		app.applyAudioPlayhead(currentPlayhead, currentRevision);
 		check(app.snapshot().playing && app.snapshot().cursor == 12,
 			"feedback for the current transport revision advances the visible playhead");
 
 		currentPlayhead.timelineFrame = currentPlayhead.durationFrames;
 		currentPlayhead.sourceCursor = app.snapshot().eventCount;
 		currentPlayhead.playing = false;
-		app.applyAudioPlayhead(currentPlayhead, 7, 11);
+		app.applyAudioPlayhead(currentPlayhead, currentRevision);
 		check(!app.snapshot().playing,
 			"completion feedback for the current revision still pauses the simulation");
 	}

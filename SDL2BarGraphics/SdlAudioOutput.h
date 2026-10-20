@@ -23,8 +23,11 @@ public:
 	bool retry();
 	bool available() const { return device_ != 0; }
 	const std::string& status() const { return status_; }
-	std::uint64_t acknowledgedTimelineGeneration() const { return acknowledgedTimelineGeneration_.load(std::memory_order_acquire); }
-	std::uint64_t acknowledgedSeekRevision() const { return acknowledgedSeekRevision_.load(std::memory_order_acquire); }
+	AudioTimelineAcknowledgement timelineAcknowledgement() const
+	{
+		return AudioTimelineAcknowledgement(acknowledgedTimelineGeneration_.load(std::memory_order_acquire),
+			acknowledgedSeekRevision_.load(std::memory_order_acquire));
+	}
 	std::uint64_t outputOverloadCount() const { return outputOverloadCount_.load(std::memory_order_acquire); }
 	bool readPlayheadFeedback(SoundEngine::AudioPlayheadFeedback& feedback) const;
 	bool armDiagnosticCapture();

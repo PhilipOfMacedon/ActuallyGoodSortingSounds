@@ -14,6 +14,7 @@
 #include "../SoundEngine/ReconstructedSound.h"
 #include "../SortingLogic/SortingLogic.h"
 #include "../SortingLogic/TracePresentationPolicy.h"
+#include "AudioPlaybackRevision.h"
 
 struct AudioPresentationState
 {
@@ -71,16 +72,16 @@ public:
 		const SoundEngine::ReconstructedParameters& reconstructedParameters = SoundEngine::ReconstructedParameters(),
 		SoundEngine::PlaybackTimingMode timingMode = SoundEngine::PlaybackTimingMode::FixedDuration,
 		bool audioDeviceAvailable = false);
-	void collectRetiredTimelines(std::uint64_t acknowledgedGeneration, bool callbackAvailable,
-		std::uint64_t acknowledgedSeekRevision = 0);
+	void collectRetiredTimelines(const AudioTimelineAcknowledgement& acknowledgement, bool callbackAvailable);
 	void republish(LatestAudioStateMailbox& mailbox);
 	std::uint64_t timelineGeneration() const { return timelineGeneration_; }
 	std::uint64_t transportRevision() const { return transportRevision_; }
+	AudioPlaybackRevision playbackRevision() const { return AudioPlaybackRevision(timelineGeneration_, transportRevision_); }
 	bool timelinePreparing() const { return timelinePreparing_; }
 	bool timelineReady() const { return currentTimeline_ != nullptr && !timelinePreparing_ && timelineError_.empty(); }
 	// Preparation readiness is not device health. Feedback from the temporary
 	// drain state must stay fenced until the callback has installed the snapshot.
-	bool playheadReady(std::uint64_t acknowledgedGeneration, std::uint64_t acknowledgedSeekRevision) const;
+	bool playheadReady(const AudioTimelineAcknowledgement& acknowledgement) const;
 	const std::string& timelineError() const { return timelineError_; }
 
 private:

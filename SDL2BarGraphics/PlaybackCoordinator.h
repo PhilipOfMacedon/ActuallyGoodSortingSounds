@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "AudioPlaybackRevision.h"
+
 enum class PlaybackCoordinatorState
 {
 	NoTrace,
@@ -37,8 +39,8 @@ public:
 	bool audioPreparationBlocksStart() const { return audioPreparationGateEnabled_ && audioPreparationPending_; }
 
 	bool acceptsAudioPlayhead(bool simulationPlaying, std::uint64_t feedbackGeneration,
-		std::uint64_t feedbackTransportRevision, std::uint64_t currentGeneration,
-		std::uint64_t currentTransportRevision, std::uint64_t durationFrames) const;
+		std::uint64_t feedbackTransportRevision, std::uint64_t durationFrames,
+		const AudioPlaybackRevision& currentRevision) const;
 
 	bool observeAudioClockAvailability(bool available);
 	void setReferenceElapsedSeconds(double elapsedSeconds) { referenceElapsedSeconds_ = elapsedSeconds; }

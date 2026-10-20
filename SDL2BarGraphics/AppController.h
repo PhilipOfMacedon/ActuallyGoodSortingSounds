@@ -24,7 +24,7 @@ public:
 	bool playbackPending() const { return playbackCoordinator_.playbackQueued(); }
 	PlaybackCoordinatorState playbackState() const;
 	void applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
-		std::uint64_t currentTimelineGeneration, std::uint64_t currentTransportRevision);
+		const AudioPlaybackRevision& currentRevision);
 	sortinglogic::RenderSnapshot snapshot() const;
 	const UserPreferences& preferences() const { return preferences_; }
 	SoundEngine::Parameters effectiveAudio() const;

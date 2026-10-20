@@ -795,3 +795,20 @@ Verification:
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
 Next: narrow the main loop's playback wiring and introduce a named timeline-generation/transport-revision fence value while keeping timeline-worker and callback ownership in their current modules.
+
+## 2026-10-20 — name audio acknowledgement and playhead revision fences
+
+Status: implementation and focused verification complete.
+
+- Added `AudioTimelineAcknowledgement` for the callback's timeline-generation and seek-revision acknowledgement, and `AudioPlaybackRevision` for the active timeline generation and transport revision.
+- Updated `SdlAudioOutput`, `AudioPresentationBridge`, `AppController`, the main loop, and transport tests to pass these named values. Removed the separate public acknowledgement accessors and multi-integer readiness/playhead interfaces so callers cannot silently swap same-typed counters.
+- Kept the callback's atomic counters, acknowledgement order, immutable timeline installation, and retirement protocol unchanged.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Standalone `AudioDeviceTransportTests` Debug and Release builds and runs with SDL's dummy backend: passed, including device recovery, seek acknowledgement, pause/step, fixed/reference timing, and 80/800-item cases.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+Next: extract the main loop's snapshot, bridge-update, readiness, feedback, and retirement sequence behind a small app-thread frame coordinator while preserving its current order.
