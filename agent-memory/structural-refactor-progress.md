@@ -1662,3 +1662,10 @@ Moved Remi Sort, Chalice Sort, Fifth Merge Sort, and their shared stable binary-
 The x64 Debug and Release solution builds passed. Focused tests passed in both configurations: Remi (3,789 checks), the merge roster tail including Chalice (17,048), and Fifth/Quad Merge (189,394), all with zero failures. git diff --check passed. SortingLogic.cpp is now 3720 lines. No runtime-performance change is claimed.
 
 Next: continue extracting merge and hybrid implementations, prioritizing coherent groups with existing shared utilities and focused replay suites.
+## 2026-10-20 — extract block-buffered and recursive rotation merge variants
+
+Moved Optimized Weave, Wiki, Andrey, New Shuffle, Yuji Buffered Merge, and Kota into MergeStrategies.cpp, along with their private recursive rotation-merge kernel. Each builder now selects an explicit strategy and the coordinator fallback cases are removed. The strategies use the existing Grail and stable k-way merge utilities through explicit detail interfaces.
+
+The x64 Debug and Release solution builds passed. The focused merge-roster suite passed in both configurations with 17,048 checks; New Shuffle's dedicated suite passed with 3,165 checks. All reported zero failures. git diff --check passed. SortingLogic.cpp is now 3389 lines. No runtime-performance change is claimed.
+
+Next: continue extracting remaining merge/hybrid methods and their shared kernels, then move insertion/workspace algorithms and reduce the coordinator dispatch further.

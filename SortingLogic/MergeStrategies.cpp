@@ -349,6 +349,344 @@ namespace sortinglogic
 			}
 		}
 
+		static void recursiveRotationMerge(Recorder& r, std::size_t first, std::size_t middle, std::size_t last,
+			const char* metricPrefix)
+		{
+			if (first >= middle || middle >= last) return;
+			r.chargeWork();
+			if (last - first == 2)
+			{
+				const SortItem left = r.at(first), right = r.at(middle);
+				r.compare(left, right, first, middle, "main", "main", SemanticRole::ComparedItem, SemanticRole::ComparedItem);
+				r.addMetric(std::string(metricPrefix) + "_comparisons");
+				if (compareItems(left, right, r.trace.direction) == ComparisonResult::Greater)
+				{
+					r.swap(first, middle, SemanticRole::WriteTarget);
+					r.addMetric(std::string(metricPrefix) + "_swaps");
+				}
+				return;
+			}
+			const std::size_t leftLength = middle - first, rightLength = last - middle;
+			std::size_t firstCut = first, secondCut = middle;
+			if (leftLength >= rightLength)
+			{
+				firstCut = first + leftLength / 2;
+				secondCut = middle + detail::grailBinarySearch(r, middle, rightLength, firstCut, true, metricPrefix);
+			}
+			else
+			{
+				secondCut = middle + rightLength / 2;
+				firstCut = first + detail::grailBinarySearch(r, first, leftLength, secondCut, false, metricPrefix);
+			}
+			const std::size_t newMiddle = firstCut + (secondCut - middle);
+			if (firstCut != middle && secondCut != middle)
+			{
+				detail::grailRotate(r, firstCut, middle - firstCut, secondCut - middle, metricPrefix);
+				r.addMetric(std::string(metricPrefix) + "_rotations");
+			}
+			recursiveRotationMerge(r, first, firstCut, newMiddle, metricPrefix);
+			recursiveRotationMerge(r, newMiddle, secondCut, last, metricPrefix);
+		}
+
+		static void optimizedWeaveMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "optimized_weave_blocks", "optimized_weave_bit_reversals", "optimized_weave_insertion_passes",
+				"optimized_weave_comparisons", "optimized_weave_swaps", "optimized_weave_merge_comparisons",
+				"optimized_weave_rotation_swaps", "optimized_weave_rotations" }) r.declareMetric(key);
+			if (count < 2) return;
+			for (std::size_t first = 0; first < count; first += 2)
+			{
+				const std::size_t last = (std::min)(count, first + 2);
+				const std::size_t length = last - first;
+				if (length < 2) continue;
+				const int phase = r.beginPhase("Optimized weave base block");
+				const std::size_t begin = r.trace.events.size();
+				std::size_t bits = 0;
+				for (std::size_t padded = 1; padded < length; padded <<= 1) ++bits;
+				for (std::size_t index = 1; index < length; ++index)
+				{
+					r.chargeWork();
+					std::size_t reversed = 0, value = index;
+					for (std::size_t bit = 0; bit < bits; ++bit) { reversed = (reversed << 1) | (value & 1u); value >>= 1; }
+					if (reversed > index)
+					{
+						r.swap(first + index, first + reversed, SemanticRole::WriteTarget);
+						r.addMetric("optimized_weave_bit_reversals");
+					}
+				}
+				strategies::binaryInsertionRange(r, first, last);
+				r.addMetric("optimized_weave_blocks");
+				r.addMetric("optimized_weave_insertion_passes");
+				r.annotate("main", RegionKind::Contiguous, first, last, 1, phase, "Bit-reversed weave block", begin);
+				r.endPhase(phase, "Optimized weave block");
+			}
+			for (std::size_t width = 2; width < count;)
+			{
+				const int phase = r.beginPhase("Optimized weave merge level width " + std::to_string(width));
+				for (std::size_t first = 0; first < count; first += width * 2)
+				{
+					const std::size_t middle = (std::min)(count, first + width);
+					const std::size_t last = (std::min)(count, middle + width);
+					if (middle < last)
+					{
+						recursiveRotationMerge(r, first, middle, last, "optimized_weave");
+						r.addMetric("optimized_weave_blocks");
+					}
+				}
+				r.endPhase(phase, "Optimized weave merge level");
+				if (width > count / 2) break;
+				width *= 2;
+			}
+		}
+
+
+		static void wikiSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "wiki_natural_runs", "wiki_reversed_runs", "wiki_extensions", "wiki_merges",
+				"wiki_buffered_merges", "wiki_rotation_merges", "wiki_buffer_writes", "wiki_comparisons", "wiki_merge_comparisons", "wiki_rotation_swaps" }) r.declareMetric(key);
+			if (count < 2) return;
+			struct Run { std::size_t first, last; Run(std::size_t a, std::size_t b) : first(a), last(b) {} };
+			std::vector<Run> runs;
+			const std::size_t minimumRun = 16;
+			for (std::size_t first = 0; first < count;)
+			{
+				std::size_t last = first + 1;
+				bool descending = false;
+				if (last < count)
+				{
+					const SortItem a = r.at(first), b = r.at(last);
+					r.compare(a, b, first, last, "main", "main");
+					r.addMetric("wiki_comparisons");
+					descending = compareItems(a, b, r.trace.direction) == ComparisonResult::Greater;
+					++last;
+					while (last < count)
+					{
+						const SortItem previous = r.at(last - 1), current = r.at(last);
+						r.compare(previous, current, last - 1, last, "main", "main");
+						r.addMetric("wiki_comparisons");
+						const ComparisonResult relation = compareItems(previous, current, r.trace.direction);
+						if (descending ? relation != ComparisonResult::Greater : relation == ComparisonResult::Greater) break;
+						++last;
+					}
+				}
+				if (descending)
+				{
+					std::size_t left = first, right = last - 1;
+					while (left < right) { r.swap(left++, right--, SemanticRole::WriteTarget); }
+					r.addMetric("wiki_reversed_runs");
+				}
+				else r.addMetric("wiki_natural_runs");
+				const std::size_t target = (std::min)(count, (std::max)(last, first + minimumRun));
+				if (target > last) { strategies::binaryInsertionRange(r, first, target); r.addMetric("wiki_extensions"); last = target; }
+				runs.push_back(Run(first, last));
+				first = last;
+			}
+			const std::size_t capacity = (std::max)(std::size_t(1), static_cast<std::size_t>(std::sqrt(static_cast<double>(count))));
+			r.resizeAuxiliary("wiki_cache", capacity);
+			while (runs.size() > 1)
+			{
+				std::vector<Run> next;
+				const int phase = r.beginPhase("Wiki buffered block merge pass");
+				for (std::size_t i = 0; i < runs.size(); i += 2)
+				{
+					if (i + 1 == runs.size()) { next.push_back(runs[i]); continue; }
+					const Run left = runs[i], right = runs[i + 1];
+					const std::size_t begin = r.trace.events.size();
+					const std::uint64_t comparisons = r.state.metrics.comparisons;
+					detail::grailBufferedMerge(r, left.first, left.last, right.last, capacity, "wiki_cache", "wiki");
+					r.addMetric("wiki_merges");
+					r.addMetric("wiki_comparisons", r.state.metrics.comparisons - comparisons);
+					r.annotate("main", RegionKind::Contiguous, left.first, right.last, 1, phase, "Wiki block merge", begin);
+					next.push_back(Run(left.first, right.last));
+				}
+				r.endPhase(phase, "Wiki merge pass");
+				runs.swap(next);
+			}
+			r.resizeAuxiliary("wiki_cache", 0);
+		}
+
+
+		static void andreySort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "andrey_runs", "andrey_merge_levels", "andrey_comparisons", "andrey_merge_comparisons",
+				"andrey_rotation_swaps", "andrey_rotations", "andrey_swaps" }) r.declareMetric(key);
+			if (count < 2) return;
+			const std::size_t block = (std::max)(std::size_t(2), static_cast<std::size_t>(std::sqrt(static_cast<double>(count))));
+			for (std::size_t first = 0; first < count; first += block)
+			{
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + block));
+				r.addMetric("andrey_runs");
+			}
+			for (std::size_t width = block; width < count;)
+			{
+				const int phase = r.beginPhase("Andrey power-of-two block merge width " + std::to_string(width));
+				for (std::size_t first = 0; first < count; first += width * 2)
+				{
+					const std::size_t middle = (std::min)(count, first + width);
+					const std::size_t last = (std::min)(count, middle + width);
+					if (middle < last)
+					{
+						const std::size_t mergeBegin = r.trace.events.size();
+						recursiveRotationMerge(r, first, middle, last, "andrey");
+						r.annotate("main", RegionKind::Contiguous, first, last, 1, phase, "Andrey rotation merge", mergeBegin);
+					}
+				}
+				r.addMetric("andrey_merge_levels");
+				r.endPhase(phase, "Andrey block merge level");
+				if (width > count / 2) break;
+				width *= 2;
+			}
+		}
+
+
+		static void newShuffleMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "new_shuffle_runs", "new_shuffle_merge_levels", "new_shuffle_comparisons", "new_shuffle_rotations" }) r.declareMetric(key);
+			if (count < 2) return;
+			for (std::size_t run = 0; run < count; run += 2)
+			{
+				if (run + 1 < count)
+				{
+					const SortItem a = r.at(run), b = r.at(run + 1);
+					r.compare(a, b, run, run + 1, "main", "main");
+					r.addMetric("new_shuffle_comparisons");
+					if (compareItems(a, b, r.trace.direction) == ComparisonResult::Greater) r.swap(run, run + 1, SemanticRole::WriteTarget);
+				}
+				r.addMetric("new_shuffle_runs");
+			}
+			for (std::size_t width = 2; width < count;)
+			{
+				const int phase = r.beginPhase("New Shuffle stable merge width " + std::to_string(width));
+				for (std::size_t first = 0; first < count; first += width * 2)
+				{
+					std::size_t middle = (std::min)(count, first + width), last = (std::min)(count, middle + width);
+					const std::size_t mergeBegin = r.trace.events.size();
+					std::size_t output = first, right = middle;
+					while (output < middle && right < last)
+					{
+						r.chargeWork();
+						const SortItem leftItem = r.at(output), rightItem = r.at(right);
+						r.compare(leftItem, rightItem, output, right, "main", "main");
+						r.addMetric("new_shuffle_comparisons");
+						if (compareItems(leftItem, rightItem, r.trace.direction) != ComparisonResult::Greater) ++output;
+						else
+					{
+						for (std::size_t position = right; position > output; --position)
+							{ r.swap(position - 1, position, SemanticRole::WriteTarget); r.addMetric("new_shuffle_rotations"); }
+						++output; ++middle; ++right;
+					}
+					}
+					r.annotate("main", RegionKind::Contiguous, first, last, 1, phase, "Shuffle-merge run pair", mergeBegin);
+				}
+				r.addMetric("new_shuffle_merge_levels");
+				r.endPhase(phase, "New Shuffle merge level");
+				if (width > count / 2) break;
+				width *= 2;
+			}
+		}
+
+
+		static void yujiBufferedMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "yuji_runs", "yuji_merge_levels", "yuji_merges", "yuji_comparisons", "yuji_buffer_writes" }) r.declareMetric(key);
+			if (count < 2) return;
+			const std::size_t runSize = (std::max)(std::size_t(2), count / 16);
+			r.resizeAuxiliary("yuji_buffer", count / 2 + (count & 1u));
+			for (std::size_t first = 0; first < count; first += runSize)
+			{
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + runSize));
+				r.addMetric("yuji_runs");
+			}
+			for (std::size_t width = runSize; width < count;)
+			{
+				const int phase = r.beginPhase("Yuji buffered merge redistribution width " + std::to_string(width));
+				for (std::size_t first = 0; first < count; first += width * 2)
+				{
+					const std::size_t middle = (std::min)(count, first + width), last = (std::min)(count, middle + width);
+					if (middle == last) continue;
+					const std::size_t leftCount = middle - first, rightCount = last - middle;
+					const std::size_t begin = r.trace.events.size();
+					if (leftCount <= rightCount)
+					{
+						for (std::size_t i = 0; i < leftCount; ++i) { r.writeAuxiliary("yuji_buffer", i, r.at(first + i)); r.addMetric("yuji_buffer_writes"); }
+						std::size_t left = 0, right = middle, output = first;
+						while (left < leftCount && right < last)
+						{
+							const SortItem a = r.auxiliaryAt("yuji_buffer", left), b = r.at(right);
+							r.compare(a, b, first + left, right, "yuji_buffer", "main"); r.addMetric("yuji_comparisons");
+							if (compareItems(a, b, r.trace.direction) != ComparisonResult::Greater) r.writeMain(output++, r.auxiliaryAt("yuji_buffer", left++));
+							else r.writeMain(output++, r.at(right++));
+						}
+						while (left < leftCount) r.writeMain(output++, r.auxiliaryAt("yuji_buffer", left++));
+					}
+					else
+					{
+						for (std::size_t i = 0; i < rightCount; ++i) { r.writeAuxiliary("yuji_buffer", i, r.at(middle + i)); r.addMetric("yuji_buffer_writes"); }
+						std::size_t left = middle, right = rightCount, output = last;
+						while (left > first && right > 0)
+						{
+							const SortItem a = r.at(left - 1), b = r.auxiliaryAt("yuji_buffer", right - 1);
+							r.compare(a, b, left - 1, middle + right - 1, "main", "yuji_buffer"); r.addMetric("yuji_comparisons");
+							if (compareItems(a, b, r.trace.direction) == ComparisonResult::Greater) r.writeMain(--output, r.at(--left));
+							else r.writeMain(--output, r.auxiliaryAt("yuji_buffer", --right));
+						}
+						while (right > 0) r.writeMain(--output, r.auxiliaryAt("yuji_buffer", --right));
+					}
+					r.addMetric("yuji_merges"); r.annotate("main", RegionKind::Contiguous, first, last, 1, phase, "Yuji redistributed merge", begin);
+				}
+				r.addMetric("yuji_merge_levels"); r.endPhase(phase, "Yuji merge level");
+				if (width > count / 2) break;
+				width *= 2;
+			}
+			r.resizeAuxiliary("yuji_buffer", 0);
+		}
+
+
+		static void kotaSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "kota_block_length", "kota_initial_blocks", "kota_merge_levels", "kota_merges",
+				"kota_comparisons", "kota_auxiliary_writes", "kota_buffer_writes", "kota_rotation_merges" }) r.declareMetric(key);
+			if (count < 2) return;
+			std::size_t block = 1;
+			while (block * block < count) ++block;
+			r.setMetric("kota_block_length", block);
+			r.resizeAuxiliary("kota_block_buffer", count);
+			for (std::size_t first = 0; first < count; first += block)
+			{
+				strategies::binaryInsertionRange(r, first, (std::min)(count, first + block));
+				r.addMetric("kota_initial_blocks");
+			}
+			std::size_t width = block;
+			while (width < count)
+			{
+				const std::size_t fanout = 4;
+				const std::size_t groupWidth = width * fanout;
+				const int phase = r.beginPhase("Kota block merge level width " + std::to_string(width));
+				for (std::size_t first = 0; first < count; first += groupWidth)
+				{
+					std::vector<std::size_t> boundaries(1, first);
+					for (std::size_t boundary = first + width; boundary < (std::min)(count, first + groupWidth); boundary += width)
+						boundaries.push_back(boundary);
+					boundaries.push_back((std::min)(count, first + groupWidth));
+					if (boundaries.size() > 2)
+					{
+						detail::traceStableKWayMerge(r, boundaries, "kota_block_buffer", "kota", "Kota four-block merge");
+					}
+				}
+				r.addMetric("kota_merge_levels"); r.endPhase(phase, "Kota block merge level");
+				if (width > count / fanout) break;
+				width *= fanout;
+			}
+			r.resizeAuxiliary("kota_block_buffer", 0);
+		}
+
+
 		static void remiSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -798,10 +1136,6 @@ namespace sortinglogic
 			}
 		}
 
-
-
-
-
 		static void lazyStableSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -978,6 +1312,12 @@ namespace sortinglogic
 
 		}
 
+		void optimizedWeaveMergeStrategy(Recorder& r) { optimizedWeaveMergeSort(r); }
+		void wikiMergeStrategy(Recorder& r) { wikiSort(r); }
+		void andreyMergeStrategy(Recorder& r) { andreySort(r); }
+		void newShuffleMergeStrategy(Recorder& r) { newShuffleMergeSort(r); }
+		void yujiBufferedMergeStrategy(Recorder& r) { yujiBufferedMergeSort(r); }
+		void kotaMergeStrategy(Recorder& r) { kotaSort(r); }
 		void remiSortStrategy(Recorder& r) { remiSort(r); }
 		void chaliceSortStrategy(Recorder& r) { chaliceSort(r); }
 		void fifthMergeSortStrategy(Recorder& r) { fifthMergeSort(r); }
