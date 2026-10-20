@@ -2441,6 +2441,46 @@ namespace
 			"main controls view keeps action routing, semantic roles, and menu heading behavior in its tree");
 	}
 
+	void testMainControlsViewSynchronizesPresentationState()
+	{
+		UserPreferences preferences;
+		preferences.visual.panelExpanded = false;
+		preferences.simulation.playbackTimingMode = SoundEngine::PlaybackTimingMode::ReferenceCadence;
+		MainControlsView view;
+		view.initializeControls(preferences, "Fixture Sort");
+
+		sortinglogic::RenderSnapshot snapshot;
+		snapshot.algorithm = sortinglogic::SortAlgorithm::Insertion;
+		snapshot.direction = sortinglogic::SortDirection::Descending;
+		snapshot.itemCount = 23;
+		snapshot.inputSeed = 41;
+		snapshot.durationSeconds = 8.0f;
+
+		UiScreenModel screen;
+		screen.setupEnabled = false;
+		screen.runEnabled = false;
+		screen.playEnabled = true;
+		screen.playCaption = "Pause";
+		screen.durationCaption = "8.0 sec";
+		screen.transport = UiTransportState::Playing;
+		view.synchronize(preferences, UiPresetId::ClassicWindows95, snapshot, screen, "Insertion Sort");
+
+		const UIRoot& controls = view.controls();
+		check(!controls.find("shuffle")->enabled() && !controls.find("run")->enabled() &&
+			controls.find("play")->enabled() && controls.find("play")->label() == "Pause",
+			"main controls view synchronizes busy setup state and available transport state");
+		check(controls.find("algorithm")->label() == "Insertion Sort" &&
+			controls.find("direction")->selectedIndex() == 1 && controls.find("bars_value")->label() == "23 bars" &&
+			controls.find("seed_readout")->label() == "Seed 41",
+			"main controls view synchronizes the algorithm and prepared-run readouts");
+		check(controls.find("time_value")->label() == "8.0 sec" && !controls.find("time_value")->enabled() &&
+			!controls.find("time_down")->enabled() && !controls.find("time_up")->enabled(),
+			"reference-cadence runs disable duration editing while keeping its current caption visible");
+		check(controls.find("start_overlay")->visible() && controls.find("start_overlay")->enabled() &&
+			controls.find("next")->label() == "Step",
+			"collapsed classic layout synchronizes its start overlay and preset-specific transport label");
+	}
+
 	void testSettingsPanelViewSynchronizesControlState()
 	{
 		const sortinglogic::AlgorithmDescriptor* merge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
@@ -3961,6 +4001,7 @@ int main(int argc, char* argv[])
 	testSettingsPanelViewOwnsNavigationAndScrolling();
 	testSettingsPanelViewInitializesItsControls();
 	testMainControlsViewInitializesTypedControls();
+	testMainControlsViewSynchronizesPresentationState();
 	testSettingsPanelViewSynchronizesControlState();
 	testSettingsPanelControlCatalog();
 	testSettingsPanelLayout();

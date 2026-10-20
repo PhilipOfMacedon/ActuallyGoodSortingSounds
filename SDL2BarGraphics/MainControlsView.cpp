@@ -6,6 +6,7 @@
 #include "SettingsPanelCatalog.h"
 #include "UiActionRouting.h"
 #include "UserSettings.h"
+#include "../SortingLogic/SortingLogic.h"
 
 void MainControlsView::initializeControls(const UserPreferences& preferences, const std::string& algorithmLabel)
 {
@@ -56,4 +57,59 @@ void MainControlsView::initializeControls(const UserPreferences& preferences, co
 	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 		if (controls_.widgets()[i]->kind() == UiWidgetKind::ComboBox)
 			controls_.widgets()[i]->setRole(UiControlRole::Choice);
+}
+
+void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetId activePreset,
+	const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel,
+	const std::string& algorithmLabel)
+{
+	const bool busy = !screenModel.setupEnabled;
+	const char* setupIds[] = { "shuffle", "insta_sort", "insta_invert", "algorithm", "direction", "run",
+		"bars_down", "bars_up", "time_down", "time_up" };
+	for (std::size_t i = 0; i < sizeof(setupIds) / sizeof(setupIds[0]); ++i)
+		controls_.setWidgetEnabled(setupIds[i], !busy);
+	controls_.setWidgetEnabled("run", screenModel.runEnabled);
+	controls_.setWidgetEnabled("play", screenModel.playEnabled);
+	controls_.find("algorithm")->setLabel(algorithmLabel);
+
+	std::string playCaption = screenModel.playCaption;
+	if (activePreset != UiPresetId::Current)
+	{
+		switch (screenModel.transport)
+		{
+		case UiTransportState::NoTrace: playCaption = "Play"; break;
+		case UiTransportState::Ready: playCaption = "Play"; break;
+		case UiTransportState::Playing: playCaption = "Pause"; break;
+		case UiTransportState::Queued: playCaption = "Cancel"; break;
+		case UiTransportState::Building: playCaption = "Queue Play"; break;
+		case UiTransportState::Preparing: playCaption = "Preparing"; break;
+		case UiTransportState::Replay: playCaption = "Replay"; break;
+		}
+	}
+	controls_.find("play")->setLabel(playCaption);
+	controls_.find("bars_value")->setLabel(std::to_string(snapshot.itemCount) + " bars");
+	controls_.find("seed_readout")->setLabel("Seed " + std::to_string(snapshot.inputSeed));
+	controls_.setWidgetEnabled("seed_readout", false);
+	const bool referenceCadence = preferences.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence;
+	controls_.setWidgetEnabled("bars_value", !busy);
+	controls_.setWidgetEnabled("time_value", !busy && !referenceCadence);
+	controls_.find("time_value")->setLabel(screenModel.durationCaption);
+	controls_.find("direction")->setSelectedIndex(snapshot.direction == sortinglogic::SortDirection::Descending ? 1 : 0);
+	controls_.find("domain")->setSelectedIndex(static_cast<int>(snapshot.domain));
+	controls_.find("pattern")->setSelectedIndex(static_cast<int>(snapshot.pattern));
+	controls_.setWidgetEnabled("domain", !busy);
+	controls_.setWidgetEnabled("pattern", !busy);
+	controls_.setWidgetVisible("start_overlay", !preferences.visual.panelExpanded && !snapshot.hasTrace && !snapshot.buildingTrace);
+	controls_.setWidgetEnabled("start_overlay", screenModel.playEnabled);
+	controls_.find("menu_file")->setOptionEnabled(1, screenModel.runEnabled);
+	controls_.find("menu_file")->setOptionEnabled(2, screenModel.playEnabled);
+	controls_.find("menu_file")->setOptionEnabled(3, true);
+	for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
+		pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
+		controls_.find("pattern")->setOptionEnabled(static_cast<std::size_t>(pattern),
+			settingsInputPatternEnabled(snapshot.domain, snapshot.algorithm,
+				static_cast<sortinglogic::InputPattern>(pattern)));
+	controls_.setWidgetEnabled("time_down", !busy && !referenceCadence);
+	controls_.setWidgetEnabled("time_up", !busy && !referenceCadence);
+	controls_.find("next")->setLabel(activePreset == UiPresetId::ClassicWindows95 ? "Step" : "Event >");
 }

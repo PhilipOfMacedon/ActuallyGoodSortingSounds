@@ -5,6 +5,10 @@
 #include "UiArchitecture.h"
 
 struct UserPreferences;
+namespace sortinglogic
+{
+	struct RenderSnapshot;
+}
 
 // Owns the retained main-control tree and the typed actions emitted by it.
 // SDL input translation, responsive placement, and renderer resources stay in
@@ -13,6 +17,9 @@ class MainControlsView
 {
 public:
 	void initializeControls(const UserPreferences& preferences, const std::string& algorithmLabel);
+	void synchronize(const UserPreferences& preferences, UiPresetId activePreset,
+		const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel,
+		const std::string& algorithmLabel);
 
 	UIRoot& controls() { return controls_; }
 	const UIRoot& controls() const { return controls_; }

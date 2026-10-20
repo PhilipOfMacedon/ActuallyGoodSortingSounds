@@ -1514,3 +1514,11 @@ Added `MainControlsView` as the owner of the retained main-control `UIRoot`, ini
 Added headless checks for selected algorithm label/action, direction and input selections, typed domain/pattern commands, shuffle routing, build-trace role, and disabled menu heading. `AppFrameworkTests` passed in x64 Debug and Release. The full x64 Release solution build passed. The x64 Debug solution compiled all targets but the final app link hit LNK1168 because the currently running app held the normal output executable open; rebuilding the app project into a separate verification directory linked successfully. `git diff --check` passed. No visible behavior or performance change is claimed.
 
 Next: move main-control state synchronization and visibility behind `MainControlsView`, then submit its ordered control composition through `UiPaintCommand`.
+
+## 2026-10-20 — move main-control synchronization into the view
+
+`MainControlsView::synchronize` now applies the prepared screen model and render snapshot to the main controls: setup busy gating, transport labels, current algorithm/input/count/seed/duration values, collapsed start-overlay state, reference-cadence duration locks, preset-specific step text, menu enablement, and input-pattern compatibility. `ControlPanel` still creates the screen model and coordinates settings-panel synchronization, layout, and inline-edit labels.
+
+Added checks for busy setup versus available transport, selected algorithm/direction and run readouts, reference-cadence timing controls, and the collapsed Classic Windows 95 start/step presentation. `AppFrameworkTests` passed in x64 Debug and Release; the app linked in x64 Debug to an isolated output and the full x64 Release solution built. `git diff --check` passed. The state-only move does not change geometry or painter order; no performance gain is claimed.
+
+Next: move main-control paint ordering through `UiPaintCommand`, preserving `ControlPanel`'s theme-specific widget renderer and text resources.

@@ -519,55 +519,8 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 {
 	screenModel_ = buildUiScreenModel(snapshot, renderPreferences_, playbackPending, displayedSaveStatus_);
 	const bool busy = !screenModel_.setupEnabled;
-	const char* setupIds[] = { "shuffle", "insta_sort", "insta_invert", "algorithm", "direction", "run",
-		"bars_down", "bars_up", "time_down", "time_up" };
-	for (std::size_t i = 0; i < sizeof(setupIds) / sizeof(setupIds[0]); ++i)
-	{
-		mainUi_.setWidgetEnabled(setupIds[i], !busy);
-	}
-	mainUi_.setWidgetEnabled("run", screenModel_.runEnabled);
-	mainUi_.setWidgetEnabled("play", screenModel_.playEnabled);
-	UiWidget* algorithm = mainUi_.find("algorithm");
-	if (algorithm) algorithm->setLabel(algorithmLabel(snapshot.algorithm));
-	std::string playCaption = screenModel_.playCaption;
-	if (renderPreferences_.appearance.activePreset != UiPresetId::Current)
-	{
-		switch (screenModel_.transport)
-		{
-		case UiTransportState::NoTrace: playCaption = "Play"; break;
-		case UiTransportState::Ready: playCaption = "Play"; break;
-		case UiTransportState::Playing: playCaption = "Pause"; break;
-		case UiTransportState::Queued: playCaption = "Cancel"; break;
-		case UiTransportState::Building: playCaption = "Queue Play"; break;
-		case UiTransportState::Preparing: playCaption = "Preparing"; break;
-		case UiTransportState::Replay: playCaption = "Replay"; break;
-		}
-	}
-	mainUi_.find("play")->setLabel(playCaption);
-	mainUi_.find("bars_value")->setLabel(std::to_string(snapshot.itemCount) + " bars");
-	mainUi_.find("seed_readout")->setLabel("Seed " + std::to_string(snapshot.inputSeed));
-	mainUi_.setWidgetEnabled("seed_readout", false);
-	const bool referenceCadence = settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence;
-	mainUi_.setWidgetEnabled("bars_value", !busy);
-	mainUi_.setWidgetEnabled("time_value", !busy && !referenceCadence);
-	mainUi_.find("time_value")->setLabel(screenModel_.durationCaption);
-	mainUi_.find("direction")->setSelectedIndex(snapshot.direction == sortinglogic::SortDirection::Descending ? 1 : 0);
-	mainUi_.find("domain")->setSelectedIndex(static_cast<int>(snapshot.domain));
-	mainUi_.find("pattern")->setSelectedIndex(static_cast<int>(snapshot.pattern));
-	mainUi_.setWidgetEnabled("domain", !busy);
-	mainUi_.setWidgetEnabled("pattern", !busy);
-	mainUi_.setWidgetVisible("start_overlay", !settings_.visual.panelExpanded && !snapshot.hasTrace && !snapshot.buildingTrace);
-	mainUi_.setWidgetEnabled("start_overlay", screenModel_.playEnabled);
-	mainUi_.find("menu_file")->setOptionEnabled(1, screenModel_.runEnabled);
-	mainUi_.find("menu_file")->setOptionEnabled(2, screenModel_.playEnabled);
-	mainUi_.find("menu_file")->setOptionEnabled(3, true);
-	for (int pattern = static_cast<int>(sortinglogic::InputPattern::Random);
-		pattern <= static_cast<int>(sortinglogic::InputPattern::AndrutReference); ++pattern)
-		mainUi_.find("pattern")->setOptionEnabled(static_cast<std::size_t>(pattern),
-			settingsInputPatternEnabled(snapshot.domain, snapshot.algorithm,
-				static_cast<sortinglogic::InputPattern>(pattern)));
-	mainUi_.setWidgetEnabled("time_down", !busy && !referenceCadence);
-	mainUi_.setWidgetEnabled("time_up", !busy && !referenceCadence);
+	mainControlsView_.synchronize(settings_, renderPreferences_.appearance.activePreset, snapshot,
+		screenModel_, algorithmLabel(snapshot.algorithm));
 	settingsPanelView_.synchronizeControls(settings_, renderPreferences_, snapshot, busy);
 	layoutSettingsControls();
 	updateInlineEditLabel();
@@ -597,7 +550,6 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 	}
 	title_->setContent(renderPreferences_.appearance.activePreset == UiPresetId::ClassicWindows95
 		? "Actually Good Sorting Sounds" : "Sorting Simulation | deterministic event trace");
-	mainUi_.find("next")->setLabel(renderPreferences_.appearance.activePreset == UiPresetId::ClassicWindows95 ? "Step" : "Event >");
 	std::ostringstream detailText;
 	const UiAlgorithmCapabilities& facts = screenModel_.algorithmCapabilities;
 	if (renderPreferences_.appearance.activePreset != UiPresetId::Current)
