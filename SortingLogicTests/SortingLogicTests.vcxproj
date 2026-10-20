@@ -50,6 +50,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="SortingLogicTests.cpp" />
+    <ClCompile Include="SortingAlgorithmTests.cpp" />
+    <ClCompile Include="SortingMergeTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SortingLogic\SortingLogic.vcxproj">
