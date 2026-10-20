@@ -154,7 +154,6 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 	sortinglogic::TraceBuildRequest request;
 	sortinglogic::CommandResult result = simulation_.beginTraceBuild(request);
 	if (!result.accepted) return result;
-	request.setConfiguration(simulation_.algorithmConfiguration());
 	const sortinglogic::AlgorithmDescriptor* traceAlgorithm = sortinglogic::algorithmDescriptor(request.algorithm);
 	if (traceAlgorithm)
 	{

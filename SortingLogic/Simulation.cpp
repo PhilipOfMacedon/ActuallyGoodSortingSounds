@@ -420,6 +420,7 @@ namespace sortinglogic
 		request.shellGapSequence = algorithmConfiguration_.shellGapSequence;
 		request.mergeWritebackMode = algorithmConfiguration_.mergeWritebackMode;
 		request.mergeExecutionMode = algorithmConfiguration_.mergeExecutionMode;
+		request.setConfiguration(algorithmConfiguration_);
 		request.completionScanEnabled = completionScanEnabled_;
 		request.mergeBufferVisualizationEnabled = mergeBufferVisualizationEnabled_;
 		trace_.reset(); currentState_ = makeInitialState(request.input); cursor_ = 0; elapsedSeconds_ = 0.0f; playing_ = false;

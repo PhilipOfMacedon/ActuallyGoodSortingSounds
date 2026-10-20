@@ -1725,3 +1725,9 @@ Moved stable option lookup, explicit-choice validation, and legacy-field import/
 The x64 Debug and Release solution builds passed. `SortingLogicTests --core-contracts-only` passed in both configurations with 39,535 checks and zero failures. `AppFrameworkTests` passed in both configurations. `git diff --check` passed. No settings format, trace ordering, UI, audio, or runtime behavior change is intended; no performance gain is claimed.
 
 Next: keep reducing configuration duplication at one compatibility seam at a time, then continue the audit's UI ownership and audio/playback boundaries. The smoke window was closed by the user and was not reopened for this structural-only change.
+
+## 2026-10-20 — let Simulation publish its complete trace configuration
+
+`Simulation::beginTraceBuild` now copies its owned typed `AlgorithmConfiguration` into the request alongside the existing compatibility fields. `AppController` no longer reaches back into `Simulation` to patch that state after request creation. Added a core contract that selects a non-default Grail buffer mode through the stable option ID and builds directly from the Simulation-produced request, checking both typed configuration and legacy trace projection.
+
+The x64 Debug and Release solution builds passed. `SortingLogicTests --core-contracts-only` passed in both configurations with 39,539 checks and zero failures; `AppFrameworkTests` passed in both configurations. The added trace contract checks that a non-default Grail mode reaches the builder and still produces an ordered result. No settings, UI, audio, trace-order, or playback behavior change is intended.

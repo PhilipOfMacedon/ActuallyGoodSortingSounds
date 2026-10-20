@@ -4803,6 +4803,28 @@ namespace
 		check(configuredShellTrace && configuredShellTrace->configuration.shellGapSequence == ShellGapSequence::Ciura &&
 			configuredShellTrace->shellGapSequence == ShellGapSequence::Ciura,
 			"simulation's named algorithm configuration reaches both typed trace state and its compatibility field");
+		check(configured.selectAlgorithm(SortAlgorithm::ArrayvGrail).accepted &&
+			configured.setAlgorithmOption("grail_buffer_mode", "static_buffer").accepted,
+			"simulation applies a stable catalog option through its owned typed configuration");
+		TraceBuildRequest grailRequest;
+		check(configured.beginTraceBuild(grailRequest).accepted && grailRequest.hasExplicitConfiguration,
+			"simulation publishes its typed configuration as part of the immutable trace request");
+		TraceBuildResult grailResult;
+		try { grailResult.trace = SortTraceBuilder::build(grailRequest); grailResult.succeeded = true; }
+		catch (const std::exception& e) { check(false, std::string("configured Grail trace builds from Simulation request: ") + e.what()); }
+		configured.completeTraceBuild(grailResult);
+		const std::shared_ptr<const SortTrace> configuredGrailTrace = configured.currentTrace();
+		check(configuredGrailTrace && configuredGrailTrace->configuration.grailBufferMode == GrailBufferMode::StaticBuffer &&
+			configuredGrailTrace->bucketCount == static_cast<int>(GrailBufferMode::StaticBuffer),
+			"Simulation request preserves typed Grail mode and its legacy trace projection without controller patch-up");
+		if (configuredGrailTrace)
+		{
+			SortState grailReplay = configuredGrailTrace->initialState;
+			for (std::size_t i = 0; i < configuredGrailTrace->events.size(); ++i)
+				applyEventForward(grailReplay, configuredGrailTrace->events[i]);
+			check(configuredGrailTrace->complete && isSorted(grailReplay, SortDirection::Ascending),
+				"Simulation-produced non-default Grail configuration retains its normal sorted result");
+		}
 		check(configured.selectAlgorithm(SortAlgorithm::Merge).accepted &&
 			configured.setMergeExecutionMode(MergeExecutionMode::TopDown).accepted &&
 			configured.setMergeWritebackMode(MergeWritebackMode::AnimatedWrites).accepted,
