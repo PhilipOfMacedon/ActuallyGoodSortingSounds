@@ -12,7 +12,6 @@
 #include "AlgorithmBrowserModel.h"
 #include "RenderingTypes.h"
 #include "SettingsPanelView.h"
-#include "SettingsPanelControls.h"
 #include "AlgorithmProfileView.h"
 #include "TimelineView.h"
 #include "TextLabel.h"

@@ -67,6 +67,8 @@ public:
 	void setModalActive(bool active);
 	const UiRect& panelBounds() const { return panelBounds_; }
 	const UiRect& contentBounds() const { return contentBounds_; }
+	void layoutForAlgorithmSelection(const std::string& familyId, const std::string& variantId,
+		float scrollbarThickness);
 	void layoutControls(const std::vector<std::string>& activeControlIds, float scrollbarThickness);
 
 	void compose(const SettingsPanelChrome& chrome, const SettingsPanelPalette& palette,

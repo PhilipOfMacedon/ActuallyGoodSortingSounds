@@ -434,13 +434,9 @@ void ControlPanel::layoutMainComboPopups()
 void ControlPanel::layoutSettingsControls()
 {
 	if (settingsPanelView_.panelBounds().width <= 0.0f) return;
-	const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(
-		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
-	const SettingsPanelAlgorithmPresentation selectedPresentation = settingsPanelAlgorithmPresentation(selected);
-	const std::vector<std::string> active = settingsPanelControlIds(
-		settingsPanelView_.page(), settingsPanelView_.audioGroup(), &selectedPresentation);
 	const float scrollbarThickness = themeNumber(renderPreferences_, "scrollbar.thickness", 8.0f);
-	settingsPanelView_.layoutControls(active, scrollbarThickness);
+	settingsPanelView_.layoutForAlgorithmSelection(settings_.simulation.familyId,
+		settings_.simulation.variantId, scrollbarThickness);
 }
 
 void ControlPanel::layoutInteractiveViews()

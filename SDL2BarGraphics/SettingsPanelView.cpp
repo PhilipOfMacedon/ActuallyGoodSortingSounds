@@ -331,6 +331,16 @@ void SettingsPanelView::setModalActive(bool active)
 		controls_.setModalBounds(panelBounds_, UiAction::ViewCommand::CloseSettings);
 }
 
+void SettingsPanelView::layoutForAlgorithmSelection(const std::string& familyId,
+	const std::string& variantId, float scrollbarThickness)
+{
+	const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptorById(familyId, variantId);
+	const SettingsPanelAlgorithmPresentation presentation = settingsPanelAlgorithmPresentation(selected);
+	const std::vector<std::string> activeControlIds = settingsPanelControlIds(
+		model_.page(), model_.audioGroup(), &presentation);
+	layoutControls(activeControlIds, scrollbarThickness);
+}
+
 void SettingsPanelView::layoutControls(const std::vector<std::string>& activeControlIds,
 	float scrollbarThickness)
 {

@@ -1805,3 +1805,11 @@ Moved the Buffered Stooge completion check out of `TraceRequestBuilder.cpp` and 
 The x64 and Win32 solution builds passed in Debug and Release. In each configuration, the focused Buffered Stooge suite passed 14,598 checks, SortingLogic core contracts passed 39,541 checks, and `AppFrameworkTests` passed. `git diff --check` passed. The smoke window remained closed. This is an ownership cleanup; trace events, replay state, audio presentation, and rendering are unchanged.
 
 Next: continue the audit with measured runtime costs or a cohesive sorting-core extraction, keeping event-storage format changes separate from algorithm ownership work.
+
+## 2026-10-20 — move settings row selection into its view
+
+`SettingsPanelView` now derives the active settings row list from its own page and audio subpage, the selected stable family/variant IDs, and the settings catalog. `ControlPanel` no longer interprets algorithm metadata to decide which settings controls are visible; it supplies the selected IDs and theme-derived scrollbar thickness to the view. Removed the settings control catalog include from `ControlPanel.h` to reduce transitive UI coupling. The view still uses the existing shared row-layout and paint-command paths.
+
+Added headless coverage that switches the settings view from Merge to Shell and checks the corresponding Merge options, Shell gap selector, Merge buffer control, and fallback behavior for unknown stable IDs. Full x64 and Win32 Debug and Release solution builds passed, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed. This moves layout policy without changing settings data, widget order, scrolling, persistence, trace behavior, or rendering; no smoke window was opened.
+
+Next: inspect the remaining settings and main-panel host responsibilities and continue with a measured renderer or coordination boundary. Keep the structural refactor goal active.

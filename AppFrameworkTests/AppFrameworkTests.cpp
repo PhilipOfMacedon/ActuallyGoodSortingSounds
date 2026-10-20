@@ -3061,6 +3061,40 @@ namespace
 			"General Audio basic and advanced groups preserve their existing control lists");
 	}
 
+	void testSettingsPanelViewSelectsRowsByStableAlgorithmId()
+	{
+		UserPreferences preferences;
+		SettingsPanelView view;
+		view.initializeControls(preferences);
+		view.setPanelBounds(UiRect(400.0f, 24.0f, 500.0f, 620.0f), false);
+		check(view.handleNavigation(UiAction::ViewCommand::ShowAlgorithmSettings),
+			"settings view opens the Algorithm page before selecting its visible controls");
+
+		const sortinglogic::AlgorithmDescriptor* merge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
+		const sortinglogic::AlgorithmDescriptor* shell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
+		check(merge && shell, "settings view stable-ID layout fixtures are registered");
+		if (!merge || !shell) return;
+
+		view.layoutForAlgorithmSelection(merge->familyId, merge->variantId, 8.0f);
+		const UiWidget* mergeExecution = view.controls().find(settingsAlgorithmOptionControlId(
+			merge->familyId, merge->variantId, "execution_mode"));
+		const UiWidget* shellGaps = view.controls().find(settingsAlgorithmOptionControlId(
+			shell->familyId, shell->variantId, "gap_sequence"));
+		check(view.controls().find("domain")->visible() && view.controls().find("merge_buffer_visualization")->visible() &&
+			mergeExecution && mergeExecution->visible() && shellGaps && !shellGaps->visible(),
+			"settings view selects Merge rows from its own page state and the stable algorithm ID pair");
+
+		view.layoutForAlgorithmSelection(shell->familyId, shell->variantId, 8.0f);
+		check(shellGaps->visible() && !mergeExecution->visible() &&
+			!view.controls().find("merge_buffer_visualization")->visible(),
+			"changing stable algorithm IDs updates visible rows without exposing prior algorithm controls");
+
+		view.layoutForAlgorithmSelection("unknown-family", "unknown-variant", 8.0f);
+		const UiWidget* comparisons = view.controls().find("algorithm_audio_00");
+		check(comparisons && comparisons->visible() && !shellGaps->visible(),
+			"unknown algorithm IDs retain the generic comparison control and hide stale option rows");
+	}
+
 	void testSettingsPanelLayout()
 	{
 		const UiRect panel(100.0f, 50.0f, 600.0f, 500.0f);
@@ -4448,6 +4482,7 @@ int main(int argc, char* argv[])
 	testSettingsPanelModel();
 	testSettingsPanelViewOwnsNavigationAndScrolling();
 	testSettingsPanelViewInitializesItsControls();
+	testSettingsPanelViewSelectsRowsByStableAlgorithmId();
 	testMainControlsViewInitializesTypedControls();
 	testMainControlsViewOwnsInlineValueSemantics();
 	testMainControlsViewSynchronizesTextPresentation();
