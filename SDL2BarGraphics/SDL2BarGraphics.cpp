@@ -142,6 +142,7 @@ int main(int argc, char** argv)
 
 	Uint64 previousCounter = SDL_GetPerformanceCounter();
 	const double performanceFrequency = static_cast<double>(SDL_GetPerformanceFrequency());
+	sortinglogic::RenderSnapshot snapshot;
 	while (!mainWindow.getShouldClose())
 	{
 		const Uint64 currentCounter = SDL_GetPerformanceCounter();
@@ -155,7 +156,7 @@ int main(int argc, char** argv)
 		audioOutput.serviceDiagnosticCapture();
 
 		const std::string audioStatus = playbackFrameCoordinator.updateAudioPresentation(app);
-		sortinglogic::RenderSnapshot snapshot = app.snapshot();
+		app.snapshotInto(snapshot);
 		const UiThemeCustomization& activeTheme = app.preferences().appearance.themes.find(app.preferences().appearance.activePreset)->second;
 		const ThemePalette palette = paletteForAppearance(app.preferences().appearance.activePreset, activeTheme);
 		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());

@@ -556,6 +556,7 @@ namespace sortinglogic
 		void synchronizePlaybackPosition(std::size_t eventCursor, double elapsedSeconds,
 			double playbackDurationSeconds, bool playing);
 		SimulationPlaybackState playbackState() const;
+		void snapshotInto(RenderSnapshot& destination) const;
 		RenderSnapshot snapshot() const;
 		std::shared_ptr<const SortTrace> currentTrace() const;
 		const std::vector<SortItem>& preparedInput() const { return preparedInput_; }
@@ -603,6 +604,6 @@ namespace sortinglogic
 		void replaceTraceWithBaseline();
 		void seekInternal(std::size_t cursor);
 		void updateElapsedFromCursor();
-		std::vector<ActiveRole> rolesAtCursor() const;
+		void rolesAtCursor(std::vector<ActiveRole>& roles) const;
 	};
 }

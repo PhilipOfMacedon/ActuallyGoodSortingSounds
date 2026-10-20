@@ -107,9 +107,17 @@ namespace
 		sortinglogic::Simulation simulation(4, 0xA710u);
 		sortinglogic::SimulationPlaybackState playback = simulation.playbackState();
 		sortinglogic::RenderSnapshot render = simulation.snapshot();
+		sortinglogic::RenderSnapshot reusable;
+		reusable.activeRoles.push_back(sortinglogic::ActiveRole(sortinglogic::SemanticRole::Pivot, 99, 0));
+		reusable.activeRegions.push_back(sortinglogic::RegionAnnotation());
+		reusable.completionReason = "stale completion";
+		reusable.compatibilityMessage = "stale compatibility";
+		simulation.snapshotInto(reusable);
 		check(!playback.hasTrace && !playback.complete && !playback.playing && playback.cursor == render.cursor &&
-			playback.durationSeconds == render.durationSeconds,
-			"compact playback state matches a full snapshot before trace creation");
+			playback.durationSeconds == render.durationSeconds && reusable.state.slots.size() == render.state.slots.size() &&
+			reusable.activeRoles.empty() && reusable.activeRegions.empty() && reusable.completionReason.empty() &&
+			reusable.compatibilityMessage.empty(),
+			"compact playback state and reusable snapshot match before trace creation and clear stale vectors and strings");
 
 		simulation.prepareInstaInvert();
 		sortinglogic::TraceBuildRequest request;
@@ -120,27 +128,39 @@ namespace
 		simulation.completeTraceBuild(std::move(result));
 		playback = simulation.playbackState();
 		render = simulation.snapshot();
+		simulation.snapshotInto(reusable);
 		check(playback.hasTrace && !playback.complete && !playback.playing && playback.cursor == render.cursor &&
-			playback.durationSeconds == render.durationSeconds,
-			"compact playback state matches a full snapshot at the initial trace cursor");
+			playback.durationSeconds == render.durationSeconds && reusable.hasTrace && reusable.state.slots.size() == render.state.slots.size() &&
+			reusable.eventCount == render.eventCount && reusable.activeRoles.size() == render.activeRoles.size() &&
+			reusable.activeRegions.size() == render.activeRegions.size(),
+			"compact playback state and reusable snapshot match at the initial trace cursor");
 
 		check(simulation.nextEvent().accepted, "playback-state fixture advances one event");
 		playback = simulation.playbackState();
 		render = simulation.snapshot();
+		simulation.snapshotInto(reusable);
 		check(playback.hasTrace == render.hasTrace && playback.complete == render.complete &&
 			playback.playing == render.playing && playback.cursor == render.cursor &&
-			playback.durationSeconds == render.durationSeconds,
-			"compact playback state tracks a stepped trace cursor");
+			playback.durationSeconds == render.durationSeconds && reusable.cursor == render.cursor &&
+			reusable.activeRoles.size() == render.activeRoles.size() && reusable.activeRegions.size() == render.activeRegions.size(),
+			"compact playback state and reusable snapshot track a stepped trace cursor");
 		check(simulation.togglePlayback().accepted && simulation.playbackState().playing,
 			"compact playback state reflects transport start");
 		const std::size_t eventCount = simulation.currentTrace()->events.size();
 		check(simulation.seekTo(eventCount).accepted, "playback-state fixture seeks to trace completion");
 		playback = simulation.playbackState();
 		render = simulation.snapshot();
+		simulation.snapshotInto(reusable);
 		check(playback.hasTrace == render.hasTrace && playback.complete == render.complete &&
 			playback.playing == render.playing && playback.cursor == render.cursor &&
-			playback.durationSeconds == render.durationSeconds,
-			"compact playback state matches a full snapshot at trace completion");
+			playback.durationSeconds == render.durationSeconds && reusable.complete == render.complete &&
+			reusable.cursor == render.cursor && reusable.activeRoles.size() == render.activeRoles.size(),
+			"compact playback state and reusable snapshot match at trace completion");
+		check(simulation.prepareShuffle(0xA711u).accepted, "playback-state fixture prepares a replacement input");
+		simulation.snapshotInto(reusable);
+		check(!reusable.hasTrace && !reusable.complete && reusable.cursor == 0 && reusable.activeRoles.empty() &&
+			reusable.activeRegions.empty() && reusable.completionReason.empty(),
+			"reused snapshot clears trace-only roles, regions, and completion information after replacement");
 	}
 
 	double medianSnapshotMicros(sortinglogic::Simulation& simulation, std::size_t cursor, std::size_t iterations,
@@ -160,6 +180,56 @@ namespace
 			{
 				const sortinglogic::RenderSnapshot value = simulation.snapshot();
 				sink += value.state.slots.size() + value.activeRoles.size() + value.activeRegions.size();
+			}
+			const double elapsed = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
+			samples.push_back(elapsed / static_cast<double>(iterations));
+		}
+		std::sort(samples.begin(), samples.end());
+		return samples[samples.size() / 2];
+	}
+
+	double medianReusedSnapshotMicros(sortinglogic::Simulation& simulation, std::size_t cursor,
+		std::size_t iterations, std::size_t& sink)
+	{
+		if (!simulation.seekTo(cursor).accepted) throw std::runtime_error("could not position simulation for reused snapshot profiling");
+		sortinglogic::RenderSnapshot reusable;
+		for (std::size_t i = 0; i < 20; ++i)
+		{
+			simulation.snapshotInto(reusable);
+			sink += reusable.state.slots.size() + reusable.activeRoles.size() + reusable.activeRegions.size();
+		}
+		std::vector<double> samples;
+		for (std::size_t batch = 0; batch < 5; ++batch)
+		{
+			const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+			for (std::size_t i = 0; i < iterations; ++i)
+			{
+				simulation.snapshotInto(reusable);
+				sink += reusable.state.slots.size() + reusable.activeRoles.size() + reusable.activeRegions.size();
+			}
+			const double elapsed = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
+			samples.push_back(elapsed / static_cast<double>(iterations));
+		}
+		std::sort(samples.begin(), samples.end());
+		return samples[samples.size() / 2];
+	}
+
+	double medianRegionFilterMicros(const sortinglogic::SortTrace& trace, std::size_t cursor,
+		std::size_t iterations, std::size_t& sink)
+	{
+		std::vector<sortinglogic::RegionAnnotation> activeRegions;
+		std::vector<double> samples;
+		for (std::size_t batch = 0; batch < 5; ++batch)
+		{
+			const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+			for (std::size_t pass = 0; pass < iterations; ++pass)
+			{
+				activeRegions.clear();
+				for (std::size_t i = 0; i < trace.annotations.size(); ++i)
+					if (trace.annotations[i].beginCursor <= cursor && cursor < trace.annotations[i].endCursor)
+						activeRegions.push_back(trace.annotations[i]);
+				sink += activeRegions.size();
+				if (!activeRegions.empty()) sink += activeRegions.front().first + activeRegions.front().last;
 			}
 			const double elapsed = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
 			samples.push_back(elapsed / static_cast<double>(iterations));
@@ -257,6 +327,9 @@ namespace
 		const RenderSnapshot comparison = simulation.snapshot();
 		const double rangeSnapshotMicros = medianSnapshotMicros(simulation, largestRangeCursor, 1000, sink);
 		const RenderSnapshot range = simulation.snapshot();
+		const double reusedRangeSnapshotMicros = medianReusedSnapshotMicros(simulation, largestRangeCursor, 500, sink);
+		const double comparisonRegionFilterMicros = medianRegionFilterMicros(*trace, comparisonCursor, 1000, sink);
+		const double rangeRegionFilterMicros = medianRegionFilterMicros(*trace, largestRangeCursor, 1000, sink);
 		const double roleProjectionMillis = medianRoleProjectionMillis(range, 25, sink);
 		const double indexedRoleProjectionMillis = medianIndexedRoleProjectionMillis(range, 25, sink);
 		std::cout << std::fixed << std::setprecision(3)
@@ -268,6 +341,9 @@ namespace
 			<< " range_roles=" << range.activeRoles.size()
 			<< " range_regions=" << range.activeRegions.size()
 			<< " range_snapshot_median_us=" << rangeSnapshotMicros
+			<< " range_reused_snapshot_median_us=" << reusedRangeSnapshotMicros
+			<< " comparison_region_filter_median_us=" << comparisonRegionFilterMicros
+			<< " range_region_filter_median_us=" << rangeRegionFilterMicros
 			<< " role_scan_median_ms_per_800_items=" << roleProjectionMillis
 			<< " role_index_median_ms_per_800_items=" << indexedRoleProjectionMillis
 			<< " sink=" << sink << '\n';
@@ -2100,6 +2176,13 @@ namespace
 	{
 		MemorySettings persistence;
 		AppController app(persistence);
+		sortinglogic::RenderSnapshot reusableSnapshot;
+		app.snapshotInto(reusableSnapshot);
+		const sortinglogic::RenderSnapshot initialSnapshot = app.snapshot();
+		check(reusableSnapshot.cursor == initialSnapshot.cursor && reusableSnapshot.eventCount == initialSnapshot.eventCount &&
+			reusableSnapshot.durationSeconds == initialSnapshot.durationSeconds && reusableSnapshot.status == initialSnapshot.status &&
+			reusableSnapshot.state.slots.size() == initialSnapshot.state.slots.size(),
+			"AppController fills a reusable render snapshot with the same initial presentation state");
 		check(persistence.writes == 0, "loading preferences does not write them back at startup");
 
 		app.dispatch(AppAction(AppActionKind::TogglePlayback));

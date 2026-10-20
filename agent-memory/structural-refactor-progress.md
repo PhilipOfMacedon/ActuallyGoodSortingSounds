@@ -866,3 +866,23 @@ Verification:
 - `git diff --check` passed; Git reported only the configured LF-to-CRLF working-tree notices.
 
 Next: profile the remaining state copy, role construction, and region filtering within the single render snapshot before considering snapshot caching.
+
+## 2026-10-20 — reuse render snapshot storage
+
+Status: measured implementation complete; annotation indexing is not justified by this profile.
+
+- Added `Simulation::snapshotInto` and `AppController::snapshotInto`, retaining the existing value-returning snapshot API for callers that need ownership. The main loop now keeps one `RenderSnapshot` and fills it each frame.
+- Snapshot generation clears and refills the destination's active-role and region vectors, preserving their capacity. It overwrites status and compatibility strings so trace replacement cannot leave stale presentation data. `rolesAtCursor` now fills a caller-owned vector instead of constructing and moving a new vector each frame.
+- Added parity and stale-data checks for no-trace, initial, stepped, playing, complete, and replacement states. Added a profile path comparing fresh snapshots with reuse of a warmed destination.
+- Deterministic 800-item Merge / atomic-range-write profile: x64 Debug fresh snapshot median 2,390.155 us vs. reused 1,091.750 us; x64 Release 41.030 us vs. 15.426 us. These are snapshot-only medians, not full-frame times.
+- Isolated filtering of 799 region annotations measured 19.470/26.807 us in Debug at the comparison/range cursors and 0.780/0.938 us in Release. Leave the scan linear; this evidence does not justify an interval index.
+
+Verification:
+
+- x64 Debug and Release solution builds passed, including the app and `SoundEnginePreview`.
+- x64 Debug and Release `AppFrameworkTests` passed; the role/snapshot profile ran in both configurations.
+- `SortingLogicTests --core-contracts-only` passed in both configurations with 39,535 checks and 0 failures.
+- Standalone x64 Debug and Release `AudioDeviceTransportTests` builds and SDL dummy-device runs passed, including 80/800-item pause, step, seek, and playback cases.
+- `git diff --check` passed; configured LF-to-CRLF notices only.
+
+Next: continue with the audit's remaining UI view/action ownership and measured text/raster invalidation concerns; do not add annotation caches absent a larger representative trace showing material cost.

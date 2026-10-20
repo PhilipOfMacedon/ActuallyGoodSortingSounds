@@ -544,10 +544,10 @@ namespace sortinglogic
 		else elapsedSeconds_ = durationSeconds_ * (static_cast<float>(cursor_) / static_cast<float>(trace_->events.size()));
 	}
 
-	std::vector<ActiveRole> Simulation::rolesAtCursor() const
+	void Simulation::rolesAtCursor(std::vector<ActiveRole>& roles) const
 	{
-		std::vector<ActiveRole> roles;
-		if (!trace_ || cursor_ == 0) return roles;
+		roles.clear();
+		if (!trace_ || cursor_ == 0) return;
 		const SemanticEvent& event = trace_->events[cursor_ - 1];
 		if (event.type == SemanticEventType::Compare)
 		{
@@ -582,13 +582,14 @@ namespace sortinglogic
 			roles.push_back(ActiveRole(SemanticRole::AuxiliaryCopy, event.item.stableId, event.firstIndex, event.workspaceName));
 		else if (event.type == SemanticEventType::DiscardItem)
 			roles.push_back(ActiveRole(SemanticRole::DiscardedItem, event.item.stableId, event.firstIndex, "discard"));
-		return roles;
 	}
 
-	RenderSnapshot Simulation::snapshot() const
+	void Simulation::snapshotInto(RenderSnapshot& result) const
 	{
-		RenderSnapshot result;
-		result.state = currentState_; result.metrics = currentState_.metrics; result.activeRoles = rolesAtCursor();
+		result.state = currentState_;
+		result.metrics = currentState_.metrics;
+		rolesAtCursor(result.activeRoles);
+		result.activeRegions.clear();
 		result.direction = direction_; result.algorithm = algorithm_; result.profile = profile_; result.domain = domain_; result.pattern = pattern_;
 		const AlgorithmDescriptor* selected = algorithmDescriptor(algorithm_);
 		result.familyId = selected ? selected->familyId : FamilyId();
@@ -602,8 +603,9 @@ namespace sortinglogic
 		result.durationSeconds = durationSeconds_; result.elapsedSeconds = elapsedSeconds_; result.hasTrace = static_cast<bool>(trace_);
 		result.buildingTrace = buildingTrace_; result.playing = playing_; result.complete = trace_ && cursor_ >= trace_->events.size();
 		result.partial = trace_ && !trace_->complete;
-		if (trace_) result.completionReason = trace_->completionReason;
+		result.completionReason = trace_ ? trace_->completionReason : std::string();
 		result.runCompatible = canRun();
+		result.compatibilityMessage.clear();
 		if (!inputPatternCompatible(domain_, pattern_))
 			result.compatibilityMessage = std::string(inputPatternName(pattern_)) + " is incompatible with " + inputDomainName(domain_) + ".";
 		else if (algorithmSupports(algorithm_, domain_) && !algorithmAcceptsItemCount(algorithm_, itemCount_))
@@ -618,6 +620,12 @@ namespace sortinglogic
 			for (std::size_t i = 0; i < trace_->annotations.size(); ++i)
 				if (trace_->annotations[i].beginCursor <= cursor_ && cursor_ < trace_->annotations[i].endCursor)
 					result.activeRegions.push_back(trace_->annotations[i]);
+	}
+
+	RenderSnapshot Simulation::snapshot() const
+	{
+		RenderSnapshot result;
+		snapshotInto(result);
 		return result;
 	}
 

@@ -639,7 +639,14 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 
 sortinglogic::RenderSnapshot AppController::snapshot() const
 {
-	sortinglogic::RenderSnapshot result = simulation_.snapshot();
+	sortinglogic::RenderSnapshot result;
+	snapshotInto(result);
+	return result;
+}
+
+void AppController::snapshotInto(sortinglogic::RenderSnapshot& result) const
+{
+	simulation_.snapshotInto(result);
 	if (playbackCoordinator_.state(result.buildingTrace, result.hasTrace, result.playing,
 		result.cursor, result.eventCount) == PlaybackCoordinatorState::Queued)
 		result.status = result.buildingTrace
@@ -651,7 +658,6 @@ sortinglogic::RenderSnapshot AppController::snapshot() const
 		result.elapsedSeconds = static_cast<float>((std::max)(0.0, (std::min)(referenceDurationSeconds(),
 			static_cast<double>(result.elapsedSeconds))));
 	}
-	return result;
 }
 
 void AppController::applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,

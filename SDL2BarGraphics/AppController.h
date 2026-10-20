@@ -25,6 +25,7 @@ public:
 	PlaybackCoordinatorState playbackState() const;
 	void applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
 		const AudioPlaybackRevision& currentRevision);
+	void snapshotInto(sortinglogic::RenderSnapshot& destination) const;
 	sortinglogic::RenderSnapshot snapshot() const;
 	const UserPreferences& preferences() const { return preferences_; }
 	SoundEngine::Parameters effectiveAudio() const;
