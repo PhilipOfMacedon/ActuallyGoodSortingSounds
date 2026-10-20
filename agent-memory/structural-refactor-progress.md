@@ -1570,3 +1570,11 @@ Moved Smooth Sort and Binomial Smooth Sort into `SmoothHeapStrategies.cpp` and r
 The x64 Debug and Release solution builds passed. The focused Smooth Sort suite passed in both configurations with 284,563 checks and no failures. `git diff --check` passed. No behavior or runtime-performance change is claimed.
 
 Next: continue with another cohesive algorithm family or move an adjacent piece of catalog/configuration ownership out of the coordinator, guided by the audit and existing focused tests.
+
+## 2026-10-20 — consolidate pattern-defeating merge ownership
+
+Moved Pattern-Defeating Merge Sort from the central coordinator into the existing merge strategy module. Its request builder now points directly to `pdMergeSortStrategy`, and its fallback dispatch case is removed.
+
+The x64 Debug and Release solution builds passed. The focused Pattern-Defeating Merge suite passed in both configurations with 108,027 checks and no failures. `git diff --check` passed. No trace-order or performance change is claimed.
+
+Next: keep removing implementation ownership from the coordinator in coherent groups, then reassess whether the remaining dispatch can become a registry-only path without changing error or validation behavior.

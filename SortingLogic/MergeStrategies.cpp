@@ -331,5 +331,122 @@ namespace sortinglogic
 		void inPlaceMergeStrategy(Recorder& r) { inPlaceMergeSort(r); }
 		void parallelMergeStrategy(Recorder& r) { parallelMergeSort(r); }
 		void optimizedBottomUpMergeStrategy(Recorder& r) { optimizedBottomUpMergeSort(r); }
+		void pdMergeSortStrategy(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			r.declareMetric("pdmerge_run_count");
+			r.declareMetric("pdmerge_run_reversals");
+			r.declareMetric("pdmerge_merge_passes");
+			r.declareMetric("pdmerge_merges");
+			r.declareMetric("pdmerge_buffered_items");
+			if (count < 2) return;
+
+			std::vector<std::size_t> runs;
+			runs.push_back(0);
+			std::size_t start = 0;
+			while (start + 1 < count)
+			{
+				const SortItem first = r.at(start), second = r.at(start + 1);
+				r.compare(first, second, start, start + 1);
+				const bool forwardRun = compareItems(first, second, r.trace.direction) != ComparisonResult::Greater;
+				std::size_t end = start + 2;
+				while (end < count)
+				{
+					const SortItem previous = r.at(end - 1), current = r.at(end);
+					r.compare(previous, current, end - 1, end);
+					const bool thisForward = compareItems(previous, current, r.trace.direction) != ComparisonResult::Greater;
+					if (thisForward != forwardRun) break;
+					++end;
+				}
+				if (!forwardRun)
+				{
+					const int group = r.beginPhase("Reverse strict descending run");
+					for (std::size_t left = start, right = end - 1; left < right; ++left, --right)
+						r.swap(left, right, SemanticRole::WriteTarget);
+					r.endPhase(group, "Descending run reversed");
+					r.addMetric("pdmerge_run_reversals");
+				}
+				runs.push_back(end);
+				r.addMetric("pdmerge_run_count");
+				start = end;
+			}
+			if (runs.back() != count) runs.push_back(count);
+
+			const std::string runLane = "pdmerge_run_boundaries";
+			r.resizeCounters(runLane, runs.size());
+			for (std::size_t i = 0; i < runs.size(); ++i)
+				r.writeCounter(runLane, i, static_cast<int>(runs[i]));
+			const std::string bufferLane = "pdmerge_buffer";
+			const auto mergePair = [&r, &bufferLane](std::size_t begin, std::size_t middle, std::size_t end)
+			{
+				const std::size_t leftCount = middle - begin;
+				const std::size_t rightCount = end - middle;
+				const int group = r.beginPhase("Pattern-defeating merge " + std::to_string(begin) + ".." + std::to_string(end));
+				if (leftCount <= rightCount)
+				{
+					r.resizeAuxiliary(bufferLane, leftCount);
+					for (std::size_t i = 0; i < leftCount; ++i) r.writeAuxiliary(bufferLane, i, r.at(begin + i));
+					std::size_t left = 0, right = middle, output = begin;
+					while (left < leftCount && right < end)
+					{
+						const SortItem leftItem = r.auxiliaryAt(bufferLane, left);
+						const SortItem rightItem = r.at(right);
+						r.compare(leftItem, rightItem, left, right, bufferLane, "main", SemanticRole::AuxiliaryCopy, SemanticRole::ComparedItem);
+						if (compareItems(leftItem, rightItem, r.trace.direction) != ComparisonResult::Greater)
+							r.writeMain(output++, leftItem, SemanticRole::WriteTarget), ++left;
+						else
+						r.writeMain(output++, rightItem, SemanticRole::WriteTarget), ++right;
+					}
+					while (left < leftCount) r.writeMain(output++, r.auxiliaryAt(bufferLane, left++), SemanticRole::WriteTarget);
+					r.addMetric("pdmerge_buffered_items", leftCount);
+				}
+				else
+				{
+					r.resizeAuxiliary(bufferLane, rightCount);
+					for (std::size_t i = 0; i < rightCount; ++i) r.writeAuxiliary(bufferLane, i, r.at(middle + i));
+					std::size_t left = middle, right = rightCount, output = end;
+					while (left > begin && right > 0)
+					{
+						const SortItem leftItem = r.at(left - 1);
+						const SortItem rightItem = r.auxiliaryAt(bufferLane, right - 1);
+						r.compare(leftItem, rightItem, left - 1, right - 1, "main", bufferLane, SemanticRole::ComparedItem, SemanticRole::AuxiliaryCopy);
+						if (compareItems(leftItem, rightItem, r.trace.direction) != ComparisonResult::Greater)
+							r.writeMain(--output, rightItem, SemanticRole::WriteTarget), --right;
+						else
+						r.writeMain(--output, leftItem, SemanticRole::WriteTarget), --left;
+					}
+					while (right > 0) r.writeMain(--output, r.auxiliaryAt(bufferLane, --right), SemanticRole::WriteTarget);
+					r.addMetric("pdmerge_buffered_items", rightCount);
+				}
+				r.resizeAuxiliary(bufferLane, 0);
+				r.endPhase(group, "Merge pair complete");
+				r.addMetric("pdmerge_merges");
+			};
+
+			std::uint64_t pass = 0;
+			while (runs.size() > 2)
+			{
+				const int group = r.beginPhase("Pairwise natural-run merge pass " + std::to_string(pass + 1));
+				std::vector<std::size_t> next;
+				next.push_back(0);
+				const std::size_t runCount = runs.size() - 1;
+				for (std::size_t run = 0; run < runCount; run += 2)
+				{
+					if (run + 1 < runCount)
+						mergePair(runs[run], runs[run + 1], runs[run + 2]);
+					next.push_back(runs[(std::min)(run + 2, runCount)]);
+				}
+				r.endPhase(group, "Pairwise run pass complete");
+				++pass;
+				r.setMetric("pdmerge_merge_passes", pass);
+				runs.swap(next);
+				r.resizeCounters(runLane, runs.size());
+				for (std::size_t i = 0; i < runs.size(); ++i)
+					r.writeCounter(runLane, i, static_cast<int>(runs[i]));
+			}
+			r.resizeCounters(runLane, 0);
+			r.resizeAuxiliary(bufferLane, 0);
+		}
+
 	}
 }
