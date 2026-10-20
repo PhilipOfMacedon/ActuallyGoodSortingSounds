@@ -56,6 +56,8 @@
     <ClCompile Include="SmoothHeapStrategies.cpp" />
     <ClCompile Include="HanoiStrategy.cpp" />
     <ClCompile Include="LibraryStrategies.cpp" />
+    <ClCompile Include="GrailStrategies.cpp" />
+    <ClCompile Include="GrailTraceUtilities.cpp" />
     <ClCompile Include="PartitionStrategies.cpp" />
     <ClCompile Include="StacklessPartitionStrategies.cpp" />
     <ClCompile Include="PartitionTraceUtilities.cpp" />
@@ -85,6 +87,7 @@
     <ClInclude Include="MergeTraceUtilities.h" />
     <ClInclude Include="TraceBuildService.h" />
     <ClInclude Include="TracePresentationPolicy.h" />
+    <ClInclude Include="GrailTraceUtilities.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

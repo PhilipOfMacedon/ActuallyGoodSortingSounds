@@ -54,6 +54,13 @@ namespace sortinglogic
 		void hanoiSort(detail::Recorder& recorder);
 		void librarySort(detail::Recorder& recorder);
 		void simplifiedLibrarySort(detail::Recorder& recorder);
+		void grailSort(detail::Recorder& recorder);
+		void parallelGrailSort(detail::Recorder& recorder);
+		void adaptiveGrailSort(detail::Recorder& recorder);
+		void sqrtMergeSortStrategy(detail::Recorder& recorder);
+		void synchronousSqrtMergeSortStrategy(detail::Recorder& recorder);
+		void circularGrailSort(detail::Recorder& recorder);
+		void unstableGrailSort(detail::Recorder& recorder);
 		void aaTreeSort(detail::Recorder& recorder);
 		void avlTreeSort(detail::Recorder& recorder);
 		void splayTreeSort(detail::Recorder& recorder);

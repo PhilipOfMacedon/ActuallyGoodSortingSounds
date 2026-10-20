@@ -1594,3 +1594,11 @@ Moved Library Sort and Simplified Library Sort into `LibraryStrategies.cpp`. The
 The x64 Debug and Release solution builds passed. Focused tests passed in both configurations: 231,499 checks for Simplified Library Sort and 92,932 for Library Sort, with no failures. `git diff --check` passed. No operation-order, audio, or performance change is claimed.
 
 Next: continue extracting remaining coordinator-owned families and inspect the catalog/build-request boundary once fewer legacy fallback implementations remain.
+
+## 2026-10-20 — isolate Grail strategies and their shared merge kernels
+
+Moved Grail, Parallel Grail, Adaptive Grail, Sqrt, Synchronous Sqrt, Circular Grail, and Unstable Grail into `GrailStrategies.cpp`. Their shared rotation, binary-search, no-buffer merge, and buffered merge kernels are used by several other merge variants, so those kernels now live behind the internal `GrailTraceUtilities` interface rather than being duplicated or hidden inside one algorithm module. Both Sqrt modes use explicit strategy wrappers.
+
+The first build exposed the coordinator's existing use of these shared kernels; the utility boundary was added, after which x64 Debug and Release solution builds passed. All four focused suites passed in both configurations: Grail (901,625 checks), Parallel Grail (2,949), Sqrt Sort (506,031), and Circular/Unstable Grail (160,247), all with zero failures. `git diff --check` passed. `SortingLogic.cpp` is now 5,866 lines, down from 7,270 at the start of this refactor continuation; the change redistributes ownership and makes no runtime-performance claim.
+
+Next: continue extracting cohesive coordinator-owned families and use shared utility headers where existing variants reuse trace kernels; revisit catalog and request-building ownership after the remaining fallbacks have narrowed.
