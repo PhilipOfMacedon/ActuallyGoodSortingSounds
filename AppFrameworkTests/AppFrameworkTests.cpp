@@ -4039,7 +4039,7 @@ namespace
 			static_cast<int>(sortinglogic::InputProfile::IntegerKeys))).accepted,
 			"integer profile can be selected from the app action layer");
 		check(persistence.writes == 1 && app.snapshot().inputSeed == seed &&
-			app.snapshot().profile == sortinglogic::InputProfile::IntegerKeys,
+			app.snapshot().domain == sortinglogic::InputDomain::NonnegativeIntegerKeys,
 			"profile change persists and regenerates from the existing seed");
 		sortinglogic::Simulation expected(80, seed, sortinglogic::InputProfile::IntegerKeys);
 		bool generatedMatches = expected.preparedInput().size() == app.simulation().preparedInput().size();

@@ -587,7 +587,7 @@ namespace sortinglogic
 		result.metrics = currentState_.metrics;
 		rolesAtCursor(result.activeRoles);
 		result.activeRegions.clear();
-		result.direction = direction_; result.algorithm = algorithm_; result.profile = inputProfileForDomain(domain_);
+		result.direction = direction_; result.algorithm = algorithm_;
 		result.domain = domain_; result.pattern = pattern_;
 		const AlgorithmDescriptor* selected = algorithmDescriptor(algorithm_);
 		result.familyId = selected ? selected->familyId : FamilyId();

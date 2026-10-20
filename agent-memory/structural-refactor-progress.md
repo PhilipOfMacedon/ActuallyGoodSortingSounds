@@ -1847,3 +1847,11 @@ The application project did not explicitly set its output and intermediate direc
 Verified all four solution builds and all four `AppFrameworkTests` runs. Confirmed each app output contains the executable, SDL2/SDL2_ttf/SDL2_image, GLEW, font, and shader files. `git diff --check` passed. No application window was launched. Direct project-only output behavior remains unverified.
 
 Next: continue with a high-value unresolved boundary from the audit, prioritizing a behavior-sensitive compatibility seam or an evidence-backed cleanup over another path-only change. Keep the structural refactor goal active.
+
+## 2026-10-20 — remove the derived profile from render snapshots
+
+Removed `RenderSnapshot::profile`, which duplicated `InputDomain` and had no production readers. The render snapshot now exposes only the input domain; `Simulation::profile()` remains as the legacy two-value compatibility accessor, and `TraceBuildRequest`/settings compatibility fields remain unchanged. Updated the app-framework assertion to check the selected integer domain directly.
+
+The full solution built in x64 Debug/Release and x86 Debug/Release. SortingLogic core contracts passed 39,541 checks in each configuration, and `AppFrameworkTests` passed in all four configurations. No generated input, trace, status, settings, or audio behavior changed. The GUI remained closed.
+
+Next: audit the remaining request/settings profile mirrors and typed-versus-legacy option fields by production call site; remove only fields proven redundant at their owning boundary. Keep the structural goal active.

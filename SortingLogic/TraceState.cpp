@@ -37,7 +37,7 @@ SemanticEvent::SemanticEvent()
 	RenderSnapshot::RenderSnapshot()
 		: state(), activeRoles(), activeRegions(), metrics(), direction(SortDirection::Ascending),
 		algorithm(SortAlgorithm::Insertion), familyId("insertion"), variantId("standard"),
-		profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats),
+		domain(InputDomain::NormalizedFloats),
 		pattern(InputPattern::Random), shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
 		mergeExecutionMode(MergeExecutionMode::BottomUp), mergeBufferVisualizationEnabled(true),
 		cursor(0), eventCount(0), itemCount(0), audioEligibleEventCount(0), inputSeed(0), durationSeconds(10.0f), elapsedSeconds(0.0f),

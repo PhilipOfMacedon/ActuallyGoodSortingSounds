@@ -477,7 +477,6 @@ namespace sortinglogic
 		SortAlgorithm algorithm;
 		FamilyId familyId;
 		VariantId variantId;
-		InputProfile profile;
 		InputDomain domain;
 		InputPattern pattern;
 		ShellGapSequence shellGapSequence;
