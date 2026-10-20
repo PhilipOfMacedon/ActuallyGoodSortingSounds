@@ -4,10 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "../SortingLogic/SortingLogic.h"
 #include "UiLayer.h"
 #include "UiAppearance.h"
-#include "UserSettings.h"
 
 enum class UiTransportState { NoTrace, Ready, Playing, Building, Queued, Preparing, Replay };
 
@@ -95,12 +93,6 @@ struct UiScreenModel
 	std::vector<UiTelemetryValue> telemetry;
 	UiScreenModel();
 };
-
-UiScreenModel buildUiScreenModel(const sortinglogic::RenderSnapshot& snapshot,
-	const UserPreferences& preferences, bool playbackPending, const std::string& applicationStatus = std::string());
-
-// Expose semantic Merge roles on the main array when its auxiliary buffer is hidden.
-std::vector<sortinglogic::ActiveRole> rolesVisibleOnMainArray(const sortinglogic::RenderSnapshot& snapshot);
 
 // Percentage of the event trace applied by the current cursor. A completed
 // empty trace is still complete; a missing or building trace has no progress.

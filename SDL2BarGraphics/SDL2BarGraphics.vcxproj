@@ -80,6 +80,7 @@
     <ClInclude Include="VisualSettingsTypes.h" />
     <ClInclude Include="UiAppearance.h" />
     <ClInclude Include="UiArchitecture.h" />
+    <ClInclude Include="UiScreenModelAdapter.h" />
     <ClInclude Include="UiActionRouting.h" />
     <ClInclude Include="WindowsFontCatalog.h" />
     <ClInclude Include="UserSettings.h" />

@@ -41,6 +41,7 @@
 #include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
 #include "../SDL2BarGraphics/UiArchitecture.h"
+#include "../SDL2BarGraphics/UiScreenModelAdapter.h"
 #include "../SDL2BarGraphics/UiActionRouting.h"
 #include "../SDL2BarGraphics/UserSettings.h"
 #include "../SDL2BarGraphics/WindowsFontCatalog.h"

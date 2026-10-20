@@ -7,6 +7,7 @@
 
 #include "LayoutMetrics.h"
 #include "UiArchitecture.h"
+#include "UiScreenModelAdapter.h"
 #include "../SortingLogic/TracePresentationPolicy.h"
 
 namespace

@@ -65,6 +65,7 @@
     <ClCompile Include="UiLayer.cpp" />
     <ClCompile Include="UiAppearance.cpp" />
     <ClCompile Include="UiArchitecture.cpp" />
+    <ClCompile Include="UiScreenModelAdapter.cpp" />
     <ClCompile Include="UiActionRouting.cpp" />
     <ClCompile Include="TextBlockLayout.cpp" />
     <ClCompile Include="AlgorithmAudioPreferences.cpp" />

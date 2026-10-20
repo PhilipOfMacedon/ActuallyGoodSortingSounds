@@ -1027,6 +1027,23 @@ Verification:
 
 Next: continue decomposing `ControlPanel`'s session state and main/settings composition, keeping platform services and algorithm catalog data behind their current adapters.
 
+## 2026-10-20 — isolate simulation-to-screen presentation adapter
+
+Status: implementation and four-configuration build/test verification complete.
+
+- Removed the SortingLogic and UserSettings includes from `UiArchitecture.h`. General layout, overlay, and paint consumers now see only UI-owned presentation types instead of inheriting the sorting engine's full public contract.
+- Moved `buildUiScreenModel` and main-array role projection into `UiScreenModelAdapter`, which is the explicit boundary that translates snapshots and saved preferences into view data.
+- Kept the same model fields, labels, role projection, duration calculation, and transport states. Existing screen-model and chart role checks continue to exercise the adapter.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64 Debug/Release and x86 Debug/Release (project configuration `Win32`).
+- `AppFrameworkTests` passed in all four configurations.
+- x64 Debug `SortingLogicTests --core-contracts-only` passed 39,535 checks with 0 failures.
+- `git diff --check` passed; configured LF-to-CRLF notices only.
+
+Next: continue moving screen/session ownership out of `ControlPanel`; prefer an owner that carries state and action handling, not just another rendering wrapper.
+
 ## 2026-10-20 — remove Release framework PDB warnings
 
 Status: implementation and warning/performance verification complete.

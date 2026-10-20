@@ -22,6 +22,7 @@
 #include "SettingsScroll.h"
 #include "WindowsFontCatalog.h"
 #include "PlaybackTimebase.h"
+#include "UiScreenModelAdapter.h"
 
 namespace
 {

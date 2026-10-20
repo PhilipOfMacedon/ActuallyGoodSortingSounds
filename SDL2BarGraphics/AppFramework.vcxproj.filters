@@ -23,6 +23,7 @@
     <ClCompile Include="UiLayer.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="UiAppearance.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="UiArchitecture.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="UiScreenModelAdapter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="UiActionRouting.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="TextBlockLayout.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmAudioPreferences.cpp"><Filter>Source Files</Filter></ClCompile>
