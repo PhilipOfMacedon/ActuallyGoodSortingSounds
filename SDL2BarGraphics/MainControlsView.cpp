@@ -36,6 +36,21 @@ MainControlsView::MainControlsView()
 {
 }
 
+std::vector<std::string> MainControlsView::controlIds() const
+{
+	std::vector<std::string> ids;
+	ids.reserve(controls_.widgets().size());
+	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+		ids.push_back(controls_.widgets()[i]->id());
+	return ids;
+}
+
+void MainControlsView::resetMenuSelection(const std::string& id)
+{
+	UiWidget* menu = controls_.find(id);
+	if (menu) menu->setSelectedIndex(0);
+}
+
 bool MainControlsView::beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds,
 	std::string& initialText) const
 {

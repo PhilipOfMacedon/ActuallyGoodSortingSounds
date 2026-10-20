@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -44,14 +45,25 @@ public:
 	void synchronizeText(const UserPreferences& preferences, UiPresetId activePreset,
 		const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel, std::uint32_t nowMs);
 	void compose(MainControlsPaintSection section, const UiRect& screen, UiPaintContext& paintContext) const;
+	const UiWidget* findControl(const std::string& id) const { return controls_.find(id); }
+	std::size_t controlCount() const { return controls_.widgets().size(); }
+	const UiWidget* controlAt(std::size_t index) const
+	{
+		return index < controls_.widgets().size() ? controls_.widgets()[index].get() : nullptr;
+	}
+	std::vector<std::string> controlIds() const;
+	bool handleInput(const UiInputEvent& event, UiAction& action) { return controls_.handleEvent(event, action); }
+	bool hasOpenCombo() const { return controls_.hasOpenCombo(); }
+	void closeCombo() { controls_.closeCombo(); }
+	void setInputCaptured(bool captured) { controls_.setInputCaptured(captured); }
+	void resetMenuSelection(const std::string& id);
+	void setControlVisible(const std::string& id, bool visible) { controls_.setWidgetVisible(id, visible); }
 	bool beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds,
 		std::string& initialText) const;
 	void showInlineValueEdit(InlineEditTarget target, const std::string& text);
 	void restoreInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds);
 	bool commitInlineValueEdit(InlineEditTarget target, const InlineEditModel& editor, AppAction& action) const;
 
-	UIRoot& controls() { return controls_; }
-	const UIRoot& controls() const { return controls_; }
 	const MainControlsText& text() const { return text_; }
 
 private:

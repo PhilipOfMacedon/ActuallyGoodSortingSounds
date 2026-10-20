@@ -1878,4 +1878,10 @@ Moved main-control combo popup sizing, clipping, and above/below placement from 
 
 The full solution built in x64/x86 Debug/Release, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed. The active visual behavior is unchanged; the GUI smoke window remained closed.
 
-Remaining UI work is in the finite audit: finish narrowing `ControlPanel`'s access to the main view, and decide whether any renderer-specific text/chrome needs the shared paint-command path. Do not duplicate specialized theme rendering merely to route every rectangle through one type.
+The main-root access seam is closed in the following checkpoint. Keep theme-specific text/chrome in the renderer adapter unless a complete view boundary needs those commands; routing every primitive through a second abstraction would add maintenance without improving the tested view seam.
+
+## 2026-10-20 — close the main widget-root access seam
+
+Removed `MainControlsView::controls()` and replaced it with read-only control lookups, indexed widget presentation, stable control IDs, and named input/capture/menu operations. `ControlPanel` now translates SDL input through the view and cannot mutate or retain the main `UIRoot`. Updated main-control tests to exercise those public view operations. The shared paint-command path already covers main controls and timeline composition; theme-specific text/chrome remains in the renderer adapter.
+
+All x64/x86 Debug/Release solution builds passed, and `AppFrameworkTests` passed in each configuration. `git diff --check` passed. This closes the main screen ownership and runtime paint-test seam without changing the visible UI or input behavior.

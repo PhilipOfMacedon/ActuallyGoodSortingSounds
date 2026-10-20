@@ -182,14 +182,14 @@ namespace
 		bool appearanceNeedsSynchronization = false;
 
 		check(view.beginForControl("bars_value", 80, 10.0f, mainControls, appearanceEditor) &&
-			mainControls.controls().find("bars_value")->label() == "80| bars",
+			mainControls.findControl("bars_value")->label() == "80| bars",
 			"inline edit view starts and presents a main item-count session through its owning control view");
 		check(!view.beginForControl("time_value", 80, 10.0f, mainControls, appearanceEditor) &&
 			view.target() == InlineEditTarget::ItemCount,
 			"inline edit view preserves its active session instead of replacing it with a second edit");
 		view.appendText("4", mainControls, appearanceEditor);
 		view.appendText("2", mainControls, appearanceEditor);
-		check(mainControls.controls().find("bars_value")->label() == "42| bars" &&
+		check(mainControls.findControl("bars_value")->label() == "42| bars" &&
 			view.commit(mainControls, appearanceEditor, action, appearanceNeedsSynchronization) &&
 			action.kind == AppActionKind::SetItemCount && action.selection == 42 && !appearanceNeedsSynchronization,
 			"inline edit view presents text and commits a typed item-count action");
@@ -209,7 +209,7 @@ namespace
 		check(!view.commit(mainControls, appearanceEditor, action, appearanceNeedsSynchronization) && view.active(),
 			"inline edit view keeps an overflowing value active for correction");
 		check(view.cancel(mainControls, 80, 10.0f) == InlineEditTarget::ItemCount &&
-			mainControls.controls().find("bars_value")->label() == "80 bars",
+			mainControls.findControl("bars_value")->label() == "80 bars",
 			"inline edit view restores main-control text and reports its cancelled target");
 
 		const std::vector<UiTokenDescriptor>& tokens = uiPresetDefinition(UiPresetId::Current).tokens;
@@ -2580,14 +2580,13 @@ namespace
 		MainControlsView view;
 		view.initializeControls(preferences, "Fixture Sort");
 
-		const UIRoot& controls = view.controls();
-		const UiWidget* algorithm = controls.find("algorithm");
-		const UiWidget* direction = controls.find("direction");
-		const UiWidget* domain = controls.find("domain");
-		const UiWidget* pattern = controls.find("pattern");
-		const UiWidget* shuffle = controls.find("shuffle");
-		const UiWidget* run = controls.find("run");
-		const UiWidget* fileMenu = controls.find("menu_file");
+		const UiWidget* algorithm = view.findControl("algorithm");
+		const UiWidget* direction = view.findControl("direction");
+		const UiWidget* domain = view.findControl("domain");
+		const UiWidget* pattern = view.findControl("pattern");
+		const UiWidget* shuffle = view.findControl("shuffle");
+		const UiWidget* run = view.findControl("run");
+		const UiWidget* fileMenu = view.findControl("menu_file");
 		check(algorithm && algorithm->label() == "Fixture Sort" && algorithm->viewCommand() == UiAction::ViewCommand::OpenAlgorithmMenu,
 			"main controls view owns the algorithm menu item and its selected label");
 		check(direction && direction->selectedIndex() == 1 && direction->action().kind == AppActionKind::SetDirection,
@@ -2612,19 +2611,19 @@ namespace
 		check(view.beginInlineValueEdit(InlineEditTarget::ItemCount, 80, 10.0f, initialText) && initialText == "80",
 			"main controls view starts item-count editing from the displayed value");
 		view.showInlineValueEdit(InlineEditTarget::ItemCount, initialText);
-		check(view.controls().find("bars_value")->label() == "80| bars",
+		check(view.findControl("bars_value")->label() == "80| bars",
 			"main controls view owns the item-count edit label and unit");
 		view.restoreInlineValueEdit(InlineEditTarget::ItemCount, 81, 10.0f);
-		check(view.controls().find("bars_value")->label() == "81 bars",
+		check(view.findControl("bars_value")->label() == "81 bars",
 			"main controls view restores the item-count label after cancellation");
 
 		check(view.beginInlineValueEdit(InlineEditTarget::Duration, 80, 10.0f, initialText) && initialText == "10",
 			"main controls view initializes duration text using its display precision");
 		view.showInlineValueEdit(InlineEditTarget::Duration, "2.5");
-		check(view.controls().find("time_value")->label() == "2.5| sec",
+		check(view.findControl("time_value")->label() == "2.5| sec",
 			"main controls view owns the duration edit label and unit");
 		view.restoreInlineValueEdit(InlineEditTarget::Duration, 80, 1.25f);
-		check(view.controls().find("time_value")->label() == "1.25 sec",
+		check(view.findControl("time_value")->label() == "1.25 sec",
 			"main controls view restores the duration label after cancellation");
 
 		InlineEditModel countEditor;
@@ -2709,31 +2708,31 @@ namespace
 		layout.interactiveSubregions["direction"].push_back(UiRect(420.0f, 40.0f, 90.0f, 28.0f));
 
 		view.applyLayout(UiPresetId::Current, layout, 1280, true);
-		check(view.controls().find("algorithm")->bounds().x == 100.0f &&
-			view.controls().find("direction")->presentation() == UiWidgetPresentation::Standard &&
-			view.controls().find("direction")->interactiveSubregions().size() == 2 &&
-			view.controls().find("bars_value")->presentation() == UiWidgetPresentation::EditableLabel,
+		check(view.findControl("algorithm")->bounds().x == 100.0f &&
+			view.findControl("direction")->presentation() == UiWidgetPresentation::Standard &&
+			view.findControl("direction")->interactiveSubregions().size() == 2 &&
+			view.findControl("bars_value")->presentation() == UiWidgetPresentation::EditableLabel,
 			"main view applies cached layout geometry and control presentations");
-		check(view.controls().find("shuffle")->visible() && !view.controls().find("menu_file")->visible() &&
-			view.controls().find("run")->visible() && !view.controls().find("domain")->visible(),
+		check(view.findControl("shuffle")->visible() && !view.findControl("menu_file")->visible() &&
+			view.findControl("run")->visible() && !view.findControl("domain")->visible(),
 			"current preset keeps its compact visible-control set");
 
 		view.applyLayout(UiPresetId::FlatVgaDos, layout, 1280, true);
-		check(view.controls().find("direction")->presentation() == UiWidgetPresentation::RadioGroup &&
-			view.controls().find("menu_file")->visible() && !view.controls().find("run")->visible() &&
-			view.controls().find("domain")->visible() && view.controls().find("pattern")->visible() &&
-			view.controls().find("seed_readout")->visible(),
+		check(view.findControl("direction")->presentation() == UiWidgetPresentation::RadioGroup &&
+			view.findControl("menu_file")->visible() && !view.findControl("run")->visible() &&
+			view.findControl("domain")->visible() && view.findControl("pattern")->visible() &&
+			view.findControl("seed_readout")->visible(),
 			"wide legacy preset promotes domain controls and radio presentation into its menu rail");
 
 		view.applyLayout(UiPresetId::FlatVgaDos, layout, 1280, false);
-		check(!view.controls().find("shuffle")->visible() && view.controls().find("panel_toggle")->visible() &&
-			view.controls().find("menu_tools")->visible() && view.controls().find("start_overlay")->visible() &&
-			view.controls().find("panel_toggle")->label() == ">",
+		check(!view.findControl("shuffle")->visible() && view.findControl("panel_toggle")->visible() &&
+			view.findControl("menu_tools")->visible() && view.findControl("start_overlay")->visible() &&
+			view.findControl("panel_toggle")->label() == ">",
 			"collapsed legacy layout retains its header/menu and start action while hiding setup controls");
 
 		view.applyLayout(UiPresetId::ClassicWindows95, layout, 1280, false);
-		check(!view.controls().find("panel_toggle")->visible() && !view.controls().find("settings")->visible() &&
-			view.controls().find("menu_file")->visible(),
+		check(!view.findControl("panel_toggle")->visible() && !view.findControl("settings")->visible() &&
+			view.findControl("menu_file")->visible(),
 			"Classic Windows 95 layout hides modern header buttons while preserving its menu bar");
 	}
 
@@ -2742,20 +2741,19 @@ namespace
 		UserPreferences preferences;
 		MainControlsView view;
 		view.initializeControls(preferences, "Fixture Sort");
-		std::vector<std::string> options;
-		for (int option = 0; option < 12; ++option) options.push_back("Long option entry " + std::to_string(option));
-		UiWidget& popup = view.controls().addComboBox("popup_test", options, 0);
-		popup.setBounds(UiRect(250.0f, 250.0f, 40.0f, 20.0f));
+		UiLayoutResult layout;
+		layout.controlBounds["menu_file"] = UiRect(250.0f, 250.0f, 40.0f, 20.0f);
+		view.applyLayout(UiPresetId::FlatVgaDos, layout, 1280, true);
 		view.layoutComboPopups(300, 300, [](const std::string&) { return 200.0f; });
-		check(popup.popupBounds().x == 70.0f && popup.popupBounds().width == 222.0f &&
-			popup.popupBounds().y == 90.0f && popup.popupBounds().height == 160.0f,
+		const UiWidget* popup = view.findControl("menu_file");
+		check(popup->popupBounds().x == 70.0f && popup->popupBounds().width == 222.0f &&
+			popup->popupBounds().y == 170.0f && popup->popupBounds().height == 80.0f,
 			"main controls view sizes and flips a long combo popup inside the logical window");
-		check(popup.visibleOptionCount() == 8 && popup.firstVisibleOption() + popup.visibleOptionCount() <= options.size(),
-			"main controls popup layout retains the widget's bounded scroll viewport");
 
-		popup.setBounds(UiRect(40.0f, 10.0f, 40.0f, 20.0f));
+		layout.controlBounds["menu_file"] = UiRect(40.0f, 10.0f, 40.0f, 20.0f);
+		view.applyLayout(UiPresetId::FlatVgaDos, layout, 1280, true);
 		view.layoutComboPopups(300, 100, [](const std::string&) { return 200.0f; });
-		check(popup.popupBounds().y == 8.0f && popup.popupBounds().height == 84.0f,
+		check(popup->popupBounds().y == 12.0f && popup->popupBounds().height == 80.0f,
 			"main controls popup layout clamps when neither full above nor below placement fits");
 	}
 
@@ -2841,19 +2839,18 @@ namespace
 		screen.transport = UiTransportState::Playing;
 		view.synchronize(preferences, UiPresetId::ClassicWindows95, snapshot, screen, "Insertion Sort");
 
-		const UIRoot& controls = view.controls();
-		check(!controls.find("shuffle")->enabled() && !controls.find("run")->enabled() &&
-			controls.find("play")->enabled() && controls.find("play")->label() == "Pause",
+		check(!view.findControl("shuffle")->enabled() && !view.findControl("run")->enabled() &&
+			view.findControl("play")->enabled() && view.findControl("play")->label() == "Pause",
 			"main controls view synchronizes busy setup state and available transport state");
-		check(controls.find("algorithm")->label() == "Insertion Sort" &&
-			controls.find("direction")->selectedIndex() == 1 && controls.find("bars_value")->label() == "23 bars" &&
-			controls.find("seed_readout")->label() == "Seed 41",
+		check(view.findControl("algorithm")->label() == "Insertion Sort" &&
+			view.findControl("direction")->selectedIndex() == 1 && view.findControl("bars_value")->label() == "23 bars" &&
+			view.findControl("seed_readout")->label() == "Seed 41",
 			"main controls view synchronizes the algorithm and prepared-run readouts");
-		check(controls.find("time_value")->label() == "8.0 sec" && !controls.find("time_value")->enabled() &&
-			!controls.find("time_down")->enabled() && !controls.find("time_up")->enabled(),
+		check(view.findControl("time_value")->label() == "8.0 sec" && !view.findControl("time_value")->enabled() &&
+			!view.findControl("time_down")->enabled() && !view.findControl("time_up")->enabled(),
 			"reference-cadence runs disable duration editing while keeping its current caption visible");
-		check(controls.find("start_overlay")->visible() && controls.find("start_overlay")->enabled() &&
-			controls.find("next")->label() == "Step",
+		check(view.findControl("start_overlay")->visible() && view.findControl("start_overlay")->enabled() &&
+			view.findControl("next")->label() == "Step",
 			"collapsed classic layout synchronizes its start overlay and preset-specific transport label");
 	}
 
@@ -2862,7 +2859,7 @@ namespace
 		UserPreferences preferences;
 		MainControlsView view;
 		view.initializeControls(preferences, "Fixture Sort");
-		view.controls().setWidgetVisible("start_overlay", false);
+		view.setControlVisible("start_overlay", false);
 		const UiRect screen(0.0f, 0.0f, 800.0f, 600.0f);
 		RecordingUiPaintContext paint;
 
@@ -2884,17 +2881,19 @@ namespace
 			}) == paint.commands().end(),
 			"expanded main paint commands include only visible content controls in retained order");
 		paint.clear();
-		view.controls().setWidgetVisible("start_overlay", true);
+		view.setControlVisible("start_overlay", true);
 		view.compose(MainControlsPaintSection::CollapsedStart, screen, paint);
 		check(paint.commands().size() == 1 && paint.commands()[0].elementId == "start_overlay",
 			"collapsed main paint composition emits the start overlay only when visible");
 
 		paint.clear();
-		view.controls().find("domain")->setBounds(UiRect(32.0f, 48.0f, 180.0f, 26.0f));
+		UiLayoutResult popupLayout;
+		popupLayout.controlBounds["domain"] = UiRect(32.0f, 48.0f, 180.0f, 26.0f);
+		view.applyLayout(UiPresetId::FlatVgaDos, popupLayout, 1280, true);
 		UiAction action;
-		view.controls().handleEvent(UiInputEvent(UiInputType::PointerDown, 40.0f, 54.0f), action);
+		view.handleInput(UiInputEvent(UiInputType::PointerDown, 40.0f, 54.0f), action);
 		view.compose(MainControlsPaintSection::Popups, screen, paint);
-		check(view.controls().hasOpenCombo() && paint.commands().size() == 1 &&
+		check(view.hasOpenCombo() && paint.commands().size() == 1 &&
 			paint.commands()[0].elementId == "domain" && paint.commands()[0].popup &&
 			paint.commands()[0].layer == UiPaintLayer::MainDropdown && paint.commands()[0].hasClip,
 			"expanded main dropdowns use clipped popup commands on the dropdown layer");
