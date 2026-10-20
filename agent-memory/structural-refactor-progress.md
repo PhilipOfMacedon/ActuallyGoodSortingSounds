@@ -96,4 +96,21 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - Release LNK4020 PDB type-record warnings remain present during `AppFrameworkTests` linking.
 
-Next: make the recorder a private shared implementation contract, then move one family strategy and its registration without altering the event sequence.
+Next: move one family strategy behind the private recorder contract without altering the event sequence.
+
+## 2026-10-19 — define the private recorder boundary
+
+Status: recorder boundary implemented; pending commit.
+
+- Moved `Recorder` into the non-public `TraceRecorder.h`, under `sortinglogic::detail`, so future family modules can record semantic operations without adding recorder internals to `SortingLogic.h`.
+- Moved operation/workspace budget exceptions and the accounted-state/event byte helpers into `SortingLogicInternal.h`, shared by recording and failure handling.
+- Verified the recorder class matches its original implementation apart from whitespace-only lines. The private helper header keeps one implementation of the invariant checks and trace accounting.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 8,218 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- Release `AppFrameworkTests` linking again emitted LNK4020 PDB type-record warnings; linking and execution succeeded.
+
+Next: move a small, isolated algorithm strategy into a family module, then expand the private strategy interface only as the actual family dependencies require.

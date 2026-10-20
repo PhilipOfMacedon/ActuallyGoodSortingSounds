@@ -57,6 +57,7 @@
   <ItemGroup>
     <ClInclude Include="SortingLogic.h" />
     <ClInclude Include="SortingLogicInternal.h" />
+    <ClInclude Include="TraceRecorder.h" />
     <ClInclude Include="TraceBuildService.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
