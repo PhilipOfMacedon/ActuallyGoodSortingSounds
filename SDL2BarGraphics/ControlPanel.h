@@ -66,7 +66,6 @@ private:
 	const UserPreferences& settings_;
 	InlineEditView inlineEditView_;
 	MainControlsView mainControlsView_;
-	UIRoot& mainUi_; // Temporary access alias while input, layout, and paint move behind the view boundary.
 	TimelineView timelineView_;
 	AppearanceEditorView appearanceEditorView_;
 	UiOverlayState overlayState_;
@@ -127,7 +126,6 @@ private:
 	void updateOverlayInputCapture();
 	void closeSettings();
 	void layoutAlgorithmMenu();
-	void layoutMainComboPopups();
 	void drawUiPaintCommand(const UiPaintCommand& command);
 	void drawAlgorithmMenu(const ThemePalette& palette);
 	bool handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action);

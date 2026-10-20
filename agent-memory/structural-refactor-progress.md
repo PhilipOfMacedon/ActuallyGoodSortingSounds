@@ -1871,3 +1871,11 @@ Removed `SimulationPreferences::profile`; settings, controller synchronization, 
 The full Visual Studio solution built in x64/x86 Debug/Release, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed with the repository's configured LF-to-CRLF notices. No generated input, trace, audio, or UI behavior changed; the smoke window remained closed.
 
 Next: classify or reduce the remaining request-level and option-level compatibility mirrors at their API boundaries, then continue the main-control view/paint extraction and test registration work from the fixed twelve-item audit. Keep measurement-only candidates gated by evidence.
+
+## 2026-10-20 — move main combo popup geometry into its view
+
+Moved main-control combo popup sizing, clipping, and above/below placement from `ControlPanel` into `MainControlsView`. The view accepts a small text-width callback so the SDL/renderer adapter retains font measurement while the view owns placement. Removed the unused duplicate popup-bounds map from `UiLayoutResult` and removed `ControlPanel`'s temporary `mainUi_` root alias. Added headless cases for a content-wider popup, screen-edge placement, and the bounded scroll viewport.
+
+The full solution built in x64/x86 Debug/Release, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed. The active visual behavior is unchanged; the GUI smoke window remained closed.
+
+Remaining UI work is in the finite audit: finish narrowing `ControlPanel`'s access to the main view, and decide whether any renderer-specific text/chrome needs the shared paint-command path. Do not duplicate specialized theme rendering merely to route every rectangle through one type.

@@ -129,7 +129,6 @@ struct UiLayoutResult
 	UiRect chartViewport;
 	UiRect telemetry;
 	std::map<std::string, UiRect> controlBounds;
-	std::map<std::string, UiRect> popupBounds;
 	std::map<std::string, std::vector<UiRect> > interactiveSubregions;
 	std::map<std::string, UiRect> clips;
 	std::vector<std::string> focusOrder;

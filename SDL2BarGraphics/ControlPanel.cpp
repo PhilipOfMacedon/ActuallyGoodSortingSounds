@@ -260,7 +260,7 @@ namespace
 
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
-	inlineEditView_(), mainControlsView_(), mainUi_(mainControlsView_.controls()), timelineView_(), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
+	inlineEditView_(), mainControlsView_(), timelineView_(), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
 		paletteIndex(activeTheme(settings).palette)), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), algorithmProfileView_(measureLogicalTextWidth), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
@@ -295,9 +295,9 @@ void ControlPanel::createWidgets()
 	mainControlsView_.initializeControls(settings_,
 		algorithmLabel(static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm)));
 	settingsPanelView_.initializeControls(settings_);
-	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
+	for (std::size_t i = 0; i < mainControlsView_.controls().widgets().size(); ++i)
 	{
-		const UiWidget& widget = *mainUi_.widgets()[i];
+		const UiWidget& widget = *mainControlsView_.controls().widgets()[i];
 		labels_[widget.id()].reset(new TextLabel(widget.label(), "Courier New Bold", 16, { 238, 246, 249, 255 }));
 	}
 	for (std::size_t i = 0; i < appearanceEditorView_.controls().widgets().size(); ++i)
@@ -313,9 +313,9 @@ void ControlPanel::createWidgets()
 			labels_[widget.id() + "#option" + std::to_string(option)].reset(
 				new TextLabel(widget.options()[option], "Courier New Bold", 14, { 238, 246, 249, 255 }));
 	}
-	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
+	for (std::size_t i = 0; i < mainControlsView_.controls().widgets().size(); ++i)
 	{
-		const UiWidget& widget = *mainUi_.widgets()[i];
+		const UiWidget& widget = *mainControlsView_.controls().widgets()[i];
 		for (std::size_t option = 0; option < widget.options().size(); ++option)
 			labels_[widget.id() + "#option" + std::to_string(option)].reset(
 				new TextLabel(widget.options()[option], "Courier New Bold", 14, { 238, 246, 249, 255 }));
@@ -354,7 +354,8 @@ void ControlPanel::updateLayout()
 	layoutInput.contentGap = themeNumber(renderPreferences_, "layout.content_gap", 14.0f);
 	layoutInput.timelineArrowSize = themeNumber(renderPreferences_, "scrollbar.arrow_size", 14.0f);
 	std::vector<std::string> controlIds;
-	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i) controlIds.push_back(mainUi_.widgets()[i]->id());
+	for (std::size_t i = 0; i < mainControlsView_.controls().widgets().size(); ++i)
+		controlIds.push_back(mainControlsView_.controls().widgets()[i]->id());
 	layoutResult_ = calculateUiLayout(preset, layoutInput, controlIds);
 	mainControlsView_.applyLayout(preset, layoutResult_, width_, settings_.visual.panelExpanded);
 	headerBounds_ = layoutResult_.header;
@@ -376,7 +377,7 @@ void ControlPanel::updateLayout()
 			widget->setPresentation(preset != UiPresetId::Current ? UiWidgetPresentation::RadioGroup : UiWidgetPresentation::Standard);
 		else widget->setPresentation(UiWidgetPresentation::Standard);
 	}
-	gearBounds_ = mainUi_.find("settings")->bounds();
+	gearBounds_ = mainControlsView_.controls().find("settings")->bounds();
 
 	const float panelWidth = std::min(520.0f, std::max(180.0f, static_cast<float>(width_) - 32.0f));
 	const float panelHeight = std::min(650.0f, std::max(300.0f, static_cast<float>(height_) - 54.0f));
@@ -384,51 +385,6 @@ void ControlPanel::updateLayout()
 		panelWidth, std::min(panelHeight, std::max(200.0f, static_cast<float>(height_) - 50.0f)));
 	settingsPanelView_.setPanelBounds(settingsPanelBounds, overlayState_.is(UiOverlayId::Settings));
 	if (appearanceEditorOpen()) layoutAppearanceEditor();
-}
-
-void ControlPanel::layoutMainComboPopups()
-{
-	layoutResult_.popupBounds.clear();
-	const ResolvedTextStyle textStyle = resolveTextStyle(13.0f);
-
-	for (std::size_t i = 0; i < mainUi_.widgets().size(); ++i)
-	{
-		UiWidget* widget = mainUi_.widgets()[i].get();
-		widget->setPopupBounds(UiRect());
-		if (widget->kind() != UiWidgetKind::ComboBox || !widget->visible() ||
-			widget->bounds().width <= 0.0f || widget->bounds().height <= 0.0f || widget->options().empty())
-			continue;
-
-		float popupWidth = widget->bounds().width;
-		for (std::size_t option = 0; option < widget->options().size(); ++option)
-		{
-			const glm::vec2 measured = TextLabel::measureText(widget->options()[option], textStyle);
-			if (measured.y > 0.0f)
-				popupWidth = std::max(popupWidth, measured.x * textStyle.logicalHeight / measured.y + 22.0f);
-		}
-		popupWidth = std::min(popupWidth, std::max(0.0f, static_cast<float>(width_) - 16.0f));
-		const std::size_t visibleOptions = widget->visibleOptionCount();
-		const float popupHeight = std::min(widget->bounds().height * static_cast<float>(visibleOptions),
-			std::max(0.0f, static_cast<float>(height_) - 16.0f));
-		const float popupX = std::max(8.0f, std::min(widget->bounds().x,
-			static_cast<float>(width_) - popupWidth - 8.0f));
-		float popupY = widget->bounds().y + widget->bounds().height;
-		bool popupAbove = false;
-		if (popupY + popupHeight > static_cast<float>(height_) - 8.0f)
-		{
-			const float aboveY = widget->bounds().y - popupHeight;
-			if (aboveY >= 8.0f)
-			{
-				popupY = aboveY;
-				popupAbove = true;
-			}
-			else popupY = std::max(8.0f, static_cast<float>(height_) - popupHeight - 8.0f);
-		}
-		const UiRect popup(popupX, popupY, popupWidth, popupHeight);
-		widget->setPopupAbove(popupAbove);
-		widget->setPopupBounds(popup);
-		layoutResult_.popupBounds[widget->id()] = popup;
-	}
 }
 
 void ControlPanel::layoutSettingsControls()
@@ -443,7 +399,12 @@ void ControlPanel::layoutInteractiveViews()
 {
 	if (width_ <= 0 || height_ <= 0) return;
 	layoutSettingsControls();
-	layoutMainComboPopups();
+	const ResolvedTextStyle popupTextStyle = resolveTextStyle(13.0f);
+	mainControlsView_.layoutComboPopups(width_, height_, [popupTextStyle](const std::string& text)
+	{
+		const glm::vec2 measured = TextLabel::measureText(text, popupTextStyle);
+		return measured.y > 0.0f ? measured.x * popupTextStyle.logicalHeight / measured.y : 0.0f;
+	});
 	layoutAlgorithmMenu();
 }
 
@@ -461,7 +422,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 {
 	for (std::map<std::string, std::unique_ptr<TextLabel> >::iterator i = labels_.begin(); i != labels_.end(); ++i)
 	{
-		const UiWidget* widget = mainUi_.find(i->first);
+		const UiWidget* widget = mainControlsView_.controls().find(i->first);
 		if (!widget) widget = settingsPanelView_.controls().find(i->first);
 		if (widget)
 		{
@@ -513,8 +474,8 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		return handleAlgorithmMenuEvent(event, action);
 	if (!settingsOpen() && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 	{
-		const UiWidget* bars = mainUi_.find("bars_value");
-		const UiWidget* duration = mainUi_.find("time_value");
+		const UiWidget* bars = mainControlsView_.controls().find("bars_value");
+		const UiWidget* duration = mainControlsView_.controls().find("time_value");
 		std::string targetWidgetId;
 		if (bars && bars->visible() && bars->enabled() && inRect(bars->bounds(), event.button.x, event.button.y))
 			targetWidgetId = "bars_value";
@@ -601,7 +562,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Controls, sdlUiEventContext(event)))
 		return settingsOpen() || action.kind != AppActionKind::None;
 	UiAction uiAction;
-	const bool consumed = (settingsOpen() ? settingsPanelView_.controls() : mainUi_).handleEvent(input, uiAction);
+	const bool consumed = (settingsOpen() ? settingsPanelView_.controls() : mainControlsView_.controls()).handleEvent(input, uiAction);
 	if (consumed && (uiAction.viewCommand != UiAction::ViewCommand::None || uiAction.appAction.kind != AppActionKind::None ||
 		uiAction.event.kind != UiEventKind::None))
 	{
@@ -618,7 +579,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	if (action.event.kind == UiEventKind::SelectionChanged &&
 		(action.event.controlId == "menu_file" || action.event.controlId == "menu_view" || action.event.controlId == "menu_tools"))
 	{
-		UiWidget* menu = mainUi_.find(action.event.controlId);
+		UiWidget* menu = mainControlsView_.controls().find(action.event.controlId);
 		if (menu) menu->setSelectedIndex(0);
 		const UiAction command = ui::mainMenuSelectionAction(action.event.controlId, action.event.selection);
 		if (command.viewCommand != UiAction::ViewCommand::None)
@@ -646,7 +607,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	{
 		if (!overlayState_.openSettings()) return;
 		updateOverlayInputCapture();
-		mainUi_.closeCombo();
+		mainControlsView_.controls().closeCombo();
 		return;
 	}
 	if (action.viewCommand == UiAction::ViewCommand::CloseSettings)
@@ -680,7 +641,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	}
 	if (action.appAction.kind == AppActionKind::SetUiPreset)
 	{
-		mainUi_.closeCombo();
+		mainControlsView_.controls().closeCombo();
 		settingsPanelView_.controls().closeCombo();
 		timelineView_.cancelDrag();
 		cancelInlineEdit();
@@ -768,9 +729,9 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	mainControlsView_.compose(MainControlsPaintSection::HeaderButtons, screen, paintContext);
 	float titleLeft = 48.0f;
 	float titleRight = static_cast<float>(width_) - 54.0f;
-	if (classicVga && !windows95 && mainUi_.find("menu_tools")->visible())
-		titleLeft = mainUi_.find("menu_tools")->bounds().x + mainUi_.find("menu_tools")->bounds().width + 12.0f;
-	if (!mainUi_.find("settings")->visible()) titleRight = static_cast<float>(width_) - 12.0f;
+	if (classicVga && !windows95 && mainControlsView_.controls().find("menu_tools")->visible())
+		titleLeft = mainControlsView_.controls().find("menu_tools")->bounds().x + mainControlsView_.controls().find("menu_tools")->bounds().width + 12.0f;
+	if (!mainControlsView_.controls().find("settings")->visible()) titleRight = static_cast<float>(width_) - 12.0f;
 	UiRect titleBounds(titleLeft, 5.0f, std::max(1.0f, titleRight - titleLeft), 22.0f);
 	if (!windows95) drawText(*title_, titleBounds, 17.0f, palette.text, TextLayer, ClipBounds(), TextOverflowPolicy::Marquee);
 	mainControlsView_.compose(MainControlsPaintSection::Menus, screen, paintContext);
@@ -800,10 +761,10 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 				ClipBounds(chart.x, chart.y, chart.width, chart.height), TextOverflowPolicy::Marquee,
 				TextHorizontalAlignment::Left);
 		}
-		if (mainUi_.find("start_overlay")->visible())
+		if (mainControlsView_.controls().find("start_overlay")->visible())
 		{
 			const UiRect chart = chartViewport_;
-			const UiRect button = mainUi_.find("start_overlay")->bounds();
+			const UiRect button = mainControlsView_.controls().find("start_overlay")->bounds();
 			const float cardWidth = std::min(480.0f, std::max(0.0f, chart.width - 24.0f));
 			const UiRect card(std::max(0.0f, chart.x + (chart.width - cardWidth) * 0.5f),
 				std::max(headerBounds_.height + 8.0f, button.y - 74.0f), cardWidth, 142.0f);
@@ -837,7 +798,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 		profilePalette.accent = toUiColor(palette.accent);
 		profilePalette.text = toUiColor(palette.text);
 		profilePalette.mutedText = toUiColor(palette.mutedText);
-		const UiRect seed = mainUi_.find("seed_readout")->bounds();
+		const UiRect seed = mainControlsView_.controls().find("seed_readout")->bounds();
 		auto renderProfileCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
 		DispatchingUiPaintContext<decltype(renderProfileCommand)> paintContext(renderProfileCommand);
 		algorithmProfileView_.compose(screenModel_.algorithm, screenModel_.algorithmCapabilities,
@@ -1311,7 +1272,7 @@ void ControlPanel::closeSettings()
 
 void ControlPanel::updateOverlayInputCapture()
 {
-	mainUi_.setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
+	mainControlsView_.controls().setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
 	settingsPanelView_.setModalActive(overlayState_.is(UiOverlayId::Settings));
 	appearanceEditorView_.controls().setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
 }
@@ -1322,7 +1283,7 @@ void ControlPanel::openAlgorithmMenu()
 	const sortinglogic::AlgorithmDescriptor* current = sortinglogic::algorithmDescriptor(
 		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
 	algorithmBrowser_.begin(current ? current->familyId : sortinglogic::FamilyId());
-	mainUi_.closeCombo();
+	mainControlsView_.controls().closeCombo();
 	updateOverlayInputCapture();
 	SDL_StartTextInput();
 	layoutAlgorithmMenu();
@@ -1371,7 +1332,7 @@ void ControlPanel::openAppearanceEditor()
 	if (!overlayState_.openAppearanceEditor()) return;
 	appearanceEditorView_.begin(settings_.appearance);
 	settingsPanelView_.handleNavigation(UiAction::ViewCommand::ShowAppearanceSettings);
-	mainUi_.closeCombo();
+	mainControlsView_.controls().closeCombo();
 	settingsPanelView_.controls().closeCombo();
 	appearanceEditorView_.controls().closeCombo();
 	updateOverlayInputCapture();
@@ -1687,7 +1648,7 @@ void ControlPanel::completeActionResult(const AppAction& action, const sortinglo
 void ControlPanel::layoutAlgorithmMenu()
 {
 	if (!algorithmBrowserOpen() || width_ <= 0 || height_ <= 0) return;
-	algorithmBrowser_.layout(mainUi_.find("algorithm")->bounds(), width_, height_);
+	algorithmBrowser_.layout(mainControlsView_.controls().find("algorithm")->bounds(), width_, height_);
 }
 
 bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action)

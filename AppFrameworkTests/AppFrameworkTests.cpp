@@ -2737,6 +2737,28 @@ namespace
 			"Classic Windows 95 layout hides modern header buttons while preserving its menu bar");
 	}
 
+	void testMainControlsViewOwnsComboPopupLayout()
+	{
+		UserPreferences preferences;
+		MainControlsView view;
+		view.initializeControls(preferences, "Fixture Sort");
+		std::vector<std::string> options;
+		for (int option = 0; option < 12; ++option) options.push_back("Long option entry " + std::to_string(option));
+		UiWidget& popup = view.controls().addComboBox("popup_test", options, 0);
+		popup.setBounds(UiRect(250.0f, 250.0f, 40.0f, 20.0f));
+		view.layoutComboPopups(300, 300, [](const std::string&) { return 200.0f; });
+		check(popup.popupBounds().x == 70.0f && popup.popupBounds().width == 222.0f &&
+			popup.popupBounds().y == 90.0f && popup.popupBounds().height == 160.0f,
+			"main controls view sizes and flips a long combo popup inside the logical window");
+		check(popup.visibleOptionCount() == 8 && popup.firstVisibleOption() + popup.visibleOptionCount() <= options.size(),
+			"main controls popup layout retains the widget's bounded scroll viewport");
+
+		popup.setBounds(UiRect(40.0f, 10.0f, 40.0f, 20.0f));
+		view.layoutComboPopups(300, 100, [](const std::string&) { return 200.0f; });
+		check(popup.popupBounds().y == 8.0f && popup.popupBounds().height == 84.0f,
+			"main controls popup layout clamps when neither full above nor below placement fits");
+	}
+
 	void testTimelineViewOwnsSeekInputAndPaintComposition()
 	{
 		TimelineView view;
@@ -4479,6 +4501,7 @@ int main(int argc, char* argv[])
 	testMainControlsViewOwnsInlineValueSemantics();
 	testMainControlsViewSynchronizesTextPresentation();
 	testMainControlsViewAppliesLayoutAndVisibility();
+	testMainControlsViewOwnsComboPopupLayout();
 	testTimelineViewOwnsSeekInputAndPaintComposition();
 	testMainControlsViewSynchronizesPresentationState();
 	testMainControlsViewComposesControlPaintCommands();

@@ -195,6 +195,43 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 	controls_.find("panel_toggle")->setLabel(expanded ? "v" : ">");
 }
 
+void MainControlsView::layoutComboPopups(int logicalWidth, int logicalHeight,
+	const std::function<float(const std::string&)>& measureOptionWidth)
+{
+	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+	{
+		UiWidget* widget = controls_.widgets()[i].get();
+		widget->setPopupBounds(UiRect());
+		if (widget->kind() != UiWidgetKind::ComboBox || !widget->visible() ||
+			widget->bounds().width <= 0.0f || widget->bounds().height <= 0.0f || widget->options().empty())
+			continue;
+
+		float popupWidth = widget->bounds().width;
+		for (std::size_t option = 0; option < widget->options().size(); ++option)
+			popupWidth = std::max(popupWidth, measureOptionWidth(widget->options()[option]) + 22.0f);
+		popupWidth = std::min(popupWidth, std::max(0.0f, static_cast<float>(logicalWidth) - 16.0f));
+		const std::size_t visibleOptions = widget->visibleOptionCount();
+		const float popupHeight = std::min(widget->bounds().height * static_cast<float>(visibleOptions),
+			std::max(0.0f, static_cast<float>(logicalHeight) - 16.0f));
+		const float popupX = std::max(8.0f, std::min(widget->bounds().x,
+			static_cast<float>(logicalWidth) - popupWidth - 8.0f));
+		float popupY = widget->bounds().y + widget->bounds().height;
+		bool popupAbove = false;
+		if (popupY + popupHeight > static_cast<float>(logicalHeight) - 8.0f)
+		{
+			const float aboveY = widget->bounds().y - popupHeight;
+			if (aboveY >= 8.0f)
+			{
+				popupY = aboveY;
+				popupAbove = true;
+			}
+			else popupY = std::max(8.0f, static_cast<float>(logicalHeight) - popupHeight - 8.0f);
+		}
+		widget->setPopupAbove(popupAbove);
+		widget->setPopupBounds(UiRect(popupX, popupY, popupWidth, popupHeight));
+	}
+}
+
 void MainControlsView::synchronizeText(const UserPreferences& preferences, UiPresetId activePreset,
 	const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel, std::uint32_t nowMs)
 {
