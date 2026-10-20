@@ -345,3 +345,20 @@ Verification:
 - `git diff --check`: passed.
 
 Next: extract view-level UI state and action binding from the `ControlPanel`/controller facade, starting with the smallest view seam that can share behavior between runtime and tests.
+
+## 2026-10-19 — decouple generic UI widgets from the app controller
+
+Status: implementation and focused verification complete.
+
+- Moved `AppAction` and its enums into `AppActions.h`, a value-only contract that uses standard library types and a forward declaration for appearance edits.
+- Changed `UiLayer.h` to include the action contract instead of `AppController.h`, removing its transitive dependency on settings persistence, simulation, and the trace-build service.
+- Added direct SortingLogic and settings includes to `UiArchitecture.h`, which consumes those types. The first build exposed that it had also relied on the controller's accidental transitive includes; the header now declares its real dependencies.
+- Listed the new contract in the Visual Studio project and filters. No action payload, widget event, or runtime dispatch behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed.
+
+Next: extract one view's composition and state from `ControlPanel`, keeping event-to-action binding at the facade boundary and preserving the shared painting path.

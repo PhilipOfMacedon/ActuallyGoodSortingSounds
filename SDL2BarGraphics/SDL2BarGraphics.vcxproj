@@ -43,6 +43,7 @@
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AppActions.h" />
     <ClInclude Include="AppController.h" />
     <ClInclude Include="AudioPresentationBridge.h" />
     <ClInclude Include="BarCountSteps.h" />

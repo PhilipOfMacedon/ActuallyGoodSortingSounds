@@ -4,8 +4,10 @@
 #include <string>
 #include <vector>
 
+#include "../SortingLogic/SortingLogic.h"
 #include "UiLayer.h"
 #include "UiAppearance.h"
+#include "UserSettings.h"
 
 enum class UiTransportState { NoTrace, Ready, Playing, Building, Queued, Preparing, Replay };
 
