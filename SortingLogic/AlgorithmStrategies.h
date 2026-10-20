@@ -47,6 +47,8 @@ namespace sortinglogic
 		void poplarHeapSort(detail::Recorder& recorder);
 		void classicTreeSort(detail::Recorder& recorder);
 		void treeSort(detail::Recorder& recorder);
+		void classicTournamentSort(detail::Recorder& recorder);
+		void tournamentSort(detail::Recorder& recorder);
 		void aaTreeSort(detail::Recorder& recorder);
 		void avlTreeSort(detail::Recorder& recorder);
 		void splayTreeSort(detail::Recorder& recorder);

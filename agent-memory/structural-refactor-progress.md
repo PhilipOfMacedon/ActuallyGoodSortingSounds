@@ -1554,3 +1554,11 @@ Added a headless `TimelineView` that owns timeline hit regions, event-arrow acti
 Headless checks cover previous/next actions, disabled input, click/drag/release seeks, clamping, progress fraction, painter order, legacy ticks, and collapsed/empty-trace visibility. `AppFrameworkTests` passed in x64 Debug and Release; full x64 Debug and Release solution builds passed. `git diff --check` passed. No live visual or performance claim is made.
 
 Next: continue reducing main-panel composition decisions behind view contracts while keeping renderer resources in the host, then resume sorting-core and configuration extraction.
+
+## 2026-10-20 — extract tournament strategies from the sorting coordinator
+
+Moved Classic Tournament Sort and Tournament Sort (Loser Tree) into `TournamentStrategies.cpp`, declared them through the existing strategy interface, and changed their catalog builders to call the strategies directly. Removed their implementations and fallback dispatch cases from `SortingLogic.cpp`; operation recording and algorithm behavior were preserved.
+
+The x64 Debug and Release solution builds passed. The focused tournament suite passed in both configurations with 229,775 checks and no failures. `git diff --check` passed. No runtime-performance claim is made; this is a source ownership and compile-time organization change.
+
+Next: inspect the remaining sorting coordinator for another cohesive boundary to extract, then update this log and verify the affected contract before each checkpoint.
