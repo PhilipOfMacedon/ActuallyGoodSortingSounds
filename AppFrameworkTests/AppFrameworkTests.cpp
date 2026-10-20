@@ -31,6 +31,7 @@
 #include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
 #include "../SDL2BarGraphics/UiArchitecture.h"
+#include "../SDL2BarGraphics/UiActionRouting.h"
 #include "../SDL2BarGraphics/UserSettings.h"
 #include "../SDL2BarGraphics/WindowsFontCatalog.h"
 
@@ -152,15 +153,15 @@ namespace
 
 	void testModifierStepSizes()
 	{
-		check(stepDeltaWithModifiers(10.0f, false, false) == 10.0f &&
-			stepDeltaWithModifiers(10.0f, true, false) == 1.0f &&
-			stepDeltaWithModifiers(10.0f, false, true) == 100.0f &&
-			stepDeltaWithModifiers(10.0f, true, true) == 10.0f,
+		check(ui::stepDeltaWithModifiers(10.0f, false, false) == 10.0f &&
+			ui::stepDeltaWithModifiers(10.0f, true, false) == 1.0f &&
+			ui::stepDeltaWithModifiers(10.0f, false, true) == 100.0f &&
+			ui::stepDeltaWithModifiers(10.0f, true, true) == 10.0f,
 			"bar step uses 10 units by default, Ctrl divides by ten, and Shift multiplies by ten");
-		check(stepDeltaWithModifiers(1.0f, false, false) == 1.0f &&
-			std::fabs(stepDeltaWithModifiers(1.0f, true, false) - 0.1f) < 0.00001f &&
-			stepDeltaWithModifiers(1.0f, false, true) == 10.0f &&
-			stepDeltaWithModifiers(1.0f, true, true) == 1.0f,
+		check(ui::stepDeltaWithModifiers(1.0f, false, false) == 1.0f &&
+			std::fabs(ui::stepDeltaWithModifiers(1.0f, true, false) - 0.1f) < 0.00001f &&
+			ui::stepDeltaWithModifiers(1.0f, false, true) == 10.0f &&
+			ui::stepDeltaWithModifiers(1.0f, true, true) == 1.0f,
 			"duration step uses one second by default, Ctrl selects a tenth, and Shift selects ten seconds");
 
 		UIRoot root;
@@ -173,6 +174,29 @@ namespace
 		root.handleEvent(UiInputEvent(UiInputType::PointerUp, 10, 10), action);
 		check(action.event.kind == UiEventKind::Activated && action.event.control,
 			"shared button activation retains Ctrl held across the pointer press and release");
+
+		UiEvent bars;
+		bars.controlId = "bars_up";
+		bars.kind = UiEventKind::Activated;
+		bars.control = true;
+		check(ui::mainControlActivationAction(bars).kind == AppActionKind::AdjustItemCount &&
+			ui::mainControlActivationAction(bars).value == 1.0f,
+			"bar activation maps through the shared action router and Ctrl selects a single-item increment");
+		bars.controlId = "bars_down";
+		bars.control = false;
+		bars.shift = true;
+		check(ui::mainControlActivationAction(bars).value == -100.0f,
+			"bar activation preserves the existing Shift decade decrement");
+		UiEvent time;
+		time.controlId = "time_down";
+		time.kind = UiEventKind::Activated;
+		time.control = true;
+		check(ui::mainControlActivationAction(time).kind == AppActionKind::AdjustDuration &&
+			std::fabs(ui::mainControlActivationAction(time).value + 0.1f) < 0.00001f,
+			"duration activation maps through the shared router with Ctrl selecting a tenth-second decrement");
+		time.controlId = "unknown";
+		check(ui::mainControlActivationAction(time).kind == AppActionKind::None,
+			"unrelated activated controls do not produce numeric step commands");
 	}
 
 	void testAppearanceAndPresetArchitecture()
@@ -841,29 +865,29 @@ namespace
 
 	void testMainMenuSelectionActions()
 	{
-		const UiAction build = mainMenuSelectionAction("menu_file", 1);
-		const UiAction generate = mainMenuSelectionAction("menu_file", 2);
-		const UiAction reset = mainMenuSelectionAction("menu_file", 3);
+		const UiAction build = ui::mainMenuSelectionAction("menu_file", 1);
+		const UiAction generate = ui::mainMenuSelectionAction("menu_file", 2);
+		const UiAction reset = ui::mainMenuSelectionAction("menu_file", 3);
 		check(build.appAction.kind == AppActionKind::BuildTrace &&
 			generate.appAction.kind == AppActionKind::GenerateAndPlay && reset.appAction.kind == AppActionKind::Reset,
 			"File menu selections map to the existing trace, generate-play, and reset commands");
 
-		const UiAction collapse = mainMenuSelectionAction("menu_view", 1);
-		const UiAction fullscreen = mainMenuSelectionAction("menu_view", 2);
+		const UiAction collapse = ui::mainMenuSelectionAction("menu_view", 1);
+		const UiAction fullscreen = ui::mainMenuSelectionAction("menu_view", 2);
 		check(collapse.appAction.kind == AppActionKind::TogglePanelExpanded &&
 			fullscreen.appAction.kind == AppActionKind::ToggleBorderlessFullscreen,
 			"View menu selections map to the existing panel and fullscreen commands");
 
-		const UiAction browser = mainMenuSelectionAction("menu_tools", 1);
-		const UiAction settings = mainMenuSelectionAction("menu_tools", 2);
-		const UiAction appearance = mainMenuSelectionAction("menu_tools", 3);
+		const UiAction browser = ui::mainMenuSelectionAction("menu_tools", 1);
+		const UiAction settings = ui::mainMenuSelectionAction("menu_tools", 2);
+		const UiAction appearance = ui::mainMenuSelectionAction("menu_tools", 3);
 		check(browser.viewCommand == UiAction::ViewCommand::OpenAlgorithmMenu &&
 			settings.viewCommand == UiAction::ViewCommand::OpenSettings &&
 			appearance.viewCommand == UiAction::ViewCommand::OpenAppearanceEditor,
 			"Tools menu selections map to typed view commands rather than string-dispatched actions");
 
-		const UiAction invalidSelection = mainMenuSelectionAction("menu_file", 99);
-		const UiAction unknownMenu = mainMenuSelectionAction("menu_other", 1);
+		const UiAction invalidSelection = ui::mainMenuSelectionAction("menu_file", 99);
+		const UiAction unknownMenu = ui::mainMenuSelectionAction("menu_other", 1);
 		check(invalidSelection.appAction.kind == AppActionKind::None &&
 			invalidSelection.viewCommand == UiAction::ViewCommand::None &&
 			unknownMenu.appAction.kind == AppActionKind::None &&
@@ -887,11 +911,11 @@ namespace
 		const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
 		for (std::size_t i = 0; i < catalog.size(); ++i)
 			if (&catalog[i] == insertion) insertionIndex = static_cast<int>(i);
-		const AppAction numericSelection = normalizeUiCatalogAction(
+		const AppAction numericSelection = ui::normalizeCatalogAction(
 			AppAction(AppActionKind::SelectAlgorithm, 0.0f, insertionIndex));
-		const AppAction stableSelection = normalizeUiCatalogAction(
+		const AppAction stableSelection = ui::normalizeCatalogAction(
 			AppAction(AppActionKind::SelectAlgorithm, insertion->familyId, insertion->variantId));
-		const AppAction invalidSelection = normalizeUiCatalogAction(
+		const AppAction invalidSelection = ui::normalizeCatalogAction(
 			AppAction(AppActionKind::SelectAlgorithm, 0.0f, static_cast<int>(catalog.size())));
 		check(numericSelection.familyId == insertion->familyId && numericSelection.variantId == insertion->variantId &&
 			stableSelection.familyId == insertion->familyId && stableSelection.variantId == insertion->variantId &&
@@ -899,9 +923,9 @@ namespace
 			"algorithm selection converts legacy catalog indices to stable IDs and rejects invalid selections");
 
 		AppAction shellSelection(AppActionKind::SetShellGapSequence, 0.0f, 2);
-		const AppAction normalizedShell = normalizeUiCatalogAction(shellSelection);
+		const AppAction normalizedShell = ui::normalizeCatalogAction(shellSelection);
 		AppAction invalidShell(AppActionKind::SetShellGapSequence, 0.0f, 99);
-		const AppAction fallbackShell = normalizeUiCatalogAction(invalidShell);
+		const AppAction fallbackShell = ui::normalizeCatalogAction(invalidShell);
 		check(normalizedShell.selection == shell->supportedOptions[2].value &&
 			fallbackShell.selection == static_cast<int>(sortinglogic::ShellGapSequence::Halving),
 			"Shell option indices resolve through catalog values with the established safe fallback");
@@ -915,15 +939,15 @@ namespace
 		}
 		AppAction indexedOption(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId, option.groupId);
 		indexedOption.selection = groupIndex;
-		const AppAction normalizedOption = normalizeUiCatalogAction(indexedOption);
+		const AppAction normalizedOption = ui::normalizeCatalogAction(indexedOption);
 		const AppAction stableOption(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId,
 			option.groupId, option.stableId, option.value + 1);
-		const AppAction normalizedStableOption = normalizeUiCatalogAction(stableOption);
+		const AppAction normalizedStableOption = ui::normalizeCatalogAction(stableOption);
 		AppAction invalidOption(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId, option.groupId);
 		invalidOption.selection = 999;
 		check(normalizedOption.optionStableId == option.stableId && normalizedOption.selection == option.value &&
 			normalizedStableOption.optionStableId == option.stableId && normalizedStableOption.selection == option.value &&
-			normalizeUiCatalogAction(invalidOption).kind == AppActionKind::None,
+			ui::normalizeCatalogAction(invalidOption).kind == AppActionKind::None,
 			"algorithm option indices and stable IDs resolve to catalog values and invalid options are rejected");
 	}
 

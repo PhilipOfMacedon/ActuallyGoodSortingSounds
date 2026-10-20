@@ -47,6 +47,7 @@
     <ClCompile Include="UiLayer.cpp" />
     <ClCompile Include="UiAppearance.cpp" />
     <ClCompile Include="UiArchitecture.cpp" />
+    <ClCompile Include="UiActionRouting.cpp" />
     <ClCompile Include="WindowsFontCatalog.cpp" />
     <ClCompile Include="UserSettings.cpp" />
     <ClCompile Include="Window.cpp" />
@@ -86,6 +87,7 @@
     <ClInclude Include="UiLayer.h" />
     <ClInclude Include="UiAppearance.h" />
     <ClInclude Include="UiArchitecture.h" />
+    <ClInclude Include="UiActionRouting.h" />
     <ClInclude Include="WindowsFontCatalog.h" />
     <ClInclude Include="UserSettings.h" />
     <ClInclude Include="Window.h" />

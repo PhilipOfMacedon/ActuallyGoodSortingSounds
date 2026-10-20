@@ -96,20 +96,11 @@ struct UiScreenModel
 	UiScreenModel();
 };
 
-// Converts the retained menu widget's stable control ID and selected option
-// into the typed command consumed by the application/view coordinator.
-UiAction mainMenuSelectionAction(const std::string& menuId, int selection);
-AppAction normalizeUiCatalogAction(const AppAction& action);
-
 UiScreenModel buildUiScreenModel(const sortinglogic::RenderSnapshot& snapshot,
 	const UserPreferences& preferences, bool playbackPending, const std::string& applicationStatus = std::string());
 
 // Expose semantic Merge roles on the main array when its auxiliary buffer is hidden.
 std::vector<sortinglogic::ActiveRole> rolesVisibleOnMainArray(const sortinglogic::RenderSnapshot& snapshot);
-
-// Ctrl scales a step down by one decade; Shift scales it up. Pressing both
-// (or neither) keeps the control's normal step size.
-float stepDeltaWithModifiers(float baseStep, bool control, bool shift);
 
 // Percentage of the event trace applied by the current cursor. A completed
 // empty trace is still complete; a missing or building trace has no progress.

@@ -15,6 +15,7 @@
 #include <commdlg.h>
 
 #include "LayoutMetrics.h"
+#include "UiActionRouting.h"
 #include "SdlUiEventAdapter.h"
 #include "SettingsScroll.h"
 #include "WindowsFontCatalog.h"
@@ -1308,7 +1309,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	{
 		UiWidget* menu = mainUi_.find(action.event.controlId);
 		if (menu) menu->setSelectedIndex(0);
-		const UiAction command = mainMenuSelectionAction(action.event.controlId, action.event.selection);
+		const UiAction command = ui::mainMenuSelectionAction(action.event.controlId, action.event.selection);
 		if (command.viewCommand != UiAction::ViewCommand::None)
 			processAction(command, output);
 		else
@@ -1369,7 +1370,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		action.appAction.kind == AppActionKind::SetShellGapSequence ||
 		action.appAction.kind == AppActionKind::SetAlgorithmOption)
 	{
-		output = normalizeUiCatalogAction(action.appAction);
+		output = ui::normalizeCatalogAction(action.appAction);
 		return;
 	}
 	if (action.appAction.kind == AppActionKind::SelectAudioBand)
@@ -1378,20 +1379,10 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		updateAudioControls();
 		layoutSettingsControls();
 	}
-	if (action.event.kind == UiEventKind::Activated &&
-		(action.event.controlId == "bars_down" || action.event.controlId == "bars_up"))
+	const AppAction controlAction = ui::mainControlActivationAction(action.event);
+	if (controlAction.kind != AppActionKind::None)
 	{
-		const float direction = action.event.controlId == "bars_down" ? -1.0f : 1.0f;
-		output = AppAction(AppActionKind::AdjustItemCount,
-			direction * stepDeltaWithModifiers(10.0f, action.event.control, action.event.shift));
-		return;
-	}
-	if (action.event.kind == UiEventKind::Activated &&
-		(action.event.controlId == "time_down" || action.event.controlId == "time_up"))
-	{
-		const float direction = action.event.controlId == "time_down" ? -1.0f : 1.0f;
-		output = AppAction(AppActionKind::AdjustDuration,
-			direction * stepDeltaWithModifiers(1.0f, action.event.control, action.event.shift));
+		output = controlAction;
 		return;
 	}
 	if (action.appAction.kind == AppActionKind::SetUiPreset)

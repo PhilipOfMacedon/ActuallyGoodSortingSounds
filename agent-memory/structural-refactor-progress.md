@@ -589,3 +589,21 @@ Verification:
 - `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
 
 Next: separate audio/settings command handling from widget interpretation and reduce the remaining event-ID string routing in `ControlPanel::processAction`.
+
+## 2026-10-19 — extract UI action routing
+
+Status: implementation and focused verification complete.
+
+- Added `UiActionRouting` as the dedicated home for main-menu mapping, catalog-backed action normalization, and the bar/time activation mapping.
+- `ControlPanel::processAction` now delegates those policies instead of containing its own bar/time arithmetic and importing the general `UiArchitecture` module for action routing.
+- Kept the established step sizes exactly: Ctrl divides by ten, Shift multiplies by ten, and pressing both or neither preserves the base step. Unknown controls and non-activation events remain no-ops.
+- Added mapping checks for bar and duration actions, modifier-scaled changes, and unrelated control IDs. Existing menu and catalog normalization checks now use the extracted module.
+- No menu behavior, command payload, catalog choice, settings value, simulation, trace, or sound behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
+
+Next: separate settings and audio widget interpretation from `ControlPanel::processAction`, then continue with controller/persistence boundaries.
