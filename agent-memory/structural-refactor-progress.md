@@ -645,7 +645,24 @@ Verification:
 - Release `SoundEngineTests`: passed (417,376 assertions).
 - `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
 
-Next: separate INI schema/migration logic from atomic platform storage and family/variant audio-profile resolution. Keep the current settings version and immediate save behavior.
+Next: separate INI schema/migration logic from atomic platform storage. Keep the current settings version and immediate save behavior.
+
+## 2026-10-19 — isolate algorithm audio preference policy
+
+Status: implementation and focused verification complete.
+
+- Moved family defaults, variant offsets, effective SoundEngine parameter construction, supported semantic-role channels, and display labels from `UserSettings.cpp` to `AlgorithmAudioPreferences.cpp`.
+- Preserved the helper declarations in `UserSettings.h`; settings loading, saved keys, gain inheritance, clamps, routing, and audio behavior remain unchanged.
+- Added the new source to the app, framework test, and standalone audio transport test project. The standalone project also lacked the already-required `AudioSettingsActions.cpp`; added it so the project links independently instead of failing before its tests.
+- No settings schema, migration, DSP normalization, synthesizer, timeline, or callback behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Standalone `AudioDeviceTransportTests` x64 Debug and Release builds: passed.
+- Standalone transport integration tests passed in both configurations with the SDL dummy backend, including 80- and 800-item scenarios.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
 ## 2026-10-19 — narrow dispatch preference snapshots
 

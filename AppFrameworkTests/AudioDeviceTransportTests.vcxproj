@@ -23,8 +23,10 @@
   <ItemGroup>
     <ClCompile Include="AudioDeviceTransportTests.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AudioPresentationBridge.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\AudioSettingsActions.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AppController.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\UiAppearance.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\AlgorithmAudioPreferences.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\UserSettings.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\SdlAudioOutput.cpp" />
   </ItemGroup>

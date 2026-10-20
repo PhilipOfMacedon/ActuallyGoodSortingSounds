@@ -49,6 +49,7 @@
     <ClCompile Include="..\SDL2BarGraphics\UiActionRouting.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\TextBlockLayout.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\WindowsFontCatalog.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\AlgorithmAudioPreferences.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\UserSettings.cpp" />
   </ItemGroup>
   <ItemGroup>

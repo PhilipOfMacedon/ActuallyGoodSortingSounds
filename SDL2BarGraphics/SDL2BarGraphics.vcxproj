@@ -49,6 +49,7 @@
     <ClCompile Include="UiAppearance.cpp" />
     <ClCompile Include="UiArchitecture.cpp" />
     <ClCompile Include="UiActionRouting.cpp" />
+    <ClCompile Include="AlgorithmAudioPreferences.cpp" />
     <ClCompile Include="WindowsFontCatalog.cpp" />
     <ClCompile Include="UserSettings.cpp" />
     <ClCompile Include="Window.cpp" />

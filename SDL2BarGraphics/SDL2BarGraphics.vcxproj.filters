@@ -38,6 +38,7 @@
     <ClCompile Include="ThemePalette.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="UiLayer.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="UiActionRouting.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="AlgorithmAudioPreferences.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="UserSettings.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Shader.cpp">
       <Filter>Source Files</Filter>
