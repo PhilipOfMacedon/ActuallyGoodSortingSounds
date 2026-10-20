@@ -550,6 +550,7 @@ namespace sortinglogic
 		const std::vector<SortItem>& preparedInput() const { return preparedInput_; }
 		std::size_t itemCount() const { return itemCount_; }
 		float durationSeconds() const { return durationSeconds_; }
+		std::size_t cursor() const { return cursor_; }
 		SortDirection direction() const { return direction_; }
 		SortAlgorithm algorithm() const { return algorithm_; }
 		InputProfile profile() const { return profile_; }
@@ -563,6 +564,7 @@ namespace sortinglogic
 		bool completionScanEnabled() const { return completionScanEnabled_; }
 		bool isBuildingTrace() const { return buildingTrace_; }
 		bool isPlaying() const { return playing_; }
+		bool hasTrace() const { return static_cast<bool>(trace_); }
 		bool canRun() const { return algorithmSupports(algorithm_, domain_) && algorithmAcceptsItemCount(algorithm_, itemCount_) &&
 			inputPatternCompatible(domain_, pattern_); }
 		static std::uint32_t createFreshSeed();

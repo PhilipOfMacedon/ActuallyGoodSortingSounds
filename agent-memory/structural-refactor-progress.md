@@ -702,3 +702,19 @@ Verification:
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
 
 Next: move INI encoding, decoding, and migrations behind a pure codec boundary. Keep the current settings version and immediate save behavior.
+
+## 2026-10-20 — avoid render snapshots for narrow simulation queries
+
+Status: implementation and focused verification complete.
+
+- Added read-only `Simulation::hasTrace()` and `Simulation::cursor()` accessors.
+- Replaced AppController snapshots used only to inspect trace existence or cursor position, including reference-cadence synchronization. Full snapshots remain where audio presentation or UI actually consumes the render state.
+- Extended the simulation worker/playback test to compare the narrow getters with the exact trace cursor before build, after publication, at each seek position, and after reset.
+- Updated the audit's frame-cost finding to mark duplicate panel preparation and narrow controller queries resolved, while retaining snapshot copies, region scans, and per-item role lookup as measured candidates rather than assumed bottlenecks.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Debug and Release `SortingLogicTests --core-contracts-only`: passed (39,522 checks each).
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.

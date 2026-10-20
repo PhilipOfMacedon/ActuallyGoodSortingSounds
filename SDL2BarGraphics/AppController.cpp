@@ -592,7 +592,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		 action.kind == AppActionKind::PreviousEvent || action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction ||
 		 action.kind == AppActionKind::SetPlaybackTimingMode))
 		synchronizeReferenceTransport(wasPlaying);
-	if (result.accepted && simulation_.snapshot().hasTrace &&
+	if (result.accepted && simulation_.hasTrace() &&
 		(action.kind == AppActionKind::SetPlaybackTimingMode || action.kind == AppActionKind::DecreaseDuration ||
 		 action.kind == AppActionKind::IncreaseDuration || action.kind == AppActionKind::AdjustDuration || action.kind == AppActionKind::SetDuration))
 		audioPreparationPending_ = true;
@@ -631,7 +631,7 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 		if (!audioClockAvailable && !(audioPreparationGateEnabled_ && audioPreparationPending_))
 		{
 			if (previousAudioClockAvailable_)
-				hostReferenceElapsedSeconds_ = referenceElapsedAtCursor(simulation_.snapshot().cursor);
+				hostReferenceElapsedSeconds_ = referenceElapsedAtCursor(simulation_.cursor());
 			hostReferenceElapsedSeconds_ += (std::max)(0.0f, deltaSeconds);
 			const double duration = referenceDurationSeconds();
 			const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
@@ -701,11 +701,11 @@ double AppController::referenceElapsedAtCursor(std::size_t cursor) const
 void AppController::synchronizeReferenceTransport(bool wasPlaying)
 {
 	if (preferences_.simulation.playbackTimingMode != SoundEngine::PlaybackTimingMode::ReferenceCadence) return;
-	const sortinglogic::RenderSnapshot current = simulation_.snapshot();
+	const std::size_t currentCursor = simulation_.cursor();
 	const double duration = referenceDurationSeconds();
 	if (!wasPlaying || !simulation_.isPlaying())
-		hostReferenceElapsedSeconds_ = referenceElapsedAtCursor(current.cursor);
-	simulation_.synchronizePlaybackPosition(current.cursor, hostReferenceElapsedSeconds_, duration, simulation_.isPlaying());
+		hostReferenceElapsedSeconds_ = referenceElapsedAtCursor(currentCursor);
+	simulation_.synchronizePlaybackPosition(currentCursor, hostReferenceElapsedSeconds_, duration, simulation_.isPlaying());
 }
 
 SoundEngine::Parameters AppController::effectiveAudio() const

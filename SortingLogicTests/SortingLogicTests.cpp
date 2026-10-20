@@ -4763,6 +4763,8 @@ namespace
 	{
 		using namespace sortinglogic;
 		Simulation simulation(18, 991);
+		check(!simulation.hasTrace() && simulation.cursor() == 0,
+			"narrow trace and cursor queries report the prepared no-trace state");
 		TraceBuildService service;
 		TraceBuildRequest request;
 		check(simulation.beginTraceBuild(request).accepted, "simulation starts trace build");
@@ -4777,7 +4779,9 @@ namespace
 			if (service.poll(result)) simulation.completeTraceBuild(result);
 			std::this_thread::yield();
 		}
-		check(!simulation.isBuildingTrace() && simulation.snapshot().hasTrace, "worker publishes successful trace to simulation");
+		check(!simulation.isBuildingTrace() && simulation.hasTrace() && simulation.cursor() == 0,
+			"worker publishes successful trace to narrow simulation queries");
+		check(simulation.snapshot().hasTrace, "render snapshot still reports the published trace");
 		const std::shared_ptr<const SortTrace> trace = simulation.currentTrace();
 		if (trace)
 		{
@@ -4791,9 +4795,11 @@ namespace
 			for (std::size_t cursor = 0; cursor < states.size(); ++cursor)
 			{
 				simulation.seekTo(cursor);
-				check(sameState(simulation.snapshot().state, states[cursor]), "simulation seek reproduces workspace cursor " + std::to_string(cursor));
+				check(simulation.cursor() == cursor && sameState(simulation.snapshot().state, states[cursor]),
+					"simulation seek reproduces workspace cursor " + std::to_string(cursor));
 			}
-			check(simulation.reset().accepted && sameState(simulation.snapshot().state, trace->initialState), "Reset restores exact prepared input");
+			check(simulation.reset().accepted && simulation.cursor() == 0 &&
+				sameState(simulation.snapshot().state, trace->initialState), "Reset restores exact prepared input");
 			check(simulation.togglePlayback().accepted, "trace playback starts");
 			check(!simulation.prepareInstaSort().accepted, "input preparation is rejected while playing");
 			simulation.advance(5.0f);
