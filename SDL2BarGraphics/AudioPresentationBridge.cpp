@@ -7,29 +7,6 @@
 
 namespace
 {
-	bool sameParameters(const SoundEngine::Parameters& a, const SoundEngine::Parameters& b)
-	{
-		if (a.masterLevel != b.masterLevel || a.bedLevel != b.bedLevel || a.bedHarmonicExponent != b.bedHarmonicExponent ||
-			a.includeSub300HzBed != b.includeSub300HzBed || a.bedComb.enabled != b.bedComb.enabled ||
-			a.bedComb.applyPhase != b.bedComb.applyPhase || a.bedComb.delayMicroseconds != b.bedComb.delayMicroseconds ||
-			a.bedComb.phaseOffsetDegrees != b.bedComb.phaseOffsetDegrees || a.bedComb.wetAtLowFrequency != b.bedComb.wetAtLowFrequency ||
-			a.bedComb.wetAtHighFrequency != b.bedComb.wetAtHighFrequency || a.bedComb.fadeStartHz != b.bedComb.fadeStartHz ||
-			a.bedComb.fadeEndHz != b.bedComb.fadeEndHz || a.bedComb.fadeExponent != b.bedComb.fadeExponent ||
-			a.comparisonBoostDb != b.comparisonBoostDb || a.heldKeyBoostDb != b.heldKeyBoostDb ||
-			a.tauBelowBins != b.tauBelowBins || a.tauAboveBins != b.tauAboveBins || a.chorusMix != b.chorusMix ||
-			a.chorusRateHz != b.chorusRateHz || a.chorusDepthMs != b.chorusDepthMs || a.chorusWeighting != b.chorusWeighting ||
-			a.attackMs != b.attackMs || a.releaseMs != b.releaseMs || a.mappingMode != b.mappingMode ||
-			a.comparisonSpreadMode != b.comparisonSpreadMode || a.enabled != b.enabled)
-			return false;
-		for (std::size_t i = 0; i < SoundEngine::BandCount; ++i)
-			if (a.bandTrimDb[i] != b.bandTrimDb[i]) return false;
-		for (std::size_t i = 0; i < SoundEngine::RoleCount; ++i)
-			if (a.roleBoostDb[i] != b.roleBoostDb[i]) return false;
-		for (std::size_t i = 0; i < SoundEngine::AccentCategoryCount; ++i)
-			if (a.accentRouting[i] != b.accentRouting[i] || a.accentGain[i] != b.accentGain[i]) return false;
-		return true;
-	}
-
 	bool sameComparison(const SoundEngine::AudioComparison& a, const SoundEngine::AudioComparison& b)
 	{
 		return a.firstPosition == b.firstPosition && a.secondPosition == b.secondPosition && a.heldKey == b.heldKey &&
@@ -39,16 +16,6 @@ namespace
 	bool sameEventAccents(const SoundEngine::EventAccentSummary& a, const SoundEngine::EventAccentSummary& b)
 	{
 		return a.counts == b.counts && a.representativePositions == b.representativePositions;
-	}
-
-	bool sameReconstructedParameters(const SoundEngine::ReconstructedParameters& a, const SoundEngine::ReconstructedParameters& b)
-	{
-		return a.minimumFrequencyHz == b.minimumFrequencyHz && a.maximumFrequencyHz == b.maximumFrequencyHz &&
-			a.excitationClockHz == b.excitationClockHz && a.carrierCycles == b.carrierCycles &&
-			a.tukeyFraction == b.tukeyFraction && a.secondOperandDelayMicroseconds == b.secondOperandDelayMicroseconds &&
-			a.masterLevel == b.masterLevel && a.specialReleaseMilliseconds == b.specialReleaseMilliseconds &&
-			a.lowPassCutoffHz == b.lowPassCutoffHz && a.audioEnabled == b.audioEnabled &&
-			a.lowPassEnabled == b.lowPassEnabled && a.mapping == b.mapping && a.idlePolicy == b.idlePolicy;
 	}
 
 	bool sameTimelineGains(const SoundEngine::AudioTimelineGainSettings& a, const SoundEngine::AudioTimelineGainSettings& b)
@@ -424,7 +391,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	const bool timelineInstallationChanged = currentTimeline_ != lastPublished_.timeline;
 	const bool clockRecovery = audioDeviceAvailable && !lastAudioDeviceAvailable_;
 	const bool audioSettingsChanged = hasPublished_ &&
-		(!sameReconstructedParameters(current.reconstructedParameters, lastPublished_.reconstructedParameters) ||
+		(!(current.reconstructedParameters == lastPublished_.reconstructedParameters) ||
 		 !sameTimelineGains(current.timelineGains, lastPublished_.timelineGains));
 	if (audioSettingsChanged) ++audioParameterRevision_;
 	const bool transportChanged = rebuildTimeline || timelineInstallationChanged || playbackChanged || cursorChangedWhilePaused || clockRecovery;
@@ -475,8 +442,8 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		current.seekState != lastPublished_.seekState || current.seekRevision != lastPublished_.seekRevision ||
 		current.transport.revision != lastPublished_.transport.revision ||
 		!sameEventAccents(current.eventAccents, lastPublished_.eventAccents) ||
-		!sameParameters(current.parameters, lastPublished_.parameters) ||
-		!sameReconstructedParameters(current.reconstructedParameters, lastPublished_.reconstructedParameters))
+		!(current.parameters == lastPublished_.parameters) ||
+		!(current.reconstructedParameters == lastPublished_.reconstructedParameters))
 	{
 		current.revision = ++revision_;
 		lastPublished_ = current;

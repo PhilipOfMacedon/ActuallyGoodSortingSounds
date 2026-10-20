@@ -196,7 +196,7 @@ Next: continue extracting and directly registering cohesive algorithm groups, th
 
 ## 2026-10-19 — isolate distribution strategies
 
-Status: implementation and focused verification complete; pending commit.
+Status: committed and pushed as `c683cfe`.
 
 - Moved Counting, Radix, American Flag, binary quick variants, Flash, Pigeonhole, Index, in-place and rotate radix variants, Gravity variants, Shatter variants, Static, and Time Sort into `DistributionStrategies.cpp`.
 - Kept key transforms, bucket helpers, reversible counter/workspace operations, and distribution-specific bounds in the same private module. Special variant selection is wrapped by named strategy entry points.
@@ -211,4 +211,22 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - No Counting/Radix event order, audio eligibility, gains, synthesis, or transport behavior changed.
 
-Next: extract another cohesive algorithm family and directly register its variants; then reduce the remaining configuration and catalog coupling.
+Next: reduce configuration and catalog coupling, beginning with shared value semantics and a resolved run-configuration boundary.
+
+## 2026-10-19 — centralize settings and audio equality
+
+Status: implementation and focused verification complete; pending commit.
+
+- Moved exact equality for synthesizer parameters and reconstructed-audio parameters onto their value types. `AudioPresentationBridge` now consumes those comparisons instead of keeping a second field list.
+- Added value equality for algorithm audio levels and user preferences. `AppController` now uses the shared preference comparison for change detection and persistence gating.
+- Kept comparison semantics identical to the removed helpers, including exact floating-point comparisons and excluding the settings schema version from change detection. No settings keys, migrations, normalization, synthesis, or timeline behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 39,446 checks with 0 failures.
+- Debug and Release catalog-coverage runs: each passed 1,678 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- Debug and Release `SoundEngineTests`: each passed 417,371 assertions.
+
+Next: define a pure resolved run-configuration value from the current request and catalog options, preserving today’s accepted defaults and compatibility behavior before moving validation out of the controller and recorder.

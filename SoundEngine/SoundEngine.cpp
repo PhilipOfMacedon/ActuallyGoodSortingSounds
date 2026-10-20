@@ -122,6 +122,26 @@ namespace SoundEngine
 		accentGain[static_cast<std::size_t>(AccentCategory::Discard)] = 0.06f;
 	}
 
+	bool Parameters::operator==(const Parameters& other) const
+	{
+		return masterLevel == other.masterLevel && bedLevel == other.bedLevel &&
+			bedHarmonicExponent == other.bedHarmonicExponent && includeSub300HzBed == other.includeSub300HzBed &&
+			bedComb.enabled == other.bedComb.enabled && bedComb.applyPhase == other.bedComb.applyPhase &&
+			bedComb.delayMicroseconds == other.bedComb.delayMicroseconds &&
+			bedComb.phaseOffsetDegrees == other.bedComb.phaseOffsetDegrees &&
+			bedComb.wetAtLowFrequency == other.bedComb.wetAtLowFrequency &&
+			bedComb.wetAtHighFrequency == other.bedComb.wetAtHighFrequency &&
+			bedComb.fadeStartHz == other.bedComb.fadeStartHz && bedComb.fadeEndHz == other.bedComb.fadeEndHz &&
+			bedComb.fadeExponent == other.bedComb.fadeExponent && comparisonBoostDb == other.comparisonBoostDb &&
+			heldKeyBoostDb == other.heldKeyBoostDb && roleBoostDb == other.roleBoostDb &&
+			tauBelowBins == other.tauBelowBins && tauAboveBins == other.tauAboveBins && chorusMix == other.chorusMix &&
+			chorusRateHz == other.chorusRateHz && chorusDepthMs == other.chorusDepthMs &&
+			chorusWeighting == other.chorusWeighting && attackMs == other.attackMs && releaseMs == other.releaseMs &&
+			mappingMode == other.mappingMode && comparisonSpreadMode == other.comparisonSpreadMode &&
+			bandTrimDb == other.bandTrimDb && accentRouting == other.accentRouting &&
+			accentGain == other.accentGain && enabled == other.enabled;
+	}
+
 	AudioCommand::AudioCommand()
 		: kind(AudioCommandKind::ClearComparison), comparison(), traceLoaded(false)
 	{

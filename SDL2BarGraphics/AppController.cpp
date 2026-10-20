@@ -9,82 +9,6 @@
 
 namespace
 {
-	bool sameAudio(const SoundEngine::Parameters& a, const SoundEngine::Parameters& b)
-	{
-		if (a.masterLevel != b.masterLevel || a.bedLevel != b.bedLevel || a.bedHarmonicExponent != b.bedHarmonicExponent ||
-			a.includeSub300HzBed != b.includeSub300HzBed || a.bedComb.enabled != b.bedComb.enabled ||
-			a.bedComb.applyPhase != b.bedComb.applyPhase || a.bedComb.delayMicroseconds != b.bedComb.delayMicroseconds ||
-			a.bedComb.phaseOffsetDegrees != b.bedComb.phaseOffsetDegrees || a.bedComb.wetAtLowFrequency != b.bedComb.wetAtLowFrequency ||
-			a.bedComb.wetAtHighFrequency != b.bedComb.wetAtHighFrequency || a.bedComb.fadeStartHz != b.bedComb.fadeStartHz ||
-			a.bedComb.fadeEndHz != b.bedComb.fadeEndHz || a.bedComb.fadeExponent != b.bedComb.fadeExponent ||
-			a.comparisonBoostDb != b.comparisonBoostDb || a.heldKeyBoostDb != b.heldKeyBoostDb ||
-			a.tauBelowBins != b.tauBelowBins || a.tauAboveBins != b.tauAboveBins || a.chorusMix != b.chorusMix ||
-			a.chorusRateHz != b.chorusRateHz || a.chorusDepthMs != b.chorusDepthMs || a.chorusWeighting != b.chorusWeighting ||
-			a.attackMs != b.attackMs || a.releaseMs != b.releaseMs || a.mappingMode != b.mappingMode ||
-			a.comparisonSpreadMode != b.comparisonSpreadMode || a.enabled != b.enabled)
-			return false;
-		for (std::size_t i = 0; i < SoundEngine::BandCount; ++i)
-			if (a.bandTrimDb[i] != b.bandTrimDb[i]) return false;
-		for (std::size_t i = 0; i < SoundEngine::RoleCount; ++i)
-			if (a.roleBoostDb[i] != b.roleBoostDb[i]) return false;
-		for (std::size_t i = 0; i < SoundEngine::AccentCategoryCount; ++i)
-			if (a.accentRouting[i] != b.accentRouting[i] || a.accentGain[i] != b.accentGain[i]) return false;
-		return true;
-	}
-
-	bool sameReconstructedAudio(const SoundEngine::ReconstructedParameters& a, const SoundEngine::ReconstructedParameters& b)
-	{
-		return a.minimumFrequencyHz == b.minimumFrequencyHz && a.maximumFrequencyHz == b.maximumFrequencyHz &&
-			a.excitationClockHz == b.excitationClockHz && a.carrierCycles == b.carrierCycles &&
-			a.tukeyFraction == b.tukeyFraction && a.secondOperandDelayMicroseconds == b.secondOperandDelayMicroseconds &&
-			a.masterLevel == b.masterLevel && a.specialReleaseMilliseconds == b.specialReleaseMilliseconds &&
-			a.lowPassCutoffHz == b.lowPassCutoffHz && a.audioEnabled == b.audioEnabled &&
-			a.lowPassEnabled == b.lowPassEnabled && a.mapping == b.mapping && a.idlePolicy == b.idlePolicy;
-	}
-
-	bool sameLevels(const AlgorithmAudioLevels& a, const AlgorithmAudioLevels& b)
-	{
-		return a.decibels == b.decibels;
-	}
-
-	template <typename Key>
-	bool sameLevelMap(const std::map<Key, AlgorithmAudioLevels>& a, const std::map<Key, AlgorithmAudioLevels>& b)
-	{
-		if (a.size() != b.size()) return false;
-		typename std::map<Key, AlgorithmAudioLevels>::const_iterator left = a.begin();
-		typename std::map<Key, AlgorithmAudioLevels>::const_iterator right = b.begin();
-		for (; left != a.end(); ++left, ++right)
-			if (left->first != right->first || !sameLevels(left->second, right->second)) return false;
-		return true;
-	}
-
-	bool samePreferences(const UserPreferences& left, const UserPreferences& right)
-	{
-		return left.visual.palette == right.visual.palette &&
-			left.visual.spacing == right.visual.spacing &&
-			left.visual.panelExpanded == right.visual.panelExpanded &&
-			sameUiAppearancePreferences(left.appearance, right.appearance) &&
-			left.simulation.itemCount == right.simulation.itemCount &&
-			left.simulation.durationSeconds == right.simulation.durationSeconds &&
-			left.simulation.playbackTimingMode == right.simulation.playbackTimingMode &&
-			left.simulation.descending == right.simulation.descending &&
-			left.simulation.algorithm == right.simulation.algorithm &&
-			left.simulation.familyId == right.simulation.familyId &&
-			left.simulation.variantId == right.simulation.variantId &&
-			left.simulation.profile == right.simulation.profile &&
-			left.simulation.domain == right.simulation.domain &&
-			left.simulation.pattern == right.simulation.pattern &&
-			left.simulation.shellGapSequence == right.simulation.shellGapSequence &&
-			left.simulation.mergeWritebackMode == right.simulation.mergeWritebackMode &&
-		left.simulation.mergeExecutionMode == right.simulation.mergeExecutionMode &&
-		left.simulation.mergeBufferVisualizationEnabled == right.simulation.mergeBufferVisualizationEnabled &&
-		left.simulation.completionScanEnabled == right.simulation.completionScanEnabled && sameAudio(left.audio, right.audio) &&
-		sameReconstructedAudio(left.reconstructedAudio, right.reconstructedAudio) &&
-			sameLevelMap(left.familyAudioDefaults, right.familyAudioDefaults) &&
-			sameLevelMap(left.variantAudioOffsets, right.variantAudioOffsets) &&
-			left.algorithmOptions == right.algorithmOptions;
-	}
-
 	void storeAlgorithmOption(UserPreferences& preferences, const sortinglogic::AlgorithmDescriptor& algorithm,
 		const std::string& groupId, int value)
 	{
@@ -685,7 +609,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	if (result.accepted && (action.kind == AppActionKind::Reset || action.kind == AppActionKind::PreviousEvent ||
 		action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction))
 		playbackPending_ = false;
-	if (!samePreferences(previous, preferences_))
+	if (!(previous == preferences_))
 	{
 		persistIfChanged(previous);
 		if (result.accepted && persistenceStatus_.find("Could not save") == 0)
@@ -819,7 +743,7 @@ void AppController::synchronizeSimulationPreferences()
 
 void AppController::persistIfChanged(const UserPreferences& previous)
 {
-	if (samePreferences(previous, preferences_))
+	if (previous == preferences_)
 		return;
 	std::string error;
 	if (!settingsPersistence_.save(preferences_, &error))

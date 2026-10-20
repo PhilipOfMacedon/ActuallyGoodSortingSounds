@@ -793,6 +793,24 @@ SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(
 UserPreferences::UserPreferences() : version(CurrentVersion), visual(), appearance(), simulation(), audio(), reconstructedAudio(), familyAudioDefaults(),
 	variantAudioOffsets(), algorithmOptions() {}
 
+bool UserPreferences::operator==(const UserPreferences& other) const
+{
+	return visual.palette == other.visual.palette && visual.spacing == other.visual.spacing &&
+		visual.panelExpanded == other.visual.panelExpanded && sameUiAppearancePreferences(appearance, other.appearance) &&
+		simulation.itemCount == other.simulation.itemCount && simulation.durationSeconds == other.simulation.durationSeconds &&
+		simulation.playbackTimingMode == other.simulation.playbackTimingMode && simulation.descending == other.simulation.descending &&
+		simulation.algorithm == other.simulation.algorithm && simulation.familyId == other.simulation.familyId &&
+		simulation.variantId == other.simulation.variantId && simulation.profile == other.simulation.profile &&
+		simulation.domain == other.simulation.domain && simulation.pattern == other.simulation.pattern &&
+		simulation.shellGapSequence == other.simulation.shellGapSequence &&
+		simulation.mergeWritebackMode == other.simulation.mergeWritebackMode &&
+		simulation.mergeExecutionMode == other.simulation.mergeExecutionMode &&
+		simulation.mergeBufferVisualizationEnabled == other.simulation.mergeBufferVisualizationEnabled &&
+		simulation.completionScanEnabled == other.simulation.completionScanEnabled && audio == other.audio &&
+		reconstructedAudio == other.reconstructedAudio && familyAudioDefaults == other.familyAudioDefaults &&
+		variantAudioOffsets == other.variantAudioOffsets && algorithmOptions == other.algorithmOptions;
+}
+
 bool UserPreferences::isValid() const
 {
 	return version == CurrentVersion && simulation.itemCount >= static_cast<int>(sortinglogic::MinItemCount) &&

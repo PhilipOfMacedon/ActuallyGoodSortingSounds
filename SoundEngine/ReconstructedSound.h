@@ -31,6 +31,7 @@ namespace SoundEngine
 		ReconstructedMapping mapping;
 		ReconstructedIdlePolicy idlePolicy;
 		ReconstructedParameters();
+		bool operator==(const ReconstructedParameters& other) const;
 	};
 
 	// Roles use the stable SoundEngine comparison role numeric values. They are

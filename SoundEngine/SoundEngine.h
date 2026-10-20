@@ -122,6 +122,7 @@ namespace SoundEngine
 		bool enabled;
 
 		Parameters();
+		bool operator==(const Parameters& other) const;
 	};
 
 	enum class AudioCommandKind

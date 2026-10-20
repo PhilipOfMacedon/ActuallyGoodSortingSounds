@@ -65,6 +65,7 @@ struct AlgorithmAudioLevels
 {
 	std::array<float, static_cast<std::size_t>(AlgorithmAudioChannel::Count)> decibels;
 	AlgorithmAudioLevels() { decibels.fill(0.0f); }
+	bool operator==(const AlgorithmAudioLevels& other) const { return decibels == other.decibels; }
 };
 
 struct UserPreferences
@@ -84,6 +85,7 @@ struct UserPreferences
 
 	UserPreferences();
 	bool isValid() const;
+	bool operator==(const UserPreferences& other) const;
 };
 
 std::string variantAudioSettingsKey(const sortinglogic::FamilyId& family, const sortinglogic::VariantId& variant);

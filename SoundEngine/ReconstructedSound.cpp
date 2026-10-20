@@ -83,6 +83,16 @@ namespace SoundEngine
 	{
 	}
 
+	bool ReconstructedParameters::operator==(const ReconstructedParameters& other) const
+	{
+		return minimumFrequencyHz == other.minimumFrequencyHz && maximumFrequencyHz == other.maximumFrequencyHz &&
+			excitationClockHz == other.excitationClockHz && carrierCycles == other.carrierCycles &&
+			tukeyFraction == other.tukeyFraction && secondOperandDelayMicroseconds == other.secondOperandDelayMicroseconds &&
+			masterLevel == other.masterLevel && specialReleaseMilliseconds == other.specialReleaseMilliseconds &&
+			lowPassCutoffHz == other.lowPassCutoffHz && audioEnabled == other.audioEnabled &&
+			lowPassEnabled == other.lowPassEnabled && mapping == other.mapping && idlePolicy == other.idlePolicy;
+	}
+
 	BurstComparison::BurstComparison()
 		: firstPosition(0.0), secondPosition(0.0), firstRole(0), secondRole(0), firstGain(1.0), secondGain(1.0), probeOnly(false)
 	{
