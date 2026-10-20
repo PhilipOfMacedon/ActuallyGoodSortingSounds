@@ -50,6 +50,7 @@
   <ItemGroup>
     <ClCompile Include="ElementaryStrategies.cpp" />
     <ClCompile Include="InsertionStrategy.cpp" />
+    <ClCompile Include="SortingNetworkStrategies.cpp" />
     <ClCompile Include="SortingLogic.cpp" />
     <ClCompile Include="Simulation.cpp" />
     <ClCompile Include="TraceBuilder.cpp" />

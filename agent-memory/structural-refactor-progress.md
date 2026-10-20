@@ -135,7 +135,7 @@ Next: extract the remaining insertion/exchange strategies in coherent batches, t
 
 ## 2026-10-19 — extract elementary exchange and selection strategies
 
-Status: implementation and focused verification complete; pending commit.
+Status: committed and pushed as `0a5614b`.
 
 - Moved Bubble, Selection, Bingo, Double Selection, Stable Selection, Gnome, Cocktail, Comb, Odd-Even, optimized/unoptimized Bubble and Cocktail, and Swapless Bubble into `ElementaryStrategies.cpp` behind the private `AlgorithmStrategies.h` interface.
 - Kept catalog IDs and the central dispatch behavior unchanged; each dispatch now calls the extracted strategy. Intro Sort's existing Insertion fallback continues to call the shared Insertion strategy.
@@ -151,4 +151,24 @@ Verification:
 - Release `AppFrameworkTests` linking emitted the existing LNK4020 PDB type-record warnings; link and execution succeeded.
 - No sound, settings, workspace contracts, stable IDs, or intended operation sequences were changed.
 
-Next: extract additional compact strategy groups, then replace the growing algorithm dispatch switch with static private registrations while preserving compatibility adapters and trace signatures.
+Next: continue extracting cohesive algorithm families, then replace the growing algorithm dispatch switch with static private registrations while preserving compatibility adapters and trace signatures.
+
+## 2026-10-19 — isolate sorting-network strategies
+
+Status: implementation and focused verification complete; pending commit.
+
+- Moved the compare-exchange helpers, deterministic layer scheduling, recursive kernels, and network strategy bodies into `SortingNetworkStrategies.cpp`.
+- Routed the 26 catalog entries for 3-smooth comb, Bitonic, Bose–Nelson, Odd-Even Merge, Diamond, Pairwise, Crease, Fold, Merge-Exchange, Pairwise Merge, Weave, and Matrix strategies through the private strategy interface.
+- Kept helper implementations private to the translation unit. The pairwise-merge power-of-two padding stays the same; its setup now belongs with the algorithm family instead of the central dispatcher.
+- Added the new module to the existing Visual Studio project; public `SortingLogic` API and stable catalog IDs remain unchanged.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 11,410 checks with 0 failures, including sorting-network schedules, phase reconstruction, trace replay, and distribution audio baselines.
+- Debug and Release catalog-coverage runs: each passed 1,678 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed.
+- Release `AppFrameworkTests` linking emitted the existing LNK4020 PDB type-record warnings; link and execution succeeded.
+- No sound synthesis, event semantics, catalog metadata, or settings behavior changed.
+
+Next: extract a similarly cohesive family module with focused replay coverage, then start reducing algorithm dispatch and catalog construction coupling.
