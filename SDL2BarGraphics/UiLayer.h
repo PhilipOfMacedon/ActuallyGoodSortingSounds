@@ -8,17 +8,7 @@
 #include <vector>
 
 #include "AppActions.h"
-
-struct UiRect
-{
-	float x, y, width, height;
-	UiRect(float left = 0.0f, float top = 0.0f, float w = 0.0f, float h = 0.0f)
-		: x(left), y(top), width(w), height(h) {}
-	bool contains(float px, float py) const
-	{
-		return px >= x && py >= y && px < x + width && py < y + height;
-	}
-};
+#include "Geometry2D.h"
 
 // Reusable clipped viewport state for dynamic UI lists. The owner provides
 // content bounds and paints/hit-tests child rows inside viewport(); wheel input

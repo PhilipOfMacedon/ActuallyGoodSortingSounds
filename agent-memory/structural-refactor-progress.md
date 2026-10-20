@@ -1789,3 +1789,11 @@ Next: inspect the remaining `ControlPanel` composition and presentation ownershi
 Added core-policy checks for hidden and visible Merge role lanes. The x64 and x86 solution builds passed in Debug and Release. `SortingLogicTests --core-contracts-only` passed in all four configurations with 39,541 checks and zero failures; `AppFrameworkTests` passed in all four configurations. `git diff --check` passed with only configured LF-to-CRLF notices. This changes no trace event, replay state, audio policy, material choice, or renderer ordering; the smoke window remained closed.
 
 Next: review `ControlPanel`'s remaining composition duties and the renderer's shared geometry types, then continue the audit's outstanding event-storage and coordination measurements. Keep the structural refactor goal active.
+
+## 2026-10-20 — separate shared geometry from UI and render types
+
+Added `Geometry2D.h` for logical-space `Rect2D` and `ClipBounds`. `UiLayer.h` retains `UiRect` as an alias so existing widget/layout code keeps its current API; `RenderingTypes.h` consumes the neutral clip type. `ArrayRenderer` now accepts `Rect2D` and no longer includes `UiLayer.h`, avoiding a chart-renderer dependency on UI widget declarations. The rectangle layout and clipping behavior are unchanged.
+
+The x64 and x86 solution builds passed in Debug and Release. `AppFrameworkTests` passed in all four configurations, including existing rectangle, clipping, and text-layout checks. `git diff --check` passed with only configured LF-to-CRLF notices. No renderer appearance or performance change is claimed.
+
+Next: assess remaining `ControlPanel` composition, measure any outstanding frame coordination costs, and continue the sorting-core and event-storage audit without changing trace or audio behavior.

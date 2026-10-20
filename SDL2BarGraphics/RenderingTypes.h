@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "RenderPipeline.h"
+#include "Geometry2D.h"
 
 struct RenderDescriptor
 {
@@ -22,19 +23,6 @@ struct RenderDescriptor
 		std::uint32_t texture,
 		MaterialId material)
 		: tint(tintValue), textureId(texture), materialId(material) {}
-};
-
-struct ClipBounds
-{
-	float x;
-	float y;
-	float width;
-	float height;
-	bool enabled;
-
-	ClipBounds() : x(0.0f), y(0.0f), width(0.0f), height(0.0f), enabled(false) {}
-	ClipBounds(float left, float top, float clipWidth, float clipHeight)
-		: x(left), y(top), width(clipWidth), height(clipHeight), enabled(true) {}
 };
 
 struct QuadInstance

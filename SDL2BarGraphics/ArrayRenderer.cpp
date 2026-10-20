@@ -36,7 +36,7 @@ bool ArrayRenderer::isReady() const
 void ArrayRenderer::render(
 	const sortinglogic::RenderSnapshot& snapshot,
 	BarSpacingMode spacingMode,
-	const UiRect& chartViewport,
+	const Rect2D& chartViewport,
 	const ThemePalette& palette)
 {
 	if (!isReady() || snapshot.state.slots.empty() || chartViewport.width <= 0.0f || chartViewport.height <= 0.0f)

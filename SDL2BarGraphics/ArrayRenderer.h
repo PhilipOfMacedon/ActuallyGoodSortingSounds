@@ -12,8 +12,8 @@
 #include "ThemePalette.h"
 #include "TextLabel.h"
 #include "VisualSettingsTypes.h"
+#include "Geometry2D.h"
 #include "Window.h"
-#include "UiLayer.h"
 #include "../SortingLogic/SortingLogic.h"
 
 class ArrayRenderer
@@ -24,7 +24,7 @@ public:
 	void render(
 		const sortinglogic::RenderSnapshot& snapshot,
 		BarSpacingMode spacing,
-		const UiRect& chartViewport,
+		const Rect2D& chartViewport,
 		const ThemePalette& palette);
 
 private:

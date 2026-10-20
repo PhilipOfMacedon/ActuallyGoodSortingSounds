@@ -63,6 +63,7 @@
     <ClInclude Include="ControlPanel.h" />
     <ClInclude Include="FrameCoordinator.h" />
     <ClInclude Include="LayoutMetrics.h" />
+    <ClInclude Include="Geometry2D.h" />
     <ClInclude Include="RenderingTypes.h" />
     <ClInclude Include="RenderPipeline.h" />
     <ClInclude Include="Renderer2D.h" />

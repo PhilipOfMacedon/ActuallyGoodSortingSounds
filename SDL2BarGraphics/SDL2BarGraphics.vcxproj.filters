@@ -89,6 +89,7 @@
     </ClInclude>
     <ClInclude Include="FrameCoordinator.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="LayoutMetrics.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Geometry2D.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Renderer2D.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ThemePalette.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="UiLayer.h"><Filter>Header Files</Filter></ClInclude>
