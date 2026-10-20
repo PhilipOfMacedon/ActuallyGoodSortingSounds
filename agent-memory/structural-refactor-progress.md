@@ -1610,3 +1610,11 @@ Moved the pinned Stalin overwrite, canonical Stalin discard filter, and Strand S
 The x64 Debug and Release solution builds passed. Stalin tests passed in both configurations with 3,277 checks; Strand Sort passed with 4,311 checks; no failures. `git diff --check` passed. No user-visible behavior change is intended.
 
 Next: continue extracting the remaining coordinator-owned families, then review the residual fallback switch and request builder duplication as a separate boundary.
+
+## 2026-10-20 — extract stochastic, guess, and nested Bogo strategies
+
+Moved Bogo, Bozo, randomized exchange variants, Guess variants, and nested Bogo strategies into `StochasticStrategies.cpp`. Shared helpers are now file-local; each selectable method is registered directly through its strategy function. Expanded the existing focused stochastic test command to include plain Bogo, which previously had no direct algorithm fixture, and selected its `shuffle_attempts` metric rather than assuming every random method uses the same counter name.
+
+The first strengthened test run caught that metric-name difference in both builds; the assertion was corrected without changing production behavior. x64 Debug and Release solution builds passed, followed by the focused stochastic suite in both configurations with 107,922 checks and zero failures. `git diff --check` passed.
+
+Next: continue removing remaining coordinator-owned implementations; then measure the residual dispatch/build-request structure and choose whether its cleanup is a separate low-risk slice.

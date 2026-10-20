@@ -959,7 +959,8 @@ namespace
 	void testStochasticNoveltyVariants()
 	{
 		using namespace sortinglogic;
-		const SortAlgorithm algorithms[] = { SortAlgorithm::ArrayvBozo, SortAlgorithm::ArrayvBubbleBogo, SortAlgorithm::ArrayvExchangeBogo };
+		const SortAlgorithm algorithms[] = { SortAlgorithm::Bogo, SortAlgorithm::ArrayvBozo,
+			SortAlgorithm::ArrayvBubbleBogo, SortAlgorithm::ArrayvExchangeBogo };
 		for (std::size_t algorithmIndex = 0; algorithmIndex < sizeof(algorithms) / sizeof(algorithms[0]); ++algorithmIndex)
 			for (int directionIndex = 0; directionIndex < 2; ++directionIndex)
 			{
@@ -979,7 +980,8 @@ namespace
 					std::string(algorithmDisplayName(algorithms[algorithmIndex])) + " reproduces the same event trace for a fixed seed");
 				SortState replay = first.initialState;
 				for (std::size_t event = 0; event < first.events.size(); ++event) applyEventForward(replay, first.events[event]);
-				const std::map<std::string, std::uint64_t>::const_iterator attempts = replay.metrics.algorithm.find("random_attempts");
+				const char* attemptsMetric = algorithms[algorithmIndex] == SortAlgorithm::Bogo ? "shuffle_attempts" : "random_attempts";
+				const std::map<std::string, std::uint64_t>::const_iterator attempts = replay.metrics.algorithm.find(attemptsMetric);
 				std::string reason;
 				check(isSorted(replay, request.direction) && validateState(replay, request.input.size(), &reason) &&
 					attempts != replay.metrics.algorithm.end() && attempts->second > 0,
@@ -5375,6 +5377,8 @@ int main(int argc, char* argv[])
 		}
 		if (argc > 1 && std::string(argv[1]) == "--bogo-only")
 		{
+			stage = "testStochasticNoveltyVariants";
+			testStochasticNoveltyVariants();
 			stage = "testAdditionalBogoVariants";
 			testAdditionalBogoVariants();
 			stage = "testNestedBogoVariants";
