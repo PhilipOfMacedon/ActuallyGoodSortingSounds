@@ -76,7 +76,8 @@
     <ClCompile Include="InsertionStrategy.cpp" />
     <ClCompile Include="SortingNetworkStrategies.cpp" />
     <ClCompile Include="TracePresentationPolicy.cpp" />
-    <ClCompile Include="SortingLogic.cpp" />
+    <ClCompile Include="AlgorithmCatalog.cpp" />
+    <ClCompile Include="TraceRequestBuilder.cpp" />
     <ClCompile Include="Simulation.cpp" />
     <ClCompile Include="TraceBuilder.cpp" />
     <ClCompile Include="TraceState.cpp" />
@@ -84,6 +85,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AlgorithmStrategies.h" />
+    <ClInclude Include="AlgorithmRequestBuilders.h" />
     <ClInclude Include="SortingLogic.h" />
     <ClInclude Include="SortingLogicInternal.h" />
     <ClInclude Include="TraceRecorder.h" />

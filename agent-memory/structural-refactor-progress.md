@@ -1699,3 +1699,11 @@ Moved Asynchronous Sort into the distribution strategies, Patience Sort into the
 The x64 Debug and Release solution builds passed. Focused tests passed in both configurations: Asynchronous Sort (30,278 checks), Patience Sort (15,995), indirect/permutation methods (19,260), Block Insertion (475,184), and Merge-Insertion (208,435), all with zero failures. `git diff --check` passed. No behavior or runtime-performance change is claimed.
 
 Next: separate catalog metadata/compatibility ownership from trace-building orchestration, then inspect the remaining coordinator utilities and redundant compatibility adapters.
+
+## 2026-10-20 — separate algorithm metadata from trace request construction
+
+Moved the static 211-entry descriptor catalog, lookup helpers, compatibility checks, and catalog labels into `AlgorithmCatalog.cpp`. Trace recording, limit handling, common finalization, and the request-builder wrappers now live in `TraceRequestBuilder.cpp`; the internal `AlgorithmRequestBuilders.h` declares the catalog's builder references. Removed the old `SortingLogic.cpp` project entry, leaving family implementation code, catalog data, and build orchestration in separate translation units.
+
+The x64 Debug and Release solution builds passed. The pinned catalog coverage test passed in both configurations with 1,741 checks and zero failures, including all 208 source mappings. `git diff --check` passed. No behavior or runtime-performance change is claimed.
+
+Next: review remaining catalog/configuration duplication and begin the application-side structural work at the label-style/cache boundary identified by the audit.
