@@ -255,7 +255,6 @@ namespace sortinglogic
 				}
 			}
 
-
 			void ectaSortInternal(Recorder& r)
 			{
 				const std::size_t count = r.state.slots.size();
@@ -441,7 +440,6 @@ namespace sortinglogic
 			}
 		}
 
-
 		static void wikiSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -508,7 +506,6 @@ namespace sortinglogic
 			r.resizeAuxiliary("wiki_cache", 0);
 		}
 
-
 		static void andreySort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -541,7 +538,6 @@ namespace sortinglogic
 				width *= 2;
 			}
 		}
-
 
 		static void newShuffleMergeSort(Recorder& r)
 		{
@@ -589,7 +585,6 @@ namespace sortinglogic
 				width *= 2;
 			}
 		}
-
 
 		static void yujiBufferedMergeSort(Recorder& r)
 		{
@@ -647,7 +642,6 @@ namespace sortinglogic
 			r.resizeAuxiliary("yuji_buffer", 0);
 		}
 
-
 		static void kotaSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -686,7 +680,6 @@ namespace sortinglogic
 			}
 			r.resizeAuxiliary("kota_block_buffer", 0);
 		}
-
 
 		static void remiSort(Recorder& r)
 		{
@@ -734,7 +727,6 @@ namespace sortinglogic
 			}
 			r.resizeAuxiliary("remi_buffer", 0);
 		}
-
 
 		static void chaliceSort(Recorder& r)
 		{
@@ -817,7 +809,6 @@ namespace sortinglogic
 			r.resizeAuxiliary("fifth_buffer", 0);
 		}
 
-
 		static void quadMergeSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -855,7 +846,6 @@ namespace sortinglogic
 			}
 			r.resizeAuxiliary("quad_buffer", 0);
 		}
-
 
 		static void blockSwapMergeSort(Recorder& r)
 		{
@@ -934,7 +924,6 @@ namespace sortinglogic
 			}
 		}
 
-
 		static void weavedMergeSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -1006,7 +995,6 @@ namespace sortinglogic
 
 			merge(0, 1, 0);
 		}
-
 
 		static void twinMergeSort(Recorder& r)
 		{
@@ -1149,7 +1137,6 @@ namespace sortinglogic
 				if (width > count / 2) break;
 			}
 		}
-
 
 		static std::size_t timMinRunLength(std::size_t length)
 		{
@@ -1365,7 +1352,6 @@ namespace sortinglogic
 			}
 		}
 
-
 		static void improvedInPlaceMergeSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -1484,7 +1470,6 @@ namespace sortinglogic
 			sort(0, count, 0);
 		}
 
-
 		static void dropMergeSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -1600,7 +1585,6 @@ namespace sortinglogic
 			return first + (end - first) / 2;
 		}
 
-
 		static void medianMergeRange(Recorder& r, std::size_t first, std::size_t end)
 		{
 			if (end - first < 2) return;
@@ -1693,7 +1677,6 @@ namespace sortinglogic
 			}
 			r.resizeAuxiliary("merge", 0);
 		}
-
 
 		static void bufferPartitionMergeSort(Recorder& r)
 		{
@@ -1929,7 +1912,6 @@ namespace sortinglogic
 			}
 			r.resizeAuxiliary("rotate_merge_buffer", 0);
 		}
-
 
 		static void laziestStableSort(Recorder& r)
 		{
@@ -2424,6 +2406,114 @@ namespace sortinglogic
 			if (count > 1) weaveMergeRange(r, 0, count - 1);
 		}
 
+			void mergeInsertionBlockSwap(Recorder& r, std::size_t firstEnd, std::size_t secondEnd, std::size_t blockSize)
+			{
+				for (std::size_t offset = 0; offset < blockSize; ++offset)
+					r.swap(firstEnd - offset, secondEnd - offset);
+				r.addMetric("block_swaps");
+			}
+
+			void mergeInsertionBlockInsert(Recorder& r, std::size_t sourceEnd, std::size_t destinationEnd, std::size_t blockSize)
+			{
+				while (sourceEnd >= blockSize && sourceEnd - blockSize >= destinationEnd)
+				{
+					mergeInsertionBlockSwap(r, sourceEnd - blockSize, sourceEnd, blockSize);
+					sourceEnd -= blockSize;
+					r.addMetric("block_insertions");
+				}
+			}
+
+			void mergeInsertionBlockReverse(Recorder& r, std::size_t firstEnd, std::size_t end, std::size_t blockSize)
+			{
+				if (end < blockSize) return;
+				std::size_t lastEnd = end - blockSize;
+				while (lastEnd > firstEnd)
+				{
+					mergeInsertionBlockSwap(r, firstEnd, lastEnd, blockSize);
+					firstEnd += blockSize;
+					if (lastEnd < blockSize) break;
+					lastEnd -= blockSize;
+					r.addMetric("block_reversals");
+				}
+			}
+
+			std::size_t mergeInsertionBlockSearch(Recorder& r, const SortItem& key, std::size_t first,
+				std::size_t end, std::size_t blockSize, std::size_t keyIndex)
+			{
+				while (first < end)
+				{
+					const std::size_t middle = first + (((end - first) / blockSize) / 2) * blockSize;
+					const SortItem candidate = r.at(middle);
+					r.compare(key, candidate, keyIndex, middle, "main", "main", SemanticRole::ProbedItem, SemanticRole::ComparedItem);
+					if (compareItems(key, candidate, r.trace.direction) == ComparisonResult::Less) end = middle;
+					else first = middle + blockSize;
+				}
+				return first;
+			}
+
+			void mergeInsertionOrderBlocks(Recorder& r, std::size_t firstEnd, std::size_t end,
+				std::size_t blockSize)
+			{
+				for (std::size_t leftEnd = firstEnd, rightEnd = leftEnd + blockSize;
+					rightEnd < end; leftEnd += blockSize, rightEnd += 2 * blockSize)
+					mergeInsertionBlockInsert(r, rightEnd, leftEnd, blockSize);
+				const std::size_t middleEnd = firstEnd + (((end - firstEnd) / blockSize) / 2) * blockSize;
+				mergeInsertionBlockReverse(r, middleEnd, end, blockSize);
+				r.addMetric("block_orderings");
+			}
+
+			void mergeInsertionSort(Recorder& r)
+			{
+				const std::size_t count = r.state.slots.size();
+				const char* metricKeys[] = { "block_swaps", "block_insertions", "block_reversals", "block_orderings", "block_searches", "block_levels" };
+				for (std::size_t i = 0; i < sizeof(metricKeys) / sizeof(metricKeys[0]); ++i) r.declareMetric(metricKeys[i]);
+				std::size_t blockSize = 1;
+				while (blockSize <= count / 2)
+				{
+					for (std::size_t end = 2 * blockSize - 1; end < count; end += 2 * blockSize)
+					{
+						const SortItem left = r.at(end - blockSize), right = r.at(end);
+						r.compare(left, right, end - blockSize, end);
+						if (compareItems(left, right, r.trace.direction) == ComparisonResult::Greater)
+							mergeInsertionBlockSwap(r, end - blockSize, end, blockSize);
+					}
+					blockSize *= 2;
+				}
+
+				while (blockSize > 0)
+				{
+					r.addMetric("block_levels");
+					const std::size_t firstEnd = blockSize - 1;
+					std::size_t runEnd = firstEnd + 2 * blockSize;
+					std::size_t group = 2, jacobsthal = 4;
+					while (runEnd <= count && 2 * blockSize * group - blockSize <= count - runEnd)
+					{
+						mergeInsertionOrderBlocks(r, runEnd, runEnd + 2 * blockSize * group - blockSize, blockSize);
+						const std::size_t searchEnd = firstEnd + blockSize * (jacobsthal - 1);
+						runEnd += blockSize * group - blockSize;
+						for (std::size_t keyIndex = runEnd; keyIndex < runEnd + blockSize * group; keyIndex += blockSize)
+						{
+							if (keyIndex >= count) break;
+							const SortItem key = r.at(keyIndex);
+							const std::size_t destination = mergeInsertionBlockSearch(r, key, firstEnd, searchEnd, blockSize, keyIndex);
+							r.addMetric("block_searches");
+							mergeInsertionBlockInsert(r, keyIndex, destination, blockSize);
+						}
+						runEnd += blockSize * group + blockSize;
+						group = jacobsthal - group;
+						jacobsthal *= 2;
+					}
+					while (runEnd < count)
+					{
+						const SortItem key = r.at(runEnd);
+						const std::size_t destination = mergeInsertionBlockSearch(r, key, firstEnd, runEnd, blockSize, runEnd);
+						r.addMetric("block_searches");
+						mergeInsertionBlockInsert(r, runEnd, destination, blockSize);
+						runEnd += 2 * blockSize;
+					}
+					blockSize /= 2;
+				}
+			}
 		}
 
 		void optimizedWeaveMergeStrategy(Recorder& r) { optimizedWeaveMergeSort(r); }
@@ -2444,6 +2534,7 @@ namespace sortinglogic
 		void bufferPartitionMergeStrategy(Recorder& r) { bufferPartitionMergeSort(r); }
 		void parallelBlockMergeStrategy(Recorder& r) { parallelBlockMergeSort(r); }
 		void optimizedRotateMergeStrategy(Recorder& r) { optimizedRotateMergeSort(r); }
+		void mergeInsertionSortStrategy(Recorder& r) { mergeInsertionSort(r); }
 		void remiSortStrategy(Recorder& r) { remiSort(r); }
 		void chaliceSortStrategy(Recorder& r) { chaliceSort(r); }
 		void fifthMergeSortStrategy(Recorder& r) { fifthMergeSort(r); }

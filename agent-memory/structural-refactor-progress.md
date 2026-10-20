@@ -1691,3 +1691,11 @@ Moved Improved In-Place Merge, Drop Merge, Median Merge, Buffer Partition Merge,
 The x64 Debug and Release solution builds passed. All six focused suites passed in both configurations: Improved In-Place Merge (294,414 checks), Drop Merge (3,341), Median Merge (2,873), Buffer Partition Merge (114,897), Parallel Block Merge (78,265), and Optimized Rotate Merge (301,382), with zero failures. `git diff --check` passed. No behavior or runtime-performance change is claimed.
 
 Next: extract the remaining insertion and workspace strategies, then reassess the residual coordinator switch and duplicated request-builder plumbing.
+
+## 2026-10-20 — remove the legacy algorithm fallback dispatcher
+
+Moved Asynchronous Sort into the distribution strategies, Patience Sort into the run-based strategies, Block Insertion into the insertion module, and Merge-Insertion into the merge module. Stable Permutation and Table Sort now share a focused `IndirectStrategies.cpp` workspace. All catalog request builders bind directly to static strategy functions; `buildSelectedAlgorithm` no longer contains an algorithm switch or a fallback builder macro. `SortingLogic.cpp` is now 1,575 lines and owns no sorting implementation bodies.
+
+The x64 Debug and Release solution builds passed. Focused tests passed in both configurations: Asynchronous Sort (30,278 checks), Patience Sort (15,995), indirect/permutation methods (19,260), Block Insertion (475,184), and Merge-Insertion (208,435), all with zero failures. `git diff --check` passed. No behavior or runtime-performance change is claimed.
+
+Next: separate catalog metadata/compatibility ownership from trace-building orchestration, then inspect the remaining coordinator utilities and redundant compatibility adapters.

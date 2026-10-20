@@ -169,6 +169,12 @@ namespace sortinglogic
 		void swaplessBubble(detail::Recorder& recorder);
 		void unoptimizedBubble(detail::Recorder& recorder);
 		void unoptimizedCocktail(detail::Recorder& recorder);
+		void asynchronousSort(detail::Recorder& recorder);
+		void blockInsertionSort(detail::Recorder& recorder);
+		void patienceSort(detail::Recorder& recorder);
+		void mergeInsertionSortStrategy(detail::Recorder& recorder);
+		void stablePermutationSortStrategy(detail::Recorder& recorder);
+		void tableSortStrategy(detail::Recorder& recorder);
 
 		void classicThreeSmoothComb(detail::Recorder& recorder);
 		void threeSmoothCombIterative(detail::Recorder& recorder);

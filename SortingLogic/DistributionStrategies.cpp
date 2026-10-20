@@ -878,6 +878,60 @@ namespace sortinglogic
 				orderedIntegerKey(r.at(n - 1), r.trace.direction) * magnitude)));
 		}
 
+		void asynchronousSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			r.declareMetric("asynchronous_key_passes");
+			r.declareMetric("asynchronous_source_probes");
+			r.declareMetric("asynchronous_emitted_items");
+			if (count == 0) return;
+
+			const std::string lane = "asynchronous_scan";
+			const std::string consumedLane = "asynchronous_consumed";
+			r.resizeAuxiliary(lane, count);
+			r.resizeCounters(consumedLane, count);
+			const auto valueRank = [&r](const SortItem& item) -> std::int64_t
+			{
+				return r.trace.direction == SortDirection::Ascending
+					? static_cast<std::int64_t>(item.integerKey) : -static_cast<std::int64_t>(item.integerKey);
+			};
+			std::int64_t minimumRank = valueRank(r.at(0)), maximumRank = minimumRank;
+			for (std::size_t i = 0; i < count; ++i)
+			{
+				r.chargeWork();
+				const SortItem item = r.at(i);
+				r.writeAuxiliary(lane, i, item);
+				const std::int64_t rank = valueRank(item);
+				minimumRank = (std::min)(minimumRank, rank);
+				maximumRank = (std::max)(maximumRank, rank);
+			}
+
+			std::uint64_t completedPasses = 0, probes = 0;
+			std::size_t output = 0;
+			for (std::int64_t currentRank = minimumRank; currentRank <= maximumRank; ++currentRank)
+			{
+				const int phase = r.beginPhase("Asynchronous value pass " + std::to_string(currentRank));
+				for (std::size_t source = 0; source < count; ++source)
+				{
+					r.probeAuxiliary(lane, source, SemanticRole::ProbedItem);
+					const SortItem item = r.auxiliaryAt(lane, source);
+					if (r.counter(consumedLane, source) == 0 && valueRank(item) <= currentRank)
+					{
+						r.writeMain(output++, item, SemanticRole::WriteTarget);
+						r.writeCounter(consumedLane, source, 1);
+					}
+				}
+				r.endPhase(phase, "Asynchronous value pass " + std::to_string(currentRank));
+				++completedPasses;
+				probes += count;
+				r.setMetric("asynchronous_key_passes", completedPasses);
+				r.setMetric("asynchronous_source_probes", probes);
+				r.setMetric("asynchronous_emitted_items", output);
+			}
+			if (output != count) throw std::logic_error("Asynchronous Sort did not emit every input item.");
+			r.resizeAuxiliary(lane, 0);
+			r.resizeCounters(consumedLane, 0);
+		}
 	}
 
 	namespace strategies
@@ -903,5 +957,6 @@ namespace sortinglogic
 		void simpleShatterSort(detail::Recorder& recorder) { sortinglogic::shatter(recorder, true); }
 		void staticSort(detail::Recorder& recorder) { sortinglogic::staticSort(recorder); }
 		void timeSort(detail::Recorder& recorder) { sortinglogic::timeSort(recorder); }
+		void asynchronousSort(detail::Recorder& recorder) { sortinglogic::asynchronousSort(recorder); }
 	}
 }
