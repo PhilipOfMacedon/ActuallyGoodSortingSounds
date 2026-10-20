@@ -14,6 +14,7 @@
 #include "Renderer2D.h"
 #include "SettingsPanelView.h"
 #include "SettingsPanelModel.h"
+#include "SettingsPanelControls.h"
 #include "TextLabel.h"
 #include "ThemePalette.h"
 #include "UiLayer.h"

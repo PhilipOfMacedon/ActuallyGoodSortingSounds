@@ -22,6 +22,7 @@
 #include "../SDL2BarGraphics/RenderingTypes.h"
 #include "../SDL2BarGraphics/SettingsPanelView.h"
 #include "../SDL2BarGraphics/SettingsPanelModel.h"
+#include "../SDL2BarGraphics/SettingsPanelControls.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
 #include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
@@ -1143,6 +1144,53 @@ namespace
 		check(model.selectedAudioBand() == 59, "audio band selection clamps above its catalog");
 		model.selectAudioBand(7, 0);
 		check(model.selectedAudioBand() == 0, "empty audio band catalogs resolve safely to index zero");
+	}
+
+	void testSettingsPanelControlCatalog()
+	{
+		const std::vector<std::string> appearance = settingsPanelControlIds(
+			SettingsPanelPage::Appearance, SettingsAudioGroup::Basic, nullptr);
+		check(appearance.size() == 4 && appearance[0] == "preset" && appearance[1] == "palette" &&
+			appearance[2] == "spacing" && appearance[3] == "appearance_customize",
+			"Appearance exposes its established settings controls in row order");
+
+		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
+		const sortinglogic::AlgorithmDescriptor* merge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
+		const sortinglogic::AlgorithmDescriptor* counting = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Counting);
+		check(insertion && merge && counting, "settings control catalog fixtures are registered");
+		if (!insertion || !merge || !counting) return;
+		const std::vector<std::string> insertionControls = settingsPanelControlIds(
+			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, insertion);
+		const auto contains = [](const std::vector<std::string>& ids, const std::string& id)
+		{
+			for (std::size_t i = 0; i < ids.size(); ++i) if (ids[i] == id) return true;
+			return false;
+		};
+		check(contains(insertionControls, "domain") && contains(insertionControls, "pattern") &&
+			contains(insertionControls, "algorithm_audio_00") && contains(insertionControls, "algorithm_audio_reset") &&
+			!contains(insertionControls, "algorithm_audio_01") && !contains(insertionControls, "algorithm_audio_03"),
+			"algorithm settings include common controls and only the existing audio operations for Insertion Sort");
+
+		const std::vector<std::string> mergeControls = settingsPanelControlIds(
+			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, merge);
+		check(contains(mergeControls, "merge_buffer_visualization") &&
+			contains(mergeControls, settingsAlgorithmOptionControlId(*merge, "execution_mode")) &&
+			contains(mergeControls, settingsAlgorithmOptionControlId(*merge, "writeback_mode")) &&
+			contains(mergeControls, "algorithm_audio_03"),
+			"Merge settings expose its registered options, buffer preference, and auxiliary audio level");
+
+		const std::vector<std::string> countingControls = settingsPanelControlIds(
+			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, counting);
+		check(contains(countingControls, "algorithm_audio_01") && contains(countingControls, "algorithm_audio_03"),
+			"distribution settings expose probe and auxiliary audio levels");
+
+		const std::vector<std::string> basicAudio = settingsPanelControlIds(
+			SettingsPanelPage::GeneralAudio, SettingsAudioGroup::Basic, insertion);
+		const std::vector<std::string> advancedAudio = settingsPanelControlIds(
+			SettingsPanelPage::GeneralAudio, SettingsAudioGroup::Advanced, insertion);
+		check(basicAudio.size() == 5 && basicAudio[0] == "recon_enabled" && basicAudio[4] == "recon_restore" &&
+			advancedAudio.size() == 9 && advancedAudio[0] == "recon_min_pitch" && advancedAudio[8] == "recon_cutoff",
+			"General Audio basic and advanced groups preserve their existing control lists");
 	}
 
 	void testSettingsStore()
@@ -2351,6 +2399,7 @@ int main()
 	testAlgorithmBrowserPaintComposition();
 	testSettingsPanelPaintComposition();
 	testSettingsPanelModel();
+	testSettingsPanelControlCatalog();
 	testSettingsStore();
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();

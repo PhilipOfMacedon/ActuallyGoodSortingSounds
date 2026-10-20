@@ -485,4 +485,20 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
 
-Next: extract settings widget composition/input setup decisions into small view helpers, keeping SDL event translation and app-action dispatch at the `ControlPanel` boundary.
+## 2026-10-19 — extract the settings page control catalog
+
+Status: implementation and focused verification complete.
+
+- Added `SettingsPanelControls` for stable algorithm-option widget IDs and captions, plus the ordered control IDs shown by each settings page and General Audio group.
+- Moved the existing Merge-only control, algorithm option grouping, per-operation audio visibility, and role-emphasis visibility decisions out of `ControlPanel::layoutSettingsControls`. The method now asks the helper for the page's active controls and applies geometry/visibility to the retained widgets.
+- Preserved the exact control ordering and legacy visibility rules for Insertion, Merge, Counting/Radix, and discard behavior. Role-channel metadata is resolved once per algorithm layout rather than reconstructed inside the channel loop.
+- Added headless checks for Appearance, Insertion, Merge, Counting, and both General Audio groups, including stable option IDs and operation-channel visibility.
+- No widget geometry, settings values, persisted keys, action routing, sorting, trace, or sound behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- `git diff --check`: passed; Git emitted only its configured LF-to-CRLF working-tree notices.
+
+Next: extract the remaining settings-pane geometry and row placement into a pure layout helper, then continue with explicit overlay ownership and generic event-to-action binding.

@@ -396,24 +396,6 @@ std::string formatDuration(float seconds)
 		return descriptor ? descriptor->displayName : "Select algorithm";
 	}
 
-	std::string algorithmOptionWidgetId(const sortinglogic::AlgorithmDescriptor& algorithm, const std::string& groupId)
-	{
-		return std::string("algorithm_option_") + algorithm.familyId + "_" + algorithm.variantId + "_" + groupId;
-	}
-
-	std::string algorithmOptionGroupCaption(const std::string& groupId)
-	{
-		if (groupId == "gap_sequence") return "Shell gap sequence";
-		if (groupId == "execution_mode") return "Merge execution order";
-		if (groupId == "writeback_mode") return "Merge writeback";
-		if (groupId == "rotate_buffer_capacity") return "Temporary buffer capacity";
-		if (groupId == "grail_buffer_mode") return "Grail buffer mode";
-		std::string caption = groupId;
-		std::replace(caption.begin(), caption.end(), '_', ' ');
-		if (!caption.empty()) caption[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(caption[0])));
-		return caption;
-	}
-
 	std::string settingsTabTitle(SettingsPanelPage page, const UserPreferences& settings)
 	{
 		if (page == SettingsPanelPage::Appearance) return "Settings | Appearance";
@@ -571,10 +553,10 @@ void ControlPanel::createWidgets()
 				if (candidate.stableId == selectedId) selectedIndex = static_cast<int>(optionNames.size());
 				optionNames.push_back(candidate.displayName);
 			}
-			const std::string id = algorithmOptionWidgetId(algorithm, groupId);
+			const std::string id = settingsAlgorithmOptionControlId(algorithm, groupId);
 			settingsUi_.addComboBox(id, optionNames, selectedIndex,
 				AppAction(AppActionKind::SetAlgorithmOption, algorithm.familyId, algorithm.variantId, groupId));
-			settingsCaptions_[id] = algorithmOptionGroupCaption(groupId);
+			settingsCaptions_[id] = settingsAlgorithmOptionCaption(groupId);
 		}
 	}
 	const SoundEngine::ReconstructedParameters& audio = settings_.reconstructedAudio;
@@ -873,69 +855,10 @@ void ControlPanel::layoutSettingsControls()
 	settingsUi_.find("settings_close")->setBounds(UiRect(settingsPanelBounds_.x + settingsPanelBounds_.width - 92.0f,
 		footerY, 76.0f, 26.0f));
 	settingsUi_.find("audio_retry")->setBounds(UiRect(x, footerY, std::min(190.0f, width - 90.0f), 26.0f));
-	std::vector<std::string> active;
-	if (settingsPanelModel_.isPage(SettingsPanelPage::Appearance))
-	{
-		active.push_back("preset"); active.push_back("palette"); active.push_back("spacing"); active.push_back("appearance_customize");
-	}
-	else if (settingsPanelModel_.isPage(SettingsPanelPage::Algorithm))
-	{
-		active.push_back("domain"); active.push_back("pattern");
-		active.push_back("playback_timing");
-		active.push_back("completion_scan");
-		const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(
-			static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
-		if (selected && selected->id == sortinglogic::SortAlgorithm::Merge)
-			active.push_back("merge_buffer_visualization");
-		if (selected)
-		{
-			std::set<std::string> groups;
-			for (std::size_t optionIndex = 0; optionIndex < selected->supportedOptions.size(); ++optionIndex)
-			{
-				const std::string groupId(selected->supportedOptions[optionIndex].groupId);
-				if (groups.insert(groupId).second) active.push_back(algorithmOptionWidgetId(*selected, groupId));
-			}
-		}
-		for (int channel = 0; channel < static_cast<int>(AlgorithmAudioChannel::Count); ++channel)
-		{
-			const AlgorithmAudioChannel level = static_cast<AlgorithmAudioChannel>(channel);
-			bool visible = false;
-			switch (level)
-			{
-			case AlgorithmAudioChannel::Comparison: visible = true; break;
-			case AlgorithmAudioChannel::ProbeAccent:
-				visible = selected && (selected->id == sortinglogic::SortAlgorithm::Counting || selected->id == sortinglogic::SortAlgorithm::Radix); break;
-			case AlgorithmAudioChannel::AuxiliaryAccent:
-				visible = selected && (selected->id == sortinglogic::SortAlgorithm::Merge || selected->id == sortinglogic::SortAlgorithm::Counting || selected->id == sortinglogic::SortAlgorithm::Radix); break;
-			case AlgorithmAudioChannel::DiscardAccent:
-				visible = selected && std::string(selected->behavior).find("discard") != std::string::npos; break;
-			default:
-				if (selected)
-				{
-					const std::vector<AlgorithmAudioChannel> roles = supportedAudioRoleChannels(*selected);
-					visible = std::find(roles.begin(), roles.end(), level) != roles.end();
-				}
-				break;
-			}
-			if (visible)
-				active.push_back(std::string("algorithm_audio_") + (channel < 10 ? "0" : "") + std::to_string(channel));
-		}
-		active.push_back("algorithm_audio_reset");
-	}
-	else
-	{
-		if (settingsPanelModel_.audioGroup() == SettingsAudioGroup::Basic)
-		{
-			const char* basicAudio[] = { "recon_enabled", "recon_master", "recon_idle_policy", "recon_release", "recon_restore" };
-			active.assign(basicAudio, basicAudio + sizeof(basicAudio) / sizeof(basicAudio[0]));
-		}
-		else
-		{
-			const char* advancedAudio[] = { "recon_min_pitch", "recon_max_pitch", "recon_mapping", "recon_clock",
-				"recon_cycles", "recon_tukey", "recon_delay", "recon_lowpass", "recon_cutoff" };
-			active.assign(advancedAudio, advancedAudio + sizeof(advancedAudio) / sizeof(advancedAudio[0]));
-		}
-	}
+	const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(
+		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
+	const std::vector<std::string> active = settingsPanelControlIds(
+		settingsPanelModel_.page(), settingsPanelModel_.audioGroup(), selected);
 	std::set<std::string> visibleWidgetIds;
 	visibleWidgetIds.insert("appearance_tab");
 	visibleWidgetIds.insert("algorithm_tab");
@@ -1125,7 +1048,7 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 		{
 			const std::string groupId(algorithmDescriptor.supportedOptions[optionIndex].groupId);
 			if (!groups.insert(groupId).second) continue;
-			const std::string id = algorithmOptionWidgetId(algorithmDescriptor, groupId);
+			const std::string id = settingsAlgorithmOptionControlId(algorithmDescriptor, groupId);
 			UiWidget* widget = settingsUi_.find(id);
 			if (!widget) continue;
 			const std::string stableId = algorithmOptionStableId(settings_, algorithmDescriptor, groupId);
