@@ -125,6 +125,10 @@ namespace SoundEngine
 		bool operator==(const Parameters& other) const;
 	};
 
+	// Applies the same bounds and enum fallbacks as Synthesizer::setParameters
+	// without constructing or mutating DSP runtime state.
+	Parameters normalizeParameters(const Parameters& parameters);
+
 	enum class AudioCommandKind
 	{
 		TraceLoaded,
@@ -181,11 +185,6 @@ namespace SoundEngine
 	float comparisonRoleGain(ComparisonRole role) const;
 		void retargetParticipant(std::array<float, BandCount>& targets, float position);
 		float readDelay(const std::array<float, 16384>& delayLine, double delaySamples) const;
-		static float sanitize(float value, float fallback, float minimum, float maximum);
-		static MappingMode sanitizeMappingMode(MappingMode mode);
-		static ComparisonSpreadMode sanitizeComparisonSpreadMode(ComparisonSpreadMode mode);
-		static ChorusWeighting sanitizeChorusWeighting(ChorusWeighting weighting);
-
 		Parameters targetParameters_;
 		AudioComparison activeComparison_;
 		bool hasComparison_;

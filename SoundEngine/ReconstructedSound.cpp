@@ -93,6 +93,27 @@ namespace SoundEngine
 			lowPassEnabled == other.lowPassEnabled && mapping == other.mapping && idlePolicy == other.idlePolicy;
 	}
 
+	ReconstructedParameters normalizeReconstructedParameters(const ReconstructedParameters& input,
+		const ReconstructedParameters& previous)
+	{
+		ReconstructedParameters normalized = input;
+		normalized.minimumFrequencyHz = clamp(normalized.minimumFrequencyHz, 50.0, 1000.0);
+		normalized.maximumFrequencyHz = clamp(normalized.maximumFrequencyHz, 1000.0, 8000.0);
+		if (normalized.minimumFrequencyHz >= normalized.maximumFrequencyHz)
+		{
+			normalized.minimumFrequencyHz = previous.minimumFrequencyHz;
+			normalized.maximumFrequencyHz = previous.maximumFrequencyHz;
+		}
+		normalized.excitationClockHz = clamp(normalized.excitationClockHz, 100.0, 600.0);
+		normalized.carrierCycles = clamp(normalized.carrierCycles, 1.0, 16.0);
+		normalized.tukeyFraction = clamp(normalized.tukeyFraction, 0.0, 1.0);
+		normalized.secondOperandDelayMicroseconds = clamp(normalized.secondOperandDelayMicroseconds, 0.0, 2000.0);
+		normalized.masterLevel = clamp(normalized.masterLevel, 0.0, 1.0);
+		normalized.specialReleaseMilliseconds = clamp(normalized.specialReleaseMilliseconds, 0.0, 2000.0);
+		normalized.lowPassCutoffHz = clamp(normalized.lowPassCutoffHz, 500.0, 20000.0);
+		return normalized;
+	}
+
 	BurstComparison::BurstComparison()
 		: firstPosition(0.0), secondPosition(0.0), firstRole(0), secondRole(0), firstGain(1.0), secondGain(1.0), probeOnly(false)
 	{
@@ -131,21 +152,7 @@ namespace SoundEngine
 
 	void ReconstructedSynthesizer::setParameters(const ReconstructedParameters& input)
 	{
-		ReconstructedParameters p = input;
-		p.minimumFrequencyHz = clamp(p.minimumFrequencyHz, 50.0, 1000.0);
-		p.maximumFrequencyHz = clamp(p.maximumFrequencyHz, 1000.0, 8000.0);
-		if (p.minimumFrequencyHz >= p.maximumFrequencyHz)
-		{
-			p.minimumFrequencyHz = parameters_.minimumFrequencyHz;
-			p.maximumFrequencyHz = parameters_.maximumFrequencyHz;
-		}
-		p.excitationClockHz = clamp(p.excitationClockHz, 100.0, 600.0);
-		p.carrierCycles = clamp(p.carrierCycles, 1.0, 16.0);
-		p.tukeyFraction = clamp(p.tukeyFraction, 0.0, 1.0);
-		p.secondOperandDelayMicroseconds = clamp(p.secondOperandDelayMicroseconds, 0.0, 2000.0);
-		p.masterLevel = clamp(p.masterLevel, 0.0, 1.0);
-		p.specialReleaseMilliseconds = clamp(p.specialReleaseMilliseconds, 0.0, 2000.0);
-		p.lowPassCutoffHz = clamp(p.lowPassCutoffHz, 500.0, 20000.0);
+		const ReconstructedParameters p = normalizeReconstructedParameters(input, parameters_);
 		parameters_ = p;
 		targetMaster_ = p.masterLevel;
 		if (!firstLanePending_ && sampleClock_ < nextClockFrame_)

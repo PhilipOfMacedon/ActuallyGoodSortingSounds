@@ -625,3 +625,24 @@ Verification:
 - `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
 
 Next: isolate per-variant/general audio widget dispatch from app preference dispatch, then continue with the duplicated settings equality and normalization paths.
+
+## 2026-10-19 — extract audio settings actions and normalization
+
+Status: implementation and focused verification complete.
+
+- Moved comparison and reconstructed audio action-to-field mapping out of `AppController` into the value-only `AudioSettingsActions` adapter. Mismatched action kinds are ignored.
+- Extracted pure SoundEngine parameter normalizers and made both runtime setters use the same normalization functions. App settings no longer construct `Synthesizer` or `ReconstructedSynthesizer` objects merely to clamp a value.
+- Preserved the two existing reconstructed frequency fallback contexts: the runtime setter falls back to its prior normalized values, while the application action adapter matches its former fresh-validator factory-default fallback.
+- Added tests for clamping, NaN/infinity fallbacks, invalid enum values, normalizer idempotence, runtime-setter equivalence, invalid channel indices, and the reconstructed frequency fallback.
+- Rechecked the equality finding in the audit against the current source. `UserPreferences`, `SoundEngine::Parameters`, and `ReconstructedParameters` already centralize their equality operators; the audit's claimed duplicate helpers in the controller and bridge were stale. Updated the audit to distinguish that from the real remaining settings-copy and codec/storage boundaries.
+- No synthesizer formula, timeline scheduling, trace, UI control, saved key, or settings version changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Debug `SoundEngineTests`: passed (417,376 assertions).
+- Release `SoundEngineTests`: passed (417,376 assertions).
+- `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
+
+Next: measure and classify preference-changing actions before reducing the dispatch-time `UserPreferences` copy; keep INI migration, Win32 replacement, and audio-profile resolution separate in later slices.

@@ -27,6 +27,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AppController.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="AudioSettingsActions.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AudioPresentationBridge.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ControlPanel.cpp">
       <Filter>Source Files</Filter>
@@ -74,6 +75,7 @@
     <ClInclude Include="SettingsPanelLayout.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppActions.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AppController.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="AudioSettingsActions.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AudioPresentationBridge.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="BarCountSteps.h">
       <Filter>Header Files</Filter>

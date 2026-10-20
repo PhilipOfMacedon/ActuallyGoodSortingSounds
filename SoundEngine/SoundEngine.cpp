@@ -16,6 +16,48 @@ namespace
 		return std::max(minimum, std::min(maximum, value));
 	}
 
+	float sanitizeParameterValue(float value, float fallback, float minimum, float maximum)
+	{
+		return std::isfinite(value) ? clampValue(value, minimum, maximum) : fallback;
+	}
+
+	SoundEngine::MappingMode sanitizeMappingModeValue(SoundEngine::MappingMode mode)
+	{
+		switch (mode)
+		{
+		case SoundEngine::MappingMode::LinearHz:
+		case SoundEngine::MappingMode::LogFrequency:
+		case SoundEngine::MappingMode::EqualBandSlots:
+			return mode;
+		default:
+			return SoundEngine::MappingMode::LinearHz;
+		}
+	}
+
+	SoundEngine::ComparisonSpreadMode sanitizeSpreadModeValue(SoundEngine::ComparisonSpreadMode mode)
+	{
+		switch (mode)
+		{
+		case SoundEngine::ComparisonSpreadMode::FixedBins:
+		case SoundEngine::ComparisonSpreadMode::PositionScaled:
+			return mode;
+		default:
+			return SoundEngine::ComparisonSpreadMode::FixedBins;
+		}
+	}
+
+	SoundEngine::ChorusWeighting sanitizeChorusWeightingValue(SoundEngine::ChorusWeighting weighting)
+	{
+		switch (weighting)
+		{
+		case SoundEngine::ChorusWeighting::Uniform:
+		case SoundEngine::ChorusWeighting::ComparisonEnvelope:
+			return weighting;
+		default:
+			return SoundEngine::ChorusWeighting::Uniform;
+		}
+	}
+
 	float smoothingAlpha(float milliseconds, float sampleRate)
 	{
 		if (milliseconds <= 0.0f || sampleRate <= 0.0f)
@@ -140,6 +182,47 @@ namespace SoundEngine
 			mappingMode == other.mappingMode && comparisonSpreadMode == other.comparisonSpreadMode &&
 			bandTrimDb == other.bandTrimDb && accentRouting == other.accentRouting &&
 			accentGain == other.accentGain && enabled == other.enabled;
+	}
+
+	Parameters normalizeParameters(const Parameters& parameters)
+	{
+		Parameters normalized;
+		normalized.masterLevel = sanitizeParameterValue(parameters.masterLevel, 0.5f, 0.0f, 1.0f);
+		normalized.bedLevel = sanitizeParameterValue(parameters.bedLevel, 0.15f, 0.0f, 1.0f);
+		normalized.bedHarmonicExponent = sanitizeParameterValue(parameters.bedHarmonicExponent, 1.5f, 0.5f, 3.0f);
+		normalized.includeSub300HzBed = parameters.includeSub300HzBed;
+		normalized.bedComb.enabled = parameters.bedComb.enabled;
+		normalized.bedComb.applyPhase = parameters.bedComb.applyPhase;
+		normalized.bedComb.delayMicroseconds = sanitizeParameterValue(parameters.bedComb.delayMicroseconds, 222.222f, 0.0f, 5000.0f);
+		normalized.bedComb.phaseOffsetDegrees = sanitizeParameterValue(parameters.bedComb.phaseOffsetDegrees, 12.0f, -180.0f, 180.0f);
+		normalized.bedComb.wetAtLowFrequency = sanitizeParameterValue(parameters.bedComb.wetAtLowFrequency, 0.95f, 0.0f, 1.0f);
+		normalized.bedComb.wetAtHighFrequency = sanitizeParameterValue(parameters.bedComb.wetAtHighFrequency, 0.90f, 0.0f, 1.0f);
+		normalized.bedComb.fadeStartHz = sanitizeParameterValue(parameters.bedComb.fadeStartHz, 6600.0f, 0.0f, 17100.0f);
+		normalized.bedComb.fadeEndHz = sanitizeParameterValue(parameters.bedComb.fadeEndHz, 15600.0f, 0.0f, 17100.0f);
+		normalized.bedComb.fadeExponent = sanitizeParameterValue(parameters.bedComb.fadeExponent, 3.0f, 0.25f, 8.0f);
+		normalized.comparisonBoostDb = sanitizeParameterValue(parameters.comparisonBoostDb, 6.0f, -60.0f, 30.0f);
+		normalized.heldKeyBoostDb = sanitizeParameterValue(parameters.heldKeyBoostDb, 6.0f, -60.0f, 30.0f);
+		for (std::size_t i = 0; i < RoleCount; ++i)
+			normalized.roleBoostDb[i] = sanitizeParameterValue(parameters.roleBoostDb[i], 0.0f, -60.0f, 12.0f);
+		normalized.tauBelowBins = sanitizeParameterValue(parameters.tauBelowBins, 0.5f, 0.05f, static_cast<float>(BandCount));
+		normalized.tauAboveBins = sanitizeParameterValue(parameters.tauAboveBins, 0.5f, 0.05f, static_cast<float>(BandCount));
+		normalized.chorusMix = sanitizeParameterValue(parameters.chorusMix, 0.0f, 0.0f, 0.5f);
+		normalized.chorusRateHz = sanitizeParameterValue(parameters.chorusRateHz, 1.0f, 0.1f, 5.0f);
+		normalized.chorusDepthMs = sanitizeParameterValue(parameters.chorusDepthMs, 2.0f, 0.0f, 8.0f);
+		normalized.chorusWeighting = sanitizeChorusWeightingValue(parameters.chorusWeighting);
+		normalized.attackMs = sanitizeParameterValue(parameters.attackMs, 8.0f, 1.0f, 200.0f);
+		normalized.releaseMs = sanitizeParameterValue(parameters.releaseMs, 8.0f, 1.0f, 2000.0f);
+		normalized.mappingMode = sanitizeMappingModeValue(parameters.mappingMode);
+		normalized.comparisonSpreadMode = sanitizeSpreadModeValue(parameters.comparisonSpreadMode);
+		normalized.enabled = parameters.enabled;
+		for (std::size_t i = 0; i < AccentCategoryCount; ++i)
+		{
+			normalized.accentRouting[i] = parameters.accentRouting[i];
+			normalized.accentGain[i] = sanitizeParameterValue(parameters.accentGain[i], 0.0f, 0.0f, 0.5f);
+		}
+		for (std::size_t i = 0; i < BandCount; ++i)
+			normalized.bandTrimDb[i] = sanitizeParameterValue(parameters.bandTrimDb[i], 0.0f, -96.0f, 12.0f);
+		return normalized;
 	}
 
 	AudioCommand::AudioCommand()
@@ -347,7 +430,7 @@ namespace SoundEngine
 		{
 			eventAccentSummary_.counts[i] = summary.counts[i];
 			if (summary.counts[i] != 0)
-				eventAccentSummary_.representativePositions[i] = sanitize(summary.representativePositions[i], 0.5f, 0.0f, 1.0f);
+				eventAccentSummary_.representativePositions[i] = sanitizeParameterValue(summary.representativePositions[i], 0.5f, 0.0f, 1.0f);
 		}
 		updateEventAccentTargets();
 	}
@@ -376,44 +459,7 @@ namespace SoundEngine
 
 	void Synthesizer::setParameters(const Parameters& parameters)
 	{
-		Parameters sanitized;
-		sanitized.masterLevel = sanitize(parameters.masterLevel, 0.5f, 0.0f, 1.0f);
-		sanitized.bedLevel = sanitize(parameters.bedLevel, 0.15f, 0.0f, 1.0f);
-		sanitized.bedHarmonicExponent = sanitize(parameters.bedHarmonicExponent, 1.5f, 0.5f, 3.0f);
-		sanitized.includeSub300HzBed = parameters.includeSub300HzBed;
-		sanitized.bedComb.enabled = parameters.bedComb.enabled;
-		sanitized.bedComb.applyPhase = parameters.bedComb.applyPhase;
-		sanitized.bedComb.delayMicroseconds = sanitize(parameters.bedComb.delayMicroseconds, 222.222f, 0.0f, 5000.0f);
-		sanitized.bedComb.phaseOffsetDegrees = sanitize(parameters.bedComb.phaseOffsetDegrees, 12.0f, -180.0f, 180.0f);
-		sanitized.bedComb.wetAtLowFrequency = sanitize(parameters.bedComb.wetAtLowFrequency, 0.95f, 0.0f, 1.0f);
-		sanitized.bedComb.wetAtHighFrequency = sanitize(parameters.bedComb.wetAtHighFrequency, 0.90f, 0.0f, 1.0f);
-		sanitized.bedComb.fadeStartHz = sanitize(parameters.bedComb.fadeStartHz, 6600.0f, 0.0f, 17100.0f);
-		sanitized.bedComb.fadeEndHz = sanitize(parameters.bedComb.fadeEndHz, 15600.0f, 0.0f, 17100.0f);
-		sanitized.bedComb.fadeExponent = sanitize(parameters.bedComb.fadeExponent, 3.0f, 0.25f, 8.0f);
-		sanitized.comparisonBoostDb = sanitize(parameters.comparisonBoostDb, 6.0f, -60.0f, 30.0f);
-		sanitized.heldKeyBoostDb = sanitize(parameters.heldKeyBoostDb, 6.0f, -60.0f, 30.0f);
-		for (std::size_t i = 0; i < RoleCount; ++i)
-			sanitized.roleBoostDb[i] = sanitize(parameters.roleBoostDb[i], 0.0f, -60.0f, 12.0f);
-		sanitized.tauBelowBins = sanitize(parameters.tauBelowBins, 0.5f, 0.05f, static_cast<float>(BandCount));
-		sanitized.tauAboveBins = sanitize(parameters.tauAboveBins, 0.5f, 0.05f, static_cast<float>(BandCount));
-		sanitized.chorusMix = sanitize(parameters.chorusMix, 0.0f, 0.0f, 0.5f);
-		sanitized.chorusRateHz = sanitize(parameters.chorusRateHz, 1.0f, 0.1f, 5.0f);
-		sanitized.chorusDepthMs = sanitize(parameters.chorusDepthMs, 2.0f, 0.0f, 8.0f);
-		sanitized.chorusWeighting = sanitizeChorusWeighting(parameters.chorusWeighting);
-		sanitized.attackMs = sanitize(parameters.attackMs, 8.0f, 1.0f, 200.0f);
-		sanitized.releaseMs = sanitize(parameters.releaseMs, 8.0f, 1.0f, 2000.0f);
-		sanitized.mappingMode = sanitizeMappingMode(parameters.mappingMode);
-		sanitized.comparisonSpreadMode = sanitizeComparisonSpreadMode(parameters.comparisonSpreadMode);
-		sanitized.enabled = parameters.enabled;
-		for (std::size_t i = 0; i < AccentCategoryCount; ++i)
-		{
-			sanitized.accentRouting[i] = parameters.accentRouting[i];
-			sanitized.accentGain[i] = sanitize(parameters.accentGain[i], 0.0f, 0.0f, 0.5f);
-		}
-		for (std::size_t i = 0; i < BandCount; ++i)
-			sanitized.bandTrimDb[i] = sanitize(parameters.bandTrimDb[i], 0.0f, -96.0f, 12.0f);
-
-		targetParameters_ = sanitized;
+		targetParameters_ = normalizeParameters(parameters);
 		targetComparisonBoost_ = decibelsToGain(targetParameters_.comparisonBoostDb);
 		targetHeldKeyBoost_ = decibelsToGain(targetParameters_.heldKeyBoostDb);
 		for (std::size_t i = 0; i < RoleCount; ++i)
@@ -507,48 +553,6 @@ namespace SoundEngine
 		const std::size_t index1 = (index0 + 1) % ChorusBufferSize;
 		const float fraction = static_cast<float>(readPosition - index0);
 		return delayLine[index0] + (delayLine[index1] - delayLine[index0]) * fraction;
-	}
-
-	float Synthesizer::sanitize(float value, float fallback, float minimum, float maximum)
-	{
-		return std::isfinite(value) ? clampValue(value, minimum, maximum) : fallback;
-	}
-
-	MappingMode Synthesizer::sanitizeMappingMode(MappingMode mode)
-	{
-		switch (mode)
-		{
-		case MappingMode::LinearHz:
-		case MappingMode::LogFrequency:
-		case MappingMode::EqualBandSlots:
-			return mode;
-		default:
-			return MappingMode::LinearHz;
-		}
-	}
-
-	ComparisonSpreadMode Synthesizer::sanitizeComparisonSpreadMode(ComparisonSpreadMode mode)
-	{
-		switch (mode)
-		{
-		case ComparisonSpreadMode::FixedBins:
-		case ComparisonSpreadMode::PositionScaled:
-			return mode;
-		default:
-			return ComparisonSpreadMode::FixedBins;
-		}
-	}
-
-	ChorusWeighting Synthesizer::sanitizeChorusWeighting(ChorusWeighting weighting)
-	{
-		switch (weighting)
-		{
-		case ChorusWeighting::Uniform:
-		case ChorusWeighting::ComparisonEnvelope:
-			return weighting;
-		default:
-			return ChorusWeighting::Uniform;
-		}
 	}
 
 	void Synthesizer::render(float* output, std::size_t frameCount, std::uint32_t sampleRate)

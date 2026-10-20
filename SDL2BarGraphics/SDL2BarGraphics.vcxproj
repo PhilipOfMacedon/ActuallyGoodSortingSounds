@@ -22,6 +22,7 @@
     <ClCompile Include="AppearanceEditorLayout.cpp" />
     <ClCompile Include="AppearanceEditorModel.cpp" />
     <ClCompile Include="AppController.cpp" />
+    <ClCompile Include="AudioSettingsActions.cpp" />
     <ClCompile Include="AlgorithmBrowserModel.cpp" />
     <ClCompile Include="AlgorithmBrowserView.cpp" />
     <ClCompile Include="SettingsPanelView.cpp" />
@@ -63,6 +64,7 @@
     <ClInclude Include="SettingsPanelLayout.h" />
     <ClInclude Include="AppActions.h" />
     <ClInclude Include="AppController.h" />
+    <ClInclude Include="AudioSettingsActions.h" />
     <ClInclude Include="AudioPresentationBridge.h" />
     <ClInclude Include="BarCountSteps.h" />
     <ClInclude Include="ArrayRenderer.h" />

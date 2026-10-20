@@ -83,6 +83,55 @@ namespace
 			"out-of-order source cursors should be rejected during preparation");
 	}
 
+	void testParameterNormalization()
+	{
+		using namespace SoundEngine;
+		Parameters input;
+		input.masterLevel = 1.5f;
+		input.bedLevel = -0.5f;
+		input.bedHarmonicExponent = std::numeric_limits<float>::quiet_NaN();
+		input.bedComb.phaseOffsetDegrees = std::numeric_limits<float>::infinity();
+		input.mappingMode = static_cast<MappingMode>(99);
+		input.comparisonSpreadMode = static_cast<ComparisonSpreadMode>(99);
+		input.chorusWeighting = static_cast<ChorusWeighting>(99);
+		input.roleBoostDb.fill(30.0f);
+		input.bandTrimDb.fill(-120.0f);
+		input.accentGain.fill(0.8f);
+
+		const Parameters normalized = normalizeParameters(input);
+		Synthesizer runtime;
+		runtime.setParameters(input);
+		require(runtime.parameters() == normalized,
+			"pure audio normalization and Synthesizer::setParameters must produce identical control values");
+		require(normalized.masterLevel == 1.0f && normalized.bedLevel == 0.0f && normalized.bedHarmonicExponent == 1.5f &&
+			normalized.bedComb.phaseOffsetDegrees == 12.0f && normalized.mappingMode == MappingMode::LinearHz &&
+			normalized.comparisonSpreadMode == ComparisonSpreadMode::FixedBins &&
+			normalized.chorusWeighting == ChorusWeighting::Uniform && normalized.roleBoostDb[0] == 12.0f &&
+			normalized.bandTrimDb[0] == -96.0f && normalized.accentGain[0] == 0.5f,
+			"audio normalization preserves existing finite bounds, non-finite defaults, and invalid-enum fallbacks");
+		require(normalizeParameters(normalized) == normalized,
+			"audio parameter normalization is idempotent");
+
+		ReconstructedParameters previous;
+		previous.minimumFrequencyHz = 250.0;
+		previous.maximumFrequencyHz = 5000.0;
+		ReconstructedParameters conflicting = previous;
+		conflicting.minimumFrequencyHz = 1000.0;
+		conflicting.maximumFrequencyHz = 1000.0;
+		conflicting.excitationClockHz = 900.0;
+		conflicting.masterLevel = -1.0;
+		const ReconstructedParameters normalizedReconstructed = normalizeReconstructedParameters(conflicting, previous);
+		ReconstructedSynthesizer reconstructedRuntime;
+		reconstructedRuntime.setParameters(previous);
+		reconstructedRuntime.setParameters(conflicting);
+		require(reconstructedRuntime.parameters() == normalizedReconstructed,
+			"pure reconstructed-parameter normalization matches the renderer's stateful fallback behavior");
+		require(normalizedReconstructed.minimumFrequencyHz == previous.minimumFrequencyHz &&
+			normalizedReconstructed.maximumFrequencyHz == previous.maximumFrequencyHz &&
+			normalizedReconstructed.excitationClockHz == 600.0 && normalizedReconstructed.masterLevel == 0.0,
+			"reconstructed normalization preserves previous frequency bounds and existing scalar clamps");
+	}
+
 	void testTimelineDrivenBurstPlayback()
 	{
 		using namespace SoundEngine;
@@ -1677,6 +1726,7 @@ int main()
 	try
 	{
 		testLegacyRendererBitExactParity();
+		testParameterNormalization();
 		testPreparedAudioTimelineMappings();
 		testTimelineDrivenBurstPlayback();
 		testReconstructedBurstRenderer();

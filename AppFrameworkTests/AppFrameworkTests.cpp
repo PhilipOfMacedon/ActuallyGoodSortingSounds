@@ -14,6 +14,7 @@
 #include "../SDL2BarGraphics/LayoutMetrics.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
 #include "../SDL2BarGraphics/AppearanceEditorModel.h"
+#include "../SDL2BarGraphics/AudioSettingsActions.h"
 #include "../SDL2BarGraphics/BarCountSteps.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserModel.h"
 #include "../SDL2BarGraphics/AlgorithmBrowserView.h"
@@ -916,6 +917,49 @@ namespace
 		const ui::SettingsNavigation unrelated = ui::settingsNavigationFor(UiAction::ViewCommand::OpenSettings);
 		check(unrelated.kind == ui::SettingsNavigationKind::None,
 			"modal opening commands are not mistaken for settings navigation");
+	}
+
+	void testAudioSettingsActionAdapter()
+	{
+		SoundEngine::Parameters audio;
+		AppAction master(AppActionKind::SetAudioParameter, 1.5f, 0, AudioParameterId::MasterLevel);
+		audio = audioSettingsActions::apply(audio, master);
+		check(audio.masterLevel == 1.0f,
+			"audio settings action applies the master value and shared sound-engine bounds");
+
+		AppAction invalidBand(AppActionKind::SetAudioParameter, 9.0f, 0, AudioParameterId::BandTrim,
+			static_cast<int>(SoundEngine::BandCount));
+		const SoundEngine::Parameters unchangedBand = audioSettingsActions::apply(audio, invalidBand);
+		check(unchangedBand.bandTrimDb == audio.bandTrimDb,
+			"audio settings action ignores an invalid per-band index");
+
+		AppAction accent(AppActionKind::SetAudioParameter, 0.8f, 0, AudioParameterId::AccentGain,
+			static_cast<int>(SoundEngine::AccentCategory::Distribution));
+		const SoundEngine::Parameters accentChanged = audioSettingsActions::apply(audio, accent);
+		check(accentChanged.accentGain[static_cast<std::size_t>(SoundEngine::AccentCategory::Distribution)] == 0.5f,
+			"audio settings action applies category gain through the shared 0.5 cap");
+		const SoundEngine::Parameters mismatched = audioSettingsActions::apply(audio,
+			AppAction(AppActionKind::ResetVariantAudioLevels));
+		check(mismatched == audio,
+			"audio settings adapter ignores app actions outside its declared command kind");
+
+		SoundEngine::ReconstructedParameters reconstructed;
+		reconstructed.minimumFrequencyHz = 500.0;
+		reconstructed.maximumFrequencyHz = 1000.0;
+		AppAction conflictingRange(AppActionKind::SetReconstructedAudioParameter,
+			ReconstructedAudioParameterId::MinimumFrequencyHz, 1000.0f);
+		reconstructed = audioSettingsActions::apply(reconstructed, conflictingRange);
+		check(reconstructed.minimumFrequencyHz == SoundEngine::ReconstructedParameters().minimumFrequencyHz &&
+			reconstructed.maximumFrequencyHz == SoundEngine::ReconstructedParameters().maximumFrequencyHz,
+			"reconstructed audio actions retain the prior fresh-validator default fallback for a conflicting frequency range");
+
+		AppAction cutoff(AppActionKind::SetReconstructedAudioParameter,
+			ReconstructedAudioParameterId::LowPassCutoffHz, 24000.0f);
+		reconstructed = audioSettingsActions::apply(reconstructed, cutoff);
+		check(reconstructed.lowPassCutoffHz == 20000.0,
+			"reconstructed audio action applies the existing cutoff maximum");
+		check(audioSettingsActions::apply(reconstructed, AppAction(AppActionKind::RetryAudioDevice)) == reconstructed,
+			"reconstructed audio settings adapter ignores unrelated app commands");
 	}
 
 	void testUiCatalogActionNormalization()
@@ -2680,6 +2724,7 @@ int main()
 	testUiOverlayState();
 	testMainMenuSelectionActions();
 	testSettingsNavigationRouting();
+	testAudioSettingsActionAdapter();
 	testUiCatalogActionNormalization();
 	testSdlUiEventAdapter();
 	testAlgorithmBrowserInputAndLayout();

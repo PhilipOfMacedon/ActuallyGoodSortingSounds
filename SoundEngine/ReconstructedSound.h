@@ -34,6 +34,11 @@ namespace SoundEngine
 		bool operator==(const ReconstructedParameters& other) const;
 	};
 
+	// Applies the same scalar bounds as ReconstructedSynthesizer::setParameters.
+	// Invalid frequency ordering falls back to the supplied previous values.
+	ReconstructedParameters normalizeReconstructedParameters(const ReconstructedParameters& parameters,
+		const ReconstructedParameters& previous);
+
 	// Roles use the stable SoundEngine comparison role numeric values. They are
 	// intentionally untyped here so this interface stays independent of traces.
 	struct BurstComparison

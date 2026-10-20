@@ -126,13 +126,15 @@ Acceptance: pause/resume, seek, queued play, replacement, device loss/retry, dra
 
 ### 8. Settings equality, normalization, storage, and audio policy are mixed — medium/high priority
 
-Evidence: field-by-field equality is duplicated in `AppController.cpp:12`/`:35` and `AudioPresentationBridge.cpp:10`/`:44`. Dispatch copies all preferences before every action (`AppController.cpp:306`), then may compare them twice (`:688`, `:820`). Audio normalization constructs a full synthesizer (`:147`/`:170`). `UserSettings.cpp` combines schema/migrations with Win32 file operations and family/variant gain resolution.
+Current-tree correction (verified during the refactor on 2026-10-19): equality is already centralized on `UserPreferences`, `SoundEngine::Parameters`, and `SoundEngine::ReconstructedParameters`; the original attribution to duplicated field-by-field comparison helpers in `AppController` and `AudioPresentationBridge` is stale for this tree. The bridge still has focused comparators for timeline gain and event-presentation structs, while the controller uses the value-type operators. Do not merge those distinct comparisons without evidence they represent the same value contract.
 
-Give parameter/preference value types one maintained equality and normalization path. Extract pure normalization functions with exactly the current clamping/default rules; avoid constructing DSP runtime state just to validate one slider. Separate INI codec/migrations from atomic platform file storage and from audio-profile resolution.
+Remaining evidence: `AppController::dispatch` copies one complete `UserPreferences` value before dispatch and compares it after accepted actions; that preserves the current save-on-change rule but copies large appearance/options maps for transport actions. `UserSettings.cpp` still combines INI schema/migrations, Win32 storage, and family/variant audio-profile resolution. Before this slice, both audio action application helpers also constructed a full synthesizer instance just to obtain sanitized settings.
 
-Classify actual preference changes at dispatch, or use group revisions/precise old values, so transport actions avoid copying the entire appearance/options state. Keep saving actual preference changes immediately; changing this to debounce/background persistence would change the current product contract and needs separate consideration.
+The current refactor extracts audio action-to-value mapping into `AudioSettingsActions` and defines pure normalizers used by both those adapters and the runtime synthesizers. This preserves the existing bounds, invalid-enum fallbacks, non-finite defaults, and reconstructed frequency-order fallback rules without constructing DSP runtime objects for app settings changes.
 
-Acceptance: zero writes for transport/scrubbing/no-op edits, one effective save for an actual preference change, identical migrations/fallbacks, and unchanged atomic temporary-file replacement/backup behavior.
+Next, profile dispatch before changing persistence: measure or count preference copies and classify actions that can change saved values. Then separate INI codec/migrations from atomic platform storage and from audio-profile resolution. Keep immediate saves for actual preference changes; debouncing or background persistence would change the product contract and needs separate consideration.
+
+Acceptance: zero writes for transport/scrubbing/no-op edits, one effective save for an actual preference change, identical migrations/fallbacks, unchanged atomic temporary-file replacement/backup behavior, and no divergence between pure normalization and runtime parameter setters.
 
 ### 9. The frame prepares more work than it needs — medium priority, measure impact
 
