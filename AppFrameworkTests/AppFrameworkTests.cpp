@@ -1572,6 +1572,44 @@ namespace
 		check(model.search().empty() && !model.options().empty(), "clearing appearance search restores the unfiltered catalog");
 	}
 
+	void testAppearanceEditorSession()
+	{
+		UiAppearancePreferences original;
+		original.activePreset = UiPresetId::Current;
+		AppearanceEditorSession session;
+		session.begin(original);
+		check(sameUiAppearancePreferences(session.draft(), original) &&
+			session.model().preset() == original.activePreset && session.error().empty(),
+			"appearance editor session begins with a clean draft copied from the current preferences");
+
+		std::string validationError;
+		const UiColor editedColor(0.12f, 0.34f, 0.56f, 1.0f);
+		check(setUiTokenValue(UiPresetId::Current, session.draft().themes[UiPresetId::Current],
+			"color.bar", UiTokenValue::fromColor(editedColor), &validationError),
+			"appearance session accepts a valid draft token edit");
+		session.draft().activePreset = UiPresetId::FlatVgaDos;
+		session.error() = "temporary validation feedback";
+		session.restore();
+		check(sameUiAppearancePreferences(session.draft(), original) &&
+			session.model().preset() == UiPresetId::Current && session.error().empty(),
+			"cancel restores the session baseline, selected preset, and clean status");
+
+		UiAppearancePreferences committed = original;
+		committed.activePreset = UiPresetId::FlatVgaDos;
+		check(setUiTokenValue(UiPresetId::FlatVgaDos, committed.themes[UiPresetId::FlatVgaDos],
+			"scrollbar.show_arrows", UiTokenValue::fromBoolean(false), &validationError),
+			"appearance session fixture accepts a committed preference edit");
+		session.begin(original);
+		session.error() = "stale error";
+		session.accept(committed);
+		session.draft().activePreset = UiPresetId::Current;
+		session.error() = "later draft error";
+		session.restore();
+		check(sameUiAppearancePreferences(session.draft(), committed) &&
+			session.model().preset() == UiPresetId::FlatVgaDos && session.error().empty(),
+			"successful apply advances the session baseline used by a later restore");
+	}
+
 	void testAlgorithmBrowserInputAndLayout()
 	{
 		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
@@ -3240,6 +3278,7 @@ int main(int argc, char* argv[])
 	testAppearanceEditorLayout();
 	testAlgorithmProfileView();
 	testAppearanceEditorModel();
+	testAppearanceEditorSession();
 	testAlgorithmBrowserModel();
 	testUiOverlayState();
 	testMainMenuSelectionActions();

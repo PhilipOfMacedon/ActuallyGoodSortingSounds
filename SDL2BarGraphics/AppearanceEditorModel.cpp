@@ -92,3 +92,31 @@ void AppearanceEditorModel::refresh()
 		if (!selectedExists) selectedToken_ = options_[0].stableId;
 	}
 }
+
+AppearanceEditorSession::AppearanceEditorSession()
+	: original_(), draft_(), model_(), error_()
+{
+}
+
+void AppearanceEditorSession::begin(const UiAppearancePreferences& current)
+{
+	original_ = current;
+	draft_ = current;
+	model_.begin(current.activePreset);
+	error_.clear();
+}
+
+void AppearanceEditorSession::restore()
+{
+	draft_ = original_;
+	model_.setPreset(draft_.activePreset);
+	error_.clear();
+}
+
+void AppearanceEditorSession::accept(const UiAppearancePreferences& committed)
+{
+	original_ = committed;
+	draft_ = committed;
+	model_.setPreset(draft_.activePreset);
+	error_.clear();
+}

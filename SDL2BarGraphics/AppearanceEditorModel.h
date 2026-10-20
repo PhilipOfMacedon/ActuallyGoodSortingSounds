@@ -43,4 +43,30 @@ private:
 	void refresh();
 };
 
+// Owns the transactional state of one appearance-editing session. The view can
+// preview a draft without changing persisted preferences, then either restore
+// the original value or accept the committed value after the app controller
+// reports a successful save.
+class AppearanceEditorSession
+{
+public:
+	AppearanceEditorSession();
+	void begin(const UiAppearancePreferences& current);
+	void restore();
+	void accept(const UiAppearancePreferences& committed);
+
+	AppearanceEditorModel& model() { return model_; }
+	const AppearanceEditorModel& model() const { return model_; }
+	UiAppearancePreferences& draft() { return draft_; }
+	const UiAppearancePreferences& draft() const { return draft_; }
+	std::string& error() { return error_; }
+	const std::string& error() const { return error_; }
+
+private:
+	UiAppearancePreferences original_;
+	UiAppearancePreferences draft_;
+	AppearanceEditorModel model_;
+	std::string error_;
+};
+
 std::string appearanceTokenLabel(const UiTokenDescriptor& descriptor);

@@ -391,7 +391,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
 	inlineEditWidgetId_(), inlineEditBuffer_(), inlineEditReplaceOnNextDigit_(false), inlineEditAppearanceValue_(false),
-	appearanceDraft_(settings.appearance), appearanceEditorModel_(), appearanceError_(), appearanceLayout_(),
+	appearanceEditorSession_(), appearanceLayout_(),
 	appearanceEditorTitle_(new TextLabel("Appearance customization", "Courier New Bold", 18, { 255, 255, 255, 255 })),
 	appearanceTokenDescription_(new TextLabel("", "Courier New Bold", 13, { 255, 255, 255, 255 })),
 	appearanceStatus_(new TextLabel("", "Courier New Bold", 12, { 255, 255, 255, 255 }))
@@ -1104,7 +1104,7 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		return true;
 	}
 	renderPreferences_ = settings_;
-	if (appearanceEditorOpen()) renderPreferences_.appearance = appearanceDraft_;
+	if (appearanceEditorOpen()) renderPreferences_.appearance = appearanceEditorSession_.draft();
 	updateLayout();
 	if (appearanceEditorOpen())
 		return handleAppearanceEditorEvent(event, action);
@@ -1353,7 +1353,7 @@ void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
 	const std::string& persistenceStatus, bool playbackPending)
 {
 	renderPreferences_ = settings_;
-	if (appearanceEditorOpen()) renderPreferences_.appearance = appearanceDraft_;
+	if (appearanceEditorOpen()) renderPreferences_.appearance = appearanceEditorSession_.draft();
 	displayedSaveStatus_ = persistenceStatus;
 	updateLayout();
 	updateWidgetStates(snapshot, playbackPending);
@@ -1761,7 +1761,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		return;
 	}
 	if (!widget.visible()) return;
-	const UiPresetId preset = drawingAppearanceEditor_ ? appearanceEditorModel_.preset() : renderPreferences_.appearance.activePreset;
+	const UiPresetId preset = drawingAppearanceEditor_ ? appearanceEditorSession_.model().preset() : renderPreferences_.appearance.activePreset;
 	const UiThemeCustomization readableEditorTheme = defaultUiThemeCustomization(preset, PaletteId::Monochrome);
 	const UiThemeCustomization& paintTheme = drawingAppearanceEditor_ ? readableEditorTheme : activeTheme(renderPreferences_);
 	const bool playbackActive = widget.role() == UiControlRole::Playback && screenModel_.transport == UiTransportState::Playing;
@@ -2049,11 +2049,11 @@ void ControlPanel::beginInlineEdit(const std::string& widgetId)
 {
 	if ((widgetId == "appearance_value" || widgetId == "appearance_color_alpha") && appearanceEditorOpen())
 	{
-		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorModel_.preset()), appearanceEditorModel_.selectedToken());
+		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorSession_.model().preset()), appearanceEditorSession_.model().selectedToken());
 		if (!descriptor || (widgetId == "appearance_value" && descriptor->type != UiTokenType::Number) ||
 			(widgetId == "appearance_color_alpha" && descriptor->type != UiTokenType::Color)) return;
-		const UiTokenValue value = effectiveUiTokenValue(appearanceEditorModel_.preset(),
-			appearanceDraft_.themes[appearanceEditorModel_.preset()], appearanceEditorModel_.selectedToken());
+		const UiTokenValue value = effectiveUiTokenValue(appearanceEditorSession_.model().preset(),
+			appearanceEditorSession_.draft().themes[appearanceEditorSession_.model().preset()], appearanceEditorSession_.model().selectedToken());
 		std::ostringstream text;
 		text << std::setprecision(9) << (widgetId == "appearance_color_alpha" ? value.color.a : value.number);
 		inlineEditWidgetId_ = widgetId;
@@ -2115,11 +2115,11 @@ bool ControlPanel::commitInlineEdit(AppAction& action)
 	{
 		char* end = nullptr;
 		const double parsed = std::strtod(inlineEditBuffer_.c_str(), &end);
-		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorModel_.preset()), appearanceEditorModel_.selectedToken());
+		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorSession_.model().preset()), appearanceEditorSession_.model().selectedToken());
 		if (!descriptor || !end || end == inlineEditBuffer_.c_str() || *end != '\0' || !std::isfinite(parsed) ||
 			parsed < descriptor->minimum || parsed > descriptor->maximum)
 		{
-			appearanceError_ = descriptor ? "Enter a value between " + std::to_string(descriptor->minimum) + " and " +
+			appearanceEditorSession_.error() = descriptor ? "Enter a value between " + std::to_string(descriptor->minimum) + " and " +
 				std::to_string(descriptor->maximum) + "." : "The selected appearance property is unavailable.";
 			return false;
 		}
@@ -2127,21 +2127,21 @@ bool ControlPanel::commitInlineEdit(AppAction& action)
 		UiTokenValue nextValue;
 		if (inlineEditWidgetId_ == "appearance_color_alpha")
 		{
-			nextValue = effectiveUiTokenValue(appearanceEditorModel_.preset(),
-				appearanceDraft_.themes[appearanceEditorModel_.preset()], appearanceEditorModel_.selectedToken());
+			nextValue = effectiveUiTokenValue(appearanceEditorSession_.model().preset(),
+				appearanceEditorSession_.draft().themes[appearanceEditorSession_.model().preset()], appearanceEditorSession_.model().selectedToken());
 			if (nextValue.type != UiTokenType::Color) return false;
 			nextValue.color.a = static_cast<float>(parsed);
 		}
 		else nextValue = UiTokenValue::fromNumber(parsed);
-		if (!setUiTokenValue(appearanceEditorModel_.preset(), appearanceDraft_.themes[appearanceEditorModel_.preset()],
-			appearanceEditorModel_.selectedToken(), nextValue, &error))
+		if (!setUiTokenValue(appearanceEditorSession_.model().preset(), appearanceEditorSession_.draft().themes[appearanceEditorSession_.model().preset()],
+			appearanceEditorSession_.model().selectedToken(), nextValue, &error))
 		{
-			appearanceError_ = error;
+			appearanceEditorSession_.error() = error;
 			return false;
 		}
 		inlineEditWidgetId_.clear(); inlineEditBuffer_.clear(); inlineEditAppearanceValue_ = false;
 		inlineEditReplaceOnNextDigit_ = false; SDL_StopTextInput();
-		appearanceError_.clear(); updateAppearanceEditorControls();
+		appearanceEditorSession_.error().clear(); updateAppearanceEditorControls();
 		return true;
 	}
 	if (inlineEditWidgetId_ == "bars_value")
@@ -2193,9 +2193,7 @@ void ControlPanel::openAppearanceEditor()
 	if (appearanceEditorOpen()) return;
 	if (algorithmBrowserOpen()) closeAlgorithmMenu();
 	if (!overlayState_.openAppearanceEditor()) return;
-	appearanceDraft_ = settings_.appearance;
-	appearanceEditorModel_.begin(appearanceDraft_.activePreset);
-	appearanceError_.clear();
+	appearanceEditorSession_.begin(settings_.appearance);
 	settingsPanelModel_.showPage(SettingsPanelPage::Appearance);
 	appearanceSearchFocused_ = false;
 	mainUi_.closeCombo();
@@ -2217,10 +2215,7 @@ void ControlPanel::closeAppearanceEditor(bool restore)
 		SDL_StopTextInput();
 	}
 	if (restore)
-	{
-		appearanceDraft_ = settings_.appearance;
-		appearanceEditorModel_.setPreset(appearanceDraft_.activePreset);
-	}
+		appearanceEditorSession_.restore();
 	if (!overlayState_.closeAppearanceEditor()) return;
 	appearanceUi_.closeCombo();
 	updateOverlayInputCapture();
@@ -2230,13 +2225,13 @@ void ControlPanel::closeAppearanceEditor(bool restore)
 void ControlPanel::refreshAppearanceTokens()
 {
 	std::vector<std::string> options;
-	const std::vector<AppearanceTokenOption>& tokenOptions = appearanceEditorModel_.options();
+	const std::vector<AppearanceTokenOption>& tokenOptions = appearanceEditorSession_.model().options();
 	for (std::size_t i = 0; i < tokenOptions.size(); ++i) options.push_back(tokenOptions[i].label);
 	UiWidget* selector = appearanceUi_.find("appearance_token");
 	if (selector)
 	{
 		selector->setOptions(options);
-		selector->setSelectedIndex(std::max(0, appearanceEditorModel_.selectedIndex()));
+		selector->setSelectedIndex(std::max(0, appearanceEditorSession_.model().selectedIndex()));
 		for (std::size_t i = 0; i < options.size(); ++i)
 		{
 			const std::string labelId = selector->id() + "#option" + std::to_string(i);
@@ -2250,17 +2245,17 @@ void ControlPanel::refreshAppearanceTokens()
 void ControlPanel::updateAppearanceEditorControls()
 {
 	if (!appearanceEditorOpen()) return;
-	const UiPresetId preset = appearanceEditorModel_.preset();
-	const std::string& selectedToken = appearanceEditorModel_.selectedToken();
-	const bool hasTokenOptions = !appearanceEditorModel_.options().empty();
+	const UiPresetId preset = appearanceEditorSession_.model().preset();
+	const std::string& selectedToken = appearanceEditorSession_.model().selectedToken();
+	const bool hasTokenOptions = !appearanceEditorSession_.model().options().empty();
 	appearanceUi_.find("appearance_preset")->setSelectedIndex(static_cast<int>(preset));
-	UiThemeCustomization& theme = appearanceDraft_.themes[preset];
+	UiThemeCustomization& theme = appearanceEditorSession_.draft().themes[preset];
 	appearanceUi_.find("appearance_palette")->setSelectedIndex(static_cast<int>(theme.palette));
-	appearanceUi_.find("appearance_category")->setSelectedIndex(appearanceEditorModel_.categoryFilter());
-	appearanceUi_.find("appearance_search")->setLabel(appearanceEditorModel_.search().empty()
-		? "Search tokens" : "Search: " + appearanceEditorModel_.search());
+	appearanceUi_.find("appearance_category")->setSelectedIndex(appearanceEditorSession_.model().categoryFilter());
+	appearanceUi_.find("appearance_search")->setLabel(appearanceEditorSession_.model().search().empty()
+		? "Search tokens" : "Search: " + appearanceEditorSession_.model().search());
 	UiWidget* token = appearanceUi_.find("appearance_token");
-	if (token) token->setSelectedIndex(std::max(0, appearanceEditorModel_.selectedIndex()));
+	if (token) token->setSelectedIndex(std::max(0, appearanceEditorSession_.model().selectedIndex()));
 
 	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
 	const bool hasToken = descriptor != nullptr;
@@ -2365,7 +2360,7 @@ void ControlPanel::layoutAppearanceEditor()
 void ControlPanel::drawAppearanceEditor()
 {
 	if (!appearanceEditorOpen()) return;
-	const UiPresetId preset = appearanceEditorModel_.preset();
+	const UiPresetId preset = appearanceEditorSession_.model().preset();
 	const ThemePalette readable = paletteForAppearance(preset,
 		defaultUiThemeCustomization(preset, PaletteId::Monochrome));
 	drawingAppearanceEditor_ = true;
@@ -2379,7 +2374,7 @@ void ControlPanel::drawAppearanceEditor()
 	const float scale = appearanceLayout_.scale;
 	const UiRect& controlClip = appearanceLayout_.contentClip;
 	const ClipBounds clip(controlClip.x, controlClip.y, controlClip.width, controlClip.height);
-	const UiTokenValue selectedValue = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], appearanceEditorModel_.selectedToken());
+	const UiTokenValue selectedValue = effectiveUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], appearanceEditorSession_.model().selectedToken());
 	if (selectedValue.type == UiTokenType::Color)
 	{
 		const UiColor& c = selectedValue.color;
@@ -2413,8 +2408,8 @@ void ControlPanel::drawAppearanceEditor()
 			widget->kind() == UiWidgetKind::ComboBox ? ValueMaterial : ButtonMaterial, RenderLayer::SettingsControls, clip);
 		drawWidget(*widget, readable, RenderLayer::SettingsControls);
 	}
-	appearanceStatus_->setContent(appearanceError_.empty() ? "Changes preview behind this editor. Apply saves; Cancel discards." : appearanceError_);
-	drawText(*appearanceStatus_, appearanceLayout_.statusBounds, 11.0f, appearanceError_.empty() ? readable.mutedText : readable.accent,
+	appearanceStatus_->setContent(appearanceEditorSession_.error().empty() ? "Changes preview behind this editor. Apply saves; Cancel discards." : appearanceEditorSession_.error());
+	drawText(*appearanceStatus_, appearanceLayout_.statusBounds, 11.0f, appearanceEditorSession_.error().empty() ? readable.mutedText : readable.accent,
 		SettingsTextLayer, ClipBounds(panel.x, panel.y, panel.width, panel.height));
 	const char* actionIds[] = { "appearance_reset_token", "appearance_reset_theme", "appearance_import",
 		"appearance_export", "appearance_apply", "appearance_cancel" };
@@ -2478,7 +2473,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 	{
 		if (event.type == SDL_TEXTINPUT)
 		{
-			appearanceEditorModel_.appendSearch(event.text.text);
+			appearanceEditorSession_.model().appendSearch(event.text.text);
 			refreshAppearanceTokens();
 			return true;
 		}
@@ -2505,11 +2500,11 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 			}
 			if (event.key.keysym.sym == SDLK_BACKSPACE)
 			{
-				appearanceEditorModel_.eraseSearchCharacter();
+				appearanceEditorSession_.model().eraseSearchCharacter();
 				refreshAppearanceTokens(); return true;
 			}
 			if (event.key.keysym.sym == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
-			{ appearanceEditorModel_.clearSearch(); refreshAppearanceTokens(); return true; }
+			{ appearanceEditorSession_.model().clearSearch(); refreshAppearanceTokens(); return true; }
 			return true;
 		}
 	}
@@ -2551,44 +2546,44 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppAction& output)
 {
 	const std::string& id = action.event.controlId;
-	const UiPresetId preset = appearanceEditorModel_.preset();
-	const std::string& selectedToken = appearanceEditorModel_.selectedToken();
+	const UiPresetId preset = appearanceEditorSession_.model().preset();
+	const std::string& selectedToken = appearanceEditorSession_.model().selectedToken();
 	if (id == "appearance_preset")
 	{
 		const int lastPreset = static_cast<int>(uiPresetCatalog().size()) - 1;
-		appearanceEditorModel_.setPreset(static_cast<UiPresetId>(std::max(0, std::min(action.event.selection, lastPreset))));
-		appearanceDraft_.activePreset = appearanceEditorModel_.preset();
+		appearanceEditorSession_.model().setPreset(static_cast<UiPresetId>(std::max(0, std::min(action.event.selection, lastPreset))));
+		appearanceEditorSession_.draft().activePreset = appearanceEditorSession_.model().preset();
 		appearanceUi_.closeCombo();
 		refreshAppearanceTokens();
-		appearanceError_.clear();
+		appearanceEditorSession_.error().clear();
 		return;
 	}
 	if (id == "appearance_palette")
 	{
-		UiThemeCustomization& theme = appearanceDraft_.themes[preset];
+		UiThemeCustomization& theme = appearanceEditorSession_.draft().themes[preset];
 		const int lastPalette = static_cast<int>(paletteCatalog().size()) - 1;
 		selectUiPalette(theme, static_cast<PaletteId>(std::max(0, std::min(action.event.selection, lastPalette))));
-		appearanceError_.clear(); updateAppearanceEditorControls(); return;
+		appearanceEditorSession_.error().clear(); updateAppearanceEditorControls(); return;
 	}
 	if (id == "appearance_category")
 	{
-		appearanceEditorModel_.setCategoryFilter(action.event.selection);
+		appearanceEditorSession_.model().setCategoryFilter(action.event.selection);
 		appearanceUi_.closeCombo();
 		refreshAppearanceTokens();
-		appearanceError_.clear();
+		appearanceEditorSession_.error().clear();
 		return;
 	}
 	if (id == "appearance_token")
 	{
-		appearanceEditorModel_.selectOption(action.event.selection);
-		appearanceError_.clear(); updateAppearanceEditorControls(); return;
+		appearanceEditorSession_.model().selectOption(action.event.selection);
+		appearanceEditorSession_.error().clear(); updateAppearanceEditorControls(); return;
 	}
 	if (id == "appearance_search") return;
 	if (action.event.kind == UiEventKind::ValueChanged &&
 		(id == "appearance_value_slider" || id == "appearance_color_r" || id == "appearance_color_g" ||
 		 id == "appearance_color_b" || id == "appearance_color_a"))
 	{
-		UiTokenValue value = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken);
+		UiTokenValue value = effectiveUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken);
 		if (id == "appearance_value_slider" && value.type == UiTokenType::Number)
 			value.number = action.event.value;
 		else if (value.type == UiTokenType::Color)
@@ -2600,9 +2595,9 @@ void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppActi
 		}
 		else return;
 		std::string error;
-		if (!setUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken, value, &error))
-			appearanceError_ = error;
-		else appearanceError_.clear();
+		if (!setUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken, value, &error))
+			appearanceEditorSession_.error() = error;
+		else appearanceEditorSession_.error().clear();
 		updateAppearanceEditorControls();
 		return;
 	}
@@ -2613,11 +2608,11 @@ void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppActi
 	if (id == "appearance_color") { chooseAppearanceColor(); return; }
 	if (id == "appearance_boolean")
 	{
-		const UiTokenValue before = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken);
+		const UiTokenValue before = effectiveUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken);
 		std::string error;
-		if (!setUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken,
-			UiTokenValue::fromBoolean(!before.boolean), &error)) appearanceError_ = error;
-		else appearanceError_.clear();
+		if (!setUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken,
+			UiTokenValue::fromBoolean(!before.boolean), &error)) appearanceEditorSession_.error() = error;
+		else appearanceEditorSession_.error().clear();
 		updateAppearanceEditorControls(); return;
 	}
 	if (id == "appearance_choice")
@@ -2626,15 +2621,15 @@ void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppActi
 		if (descriptor && action.event.selection >= 0 && static_cast<std::size_t>(action.event.selection) < descriptor->choices.size())
 		{
 			std::string error;
-			if (!setUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken,
-				UiTokenValue::fromChoice(descriptor->choices[static_cast<std::size_t>(action.event.selection)]), &error)) appearanceError_ = error;
-			else appearanceError_.clear();
+			if (!setUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken,
+				UiTokenValue::fromChoice(descriptor->choices[static_cast<std::size_t>(action.event.selection)]), &error)) appearanceEditorSession_.error() = error;
+			else appearanceEditorSession_.error().clear();
 		}
 		updateAppearanceEditorControls(); return;
 	}
 	if (id == "appearance_font_family" || id == "appearance_font_style")
 	{
-		const UiTokenValue current = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken);
+		const UiTokenValue current = effectiveUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken);
 		if (current.type == UiTokenType::Font)
 		{
 			UiFontReference font = current.font;
@@ -2649,9 +2644,9 @@ void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppActi
 				}
 				else font.style = widget->options()[static_cast<std::size_t>(action.event.selection)];
 				std::string error;
-				if (!setUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken,
-					UiTokenValue::fromFont(font), &error)) appearanceError_ = error;
-				else appearanceError_.clear();
+				if (!setUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken,
+					UiTokenValue::fromFont(font), &error)) appearanceEditorSession_.error() = error;
+				else appearanceEditorSession_.error().clear();
 			}
 		}
 		updateAppearanceEditorControls(); return;
@@ -2659,56 +2654,56 @@ void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppActi
 	if (id == "appearance_reset_token") { resetAppearanceToken(); return; }
 	if (id == "appearance_reset_theme")
 	{
-		appearanceDraft_.themes[preset] = defaultUiThemeCustomization(preset);
-		appearanceError_.clear(); updateAppearanceEditorControls(); return;
+		appearanceEditorSession_.draft().themes[preset] = defaultUiThemeCustomization(preset);
+		appearanceEditorSession_.error().clear(); updateAppearanceEditorControls(); return;
 	}
 	if (id == "appearance_import") { importAppearanceProfile(); return; }
 	if (id == "appearance_export") { exportAppearanceProfile(); return; }
 	if (id == "appearance_cancel") { closeAppearanceEditor(true); return; }
 	if (id == "appearance_apply")
 	{
-		appearanceDraft_.activePreset = preset;
+		appearanceEditorSession_.draft().activePreset = preset;
 		output = AppAction(AppActionKind::ApplyAppearance);
-		output.appearance.reset(new UiAppearancePreferences(appearanceDraft_));
+		output.appearance.reset(new UiAppearancePreferences(appearanceEditorSession_.draft()));
 	}
 }
 
 void ControlPanel::resetAppearanceToken()
 {
-	if (appearanceEditorModel_.selectedToken().empty()) return;
-	appearanceDraft_.themes[appearanceEditorModel_.preset()].overrides.erase(appearanceEditorModel_.selectedToken());
-	appearanceError_.clear(); updateAppearanceEditorControls();
+	if (appearanceEditorSession_.model().selectedToken().empty()) return;
+	appearanceEditorSession_.draft().themes[appearanceEditorSession_.model().preset()].overrides.erase(appearanceEditorSession_.model().selectedToken());
+	appearanceEditorSession_.error().clear(); updateAppearanceEditorControls();
 }
 
 void ControlPanel::adjustAppearanceNumber(float direction)
 {
-	const UiPresetId preset = appearanceEditorModel_.preset();
-	const std::string& selectedToken = appearanceEditorModel_.selectedToken();
+	const UiPresetId preset = appearanceEditorSession_.model().preset();
+	const std::string& selectedToken = appearanceEditorSession_.model().selectedToken();
 	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
 	if (!descriptor || descriptor->type != UiTokenType::Number) return;
-	const UiTokenValue current = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken);
+	const UiTokenValue current = effectiveUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken);
 	const double increment = descriptor->maximum - descriptor->minimum > 100.0 ? 1.0 : 0.5;
 	std::string error;
-	if (!setUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken,
+	if (!setUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken,
 		UiTokenValue::fromNumber(std::max(descriptor->minimum, std::min(descriptor->maximum, current.number + direction * increment))), &error))
-		appearanceError_ = error;
-	else appearanceError_.clear();
+		appearanceEditorSession_.error() = error;
+	else appearanceEditorSession_.error().clear();
 	updateAppearanceEditorControls();
 }
 
 void ControlPanel::chooseAppearanceColor()
 {
-	const UiPresetId preset = appearanceEditorModel_.preset();
-	const std::string& selectedToken = appearanceEditorModel_.selectedToken();
-	const UiTokenValue value = effectiveUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken);
+	const UiPresetId preset = appearanceEditorSession_.model().preset();
+	const std::string& selectedToken = appearanceEditorSession_.model().selectedToken();
+	const UiTokenValue value = effectiveUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken);
 	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
 	if (!descriptor || descriptor->type != UiTokenType::Color || value.type != UiTokenType::Color) return;
 	UiColor color;
 	if (!AppearanceDialogAdapter::chooseColor(window_, value.color, color)) return;
 	std::string error;
-	if (!setUiTokenValue(preset, appearanceDraft_.themes[preset], selectedToken,
-		UiTokenValue::fromColor(color), &error)) appearanceError_ = error;
-	else appearanceError_.clear();
+	if (!setUiTokenValue(preset, appearanceEditorSession_.draft().themes[preset], selectedToken,
+		UiTokenValue::fromColor(color), &error)) appearanceEditorSession_.error() = error;
+	else appearanceEditorSession_.error().clear();
 	updateAppearanceEditorControls();
 }
 
@@ -2716,19 +2711,19 @@ void ControlPanel::importAppearanceProfile()
 {
 	const AppearanceDialogResult result = AppearanceDialogAdapter::importProfile(window_);
 	if (result.status == AppearanceDialogStatus::Cancelled) return;
-	if (result.status == AppearanceDialogStatus::Failed) { appearanceError_ = result.error; return; }
+	if (result.status == AppearanceDialogStatus::Failed) { appearanceEditorSession_.error() = result.error; return; }
 	const UiAppearanceProfile& profile = result.profile;
-	appearanceDraft_.themes[profile.preset] = profile.theme;
-	appearanceDraft_.activePreset = profile.preset;
-	appearanceEditorModel_.setPreset(profile.preset);
-	appearanceError_.clear();
+	appearanceEditorSession_.draft().themes[profile.preset] = profile.theme;
+	appearanceEditorSession_.draft().activePreset = profile.preset;
+	appearanceEditorSession_.model().setPreset(profile.preset);
+	appearanceEditorSession_.error().clear();
 	if (!profile.ignoredTokens.empty())
 	{
-		appearanceError_ = "Imported profile; ignored unknown tokens: ";
+		appearanceEditorSession_.error() = "Imported profile; ignored unknown tokens: ";
 		for (std::size_t i = 0; i < profile.ignoredTokens.size(); ++i)
 		{
-			if (i) appearanceError_ += ", ";
-			appearanceError_ += profile.ignoredTokens[i];
+			if (i) appearanceEditorSession_.error() += ", ";
+			appearanceEditorSession_.error() += profile.ignoredTokens[i];
 		}
 	}
 	refreshAppearanceTokens();
@@ -2736,11 +2731,11 @@ void ControlPanel::importAppearanceProfile()
 
 void ControlPanel::exportAppearanceProfile()
 {
-	const UiPresetId preset = appearanceEditorModel_.preset();
+	const UiPresetId preset = appearanceEditorSession_.model().preset();
 	const AppearanceDialogResult result = AppearanceDialogAdapter::exportProfile(window_, preset,
-		appearanceDraft_.themes[preset]);
+		appearanceEditorSession_.draft().themes[preset]);
 	if (result.status == AppearanceDialogStatus::Cancelled) return;
-	appearanceError_ = result.status == AppearanceDialogStatus::Failed
+	appearanceEditorSession_.error() = result.status == AppearanceDialogStatus::Failed
 		? result.error : "Appearance profile exported.";
 }
 
@@ -2756,10 +2751,10 @@ void ControlPanel::completeActionResult(const AppAction& action, const sortinglo
 	if (action.kind != AppActionKind::ApplyAppearance || !appearanceEditorOpen()) return;
 	if (!result.accepted)
 	{
-		appearanceError_ = result.message.empty() ? "Could not save appearance. Check the settings file and try again." : result.message;
+		appearanceEditorSession_.error() = result.message.empty() ? "Could not save appearance. Check the settings file and try again." : result.message;
 		return;
 	}
-	appearanceDraft_ = settings_.appearance;
+	appearanceEditorSession_.accept(settings_.appearance);
 	closeAppearanceEditor(false);
 }
 

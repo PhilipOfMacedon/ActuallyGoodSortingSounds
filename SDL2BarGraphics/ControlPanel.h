@@ -115,9 +115,7 @@ private:
 	std::string inlineEditBuffer_;
 	bool inlineEditReplaceOnNextDigit_;
 	bool inlineEditAppearanceValue_;
-	UiAppearancePreferences appearanceDraft_;
-	AppearanceEditorModel appearanceEditorModel_;
-	std::string appearanceError_;
+	AppearanceEditorSession appearanceEditorSession_;
 	AppearanceEditorLayoutResult appearanceLayout_;
 	std::unique_ptr<TextLabel> appearanceEditorTitle_;
 	std::unique_ptr<TextLabel> appearanceTokenDescription_;

@@ -1373,3 +1373,15 @@ Verification:
 - `git diff --check` passed. No live-window screenshot review was run for this slice.
 
 Next: continue extracting actual view/session ownership from `ControlPanel`, starting with the appearance editor, while preserving the current modal and draft/apply/cancel behavior.
+
+## 2026-10-20 — consolidate appearance editor session state
+
+Moved the appearance editor's original preferences, editable draft, token-selection model, and feedback string into one `AppearanceEditorSession`. `ControlPanel` now begins a session on open, restores its baseline on Cancel, and advances the baseline only after the app reports a successful Apply. SDL event handling, rendering, and native profile dialogs remain in `ControlPanel` for a later view extraction.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64 Debug/Release and x86 Debug/Release.
+- `AppFrameworkTests` passed in all four configurations. New coverage checks session begin, draft token editing, cancel restoration, error clearing, and Apply baseline advancement.
+- `git diff --check` passed. No live-window screenshot review was run because this slice changes state ownership only.
+
+Next: extract appearance editor layout, paint composition, and widget action handling behind a dedicated view while keeping native file dialogs in the platform adapter.
