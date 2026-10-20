@@ -9,6 +9,8 @@
 #include "../SoundEngine/AudioTimeline.h"
 #include "UiAppearance.h"
 
+static const int UserSettingsCurrentVersion = 8;
+
 enum class BarSpacingMode
 {
 	None,

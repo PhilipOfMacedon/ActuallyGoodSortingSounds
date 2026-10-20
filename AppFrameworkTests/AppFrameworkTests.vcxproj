@@ -51,6 +51,8 @@
     <ClCompile Include="..\SDL2BarGraphics\WindowsFontCatalog.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AlgorithmAudioPreferences.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\SettingsFileStorage.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\SettingsIniCodec.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\UserSettingsValidation.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\UserSettings.cpp" />
   </ItemGroup>
   <ItemGroup>

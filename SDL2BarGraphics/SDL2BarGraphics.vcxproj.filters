@@ -40,6 +40,8 @@
     <ClCompile Include="UiActionRouting.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmAudioPreferences.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SettingsFileStorage.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SettingsIniCodec.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="UserSettingsValidation.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="UserSettings.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Shader.cpp">
       <Filter>Source Files</Filter>
@@ -92,6 +94,8 @@
     <ClInclude Include="SdlUiEventAdapter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsScroll.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsFileStorage.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SettingsIniCodec.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="UserSettingsValidation.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Mesh.h">
       <Filter>Header Files</Filter>
     </ClInclude>

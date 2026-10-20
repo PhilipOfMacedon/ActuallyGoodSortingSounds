@@ -718,3 +718,23 @@ Verification:
 - Debug and Release `AppFrameworkTests`: passed.
 - Debug and Release `SortingLogicTests --core-contracts-only`: passed (39,522 checks each).
 - `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
+
+Next: centralize deterministic semantic presentation eligibility, operands/roles, and lane visibility across the trace cadence index, audio adapter, and UI controls.
+
+## 2026-10-20 — isolate settings validation and INI codec
+
+Status: implementation and focused verification complete.
+
+- Moved settings range/enum invariants into `UserSettingsValidation.cpp`, pure INI parsing, serialization, and v1–v8 migrations into `SettingsIniCodec.cpp`, while `SettingsFileStorage.cpp` remains the only module using Win32 file APIs.
+- Reduced `UserSettings.cpp` to preference value semantics and `SettingsStore` delegation. Added a single shared current-version constant; settings remain at version 8.
+- Kept stable keys, migration fallback rules, defaults, format precision, and serializer field order by moving the existing codec logic without redesigning it.
+- Existing migration, malformed-value, round-trip, and backup tests exercise the codec through `SettingsStore`; no new settings format or key was introduced.
+- Added codec and validation translation units to the app, framework tests, and standalone audio transport test project.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed, including v1–v8 migration, malformed settings, audio fallback, round-trip, and migration backup checks.
+- Standalone `AudioDeviceTransportTests` x64 Debug and Release builds: passed.
+- Standalone transport integration tests passed in both configurations with the SDL dummy backend, including both timing modes and 800-item cases.
+- `git diff --check`: passed; Git reported only configured LF-to-CRLF working-tree notices.
