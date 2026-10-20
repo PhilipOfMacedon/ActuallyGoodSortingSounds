@@ -1648,3 +1648,10 @@ Moved Lazy Stable Sort and Optimized Lazy Stable Sort into MergeStrategies.cpp. 
 The x64 Debug and Release solution builds passed. The existing focused Lazy Stable suite passed in both configurations with 450,132 checks and zero failures. git diff --check passed. SortingLogic.cpp is now 4202 lines; no runtime-performance change is claimed.
 
 Next: move the related Laziest/Lazierest variants and their private merge operations, then continue through the remaining merge kernels.
+## 2026-10-20 — move Laziest and Lazierest into the merge module
+
+Moved the Laziest and Lazierest in-place stable merge implementations into MergeStrategies.cpp, including their per-variant search, rotation, and merge paths. Builders now call explicit strategies and the coordinator fallback cases are gone. The merge module now declares its <cmath> dependency explicitly, exposed when the moved code no longer inherited the coordinator's broad include set.
+
+The x64 Debug and Release solution builds passed after adding the header. Focused suites passed in both configurations: Laziest (5,497 checks) and Lazierest (305,466 checks), all with zero failures. git diff --check passed. SortingLogic.cpp is now 3891 lines; no runtime-performance claim is made.
+
+Next: extract the shared run/merge helper into the merge utility boundary and move Remi, Chalice, and Fifth Merge behind the merge strategy interface.
