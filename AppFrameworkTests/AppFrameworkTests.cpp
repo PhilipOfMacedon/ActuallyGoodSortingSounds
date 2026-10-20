@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <chrono>
 #include <thread>
@@ -25,6 +26,8 @@
 #include "../SDL2BarGraphics/SettingsPanelControls.h"
 #include "../SDL2BarGraphics/SettingsPanelLayout.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
+#define SDL_MAIN_HANDLED
+#include "../SDL2BarGraphics/SdlUiEventAdapter.h"
 #include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
 #include "../SDL2BarGraphics/UiArchitecture.h"
@@ -834,6 +837,69 @@ namespace
 			"appearance editing can replace a browser request without retaining stale browser ownership");
 		check(overlays.closeAppearanceEditor() && overlays.active() == UiOverlayId::None,
 			"appearance editing entered outside settings returns to the main view");
+	}
+
+	void testSdlUiEventAdapter()
+	{
+		SDL_Event event = {};
+		UiInputEvent input(UiInputType::FocusLost);
+		event.type = SDL_MOUSEMOTION;
+		event.motion.x = 17;
+		event.motion.y = 29;
+		check(translateSdlUiEvent(event, input) && input.type == UiInputType::PointerMove &&
+			input.x == 17.0f && input.y == 29.0f,
+			"SDL motion translates into pointer movement with logical coordinates");
+
+		event = SDL_Event();
+		event.type = SDL_MOUSEBUTTONDOWN;
+		event.button.button = SDL_BUTTON_RIGHT;
+		check(!translateSdlUiEvent(event, input),
+			"unsupported mouse buttons remain outside retained widget input");
+		event.button.button = SDL_BUTTON_LEFT;
+		event.button.x = 41;
+		event.button.y = 53;
+		check(translateSdlUiEvent(event, input) && input.type == UiInputType::PointerDown &&
+			input.x == 41.0f && input.y == 53.0f,
+			"left-button SDL input translates into pointer capture coordinates");
+
+		event = SDL_Event();
+		event.type = SDL_MOUSEWHEEL;
+		event.wheel.y = -2;
+		SdlUiEventContext wheelContext;
+		wheelContext.pointerX = 63.0f;
+		wheelContext.pointerY = 72.0f;
+		check(translateSdlUiEvent(event, input, SdlUiKeyProfile::Controls, wheelContext) &&
+			input.type == UiInputType::Wheel && input.wheelDelta == -2 && input.x == 63.0f && input.y == 72.0f,
+			"SDL wheel translation preserves its signed delta and platform-supplied pointer position");
+
+		event = SDL_Event();
+		event.type = SDL_KEYDOWN;
+		event.key.keysym.sym = SDLK_SPACE;
+		event.key.keysym.mod = static_cast<SDL_Keymod>(KMOD_CTRL | KMOD_SHIFT);
+		check(translateSdlUiEvent(event, input) && input.key == UiKey::Space && input.control && input.shift,
+			"control-profile keyboard translation preserves supported keys and modifiers");
+		event.key.keysym.sym = SDLK_BACKSPACE;
+		check(!translateSdlUiEvent(event, input) &&
+			translateSdlUiEvent(event, input, SdlUiKeyProfile::Search) && input.key == UiKey::Backspace,
+			"search-profile translation enables backspace without changing control-profile keys");
+		event.key.keysym.sym = SDLK_SPACE;
+		check(!translateSdlUiEvent(event, input, SdlUiKeyProfile::Search),
+			"search-profile translation retains the browser's prior unsupported-space behavior");
+
+		event = SDL_Event();
+		event.type = SDL_TEXTINPUT;
+		std::memcpy(event.text.text, "quick", sizeof("quick"));
+		check(translateSdlUiEvent(event, input) && input.type == UiInputType::TextInput && input.text == "quick",
+			"SDL text input translates into the shared text event");
+
+		event = SDL_Event();
+		event.type = SDL_WINDOWEVENT;
+		event.window.event = SDL_WINDOWEVENT_FOCUS_LOST;
+		check(translateSdlUiEvent(event, input) && input.type == UiInputType::FocusLost,
+			"window focus loss translates into a UI lifecycle event");
+		event.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
+		check(!translateSdlUiEvent(event, input),
+			"unrelated SDL window events are not presented as widget input");
 	}
 
 	void testAppearanceEditorLayout()
@@ -2477,6 +2543,7 @@ int main()
 	testAppearanceEditorModel();
 	testAlgorithmBrowserModel();
 	testUiOverlayState();
+	testSdlUiEventAdapter();
 	testAlgorithmBrowserInputAndLayout();
 	testAlgorithmBrowserPaintComposition();
 	testSettingsPanelPaintComposition();

@@ -53,6 +53,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SdlAudioOutput.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SdlUiEventAdapter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="TextLabel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -83,6 +84,7 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="SdlAudioOutput.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SdlUiEventAdapter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsScroll.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Mesh.h">
       <Filter>Header Files</Filter>

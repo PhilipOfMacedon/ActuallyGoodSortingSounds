@@ -15,6 +15,7 @@
 #include <commdlg.h>
 
 #include "LayoutMetrics.h"
+#include "SdlUiEventAdapter.h"
 #include "SettingsScroll.h"
 #include "WindowsFontCatalog.h"
 
@@ -86,44 +87,25 @@ namespace
 		return command.hasClip ? ClipBounds(command.clip.x, command.clip.y, command.clip.width, command.clip.height) : ClipBounds();
 	}
 
-	bool translateAlgorithmBrowserEvent(const SDL_Event& event, UiInputEvent& input)
+	SdlUiEventContext sdlUiEventContext(const SDL_Event& event)
 	{
-		if (event.type == SDL_MOUSEMOTION)
-			input = UiInputEvent(UiInputType::PointerMove, static_cast<float>(event.motion.x), static_cast<float>(event.motion.y));
-		else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
-			input = UiInputEvent(UiInputType::PointerDown, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
-		else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
-			input = UiInputEvent(UiInputType::PointerUp, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
-		else if (event.type == SDL_MOUSEWHEEL)
+		SdlUiEventContext context;
+		if (event.type == SDL_MOUSEWHEEL)
 		{
-			int mouseX = 0, mouseY = 0;
+			int mouseX = 0;
+			int mouseY = 0;
 			SDL_GetMouseState(&mouseX, &mouseY);
-			input = UiInputEvent(UiInputType::Wheel, static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y);
+			context.pointerX = static_cast<float>(mouseX);
+			context.pointerY = static_cast<float>(mouseY);
 		}
-		else if (event.type == SDL_TEXTINPUT)
-			input = UiInputEvent(UiInputType::TextInput, std::string(event.text.text));
-		else if (event.type == SDL_KEYDOWN)
+		else if (event.type == SDL_MOUSEBUTTONDOWN)
 		{
-			UiKey key = UiKey::None;
-			switch (event.key.keysym.sym)
-			{
-			case SDLK_TAB: key = UiKey::Tab; break;
-			case SDLK_RETURN: case SDLK_KP_ENTER: key = UiKey::Enter; break;
-			case SDLK_BACKSPACE: key = UiKey::Backspace; break;
-			case SDLK_ESCAPE: key = UiKey::Escape; break;
-			case SDLK_UP: key = UiKey::Up; break;
-			case SDLK_DOWN: key = UiKey::Down; break;
-			case SDLK_LEFT: key = UiKey::Left; break;
-			case SDLK_RIGHT: key = UiKey::Right; break;
-			default: return false;
-			}
-			input = UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, key,
-				(event.key.keysym.mod & KMOD_SHIFT) != 0);
+			const SDL_Keymod modifiers = SDL_GetModState();
+			context.shift = (modifiers & KMOD_SHIFT) != 0;
+			context.control = (modifiers & KMOD_CTRL) != 0;
+			context.alt = (modifiers & KMOD_ALT) != 0;
 		}
-		else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
-			input = UiInputEvent(UiInputType::FocusLost);
-		else return false;
-		return true;
+		return context;
 	}
 
 	std::vector<std::string> paletteNames()
@@ -1311,55 +1293,9 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		action = AppAction(AppActionKind::SeekFraction, timelineFraction(static_cast<float>(event.button.x)));
 		return true;
 	}
-	UiInputEvent input(UiInputType::PointerMove);
-	bool translated = true;
-	if (event.type == SDL_MOUSEMOTION)
-		input = UiInputEvent(UiInputType::PointerMove, static_cast<float>(event.motion.x), static_cast<float>(event.motion.y));
-	else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
-		input = UiInputEvent(UiInputType::PointerDown, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
-	else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
-		input = UiInputEvent(UiInputType::PointerUp, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
-	else if (event.type == SDL_KEYDOWN)
-	{
-		UiKey key = UiKey::None;
-		switch (event.key.keysym.sym)
-		{
-		case SDLK_TAB: key = UiKey::Tab; break;
-		case SDLK_RETURN: case SDLK_KP_ENTER: key = UiKey::Enter; break;
-		case SDLK_SPACE: key = UiKey::Space; break;
-		case SDLK_ESCAPE: key = UiKey::Escape; break;
-		case SDLK_UP: key = UiKey::Up; break;
-		case SDLK_DOWN: key = UiKey::Down; break;
-		case SDLK_LEFT: key = UiKey::Left; break;
-		case SDLK_RIGHT: key = UiKey::Right; break;
-		default: translated = false; break;
-		}
-		input = UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, key,
-			(event.key.keysym.mod & KMOD_SHIFT) != 0);
-		input.control = (event.key.keysym.mod & KMOD_CTRL) != 0;
-		input.alt = (event.key.keysym.mod & KMOD_ALT) != 0;
-	}
-	else if (event.type == SDL_MOUSEWHEEL)
-	{
-		int mouseX = 0, mouseY = 0;
-		SDL_GetMouseState(&mouseX, &mouseY);
-		input = UiInputEvent(UiInputType::Wheel, static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y);
-	}
-	else if (event.type == SDL_TEXTINPUT)
-		input = UiInputEvent(UiInputType::TextInput, std::string(event.text.text));
-	else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
-		input = UiInputEvent(UiInputType::FocusLost);
-	else
-		translated = false;
-	if (!translated)
+	UiInputEvent input(UiInputType::FocusLost);
+	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Controls, sdlUiEventContext(event)))
 		return settingsOpen() || action.kind != AppActionKind::None;
-	if (event.type == SDL_MOUSEBUTTONDOWN)
-	{
-		const SDL_Keymod modifiers = SDL_GetModState();
-		input.shift = (modifiers & KMOD_SHIFT) != 0;
-		input.control = (modifiers & KMOD_CTRL) != 0;
-		input.alt = (modifiers & KMOD_ALT) != 0;
-	}
 	UiAction uiAction;
 	const bool consumed = (settingsOpen() ? settingsUi_ : mainUi_).handleEvent(input, uiAction);
 	if (consumed && (uiAction.viewCommand != UiAction::ViewCommand::None || uiAction.appAction.kind != AppActionKind::None ||
@@ -2849,49 +2785,8 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 		closeAppearanceEditor(true);
 		return true;
 	}
-	UiInputEvent input(UiInputType::PointerMove);
-	bool translated = true;
-	if (event.type == SDL_MOUSEMOTION)
-		input = UiInputEvent(UiInputType::PointerMove, static_cast<float>(event.motion.x), static_cast<float>(event.motion.y));
-	else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
-		input = UiInputEvent(UiInputType::PointerDown, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
-	else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
-		input = UiInputEvent(UiInputType::PointerUp, static_cast<float>(event.button.x), static_cast<float>(event.button.y));
-	else if (event.type == SDL_MOUSEWHEEL)
-	{
-		int mouseX = 0, mouseY = 0; SDL_GetMouseState(&mouseX, &mouseY);
-		input = UiInputEvent(UiInputType::Wheel, static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y);
-	}
-	else if (event.type == SDL_TEXTINPUT)
-		input = UiInputEvent(UiInputType::TextInput, std::string(event.text.text));
-	else if (event.type == SDL_KEYDOWN)
-	{
-		UiKey key = UiKey::None;
-		switch (event.key.keysym.sym)
-		{
-		case SDLK_TAB: key = UiKey::Tab; break;
-		case SDLK_RETURN: case SDLK_KP_ENTER: key = UiKey::Enter; break;
-		case SDLK_SPACE: key = UiKey::Space; break;
-		case SDLK_ESCAPE: key = UiKey::Escape; break;
-		case SDLK_UP: key = UiKey::Up; break;
-		case SDLK_DOWN: key = UiKey::Down; break;
-		case SDLK_LEFT: key = UiKey::Left; break;
-		case SDLK_RIGHT: key = UiKey::Right; break;
-		default: translated = false; break;
-		}
-		input = UiInputEvent(UiInputType::KeyDown, 0, 0, key, (event.key.keysym.mod & KMOD_SHIFT) != 0);
-		input.control = (event.key.keysym.mod & KMOD_CTRL) != 0;
-		input.alt = (event.key.keysym.mod & KMOD_ALT) != 0;
-	}
-	else translated = false;
-	if (!translated) return true;
-	if (event.type == SDL_MOUSEBUTTONDOWN)
-	{
-		const SDL_Keymod modifiers = SDL_GetModState();
-		input.shift = (modifiers & KMOD_SHIFT) != 0;
-		input.control = (modifiers & KMOD_CTRL) != 0;
-		input.alt = (modifiers & KMOD_ALT) != 0;
-	}
+	UiInputEvent input(UiInputType::FocusLost);
+	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Controls, sdlUiEventContext(event))) return true;
 	UiAction uiAction;
 	const bool consumed = appearanceUi_.handleEvent(input, uiAction);
 	if (uiAction.viewCommand == UiAction::ViewCommand::CloseAppearanceEditor)
@@ -3157,7 +3052,7 @@ void ControlPanel::layoutAlgorithmMenu()
 bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action)
 {
 	UiInputEvent input(UiInputType::FocusLost);
-	if (!translateAlgorithmBrowserEvent(event, input)) return true;
+	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Search, sdlUiEventContext(event))) return true;
 	const AlgorithmBrowserInputResult result = algorithmBrowser_.handleInput(
 		input, screenModel_.setupEnabled, settings_.simulation.algorithm);
 	if (result.closeRequested)

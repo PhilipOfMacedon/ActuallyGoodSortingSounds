@@ -36,6 +36,7 @@
     <ClCompile Include="Renderer2D.cpp" />
     <ClCompile Include="SDL2BarGraphics.cpp" />
     <ClCompile Include="SdlAudioOutput.cpp" />
+    <ClCompile Include="SdlUiEventAdapter.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Rectangle.cpp" />
     <ClCompile Include="Shader.cpp" />
@@ -75,6 +76,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="Shader.h" />
     <ClInclude Include="SdlAudioOutput.h" />
+    <ClInclude Include="SdlUiEventAdapter.h" />
     <ClInclude Include="SettingsScroll.h" />
     <ClInclude Include="TextLabel.h" />
     <ClInclude Include="TextBlockLayout.h" />

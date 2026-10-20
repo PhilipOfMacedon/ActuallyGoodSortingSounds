@@ -533,6 +533,24 @@ Verification:
 - x64 Debug and Release solution builds: passed.
 - Debug and Release `AppFrameworkTests`: passed.
 - Release `SoundEngineTests`: passed (417,371 assertions); no sound code changed.
-- A separate Debug `SortingLogicTests` catalog run is still in progress; no SortingLogic files changed in this slice.
+- An attempted Debug `SortingLogicTests` rerun was stopped after more than eight CPU minutes because this UI-only slice does not touch SortingLogic; no SortingLogic result is claimed for this slice.
 
 Next: centralize view event-to-action routing so the retained UI tree emits one typed action path instead of mixing widget events and direct view commands inside `ControlPanel`.
+
+## 2026-10-19 — extract SDL input translation
+
+Status: implementation and focused verification complete.
+
+- Added `SdlUiEventAdapter` to translate pointer, wheel, keyboard, text, and focus events into the retained UI's `UiInputEvent` contract. The adapter is deterministic: the ControlPanel facade supplies SDL's current pointer position for wheel events and current modifiers for mouse-down events.
+- Replaced the separate conversion blocks in the main panel and appearance editor, and the algorithm browser's narrower converter, with the shared adapter. `Controls` and `Search` key profiles preserve their previous Space/Backspace differences.
+- Added framework checks for supported/unsupported keys, modifier propagation, pointer coordinates, wheel context, text input, focus loss, and ignored window events. The test project only needs SDL headers; this adapter does not link or call SDL runtime functions.
+- No widget geometry, action mapping, keyboard shortcut, simulation, trace, or audio behavior changed.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release `AppFrameworkTests`: passed.
+- Debug and Release `SoundEngineTests`: passed (417,371 assertions each).
+- `git diff --check`: passed; Git reported only its configured LF-to-CRLF working-tree notices.
+
+Next: extract the main-menu and widget-event to typed-command mapping from `ControlPanel::processAction`, preserving the existing `AppAction` payloads and menu selection behavior.
