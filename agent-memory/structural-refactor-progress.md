@@ -1238,3 +1238,18 @@ Verification:
 - `git diff --check` and a final x64 Debug rebuild passed. `SortingLogic.cpp` is now 8,151 physical lines, down 240 from the preceding stackless partition slice. This is source relocation, not a runtime speed claim.
 
 Next: continue extracting merge families around explicit shared buffer/rotation kernels, then return to the configuration and UI ownership boundaries in the audit.
+## 2026-10-20 — isolate the baseline Merge strategy and shared merge-range writer
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved the configurable bottom-up/top-down Merge Sort implementation into `MergeStrategies.cpp` and registered the stable Merge ID directly.
+- Moved the shared merge-range recorder operation into `MergeTraceUtilities.cpp/.h`. Binary/iterative merge variants, ECTA, Median Merge, Buffer Partition Merge, and the other existing users now call the same `detail::traceMergeRange` helper.
+- Preserved the configured atomic-range versus animated-item writeback behavior and the existing merge annotations, comparisons, metrics, and event ordering. The implementation body changed only its helper qualification after the move.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- In each configuration: core contracts 39,535 checks; merge-family variants 44,531; Iterative Top-down Merge 228,782; ECTA 120,305; Median Merge 2,873; Buffer Partition Merge 114,897; catalog coverage 1,741. All reported 0 failures.
+- `git diff --check` passed. `SortingLogic.cpp` is now 8,085 physical lines, down 66 lines from the preceding partition-kernel slice. This is a source ownership change, not a runtime speed claim.
+
+Next: continue extracting cohesive merge implementations and their shared buffer/rotation kernels, then resume the configuration and view-ownership items in the audit.

@@ -67,6 +67,7 @@ namespace sortinglogic
 		void introSortStrategy(detail::Recorder& recorder);
 		void pdqBranchedStrategy(detail::Recorder& recorder);
 		void pdqBranchlessStrategy(detail::Recorder& recorder);
+		void mergeSortStrategy(detail::Recorder& recorder);
 		void optimizedBubble(detail::Recorder& recorder);
 		void optimizedCocktail(detail::Recorder& recorder);
 		void selection(detail::Recorder& recorder);

@@ -4,6 +4,7 @@
 #include "PermutationTraceUtilities.h"
 #include "SortingLogicInternal.h"
 #include "TraceRecorder.h"
+#include "MergeTraceUtilities.h"
 #include "PartitionTraceUtilities.h"
 
 #include <algorithm>
@@ -2469,72 +2470,6 @@ namespace sortinglogic
 			}
 		}
 
-		void mergeRange(Recorder& r, std::size_t first, std::size_t middle, std::size_t last)
-		{
-			if (middle >= last) return;
-			const std::size_t begin = r.trace.events.size();
-			for (std::size_t i = first; i < last; ++i) r.writeAuxiliary("merge", i, r.at(i));
-			std::vector<SortItem> merged;
-			if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite)
-				merged.reserve(last - first);
-			std::size_t left = first, right = middle;
-			for (std::size_t out = first; out < last; ++out)
-			{
-				SortItem chosen;
-				if (left >= middle) chosen = r.auxiliaryAt("merge", right++);
-				else if (right >= last) chosen = r.auxiliaryAt("merge", left++);
-				else
-				{
-					const SortItem a = r.auxiliaryAt("merge", left), b = r.auxiliaryAt("merge", right);
-					r.compare(a, b, left, right, "merge", "merge");
-					if (compareItems(a, b, r.trace.direction) != ComparisonResult::Greater)
-						chosen = r.auxiliaryAt("merge", left++);
-					else chosen = r.auxiliaryAt("merge", right++);
-				}
-				if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite) merged.push_back(chosen);
-				else r.writeMain(out, chosen);
-			}
-			if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite)
-				r.writeMainRange(first, merged);
-			r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "Merge range", begin);
-		}
-
-		void mergeSort(Recorder& r)
-		{
-			const std::size_t n = r.state.slots.size();
-			if (n < 2) return;
-			r.resizeAuxiliary("merge", n);
-			if (r.trace.configuration.mergeExecutionMode == MergeExecutionMode::TopDown)
-			{
-				std::size_t maximumDepth = 0;
-				for (std::size_t span = n; span > 1; span = (span + 1) / 2) ++maximumDepth;
-				std::function<void(std::size_t, std::size_t, std::size_t)> split;
-				split = [&r, &split, maximumDepth](std::size_t first, std::size_t last, std::size_t depth)
-				{
-					if (last - first < 2) return;
-					const std::size_t middle = first + (last - first) / 2;
-					split(first, middle, depth + 1);
-					split(middle, last, depth + 1);
-					mergeRange(r, first, middle, last);
-					const std::uint64_t pass = static_cast<std::uint64_t>(maximumDepth - depth);
-					r.setMetric("merge_passes", std::max(r.state.metrics.algorithm["merge_passes"], pass));
-				};
-				split(0, n, 0);
-				return;
-			}
-			for (std::size_t width = 1; width < n; width *= 2)
-			{
-				r.addMetric("merge_passes");
-				for (std::size_t first = 0; first < n; first += width * 2)
-				{
-					const std::size_t middle = std::min(first + width, n);
-					const std::size_t last = std::min(first + width * 2, n);
-					mergeRange(r, first, middle, last);
-				}
-				if (width > n / 2) break;
-			}
-		}
-
 		void weaveMergeRange(Recorder& r, std::size_t first, std::size_t last)
 		{
 			if (last <= first) return;
@@ -3029,7 +2964,7 @@ namespace sortinglogic
 					const std::size_t last = (std::min)(count, middle + width);
 					if (middle < last)
 					{
-					mergeRange(r, first, middle, last);
+					detail::traceMergeRange(r, first, middle, last);
 						r.addMetric("ecta_binary_merges");
 					}
 				}
@@ -3333,7 +3268,7 @@ namespace sortinglogic
 				{
 					const std::size_t middle = (std::min)(last, start + width);
 					const std::size_t end = (std::min)(last, middle + width);
-					if (middle < end) mergeRange(r, start, middle, end);
+					if (middle < end) detail::traceMergeRange(r, start, middle, end);
 					start = end;
 				}
 				r.addMetric(metricPrefix + "_binary_merge_passes");
@@ -4320,7 +4255,7 @@ namespace sortinglogic
 					const std::size_t middle = count * (i + 1) / subarrayCount;
 					const std::size_t last = count * (std::min)(i + 2, subarrayCount) / subarrayCount;
 					if (first < middle && middle < last)
-						mergeRange(r, first, middle, last);
+						detail::traceMergeRange(r, first, middle, last);
 				}
 				r.endPhase(phase, "Iterative top-down merge layer");
 				r.addMetric("merge_passes");
@@ -4410,7 +4345,7 @@ namespace sortinglogic
 				split(first, middle, depth + 1);
 				split(middle, last, depth + 1);
 				r.endPhase(siblingTasks, "Parallel Merge sibling tasks");
-				mergeRange(r, first, middle, last);
+				detail::traceMergeRange(r, first, middle, last);
 				r.addMetric("merge_passes");
 				r.setMetric("maximum_merge_depth", (std::max)(
 					r.state.metrics.algorithm["maximum_merge_depth"], static_cast<std::uint64_t>(depth)));
@@ -5576,7 +5511,7 @@ namespace sortinglogic
 				const std::size_t middle = first + length / 2;
 				sortRange(first, middle, depth + 1);
 				sortRange(middle, end, depth + 1);
-				mergeRange(r, first, middle, end);
+				detail::traceMergeRange(r, first, middle, end);
 				r.addMetric("merged_ranges");
 				r.setMetric("maximum_merge_depth", std::max<std::uint64_t>(
 					r.state.metrics.algorithm["maximum_merge_depth"], static_cast<std::uint64_t>(depth)));
@@ -5774,7 +5709,7 @@ namespace sortinglogic
 					if (middle < right)
 					{
 						const std::size_t begin = r.trace.events.size();
-						mergeRange(r, left, middle, right);
+						detail::traceMergeRange(r, left, middle, right);
 						r.annotate("main", RegionKind::Contiguous, left, right, 1, phase,
 							"Median Merge partition range", begin);
 						r.addMetric("median_merge_merge_ranges");
@@ -5906,7 +5841,7 @@ namespace sortinglogic
 				sortRange(first, split);
 				sortRange(split, end);
 				const int phase = r.beginPhase("Buffer-partitioned merge");
-				mergeRange(r, first, split, end);
+				detail::traceMergeRange(r, first, split, end);
 				r.endPhase(phase, "Buffer-partitioned merge");
 				r.annotate("main", RegionKind::Contiguous, first, end, 1, -1, "Median-selected merge range", annotationBegin);
 				r.addMetric("buffer_partition_merges");
@@ -5939,7 +5874,7 @@ namespace sortinglogic
 					{
 						const std::size_t begin = r.trace.events.size();
 						const std::uint64_t comparisonsBefore = r.state.metrics.comparisons;
-						mergeRange(r, first, middle, last);
+						detail::traceMergeRange(r, first, middle, last);
 						r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "Independent merge block", begin);
 						r.addMetric("parallel_block_tasks");
 						r.addMetric("parallel_block_comparisons", r.state.metrics.comparisons - comparisonsBefore);
@@ -6571,7 +6506,6 @@ namespace sortinglogic
 				case SortAlgorithm::CanonicalStalinFilter: canonicalStalinFilter(recorder); break;
 				case SortAlgorithm::ArrayvStrand: strandSort(recorder); break;
 				case SortAlgorithm::ArrayvRecursiveShell: recursiveShell(recorder); break;
-				case SortAlgorithm::Merge: mergeSort(recorder); break;
 				case SortAlgorithm::ArrayvBinaryMerge: binaryMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvIterativeTopDownMerge: iterativeTopDownMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvInPlaceMerge: inPlaceMergeSort(recorder); break;
@@ -6721,7 +6655,7 @@ namespace sortinglogic
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvSplayTreeRequest, ArrayvSplayTree, &strategies::splayTreeSort)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvRedBlackTreeRequest, ArrayvRedBlackTree, &strategies::redBlackTreeSort)
 		SORT_REQUEST_BUILDER(buildArrayvRecursiveShellRequest, ArrayvRecursiveShell)
-		SORT_REQUEST_BUILDER(buildMergeRequest, Merge)
+		SORT_STRATEGY_REQUEST_BUILDER(buildMergeRequest, Merge, &strategies::mergeSortStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildQuickRequest, Quick, &strategies::quick)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvLLQuickRequest, ArrayvLLQuick, &strategies::leftLeftQuick)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvLRQuickRequest, ArrayvLRQuick, &strategies::leftRightQuick)

@@ -55,6 +55,8 @@
     <ClCompile Include="PartitionStrategies.cpp" />
     <ClCompile Include="StacklessPartitionStrategies.cpp" />
     <ClCompile Include="PartitionTraceUtilities.cpp" />
+    <ClCompile Include="MergeStrategies.cpp" />
+    <ClCompile Include="MergeTraceUtilities.cpp" />
     <ClCompile Include="PermutationTraceUtilities.cpp" />
     <ClCompile Include="SelectionStrategies.cpp" />
     <ClCompile Include="PancakeStrategies.cpp" />
@@ -75,6 +77,7 @@
     <ClInclude Include="TraceRecorder.h" />
     <ClInclude Include="PermutationTraceUtilities.h" />
     <ClInclude Include="PartitionTraceUtilities.h" />
+    <ClInclude Include="MergeTraceUtilities.h" />
     <ClInclude Include="TraceBuildService.h" />
     <ClInclude Include="TracePresentationPolicy.h" />
   </ItemGroup>
