@@ -1863,3 +1863,11 @@ Removed `SortTrace::profile`, which was only assigned during trace success/failu
 The full solution built in x64 Debug/Release and x86 Debug/Release. SortingLogic core contracts passed 39,541 checks in each configuration, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed. No event order, replay state, metrics, audio presentation, or user-visible behavior changed.
 
 Next: continue the finite configuration audit by tracing the remaining `TraceBuildRequest` profile/domain precedence and persisted preference mirror to their migration and direct-caller boundaries. Preserve compatibility until those consumers are explicitly migrated.
+
+## 2026-10-20 — make input domain authoritative in saved preferences
+
+Removed `SimulationPreferences::profile`; settings, controller synchronization, preference equality, and validation now use `InputDomain` as the sole stored input-kind value. The INI codec still accepts profile-only v3/v4-era settings and writes the legacy `profile=` key derived from the current domain, preserving older-file compatibility without keeping a second runtime setting. Added checks for domain precedence when a compatibility key conflicts and for retaining the derived key on save. The broader `TraceBuildRequest` profile field remains a direct-caller compatibility adapter, and generic plus legacy algorithm-option representations remain under audit.
+
+The full Visual Studio solution built in x64/x86 Debug/Release, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed with the repository's configured LF-to-CRLF notices. No generated input, trace, audio, or UI behavior changed; the smoke window remained closed.
+
+Next: classify or reduce the remaining request-level and option-level compatibility mirrors at their API boundaries, then continue the main-control view/paint extraction and test registration work from the fixed twelve-item audit. Keep measurement-only candidates gated by evidence.

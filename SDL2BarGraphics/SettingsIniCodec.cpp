@@ -545,6 +545,7 @@ namespace
 UserPreferences settingsini::decode(const std::string& content)
 {
 	UserPreferences defaults;
+	sortinglogic::InputProfile legacyProfile = sortinglogic::InputProfile::NormalizedFloat;
 	std::map<std::string, std::string> values;
 	std::istringstream input(content);
 	std::string line;
@@ -589,15 +590,14 @@ UserPreferences settingsini::decode(const std::string& content)
 	{
 		// v1/v2 stored the sole algorithm as catalog position zero.
 		defaults.simulation.algorithm = static_cast<int>(sortinglogic::SortAlgorithm::Insertion);
-		defaults.simulation.profile = sortinglogic::InputProfile::NormalizedFloat;
 		defaults.simulation.domain = sortinglogic::InputDomain::NormalizedFloats;
 		defaults.simulation.pattern = sortinglogic::InputPattern::Random;
 	}
 	else if (version == 3)
 	{
 		found = values.find("profile");
-		if (found != values.end() && !parseProfile(found->second, defaults.simulation.profile)) return UserPreferences();
-		defaults.simulation.domain = defaults.simulation.profile == sortinglogic::InputProfile::NormalizedFloat
+		if (found != values.end() && !parseProfile(found->second, legacyProfile)) return UserPreferences();
+		defaults.simulation.domain = legacyProfile == sortinglogic::InputProfile::NormalizedFloat
 			? sortinglogic::InputDomain::NormalizedFloats : sortinglogic::InputDomain::NonnegativeIntegerKeys;
 		defaults.simulation.pattern = sortinglogic::InputPattern::Random;
 		found = values.find("shell_gap_sequence");
@@ -645,13 +645,12 @@ UserPreferences settingsini::decode(const std::string& content)
 		if (found != values.end())
 		{
 			if (!parseDomain(found->second, defaults.simulation.domain)) return UserPreferences();
-			defaults.simulation.profile = sortinglogic::inputProfileForDomain(defaults.simulation.domain);
 		}
 		else
 		{
 			found = values.find("profile");
-			if (found != values.end() && !parseProfile(found->second, defaults.simulation.profile)) return UserPreferences();
-			defaults.simulation.domain = defaults.simulation.profile == sortinglogic::InputProfile::NormalizedFloat
+			if (found != values.end() && !parseProfile(found->second, legacyProfile)) return UserPreferences();
+			defaults.simulation.domain = legacyProfile == sortinglogic::InputProfile::NormalizedFloat
 				? sortinglogic::InputDomain::NormalizedFloats : sortinglogic::InputDomain::NonnegativeIntegerKeys;
 		}
 		found = values.find("pattern");
@@ -764,7 +763,7 @@ std::string settingsini::encode(const UserPreferences& settings)
 		<< "completion_scan=" << (settings.simulation.completionScanEnabled ? 1 : 0) << "\n"
 		<< "family_id=" << settings.simulation.familyId << "\n"
 		<< "variant_id=" << settings.simulation.variantId << "\n"
-		<< "profile=" << profileName(settings.simulation.profile) << "\n"
+		<< "profile=" << profileName(sortinglogic::inputProfileForDomain(settings.simulation.domain)) << "\n"
 		<< "domain=" << domainName(settings.simulation.domain) << "\n"
 		<< "pattern=" << patternName(settings.simulation.pattern) << "\n"
 		<< "shell_gap_sequence=" << gapSequenceName(shellGap) << "\n"

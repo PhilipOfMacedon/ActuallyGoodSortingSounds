@@ -30,7 +30,6 @@ struct SimulationPreferences
 	int algorithm;
 	sortinglogic::FamilyId familyId;
 	sortinglogic::VariantId variantId;
-	sortinglogic::InputProfile profile;
 	sortinglogic::InputDomain domain;
 	sortinglogic::InputPattern pattern;
 	bool mergeBufferVisualizationEnabled;

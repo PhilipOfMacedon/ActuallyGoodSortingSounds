@@ -429,10 +429,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		{
 			result = simulation_.setInputProfile(static_cast<sortinglogic::InputProfile>(action.selection));
 			if (result.accepted)
-			{
-				preferences_.simulation.profile = simulation_.profile();
 				preferences_.simulation.domain = simulation_.domain();
-			}
 		}
 		break;
 	case AppActionKind::SetInputDomain:
@@ -443,10 +440,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		{
 			result = simulation_.setInputDomain(static_cast<sortinglogic::InputDomain>(action.selection));
 			if (result.accepted)
-			{
 				preferences_.simulation.domain = simulation_.domain();
-				preferences_.simulation.profile = simulation_.profile();
-			}
 		}
 		break;
 	case AppActionKind::SetInputPattern:
@@ -723,7 +717,6 @@ void AppController::synchronizeSimulationPreferences()
 		preferences_.simulation.familyId = descriptor->familyId;
 		preferences_.simulation.variantId = descriptor->variantId;
 	}
-	preferences_.simulation.profile = simulation_.profile();
 	preferences_.simulation.domain = simulation_.domain();
 	preferences_.simulation.pattern = simulation_.pattern();
 	preferences_.simulation.mergeBufferVisualizationEnabled = simulation_.mergeBufferVisualizationEnabled();

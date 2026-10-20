@@ -41,6 +41,25 @@ The manifest has 208 source rows, all marked `implemented_and_tested`; the curre
 
 ## Findings and recommended changes
 
+## Refactor status (verified 2026-10-20)
+
+This is the finite status ledger for the twelve findings below. It records completed boundaries separately from evidence-gated performance work; unrelated observations do not expand this list.
+
+| # | Status | Remaining work or disposition |
+| --- | --- | --- |
+| 1 | Resolved | Text style identity, wrapped-text caching, and single UI-frame preparation are fixed. Performance savings were not benchmarked. |
+| 2 | Resolved structurally | Sorting contracts, recorder, replay, simulation, request validation, and family strategies are split; catalog entries use direct registered strategies. The centralized descriptor table remains intentionally data-heavy. |
+| 3 | In progress | `SimulationPreferences` now stores only `InputDomain`; the legacy INI `profile` key is derived and profile-only files still migrate. `TraceBuildRequest` and algorithm options still carry compatibility and typed representations that need explicit resolution or disposition. |
+| 4 | Partial | Settings, browser, profile, appearance, and inline edit ownership are extracted. `ControlPanel` still owns the main widget root, host adaptation, and native dialogs. |
+| 5 | Partial | Settings and extracted views use the runtime `UiPaintCommand` path. Main-control composition and some specialized rendering still use the renderer directly. |
+| 6 | Resolved | `TracePresentationPolicy` centralizes audio eligibility, semantic role projection, and workspace visibility; existing distribution-audio checks pass. |
+| 7 | Mostly resolved | Playback lifecycle, app-thread frame coordination, timebase, and typed callback acknowledgements have explicit boundaries. Snapshot/coordination cost remains an unmeasured candidate. |
+| 8 | Resolved | Settings value semantics, validation, INI migration, file storage, and algorithm-audio preference policy have separate owners. |
+| 9 | Partial | Duplicate frame preparation and full snapshots for simple controller queries are removed. Snapshot copying, annotation scans, and role lookup need measurement before further caching. |
+| 10 | Deferred pending evidence | Trace bytes are explicitly an admission-budget estimate. Compact event storage remains deferred until representative memory high-water and build-time comparisons justify it. |
+| 11 | Mostly resolved | The unused Mesh/Rectangle path and legacy synth member are removed; chart inputs are narrower. Identical-state semantic material buckets remain a profiling candidate. |
+| 12 | Partial | Executable-relative assets, overridable dependency roots, a shared AppFramework target, and aligned application outputs are in place. Test-source decomposition and single-source test registration remain. |
+
 ### 1. The label cache can be invalidated twice for unchanged text — first priority
 
 Baseline evidence: `ControlPanel` previously alternated `TextLabel` between legacy and themed font/DPI setters, while the profile recomputed paragraph wrapping during paint. That call path is no longer present.
@@ -86,7 +105,7 @@ Baseline evidence: `ControlPanel` formerly owned the appearance transaction, bro
 
 Current status (verified 2026-10-20): `AppActions.h` holds the value-only app command contract, `UiOverlayState` owns modal transitions, and the browser, settings chrome/model, profile, and appearance editor have separate model/view boundaries. `AppearanceEditorView` owns its controls, session, layout, composition, synchronization, and pure edit actions, returning explicit host effects. `InlineEditModel` owns edit target, accepted-character rules, replacement/backspace/clear behavior, and strict integer/float/double parsing without SDL or renderer dependencies. `SettingsPanelControls` consumes UI-owned `SettingsPanelAlgorithmPresentation` values; `SettingsPanelCatalog` translates SortingLogic descriptors into option groups, visible-audio control IDs, pattern compatibility, and option labels. `SettingsPanelView` owns the retained settings widget root, construction and synchronization of settings values/actions/enabled state, captions, navigation/scroll model, panel/content bounds, responsive row placement, active-control visibility, and typed settings-tab/scroll behavior. It lays out the container only when the cached screen layout changes. `ControlPanel` remains the SDL/renderer adapter, paints specialized controls, owns the main widget root and native dialogs, and converts view effects to app actions.
 
-Next: submit settings tab/content control paint through the existing `UiPaintCommand` path, then isolate the main-control root and view state. Keep focus, scroll, pointer capture, and modal dismissal behavior under test; do not create view classes that only relocate control flow.
+Remaining: isolate main-control composition and host effects while keeping focus, scroll, pointer capture, and modal dismissal under test. Do not create view classes that only relocate control flow.
 
 Acceptance: actual runtime view composition and edit state are testable without SDL/GL; menu search/scrolling, Escape/back, focus, pointer capture, inline editing, and outside-click dismissal preserve their current behavior.
 
@@ -96,7 +115,7 @@ Baseline evidence: early `UiPaintContext` coverage only checked a test recorder.
 
 Current status (verified 2026-10-20): settings chrome and settings control order now submit through `UiPaintCommand`; each visible widget is represented by its stable UI ID, layer, clip, and popup state, while `ControlPanel` adapts those commands through the existing specialized widget renderers into `Renderer2D`. `AlgorithmBrowserView`, `AlgorithmProfileView`, and `AppearanceEditorView` also submit production composition through the same contract. Headless tests compose those runtime views and inspect emitted commands. Main controls, timeline, and some specialized text/control rendering still submit directly through `Renderer2D`. Settings geometry, visibility, state, and command ordering have headless coverage; live inspection confirmed the settings tabs and dropdown popup still render in the active palette.
 
-Next: extend the existing command contract to main-control composition. Keep detailed widget styling and actual painter-order/material tests on the current renderer path; do not add a parallel paint abstraction.
+Remaining: extend the existing command contract to main-control composition. Keep detailed widget styling and actual painter-order/material tests on the current renderer path; do not add a parallel paint abstraction.
 
 ### 6. Audio eligibility and semantic visibility are repeated across layers — high priority
 
@@ -136,7 +155,7 @@ Current status (verified 2026-10-20): this boundary is resolved. `UserSettings.c
 
 The settings version, keys, defaults, malformed-value fallbacks, stable algorithm IDs, v1–v8 migrations, immediate save-on-change behavior, backup suffix, bounded reads, write-through replacement, and normalization rules are unchanged. Verification: x64 Debug/Release solution builds and `AppFrameworkTests` pass; the standalone `AudioDeviceTransportTests` project builds and passes in both configurations, including reference/fixed timing and 800-item scenarios. No background saving or debouncing was introduced.
 
-Next: centralize deterministic semantic presentation eligibility, operand/role projection, and lane visibility so the trace cadence index, audio adapter, and UI controls consume one policy without changing Counting/Radix or Merge behavior.
+Completed: deterministic event eligibility, operand/role projection, cadence indexing, and lane visibility are centralized in `TracePresentationPolicy`; the current verification above covers the existing Counting/Radix and Merge behavior.
 
 Acceptance: zero writes for transport/scrubbing/no-op edits, one effective save for an actual preference change, identical migrations/fallbacks, unchanged atomic temporary-file replacement/backup behavior, and no divergence between pure normalization and runtime parameter setters.
 

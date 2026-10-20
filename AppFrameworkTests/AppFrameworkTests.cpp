@@ -44,6 +44,7 @@
 #include "../SDL2BarGraphics/SettingsPanelControls.h"
 #include "../SDL2BarGraphics/SettingsPanelCatalog.h"
 #include "../SDL2BarGraphics/SettingsPanelLayout.h"
+#include "../SDL2BarGraphics/SettingsIniCodec.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
 #define SDL_MAIN_HANDLED
 #include "../SDL2BarGraphics/SdlUiEventAdapter.h"
@@ -2889,7 +2890,6 @@ namespace
 		preferences.simulation.variantId = merge->variantId;
 		preferences.simulation.domain = sortinglogic::InputDomain::NonnegativeIntegerKeys;
 		preferences.simulation.pattern = sortinglogic::InputPattern::FewUnique;
-		preferences.simulation.profile = sortinglogic::InputProfile::IntegerKeys;
 		preferences.simulation.playbackTimingMode = SoundEngine::PlaybackTimingMode::ReferenceCadence;
 		preferences.simulation.mergeBufferVisualizationEnabled = false;
 		preferences.simulation.completionScanEnabled = true;
@@ -3152,7 +3152,7 @@ namespace
 			"fixed-duration playback remains the default timing mode");
 		check(defaults.version == 8 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			defaults.simulation.familyId == "insertion-methods" && defaults.simulation.variantId == "insertion" &&
-			defaults.simulation.profile == sortinglogic::InputProfile::NormalizedFloat,
+			defaults.simulation.domain == sortinglogic::InputDomain::NormalizedFloats,
 			"new settings use stable algorithm IDs and showcase defaults");
 		const sortinglogic::AlgorithmDescriptor* defaultShell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
 		check(defaultShell && algorithmOptionValue(defaults, *defaultShell, "gap_sequence") ==
@@ -3190,7 +3190,6 @@ namespace
 		saved.simulation.algorithm = static_cast<int>(sortinglogic::SortAlgorithm::Merge);
 		saved.simulation.familyId = "merge-sort";
 		saved.simulation.variantId = "merge";
-		saved.simulation.profile = sortinglogic::InputProfile::IntegerKeys;
 		saved.simulation.domain = sortinglogic::InputDomain::SignedIntegerKeys;
 		saved.simulation.pattern = sortinglogic::InputPattern::NearlySorted;
 		saved.algorithmOptions[algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence")] = "ciura";
@@ -3251,6 +3250,9 @@ namespace
 		mergeOffsets.decibels[static_cast<std::size_t>(AlgorithmAudioChannel::AuxiliaryAccent)] = -6.0f;
 		saved.variantAudioOffsets[variantAudioSettingsKey("merge-sort", "merge")] = mergeOffsets;
 		std::string error;
+		const std::string encodedSettings = settingsini::encode(saved);
+		check(encodedSettings.find("profile=integer_keys\n") != std::string::npos,
+			"settings retain the legacy profile key derived from the authoritative input domain");
 		check(store.save(saved, &error), "save a valid settings file");
 		SettingsStore restartedStore(path);
 		const UserSettings loaded = restartedStore.load();
@@ -3268,11 +3270,14 @@ namespace
 		check(loaded.simulation.algorithm == saved.simulation.algorithm, "settings round-trip selected algorithm");
 		check(loaded.simulation.familyId == saved.simulation.familyId && loaded.simulation.variantId == saved.simulation.variantId,
 			"settings round-trip stable family and variant IDs");
-		check(loaded.simulation.profile == saved.simulation.profile &&
-			algorithmOptionValue(loaded, *defaultShell, "gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Ciura),
-			"settings round-trip profile and stable Shell option selection");
+		check(algorithmOptionValue(loaded, *defaultShell, "gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Ciura),
+			"settings round-trip the stable Shell option selection");
 		check(loaded.simulation.domain == saved.simulation.domain && loaded.simulation.pattern == saved.simulation.pattern,
 			"settings round-trip signed domain and input pattern");
+		const UserPreferences conflictingLegacyProfile = settingsini::decode(
+			"version=8\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=integer_keys\ndomain=normalized_float\n");
+		check(conflictingLegacyProfile.simulation.domain == sortinglogic::InputDomain::NormalizedFloats,
+			"authoritative input domain wins over a conflicting compatibility profile key");
 		const sortinglogic::AlgorithmDescriptor* savedMerge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
 		check(savedMerge && algorithmOptionValue(loaded, *savedMerge, "writeback_mode") ==
 			static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites),
@@ -3344,7 +3349,7 @@ namespace
 		check(migrated.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
 			"older settings default to fixed-duration playback");
 		check(migrated.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
-			migrated.simulation.profile == sortinglogic::InputProfile::NormalizedFloat &&
+			migrated.simulation.domain == sortinglogic::InputDomain::NormalizedFloats &&
 			algorithmOptionValue(migrated, *defaultShell, "gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Halving),
 			"version-1 migration establishes showcase defaults safely");
 		check(migrated.audio.masterLevel == defaults.audio.masterLevel && migrated.audio.bedComb.enabled == defaults.audio.bedComb.enabled,
@@ -3353,12 +3358,12 @@ namespace
 		const UserPreferences migratedV2 = store.load();
 		check(migratedV2.version == 8 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
 			migratedV2.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
-			migratedV2.simulation.profile == sortinglogic::InputProfile::NormalizedFloat,
+			migratedV2.simulation.domain == sortinglogic::InputDomain::NormalizedFloats,
 			"version-2 settings retain existing values and migrate new fields");
 		writeFile(path, "version=3\npalette=cyan\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nalgorithm=999999\nprofile=integer_keys\nshell_gap_sequence=tokuda\n");
 		const UserPreferences unknownAlgorithm = store.load();
 		check(unknownAlgorithm.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
-			unknownAlgorithm.simulation.profile == sortinglogic::InputProfile::IntegerKeys &&
+			unknownAlgorithm.simulation.domain == sortinglogic::InputDomain::NonnegativeIntegerKeys &&
 			algorithmOptionValue(unknownAlgorithm, *defaultShell, "gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Tokuda),
 			"unknown saved algorithm IDs fall back while valid new settings survive");
 		writeFile(path, "version=4\npalette=cyan\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=made-up\nvariant_id=missing\nprofile=normalized_float\nshell_gap_sequence=halving\n");

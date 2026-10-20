@@ -58,14 +58,14 @@ bool VisualPreferences::operator==(const VisualPreferences& other) const
 SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(10),
 	playbackTimingMode(SoundEngine::PlaybackTimingMode::FixedDuration), descending(false),
 	algorithm(static_cast<int>(sortinglogic::SortAlgorithm::Insertion)), familyId("insertion-methods"), variantId("insertion"),
-	profile(sortinglogic::InputProfile::NormalizedFloat), domain(sortinglogic::InputDomain::NormalizedFloats),
+	domain(sortinglogic::InputDomain::NormalizedFloats),
 	pattern(sortinglogic::InputPattern::Random), mergeBufferVisualizationEnabled(true), completionScanEnabled(false) {}
 
 bool SimulationPreferences::operator==(const SimulationPreferences& other) const
 {
 	return itemCount == other.itemCount && durationSeconds == other.durationSeconds &&
 		playbackTimingMode == other.playbackTimingMode && descending == other.descending && algorithm == other.algorithm &&
-		familyId == other.familyId && variantId == other.variantId && profile == other.profile && domain == other.domain &&
+		familyId == other.familyId && variantId == other.variantId && domain == other.domain &&
 		pattern == other.pattern && mergeBufferVisualizationEnabled == other.mergeBufferVisualizationEnabled &&
 		completionScanEnabled == other.completionScanEnabled;
 }
@@ -89,11 +89,8 @@ bool UserPreferences::isValid() const
 		sortinglogic::algorithmDescriptorById(simulation.familyId, simulation.variantId) != nullptr &&
 		sortinglogic::algorithmDescriptorById(simulation.familyId, simulation.variantId)->id ==
 			static_cast<sortinglogic::SortAlgorithm>(simulation.algorithm) &&
-		(static_cast<int>(simulation.profile) == static_cast<int>(sortinglogic::InputProfile::NormalizedFloat) ||
-		 static_cast<int>(simulation.profile) == static_cast<int>(sortinglogic::InputProfile::IntegerKeys)) &&
 		static_cast<int>(simulation.domain) >= static_cast<int>(sortinglogic::InputDomain::NormalizedFloats) &&
 		static_cast<int>(simulation.domain) <= static_cast<int>(sortinglogic::InputDomain::IntegerPermutation) &&
-		simulation.profile == sortinglogic::inputProfileForDomain(simulation.domain) &&
 		sortinglogic::inputPatternCompatible(simulation.domain, simulation.pattern) &&
 		(static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::FixedDuration) ||
 		 static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence)) &&
