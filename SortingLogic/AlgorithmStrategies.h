@@ -21,6 +21,11 @@ namespace sortinglogic
 		void gnome(detail::Recorder& recorder);
 		void insertion(detail::Recorder& recorder);
 		void oddEven(detail::Recorder& recorder);
+		void binaryGnome(detail::Recorder& recorder);
+		void optimizedGnome(detail::Recorder& recorder);
+		void shove(detail::Recorder& recorder);
+		void slope(detail::Recorder& recorder);
+		void hybridComb(detail::Recorder& recorder);
 		void optimizedBubble(detail::Recorder& recorder);
 		void optimizedCocktail(detail::Recorder& recorder);
 		void selection(detail::Recorder& recorder);

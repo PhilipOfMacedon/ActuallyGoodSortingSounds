@@ -1111,3 +1111,19 @@ Verification:
 - `git diff --check` passed.
 
 Next: continue removing cohesive algorithm families from the central implementation file; inspect shared helper ownership before moving the remaining exchange and heap kernels.
+
+## 2026-10-20 — extract elementary exchange variants
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved Binary Gnome, Optimized Gnome, Shove, Slope, and Hybrid Comb Sort into the existing `ElementaryStrategies.cpp` module.
+- Routed their stable IDs through direct strategy builders and removed their fallback-switch cases. Hybrid Comb continues to call the shared Insertion strategy; the gap schedule, metrics, annotations, and operation sequence are unchanged.
+- Added a focused suite for empty, singleton, duplicate, all-equal, ordered, and randomized inputs in both directions, plus the existing Hybrid Comb and Intro Circle checks.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86 Debug/Release and x64 Debug/Release.
+- Focused elementary exchange tests passed 37,445 checks; pinned catalog coverage passed 1,741 checks; SortingLogic core contracts passed 39,535 checks. All reported 0 failures.
+- `git diff --check` passed.
+
+Next: address the Circle/Intro Circle dependency on the shared binary insertion range before moving that family; then continue with remaining heap and tree ownership boundaries.

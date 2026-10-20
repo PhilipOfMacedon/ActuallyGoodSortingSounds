@@ -1,6 +1,9 @@
 #include "AlgorithmStrategies.h"
 #include "TraceRecorder.h"
 
+#include <algorithm>
+#include <string>
+
 namespace sortinglogic
 {
 	namespace strategies
@@ -328,5 +331,114 @@ namespace sortinglogic
 			}
 		}
 
+
+		void binaryGnome(Recorder& r)
+		{
+			// Binary Gnome Sort locates a stable insertion point by binary search,
+			// then uses adjacent swaps to move the item into place.
+			for (std::size_t i = 1; i < r.state.slots.size(); ++i)
+			{
+				const SortItem key = r.at(i);
+				std::size_t low = 0, high = i;
+				while (low < high)
+				{
+					const std::size_t middle = low + (high - low) / 2;
+					const SortItem candidate = r.at(middle);
+					r.compare(key, candidate, i, middle, "main", "main", SemanticRole::HeldKey, SemanticRole::ComparedItem);
+					if (compareItems(key, candidate, r.trace.direction) == ComparisonResult::Less) high = middle;
+					else low = middle + 1;
+				}
+				for (std::size_t position = i; position > low; --position)
+					r.swap(position, position - 1, SemanticRole::HeldKey);
+			}
+		}
+
+		void optimizedGnome(Recorder& r)
+		{
+			for (std::size_t i = 1; i < r.state.slots.size(); ++i)
+			{
+				std::size_t position = i;
+				while (position > 0)
+				{
+					const SortItem a = r.at(position - 1), b = r.at(position);
+					r.compare(a, b, position - 1, position);
+					if (compareItems(a, b, r.trace.direction) != ComparisonResult::Greater) break;
+					r.swap(position - 1, position);
+					--position;
+				}
+			}
+		}
+
+		void shove(Recorder& r)
+		{
+			const std::size_t n = r.state.slots.size();
+			if (n < 2) return;
+			std::size_t i = 0;
+			while (i + 1 < n)
+			{
+				const SortItem a = r.at(i), b = r.at(i + 1);
+				r.compare(a, b, i, i + 1);
+				if (compareItems(a, b, r.trace.direction) == ComparisonResult::Greater)
+				{
+					for (std::size_t forward = i; forward + 1 < n; ++forward) r.swap(forward, forward + 1);
+					if (i > 0) --i;
+				}
+				else ++i;
+			}
+		}
+
+		void slope(Recorder& r)
+		{
+			const std::size_t n = r.state.slots.size();
+			for (std::ptrdiff_t j = 1; j < static_cast<std::ptrdiff_t>(n); ++j)
+			{
+				std::ptrdiff_t i = j;
+				for (std::ptrdiff_t k = i - 1; k >= 0; --k, --i)
+				{
+					const SortItem a = r.at(static_cast<std::size_t>(i)), b = r.at(static_cast<std::size_t>(k));
+					r.compare(a, b, static_cast<std::size_t>(i), static_cast<std::size_t>(k));
+					if (compareItems(a, b, r.trace.direction) == ComparisonResult::Less)
+						r.swap(static_cast<std::size_t>(i), static_cast<std::size_t>(k));
+				}
+			}
+		}
+
+		void hybridComb(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			r.declareMetric("gap_passes");
+			r.declareMetric("last_gap");
+			r.declareMetric("insertion_fallbacks");
+			std::size_t gap = count;
+			bool changed = false;
+			const double insertionThreshold = std::min(8.0, static_cast<double>(count) / 32.0);
+			while (gap > 1 || changed)
+			{
+				if (gap > 1) gap = static_cast<std::size_t>(static_cast<double>(gap) / 1.3);
+				gap = std::max<std::size_t>(1, gap);
+				changed = false;
+				r.addMetric("gap_passes");
+				r.setMetric("last_gap", gap);
+				const std::size_t begin = r.trace.events.size();
+				if (static_cast<double>(gap) <= insertionThreshold)
+				{
+					r.addMetric("insertion_fallbacks");
+					strategies::insertion(r);
+					r.annotate("main", RegionKind::Contiguous, 0, count, 1, -1, "Hybrid comb insertion fallback", begin);
+					break;
+				}
+				for (std::size_t i = 0; i + gap < count; ++i)
+				{
+					const SortItem a = r.at(i), b = r.at(i + gap);
+					r.compare(a, b, i, i + gap);
+					if (compareItems(a, b, r.trace.direction) == ComparisonResult::Greater)
+					{
+						r.swap(i, i + gap);
+						changed = true;
+					}
+				}
+				r.annotate("main", RegionKind::Strided, 0, count, gap, -1, "Hybrid comb gap " + std::to_string(gap), begin);
+			}
+		}
 	}
 }
