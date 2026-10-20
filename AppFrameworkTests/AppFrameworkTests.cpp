@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "../SDL2BarGraphics/LayoutMetrics.h"
+#include "../SDL2BarGraphics/InlineEditModel.h"
 #include "../SDL2BarGraphics/ActiveRoleLookup.h"
 #include "../SDL2BarGraphics/AlgorithmProfileView.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
@@ -104,6 +105,62 @@ namespace
 					"indexed active-role lookup matches the linear reference across lanes and duplicate roles");
 			}
 		lookup.release();
+	}
+
+	void testInlineEditModel()
+	{
+		InlineEditModel editor;
+		int integerValue = 99;
+		float floatValue = 99.0f;
+		double doubleValue = 99.0;
+		check(!editor.active() && !editor.tryParseInteger(integerValue) && !editor.tryParseFloat(floatValue),
+			"inline edit model starts inactive and refuses empty numeric input");
+
+		editor.begin(InlineEditTarget::ItemCount, "80");
+		check(editor.appendText("x") && editor.text() == "80",
+			"item-count editing ignores invalid characters without consuming first-character replacement");
+		editor.appendText("7");
+		editor.appendText("1a2");
+		check(editor.text() == "712" && editor.tryParseInteger(integerValue) && integerValue == 712,
+			"item-count editing replaces the initial value on first accepted input and keeps ASCII digits");
+		editor.begin(InlineEditTarget::ItemCount, "2147483648");
+		check(!editor.tryParseInteger(integerValue) && integerValue == 712,
+			"item-count parsing rejects integer overflow without changing its output argument");
+		editor.begin(InlineEditTarget::ItemCount, "8");
+		editor.appendText("-1.2");
+		check(editor.text() == "12",
+			"item-count editing rejects signs and decimal separators");
+
+		editor.begin(InlineEditTarget::Duration, "10.5");
+		editor.backspace();
+		editor.appendText("3");
+		check(editor.text() == "10.3" && editor.tryParseFloat(floatValue) && std::fabs(floatValue - 10.3f) < 0.0001f,
+			"duration editing permits decimal input and parses a finite float");
+		editor.begin(InlineEditTarget::Duration, "1");
+		editor.appendText("2.3.4");
+		check(editor.text() == "2.3.4" && !editor.tryParseFloat(floatValue),
+			"duration editing preserves accepted text while rejecting an invalid multi-decimal commit");
+
+		editor.begin(InlineEditTarget::AppearanceNumber, "0.5");
+		check(editor.isAppearanceEdit(), "appearance scalar editing is identified independently from setup controls");
+		editor.appendText("-1.25");
+		check(editor.text() == "-1.25" && editor.tryParseDouble(doubleValue) && doubleValue == -1.25,
+			"appearance scalar editing permits signed finite decimal values");
+		editor.begin(InlineEditTarget::AppearanceAlpha, "1.000");
+		check(editor.isAppearanceEdit() && editor.target() == InlineEditTarget::AppearanceAlpha,
+			"appearance alpha uses the same text model with a distinct semantic target");
+
+		editor.begin(InlineEditTarget::Duration, "1234567890");
+		editor.backspace();
+		editor.appendText("12");
+		check(editor.text() == "1234567891",
+			"inline editing retains the existing ten-character input limit");
+		editor.clear();
+		editor.appendText("4");
+		check(editor.text() == "4", "clearing input disables replacement before the next character");
+		editor.finish();
+		check(!editor.active() && editor.text().empty() && !editor.tryParseDouble(doubleValue),
+			"finishing an inline edit clears its target and input buffer");
 	}
 
 	void testSimulationPlaybackState()
@@ -3545,6 +3602,7 @@ int main(int argc, char* argv[])
 		}
 	}
 	testActiveRoleLookup();
+	testInlineEditModel();
 	testSimulationPlaybackState();
 	testSpacing();
 	testPreferenceValueEquality();

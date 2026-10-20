@@ -2,10 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
-#include <cstdlib>
 #include <iomanip>
-#include <limits>
 #include <set>
 #include <sstream>
 
@@ -223,20 +220,17 @@ namespace
 		return rect.contains(static_cast<float>(x), static_cast<float>(y));
 	}
 
-	bool parseInlineInteger(const std::string& text, int& value)
+	const char* inlineEditWidgetId(InlineEditTarget target)
 	{
-		if (text.empty()) return false;
-		int parsed = 0;
-		for (std::size_t i = 0; i < text.size(); ++i)
+		switch (target)
 		{
-			const unsigned char character = static_cast<unsigned char>(text[i]);
-			if (character < '0' || character > '9') return false;
-			const int digit = character - '0';
-			if (parsed > (std::numeric_limits<int>::max() - digit) / 10) return false;
-			parsed = parsed * 10 + digit;
+		case InlineEditTarget::ItemCount: return "bars_value";
+		case InlineEditTarget::Duration: return "time_value";
+		case InlineEditTarget::AppearanceNumber: return "appearance_value";
+		case InlineEditTarget::AppearanceAlpha: return "appearance_color_alpha";
+		case InlineEditTarget::None: return "";
 		}
-		value = parsed;
-		return true;
+		return "";
 	}
 
 std::string formatDuration(float seconds)
@@ -375,7 +369,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	headerBounds_(), gearBounds_(), settingsPanelBounds_(), settingsContentBounds_(), draggingTimeline_(false),
 	appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
-	inlineEditWidgetId_(), inlineEditBuffer_(), inlineEditReplaceOnNextDigit_(false), inlineEditAppearanceValue_(false)
+	inlineEdit_()
 {
 	createWidgets();
 	updateLayout();
@@ -383,7 +377,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 
 ControlPanel::~ControlPanel()
 {
-	if (!inlineEditWidgetId_.empty() || algorithmBrowserOpen() || appearanceSearchFocused_) SDL_StopTextInput();
+	if (inlineEdit_.active() || algorithmBrowserOpen() || appearanceSearchFocused_) SDL_StopTextInput();
 }
 
 bool ControlPanel::isReady() const
@@ -1052,7 +1046,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 
 bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 {
-	if (!appearanceEditorOpen() && !algorithmBrowserOpen() && !appearanceSearchFocused_ && inlineEditWidgetId_.empty() &&
+	if (!appearanceEditorOpen() && !algorithmBrowserOpen() && !appearanceSearchFocused_ && !inlineEdit_.active() &&
 		event.type == SDL_KEYDOWN && !event.key.repeat &&
 		event.key.keysym.sym == SDLK_F12 && (event.key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT)) == (KMOD_CTRL | KMOD_SHIFT))
 	{
@@ -1077,18 +1071,18 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 			targetWidgetId = "time_value";
 		if (!targetWidgetId.empty())
 		{
-			if (!inlineEditWidgetId_.empty() && targetWidgetId == inlineEditWidgetId_) return true;
-			if (!inlineEditWidgetId_.empty() && !commitInlineEdit(action)) return true;
+			if (inlineEdit_.active() && targetWidgetId == inlineEditWidgetId(inlineEdit_.target())) return true;
+			if (inlineEdit_.active() && !commitInlineEdit(action)) return true;
 			beginInlineEdit(targetWidgetId);
 			return true;
 		}
-		if (!inlineEditWidgetId_.empty())
+		if (inlineEdit_.active())
 		{
 			if (!commitInlineEdit(action)) return true;
 			return true;
 		}
 	}
-	if (!inlineEditWidgetId_.empty())
+	if (inlineEdit_.active())
 	{
 		if (event.type == SDL_TEXTINPUT)
 			return appendInlineEditText(event.text.text);
@@ -1101,18 +1095,16 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 				return true;
 			}
 			if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
-				return commitInlineEdit(action) || !inlineEditWidgetId_.empty();
+				return commitInlineEdit(action) || inlineEdit_.active();
 			if (key == SDLK_BACKSPACE)
 			{
-				inlineEditReplaceOnNextDigit_ = false;
-				if (!inlineEditBuffer_.empty()) inlineEditBuffer_.erase(inlineEditBuffer_.size() - 1);
+				inlineEdit_.backspace();
 				updateInlineEditLabel();
 				return true;
 			}
 			if (key == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
 			{
-				inlineEditBuffer_.clear();
-				inlineEditReplaceOnNextDigit_ = false;
+				inlineEdit_.clear();
 				updateInlineEditLabel();
 				return true;
 			}
@@ -2005,74 +1997,64 @@ void ControlPanel::beginInlineEdit(const std::string& widgetId)
 {
 	if ((widgetId == "appearance_value" || widgetId == "appearance_color_alpha") && appearanceEditorOpen())
 	{
+		const InlineEditTarget target = widgetId == "appearance_value"
+			? InlineEditTarget::AppearanceNumber : InlineEditTarget::AppearanceAlpha;
 		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorView_.session().model().preset()), appearanceEditorView_.session().model().selectedToken());
-		if (!descriptor || (widgetId == "appearance_value" && descriptor->type != UiTokenType::Number) ||
-			(widgetId == "appearance_color_alpha" && descriptor->type != UiTokenType::Color)) return;
+		if (!descriptor || (target == InlineEditTarget::AppearanceNumber && descriptor->type != UiTokenType::Number) ||
+			(target == InlineEditTarget::AppearanceAlpha && descriptor->type != UiTokenType::Color)) return;
 		const UiTokenValue value = effectiveUiTokenValue(appearanceEditorView_.session().model().preset(),
 			appearanceEditorView_.session().draft().themes[appearanceEditorView_.session().model().preset()], appearanceEditorView_.session().model().selectedToken());
 		std::ostringstream text;
-		text << std::setprecision(9) << (widgetId == "appearance_color_alpha" ? value.color.a : value.number);
-		inlineEditWidgetId_ = widgetId;
-		inlineEditBuffer_ = text.str();
-		inlineEditAppearanceValue_ = true;
-		inlineEditReplaceOnNextDigit_ = true;
+		text << std::setprecision(9) << (target == InlineEditTarget::AppearanceAlpha ? value.color.a : value.number);
+		inlineEdit_.begin(target, text.str());
 		SDL_StartTextInput();
 		updateInlineEditLabel();
 		return;
 	}
 	if (widgetId != "bars_value" && widgetId != "time_value") return;
-	inlineEditWidgetId_ = widgetId;
-	inlineEditAppearanceValue_ = false;
-	inlineEditBuffer_ = widgetId == "bars_value"
+	const InlineEditTarget target = widgetId == "bars_value"
+		? InlineEditTarget::ItemCount : InlineEditTarget::Duration;
+	const std::string initialText = target == InlineEditTarget::ItemCount
 		? std::to_string(settings_.simulation.itemCount)
 		: ([this]() { std::ostringstream value; value << std::setprecision(6) << settings_.simulation.durationSeconds; return value.str(); })();
-	inlineEditReplaceOnNextDigit_ = true;
+	inlineEdit_.begin(target, initialText);
 	SDL_StartTextInput();
 	updateInlineEditLabel();
 }
 
 void ControlPanel::updateInlineEditLabel()
 {
-	if (inlineEditWidgetId_.empty()) return;
-	if (inlineEditAppearanceValue_)
+	if (!inlineEdit_.active()) return;
+	const InlineEditTarget target = inlineEdit_.target();
+	const char* widgetId = inlineEditWidgetId(target);
+	if (inlineEdit_.isAppearanceEdit())
 	{
-		UiWidget* value = appearanceEditorView_.controls().find(inlineEditWidgetId_);
-		if (value) value->setLabel(inlineEditBuffer_ + "|");
+		UiWidget* value = appearanceEditorView_.controls().find(widgetId);
+		if (value) value->setLabel(inlineEdit_.text() + "|");
 		return;
 	}
-	UiWidget* widget = mainUi_.find(inlineEditWidgetId_);
+	UiWidget* widget = mainUi_.find(widgetId);
 	if (!widget) return;
-	widget->setLabel(inlineEditBuffer_ + "|" + (inlineEditWidgetId_ == "bars_value" ? " bars" : " sec"));
+	widget->setLabel(inlineEdit_.text() + "|" + (target == InlineEditTarget::ItemCount ? " bars" : " sec"));
 }
 
 bool ControlPanel::appendInlineEditText(const char* text)
 {
-	if (!text) return true;
-	for (const char* character = text; *character; ++character)
-	{
-		const bool digit = *character >= '0' && *character <= '9';
-		const bool decimal = *character == '.' && (inlineEditAppearanceValue_ || inlineEditWidgetId_ == "time_value");
-		const bool sign = *character == '-' && inlineEditAppearanceValue_;
-		if (!digit && !decimal && !sign) continue;
-		if (inlineEditReplaceOnNextDigit_)
-		{
-			inlineEditBuffer_.clear();
-			inlineEditReplaceOnNextDigit_ = false;
-		}
-		if (inlineEditBuffer_.size() < 10) inlineEditBuffer_ += *character;
-	}
+	if (!inlineEdit_.appendText(text)) return false;
 	updateInlineEditLabel();
 	return true;
 }
 
 bool ControlPanel::commitInlineEdit(AppAction& action)
 {
-	if (inlineEditAppearanceValue_)
+	if (!inlineEdit_.active()) return false;
+	const InlineEditTarget target = inlineEdit_.target();
+	if (inlineEdit_.isAppearanceEdit())
 	{
-		char* end = nullptr;
-		const double parsed = std::strtod(inlineEditBuffer_.c_str(), &end);
+		double parsed = 0.0;
+		const bool parsedSuccessfully = inlineEdit_.tryParseDouble(parsed);
 		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(appearanceEditorView_.session().model().preset()), appearanceEditorView_.session().model().selectedToken());
-		if (!descriptor || !end || end == inlineEditBuffer_.c_str() || *end != '\0' || !std::isfinite(parsed) ||
+		if (!descriptor || !parsedSuccessfully ||
 			parsed < descriptor->minimum || parsed > descriptor->maximum)
 		{
 			appearanceEditorView_.session().error() = descriptor ? "Enter a value between " + std::to_string(descriptor->minimum) + " and " +
@@ -2081,7 +2063,7 @@ bool ControlPanel::commitInlineEdit(AppAction& action)
 		}
 		std::string error;
 		UiTokenValue nextValue;
-		if (inlineEditWidgetId_ == "appearance_color_alpha")
+		if (target == InlineEditTarget::AppearanceAlpha)
 		{
 			nextValue = effectiveUiTokenValue(appearanceEditorView_.session().model().preset(),
 				appearanceEditorView_.session().draft().themes[appearanceEditorView_.session().model().preset()], appearanceEditorView_.session().model().selectedToken());
@@ -2095,47 +2077,42 @@ bool ControlPanel::commitInlineEdit(AppAction& action)
 			appearanceEditorView_.session().error() = error;
 			return false;
 		}
-		inlineEditWidgetId_.clear(); inlineEditBuffer_.clear(); inlineEditAppearanceValue_ = false;
-		inlineEditReplaceOnNextDigit_ = false; SDL_StopTextInput();
+		inlineEdit_.finish();
+		SDL_StopTextInput();
 		appearanceEditorView_.session().error().clear(); synchronizeAppearanceEditorControls();
 		return true;
 	}
-	if (inlineEditWidgetId_ == "bars_value")
+	if (target == InlineEditTarget::ItemCount)
 	{
 		int value = 0;
-		if (!parseInlineInteger(inlineEditBuffer_, value)) return false;
+		if (!inlineEdit_.tryParseInteger(value)) return false;
 		action = AppAction(AppActionKind::SetItemCount, 0.0f, value);
 	}
-	else if (inlineEditWidgetId_ == "time_value")
+	else if (target == InlineEditTarget::Duration)
 	{
-		char* end = nullptr;
-		const float value = std::strtof(inlineEditBuffer_.c_str(), &end);
-		if (!end || end == inlineEditBuffer_.c_str() || *end != '\0' || !std::isfinite(value)) return false;
+		float value = 0.0f;
+		if (!inlineEdit_.tryParseFloat(value)) return false;
 		action = AppAction(AppActionKind::SetDuration, value);
 	}
 	else return false;
-	inlineEditWidgetId_.clear();
-	inlineEditBuffer_.clear();
-	inlineEditAppearanceValue_ = false;
-	inlineEditReplaceOnNextDigit_ = false;
+	inlineEdit_.finish();
 	SDL_StopTextInput();
 	return true;
 }
 
 void ControlPanel::cancelInlineEdit()
 {
-	if (inlineEditWidgetId_.empty()) return;
-	if (inlineEditAppearanceValue_)
+	if (!inlineEdit_.active()) return;
+	const InlineEditTarget target = inlineEdit_.target();
+	if (inlineEdit_.isAppearanceEdit())
 	{
-		inlineEditWidgetId_.clear(); inlineEditBuffer_.clear(); inlineEditAppearanceValue_ = false;
-		inlineEditReplaceOnNextDigit_ = false; SDL_StopTextInput();
+		inlineEdit_.finish();
+		SDL_StopTextInput();
 		synchronizeAppearanceEditorControls();
 		return;
 	}
-	const bool editingBarCount = inlineEditWidgetId_ == "bars_value";
-	inlineEditWidgetId_.clear();
-	inlineEditBuffer_.clear();
-	inlineEditReplaceOnNextDigit_ = false;
+	const bool editingBarCount = target == InlineEditTarget::ItemCount;
+	inlineEdit_.finish();
 	SDL_StopTextInput();
 	UiWidget* widget = mainUi_.find(editingBarCount ? "bars_value" : "time_value");
 	if (widget)
@@ -2162,7 +2139,7 @@ void ControlPanel::openAppearanceEditor()
 void ControlPanel::closeAppearanceEditor(bool restore)
 {
 	if (!appearanceEditorOpen()) return;
-	if (!inlineEditWidgetId_.empty()) cancelInlineEdit();
+	if (inlineEdit_.active()) cancelInlineEdit();
 	if (appearanceSearchFocused_)
 	{
 		appearanceSearchFocused_ = false;
@@ -2274,7 +2251,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 		appearanceEditorView_.controls().handleEvent(UiInputEvent(UiInputType::FocusLost), lost);
 		return true;
 	}
-	if (!inlineEditWidgetId_.empty() && inlineEditAppearanceValue_)
+	if (inlineEdit_.active() && inlineEdit_.isAppearanceEdit())
 	{
 		if (event.type == SDL_TEXTINPUT) return appendInlineEditText(event.text.text);
 		if (event.type == SDL_KEYDOWN)
@@ -2292,14 +2269,13 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 			if (key == SDLK_RETURN || key == SDLK_KP_ENTER) { commitInlineEdit(action); return true; }
 			if (key == SDLK_BACKSPACE)
 			{
-				inlineEditReplaceOnNextDigit_ = false;
-				if (!inlineEditBuffer_.empty()) inlineEditBuffer_.erase(inlineEditBuffer_.size() - 1);
+				inlineEdit_.backspace();
 				updateInlineEditLabel();
 				return true;
 			}
 			if (key == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
 			{
-				inlineEditBuffer_.clear(); inlineEditReplaceOnNextDigit_ = false; updateInlineEditLabel(); return true;
+				inlineEdit_.clear(); updateInlineEditLabel(); return true;
 			}
 			return true;
 		}
@@ -2349,7 +2325,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 		appearanceSearchFocused_ = false;
 		SDL_StopTextInput();
 	}
-	if (!inlineEditWidgetId_.empty() && inlineEditAppearanceValue_ && event.type == SDL_MOUSEBUTTONDOWN &&
+	if (inlineEdit_.active() && inlineEdit_.isAppearanceEdit() && event.type == SDL_MOUSEBUTTONDOWN &&
 		!commitInlineEdit(action)) return true;
 	if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE && !appearanceEditorView_.controls().hasOpenCombo())
 	{

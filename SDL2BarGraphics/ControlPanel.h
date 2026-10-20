@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "AppearanceEditorView.h"
+#include "InlineEditModel.h"
 #include "AlgorithmBrowserView.h"
 #include "AlgorithmBrowserModel.h"
 #include "RenderingTypes.h"
@@ -55,7 +56,7 @@ public:
 	bool settingsOpen() const { return overlayState_.settingsSurfaceOpen(); }
 	bool textEntryActive() const
 	{
-		return !inlineEditWidgetId_.empty() || appearanceSearchFocused_ ||
+		return inlineEdit_.active() || appearanceSearchFocused_ ||
 			(overlayState_.is(UiOverlayId::AlgorithmBrowser) && algorithmBrowser_.searchFocused);
 	}
 	bool modalUiOpen() const { return overlayState_.modalOpen(); }
@@ -110,10 +111,7 @@ private:
 	bool layoutCacheValid_;
 	UiPresetId laidOutPreset_;
 	bool fontFallbackActive_;
-	std::string inlineEditWidgetId_;
-	std::string inlineEditBuffer_;
-	bool inlineEditReplaceOnNextDigit_;
-	bool inlineEditAppearanceValue_;
+	InlineEditModel inlineEdit_;
 
 	void createWidgets();
 	void updateLayout();

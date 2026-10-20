@@ -1426,3 +1426,15 @@ Verification:
 - This is an ownership refactor. No performance improvement is claimed.
 
 Next: extract the remaining inline appearance editor input state/commit logic into a small platform-neutral model, or move to the audit's settings/configuration ownership boundary if the inline editor proves inseparable from SDL text input. Keep the host responsible for SDL event translation and native dialogs.
+
+## 2026-10-20 — extract inline edit state and parsing
+
+Added `InlineEditModel` to the existing `AppFramework` library. It owns the active edit target, accepted-character rules, first-character replacement, the ten-character limit, backspace/clear behavior, and strict integer/float/double parsing. `ControlPanel` now maps targets to widget IDs, translates SDL text/key events, applies values to appearance preferences or `AppAction`s, and restores labels on cancel. This keeps SDL, renderer, and settings ownership out of the model while removing four pieces of mutable input state and parser logic from the facade.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64/x86 Debug and Release.
+- `AppFrameworkTests` passed in all four configurations. New checks cover target-specific character filtering, replacement behavior, overflow and malformed numeric input, finite parsing, and the ten-character limit.
+- `git diff --check` passed. No visual layout changed, so no screenshot review was run. No performance improvement is claimed.
+
+Next: extract main/settings view ownership and assess whether their runtime paint and action paths can use the existing shared paint/action contracts without introducing a second abstraction.

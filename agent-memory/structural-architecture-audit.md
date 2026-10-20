@@ -43,15 +43,11 @@ The manifest has 208 source rows, all marked `implemented_and_tested`; the curre
 
 ### 1. The label cache can be invalidated twice for unchanged text — first priority
 
-Evidence: `ControlPanel.cpp:1168` calls legacy `TextLabel::setText(..., "Courier New Bold", size, ...)` while synchronizing labels. `ControlPanel.cpp:2399` calls the themed font/DPI overload while drawing the same labels. `TextLabel.cpp:102`, `:107`, and `:132` use different font identities and DPI values, and rebuild when these change.
+Baseline evidence: `ControlPanel` previously alternated `TextLabel` between legacy and themed font/DPI setters, while the profile recomputed paragraph wrapping during paint. That call path is no longer present.
 
-For labels synchronized and drawn every frame, those paths alternate between the legacy and resolved font keys. The cache's unchanged-content guard cannot prevent texture recreation. This is a concrete call-path finding; its CPU/GPU cost has not yet been measured.
+Current status (verified 2026-10-20): `TextLabel::setContent` changes visible text without resetting font identity, raster size, or DPI. `ResolvedTextStyle` supplies one font/size/DPI/logical-height contract for measurement and drawing, and `TextBlockLayout` caches wrapped lines by content, width, and style. The app prepares `ControlPanel` once before chart rendering; `render` paints that prepared frame. The algorithm profile uses cached paragraph layout and retains scrolling/clipping behavior.
 
-Extract a text-content setter that does not modify font state, and resolve one `TextStyle` per label/frame revision. Introduce reusable wrapped-text layout for the algorithm description and other long paragraphs. Measurement, line spacing, rasterization, clipping, and painting should consume the same resolved style. Use explicit title/body/caption roles rather than choosing typography by numeric target-height thresholds.
-
-Cache wrapped lines by content, width, font, DPI, and style revision. Currently the profile recomputes wrapping during painting. Font enumeration/fallback behavior must remain consistent between measurement and rendering.
-
-Acceptance: unchanged visible labels do not allocate a new GL text texture on successive idle frames; description wrapping remains readable across presets, width, font changes, and DPI. Preserve all current text and scroll behavior.
+Remaining uncertainty: no texture-allocation counter or idle-frame benchmark was added, so the fixed invalidation path is verified from the call graph, while its CPU/GPU savings remain unmeasured. Preserve font fallback, raster identity, and scroll behavior when changing this code again.
 
 ### 2. One sorting translation unit owns almost the entire subsystem — high priority
 
@@ -86,23 +82,21 @@ Acceptance: current v1–v8 settings load identically, saved keys and effective 
 
 ### 4. The UI has retained widgets, but screen ownership is still centralized — high priority
 
-Evidence: `ControlPanel.h` owns main/settings/appearance roots, several overlay booleans, menu selections, scroll viewports, inline-edit state, theme drafts, labels, and dialog methods. Its implementation contains the main pane, algorithm browser, settings pages, appearance editor, profile card, text renderer, and input adapter. `UiLayer.h:10` includes `AppController.h`, pulling the controller, trace worker, settings, and audio contracts into generic widgets.
+Baseline evidence: `ControlPanel` formerly owned the appearance transaction, browser model, and all inline edit buffer/parser state alongside its main/settings roots, platform input, and renderer facade. Generic widgets also previously depended on the concrete controller.
 
-Extract small view objects: main controls/profile, algorithm browser, settings host, appearance editor, and inline editor. Each owns its state and UI composition. Keep `ControlPanel` as their facade initially. Move SDL-event conversion, color/file dialogs, and platform font lookup behind app/platform adapters.
+Current status (verified 2026-10-20): `AppActions.h` holds the value-only app command contract, `UiOverlayState` owns modal transitions, and the browser, settings chrome/model, profile, and appearance editor have separate model/view boundaries. `AppearanceEditorView` owns its controls, session, layout, composition, synchronization, and pure edit actions, returning explicit host effects. `InlineEditModel` now owns edit target, accepted-character rules, replacement/backspace/clear behavior, and strict integer/float/double parsing without SDL or renderer dependencies. `ControlPanel` remains the runtime facade for main/settings widget roots, SDL event translation, renderer submission, native dialogs, and conversion of view effects to app actions.
 
-Move `AppAction` contracts out of `AppController.h`. Generic UI input and widgets should not require the concrete app controller or worker headers. Bind generic control events to app actions at the view/coordinator boundary. Named action factories or typed payloads can prevent invalid combinations of the current catch-all `value/selection/index/string` fields without introducing a heap-allocated command object for every click.
+Next: continue extracting main/settings runtime view ownership and replace residual view-specific dispatch strings at the coordinator boundary when that can preserve existing UI action semantics. Keep focus, scroll, pointer capture, and modal dismissal behavior under test; do not create view classes that only relocate control flow.
 
-Use a single active-overlay state with explicit transitions instead of independent booleans that must remain mutually consistent. Keep scroll offsets and keyboard focus per view; preserve the existing shared viewport geometry and modal input rules.
-
-Acceptance: actual runtime view composition is testable without SDL/GL; menu search/scrolling, Escape/back, focus, pointer capture, inline editing, and outside-click dismissal preserve their current behavior.
+Acceptance: actual runtime view composition and edit state are testable without SDL/GL; menu search/scrolling, Escape/back, focus, pointer capture, inline editing, and outside-click dismissal preserve their current behavior.
 
 ### 5. Part of the apparent UI test seam is not connected to runtime painting — high priority
 
-Evidence: `UiPaintContext`/`UiPaintCommand` are declared in `UiArchitecture.h:159`; the only use found outside declarations is the recording-context check in `AppFrameworkTests.cpp:374`. Runtime `ControlPanel` paints directly through `Renderer2D`.
+Baseline evidence: early `UiPaintContext` coverage only checked a test recorder. That finding is stale for the extracted chrome views.
 
-The existing recording-context check proves storage behavior of a test recorder, not the commands produced by real menus or settings views. Either connect view composition to this interface with a real renderer adapter, or remove the unused parallel abstraction. Prefer one paint-command contract consumed by both production rendering and headless composition checks.
+Current status (verified 2026-10-20): `SettingsPanelView`, `AlgorithmBrowserView`, `AlgorithmProfileView`, and `AppearanceEditorView` submit their production composition through `UiPaintCommand`; `ControlPanel` adapts those commands into the existing `Renderer2D` queue. Headless tests compose the same view objects and inspect the emitted commands. Main widget control-state painting and some specialized text/control rendering still use `Renderer2D` directly, so that part of the screen does not yet share a headless composition path.
 
-Acceptance: a layout/paint regression in a real settings pane affects a meaningful test; renderer painter-order checks continue to test the actual batch-key policy.
+Next: reuse the existing command contract when extracting main/settings content. Keep the renderer's actual painter-order/material tests on the real queue policy; do not add a parallel paint abstraction.
 
 ### 6. Audio eligibility and semantic visibility are repeated across layers — high priority
 
@@ -241,6 +235,14 @@ Start with orders 0–2. They give a concrete performance win and the seams need
 - Inspected the named runtime contracts, project references/source lists, recorder/replay paths, main frame/transport path, UI/text pipeline, settings codec, and representative test helpers.
 - Measured physical source size and inspected manifest status; no new full-catalog correctness claim is made.
 - Confirmed the supplied coding guide was copied verbatim by SHA-256 equality. Preserved its sibling workflow locally and added discoverability through root `AGENTS.md`.
-- Runtime code is unchanged in this audit. No application build or algorithm/audio suite rerun is needed to validate these documentation/ignore changes.
-- Text-cache churn is supported by the inspected call sequence; its time/texture-allocation cost still needs instrumentation. Snapshot/annotation/role-scan costs and compact-event savings are candidates requiring measurement.
+- Runtime code was unchanged when this audit was first written; implementation changes and their regression evidence are recorded in the execution checkpoints and `structural-refactor-progress.md`.
+- The original text-cache invalidation path has been corrected, but its performance impact remains unmeasured. Snapshot/annotation/role-scan costs and compact-event savings remain candidates requiring measurement.
 - No general proof was made that every duplicated algorithm kernel is equivalent, that every retained class is dead in every offline tool, or that accounted trace bytes equal peak heap use. Those checks belong to the relevant implementation slice.
+
+## Structural refactor execution checkpoint — 2026-10-20
+
+The appearance view now owns its transactional state, control synchronization, and pure edit actions. Inline input buffering and numeric parsing have been extracted to the SDL-independent `InlineEditModel` in the existing `AppFramework` library. `ControlPanel` maps edit targets to controls, translates SDL events, applies values to preferences or app commands, and handles renderer/native-dialog effects.
+
+The full Visual Studio solution builds in x64/x86 Debug and Release; `AppFrameworkTests` passes in all four configurations. New inline-edit checks cover target-specific character filtering, first-character replacement, malformed/overflow parsing, and the ten-character input limit. `git diff --check` passes. No visual layout changed and no performance claim is made.
+
+Next: continue extracting main/settings runtime view ownership through the existing paint and action contracts. The full architecture audit remains active; this checkpoint does not certify the overall refactor as complete.

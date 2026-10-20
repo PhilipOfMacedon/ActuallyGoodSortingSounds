@@ -49,6 +49,7 @@
     <ClCompile Include="AlgorithmProfileView.cpp" />
     <ClCompile Include="ActiveRoleLookup.cpp" />
     <ClCompile Include="AppearanceEditorView.cpp" />
+    <ClCompile Include="InlineEditModel.cpp" />
     <ClCompile Include="AppearanceEditorLayout.cpp" />
     <ClCompile Include="AppearanceEditorModel.cpp" />
     <ClCompile Include="AlgorithmBrowserModel.cpp" />
