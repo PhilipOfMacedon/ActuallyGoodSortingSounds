@@ -58,6 +58,7 @@
     <ClCompile Include="LibraryStrategies.cpp" />
     <ClCompile Include="GrailStrategies.cpp" />
     <ClCompile Include="GrailTraceUtilities.cpp" />
+    <ClCompile Include="RunBasedStrategies.cpp" />
     <ClCompile Include="PartitionStrategies.cpp" />
     <ClCompile Include="StacklessPartitionStrategies.cpp" />
     <ClCompile Include="PartitionTraceUtilities.cpp" />

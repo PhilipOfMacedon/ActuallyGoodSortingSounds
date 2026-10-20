@@ -61,6 +61,9 @@ namespace sortinglogic
 		void synchronousSqrtMergeSortStrategy(detail::Recorder& recorder);
 		void circularGrailSort(detail::Recorder& recorder);
 		void unstableGrailSort(detail::Recorder& recorder);
+		void stalinOverwrite(detail::Recorder& recorder);
+		void canonicalStalinFilter(detail::Recorder& recorder);
+		void strandSort(detail::Recorder& recorder);
 		void aaTreeSort(detail::Recorder& recorder);
 		void avlTreeSort(detail::Recorder& recorder);
 		void splayTreeSort(detail::Recorder& recorder);

@@ -1602,3 +1602,11 @@ Moved Grail, Parallel Grail, Adaptive Grail, Sqrt, Synchronous Sqrt, Circular Gr
 The first build exposed the coordinator's existing use of these shared kernels; the utility boundary was added, after which x64 Debug and Release solution builds passed. All four focused suites passed in both configurations: Grail (901,625 checks), Parallel Grail (2,949), Sqrt Sort (506,031), and Circular/Unstable Grail (160,247), all with zero failures. `git diff --check` passed. `SortingLogic.cpp` is now 5,866 lines, down from 7,270 at the start of this refactor continuation; the change redistributes ownership and makes no runtime-performance claim.
 
 Next: continue extracting cohesive coordinator-owned families and use shared utility headers where existing variants reuse trace kernels; revisit catalog and request-building ownership after the remaining fallbacks have narrowed.
+
+## 2026-10-20 — isolate run-based and discarding strategies
+
+Moved the pinned Stalin overwrite, canonical Stalin discard filter, and Strand Sort into `RunBasedStrategies.cpp`. Their scalar rewrite, discard/provenance, and strand-lane trace operations remain unchanged, with the Strand permutation emission continuing to use the shared permutation utility. The three request builders now bind directly to these strategies and their fallback cases are removed.
+
+The x64 Debug and Release solution builds passed. Stalin tests passed in both configurations with 3,277 checks; Strand Sort passed with 4,311 checks; no failures. `git diff --check` passed. No user-visible behavior change is intended.
+
+Next: continue extracting the remaining coordinator-owned families, then review the residual fallback switch and request builder duplication as a separate boundary.
