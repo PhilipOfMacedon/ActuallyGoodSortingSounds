@@ -1,6 +1,7 @@
 #include "AlgorithmStrategies.h"
 #include "PermutationTraceUtilities.h"
 #include "TraceRecorder.h"
+#include "TraceRequestBuilderInternal.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -242,5 +243,21 @@ namespace sortinglogic
 				r.annotate(lanes[pile], RegionKind::Group, 0, pileMaximumSizes[pile], 1, static_cast<int>(pile),
 					"Patience pile " + std::to_string(pile + 1), pileBeginCursors[pile]);
 		}
+	}
+
+	SortTrace buildArrayvStalinOverwriteRequest(const TraceBuildRequest& request)
+	{
+		SortTrace trace = detail::buildAlgorithmTrace(request, SortAlgorithm::ArrayvStalinOverwrite,
+			&strategies::stalinOverwrite);
+		trace.outcome = AlgorithmOutcome::SortedValueRewrite;
+		return trace;
+	}
+
+	SortTrace buildCanonicalStalinFilterRequest(const TraceBuildRequest& request)
+	{
+		SortTrace trace = detail::buildAlgorithmTrace(request, SortAlgorithm::CanonicalStalinFilter,
+			&strategies::canonicalStalinFilter);
+		trace.outcome = AlgorithmOutcome::SortedWithDiscards;
+		return trace;
 	}
 }

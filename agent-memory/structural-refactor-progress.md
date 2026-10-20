@@ -1813,3 +1813,11 @@ Next: continue the audit with measured runtime costs or a cohesive sorting-core 
 Added headless coverage that switches the settings view from Merge to Shell and checks the corresponding Merge options, Shell gap selector, Merge buffer control, and fallback behavior for unknown stable IDs. Full x64 and Win32 Debug and Release solution builds passed, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed. This moves layout policy without changing settings data, widget order, scrolling, persistence, trace behavior, or rendering; no smoke window was opened.
 
 Next: inspect the remaining settings and main-panel host responsibilities and continue with a measured renderer or coordination boundary. Keep the structural refactor goal active.
+
+## 2026-10-20 — move declared outcomes out of the trace recorder
+
+Removed the recorder's algorithm-ID branches that assigned `IncompleteDemonstration`, `SortedValueRewrite`, and `SortedWithDiscards`. `TraceRecorder` now chooses only the general sorted-permutation outcome from descriptor stability. The Optimized Stooge and Fun request adapters set their declared incomplete outcome; the pinned Stalin overwrite and canonical Stalin filter adapters set their rewrite/discard outcomes. Buffered Stooge keeps its separate final-snapshot check because its outcome depends on the actual result. This keeps algorithm-specific presentation semantics beside the corresponding strategy request while preserving trace generation status as a separate field.
+
+Full x64 and Win32 Debug and Release solution builds passed. In all four configurations, recursive-novelty tests passed 33,979 checks, Stalin tests passed 3,277 checks, and SortingLogic core contracts passed 39,541 checks. `git diff --check` passed. No event, state mutation, replay order, or audio behavior changed; no smoke window was opened.
+
+Next: continue the sorting-core ownership audit and make the event-memory accounting scope explicit before considering any storage-format change.

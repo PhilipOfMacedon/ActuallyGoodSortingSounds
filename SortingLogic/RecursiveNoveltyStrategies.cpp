@@ -440,6 +440,22 @@ namespace sortinglogic
 		}
 	}
 
+	SortTrace buildArrayvOptimizedStoogeRequest(const TraceBuildRequest& request)
+	{
+		SortTrace trace = detail::buildAlgorithmTrace(request, SortAlgorithm::ArrayvOptimizedStooge,
+			&strategies::optimizedStooge);
+		trace.outcome = AlgorithmOutcome::IncompleteDemonstration;
+		return trace;
+	}
+
+	SortTrace buildArrayvFunRequest(const TraceBuildRequest& request)
+	{
+		SortTrace trace = detail::buildAlgorithmTrace(request, SortAlgorithm::ArrayvFun,
+			&strategies::funSort);
+		trace.outcome = AlgorithmOutcome::IncompleteDemonstration;
+		return trace;
+	}
+
 	SortTrace buildArrayvBufferedStoogeRequest(const TraceBuildRequest& request)
 	{
 		SortTrace trace = detail::buildAlgorithmTrace(request, SortAlgorithm::ArrayvBufferedStooge,

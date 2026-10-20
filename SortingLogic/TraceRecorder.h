@@ -40,14 +40,6 @@ namespace sortinglogic
 				const AlgorithmDescriptor* descriptor = algorithmDescriptor(request.algorithm);
 				trace.outcome = descriptor && descriptor->stable
 					? AlgorithmOutcome::SortedStablePermutation : AlgorithmOutcome::SortedPermutation;
-				if (request.algorithm == SortAlgorithm::ArrayvOptimizedStooge)
-					trace.outcome = AlgorithmOutcome::IncompleteDemonstration;
-				if (request.algorithm == SortAlgorithm::ArrayvFun)
-					trace.outcome = AlgorithmOutcome::IncompleteDemonstration;
-				if (request.algorithm == SortAlgorithm::ArrayvStalinOverwrite)
-					trace.outcome = AlgorithmOutcome::SortedValueRewrite;
-				if (request.algorithm == SortAlgorithm::CanonicalStalinFilter)
-					trace.outcome = AlgorithmOutcome::SortedWithDiscards;
 				if (descriptor)
 					for (std::size_t i = 0; i < descriptor->metrics.size(); ++i)
 						state.metrics.algorithm[descriptor->metrics[i].key] = 0;
