@@ -54,6 +54,7 @@
     <ClCompile Include="TreeStrategies.cpp" />
     <ClCompile Include="PartitionStrategies.cpp" />
     <ClCompile Include="StacklessPartitionStrategies.cpp" />
+    <ClCompile Include="PartitionTraceUtilities.cpp" />
     <ClCompile Include="PermutationTraceUtilities.cpp" />
     <ClCompile Include="SelectionStrategies.cpp" />
     <ClCompile Include="PancakeStrategies.cpp" />
@@ -73,6 +74,7 @@
     <ClInclude Include="SortingLogicInternal.h" />
     <ClInclude Include="TraceRecorder.h" />
     <ClInclude Include="PermutationTraceUtilities.h" />
+    <ClInclude Include="PartitionTraceUtilities.h" />
     <ClInclude Include="TraceBuildService.h" />
     <ClInclude Include="TracePresentationPolicy.h" />
   </ItemGroup>

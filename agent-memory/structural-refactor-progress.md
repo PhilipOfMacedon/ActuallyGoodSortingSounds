@@ -1222,3 +1222,19 @@ Verification:
 - `git diff --check` passed. `SortingLogic.cpp` is now 8,391 physical lines, down 303 lines from the preceding Quick partition slice. This measures code relocation, not runtime speed.
 
 Next: move shared IntroSort/PDQ partition kernels behind a sorting-internal boundary, then continue extracting the larger merge implementations with their actual shared buffer kernels.
+## 2026-10-20 — extract shared partition kernels, IntroSort, and PDQ
+
+Status: implementation and bounded regression verification complete; the full 800-item PDQ stress fixture remains unverified in this slice.
+
+- Moved median-of-three selection, the traced Hoare partition, and heap-sort range fallback into `PartitionTraceUtilities.cpp/.h` under `sortinglogic::detail`. The helper bodies and recorder operations were moved without algorithmic edits; `siftDown` has internal linkage.
+- Moved IntroSort and both PDQ variants into `PartitionStrategies.cpp`, added direct strategy registration, and removed their fallback-switch cases. Drop Merge, Median Merge, and Buffer Partition Merge now call the same shared utility boundary explicitly.
+- Added `--pdq-smoke-only`, which runs the existing boundary/duplicate matrix while omitting only the two 800-item patterns. The original `--pdq-only` full suite remains unchanged by default.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- In each configuration: IntroSort 38,165 checks; PDQ boundary smoke 88,015; Drop Merge 3,341; Median Merge 2,873; Buffer Partition Merge 114,897; catalog coverage 1,741; core contracts 39,535. All completed suites reported 0 failures.
+- The full `--pdq-only` Debug suite was stopped after memory rose to approximately 780 MiB while validating its two 800-item trace/replay cases. That stress result is not reported as passing; the bounded PDQ cases and catalog coverage passed.
+- `git diff --check` and a final x64 Debug rebuild passed. `SortingLogic.cpp` is now 8,151 physical lines, down 240 from the preceding stackless partition slice. This is source relocation, not a runtime speed claim.
+
+Next: continue extracting merge families around explicit shared buffer/rotation kernels, then return to the configuration and UI ownership boundaries in the audit.

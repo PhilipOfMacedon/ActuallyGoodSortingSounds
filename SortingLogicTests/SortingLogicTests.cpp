@@ -3534,7 +3534,7 @@ namespace
 		}
 	}
 
-	void testPDQVariants()
+	void testPDQVariants(bool includeStressPatterns = true)
 	{
 		using namespace sortinglogic;
 		const SortAlgorithm algorithms[] = { SortAlgorithm::ArrayvPDQBranched, SortAlgorithm::ArrayvPDQBranchless };
@@ -3555,6 +3555,7 @@ namespace
 						algorithms[algorithmIndex], direction == 0 ? SortDirection::Ascending : SortDirection::Descending,
 						InputDomain::NonnegativeIntegerKeys);
 			}
+			if (!includeStressPatterns) continue;
 			for (int direction = 0; direction < 2; ++direction)
 			{
 				const SortDirection sortDirection = direction == 0 ? SortDirection::Ascending : SortDirection::Descending;
@@ -5640,6 +5641,13 @@ int main(int argc, char* argv[])
 			stage = "testAdaptiveGrailSort";
 			testAdaptiveGrailSort();
 			std::cout << "Focused Grail family tests: " << checks << " checks, " << failures << " failures.\n";
+			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+		if (argc > 1 && std::string(argv[1]) == "--pdq-smoke-only")
+		{
+			stage = "PDQ boundary and duplicate cases";
+			testPDQVariants(false);
+			std::cout << "Focused PDQ boundary tests: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 		if (argc > 1 && std::string(argv[1]) == "--pdq-only")

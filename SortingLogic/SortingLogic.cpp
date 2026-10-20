@@ -4,6 +4,7 @@
 #include "PermutationTraceUtilities.h"
 #include "SortingLogicInternal.h"
 #include "TraceRecorder.h"
+#include "PartitionTraceUtilities.h"
 
 #include <algorithm>
 #include <cmath>
@@ -5639,86 +5640,6 @@ namespace sortinglogic
 			}
 		}
 
-		std::size_t introMedianOfThree(Recorder& r, std::size_t first, std::size_t middle, std::size_t last)
-		{
-			SortItem a = r.at(first), b = r.at(middle), c = r.at(last);
-			r.compare(c, a, last, first);
-			if (compareItems(c, a, r.trace.direction) == ComparisonResult::Less) r.swap(first, last);
-			a = r.at(first); b = r.at(middle); c = r.at(last);
-			r.compare(b, a, middle, first);
-			if (compareItems(b, a, r.trace.direction) == ComparisonResult::Less) r.swap(middle, first);
-			a = r.at(first); b = r.at(middle); c = r.at(last);
-			r.compare(c, b, last, middle);
-			if (compareItems(c, b, r.trace.direction) == ComparisonResult::Less) r.swap(last, middle);
-			return middle;
-		}
-
-		std::size_t introPartition(Recorder& r, std::size_t first, std::size_t end, std::size_t pivotIndex)
-		{
-			const SortItem pivot = r.at(pivotIndex);
-			std::size_t left = first;
-			std::ptrdiff_t right = static_cast<std::ptrdiff_t>(end) - 1;
-			for (;;)
-			{
-				while (left < end)
-				{
-					const SortItem item = r.at(left);
-					r.compare(item, pivot, left, pivotIndex, "main", "main", SemanticRole::ComparedItem, SemanticRole::Pivot);
-					if (compareItems(item, pivot, r.trace.direction) != ComparisonResult::Less) break;
-					++left;
-				}
-				while (right >= static_cast<std::ptrdiff_t>(first))
-				{
-					const std::size_t index = static_cast<std::size_t>(right);
-					const SortItem item = r.at(index);
-					r.compare(pivot, item, pivotIndex, index, "main", "main", SemanticRole::Pivot, SemanticRole::ComparedItem);
-					if (compareItems(pivot, item, r.trace.direction) != ComparisonResult::Less) break;
-					--right;
-				}
-				if (static_cast<std::ptrdiff_t>(left) >= right) return left;
-				const std::size_t rightIndex = static_cast<std::size_t>(right);
-				r.swap(left, rightIndex);
-				if (pivotIndex == left) pivotIndex = rightIndex;
-				else if (pivotIndex == rightIndex) pivotIndex = left;
-				++left;
-				--right;
-			}
-		}
-
-		void introSiftDown(Recorder& r, std::size_t first, std::size_t root, std::size_t heapSize)
-		{
-			for (;;)
-			{
-				const std::size_t leftChild = root * 2 + 1;
-				if (leftChild >= heapSize) return;
-				std::size_t greatest = leftChild;
-				const std::size_t rightChild = leftChild + 1;
-				if (rightChild < heapSize)
-				{
-					const SortItem leftItem = r.at(first + leftChild), rightItem = r.at(first + rightChild);
-					r.compare(leftItem, rightItem, first + leftChild, first + rightChild);
-					if (compareItems(leftItem, rightItem, r.trace.direction) == ComparisonResult::Less) greatest = rightChild;
-				}
-				const SortItem parent = r.at(first + root), child = r.at(first + greatest);
-				r.compare(parent, child, first + root, first + greatest);
-				if (compareItems(parent, child, r.trace.direction) != ComparisonResult::Less) return;
-				r.swap(first + root, first + greatest);
-				root = greatest;
-			}
-		}
-
-		void introHeapSortRange(Recorder& r, std::size_t first, std::size_t end)
-		{
-			const std::size_t length = end - first;
-			for (std::size_t start = length / 2; start > 0; --start)
-				introSiftDown(r, first, start - 1, length);
-			for (std::size_t remaining = length; remaining > 1; --remaining)
-			{
-				r.swap(first, first + remaining - 1);
-				introSiftDown(r, first, 0, remaining - 1);
-			}
-		}
-
 		void dropMergeSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -5766,7 +5687,7 @@ namespace sortinglogic
 					r.addMetric("drop_merge_early_fallbacks");
 					r.annotate("main", RegionKind::Contiguous, 0, count, 1, -1,
 						"Drop Merge early fallback", scanBegin);
-					introHeapSortRange(r, 0, count);
+					detail::traceHeapSortRange(r, 0, count);
 					fellBack = true;
 					break;
 				}
@@ -5781,7 +5702,7 @@ namespace sortinglogic
 				{
 					for (std::size_t i = 0; i < dropped; ++i)
 						r.writeMain(i, r.auxiliaryAt("drop_merge_dropped", i));
-					introHeapSortRange(r, 0, dropped);
+					detail::traceHeapSortRange(r, 0, dropped);
 					r.addMetric("drop_merge_suffix_heap_sorts");
 				}
 				std::size_t left = 0, right = 0;
@@ -5892,10 +5813,10 @@ namespace sortinglogic
 					const std::size_t middle = first + (end - first) / 2;
 					const std::size_t pivotIndex = useMedianOfMedians
 						? medianOfMediansIndex(r, first, end)
-						: introMedianOfThree(r, first, middle, end - 1);
+						: detail::traceMedianOfThree(r, first, middle, end - 1);
 					if (useMedianOfMedians) r.addMetric("median_merge_median_of_medians_pivots");
 					const std::uint64_t comparisonsBefore = r.state.metrics.comparisons;
-					const std::size_t split = introPartition(r, first, end, pivotIndex);
+					const std::size_t split = detail::traceHoarePartition(r, first, end, pivotIndex);
 					r.addMetric("median_merge_partitions");
 					r.addMetric("median_merge_comparisons", r.state.metrics.comparisons - comparisonsBefore);
 					if (split <= first || split >= end)
@@ -5927,164 +5848,6 @@ namespace sortinglogic
 			r.resizeAuxiliary("merge", 0);
 		}
 
-		void introSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			const char* metricKeys[] = { "partitions", "maximum_depth", "heap_fallbacks", "insertion_passes" };
-			for (std::size_t i = 0; i < sizeof(metricKeys) / sizeof(metricKeys[0]); ++i) r.declareMetric(metricKeys[i]);
-			if (count < 2) return;
-			std::size_t floorLog = 0;
-			for (std::size_t n = count; n > 1; n >>= 1) ++floorLog;
-			const std::size_t depthLimit = floorLog * 2;
-			std::function<void(std::size_t, std::size_t, std::size_t, std::size_t)> sortRange;
-			sortRange = [&r, &sortRange](std::size_t first, std::size_t end, std::size_t remainingDepth, std::size_t depth)
-			{
-				if (end - first <= 16) return;
-				r.setMetric("maximum_depth", std::max<std::uint64_t>(r.state.metrics.algorithm["maximum_depth"], depth));
-				if (remainingDepth == 0)
-				{
-					r.addMetric("heap_fallbacks");
-					introHeapSortRange(r, first, end);
-					return;
-				}
-				r.addMetric("partitions");
-				const std::size_t annotationBegin = r.trace.events.size();
-				const std::size_t middle = first + (end - first) / 2;
-				const std::size_t pivot = introMedianOfThree(r, first, middle, end - 1);
-				const std::size_t split = introPartition(r, first, end, pivot);
-				r.annotate("main", RegionKind::Contiguous, first, end, 1, -1, "IntroSort partition", annotationBegin);
-				if (split < end) sortRange(split, end, remainingDepth - 1, depth + 1);
-				if (split > first) sortRange(first, split, remainingDepth - 1, depth + 1);
-			};
-			sortRange(0, count, depthLimit, 1);
-
-			for (std::size_t i = 1; i < count; ++i)
-			{
-				const SortItem key = r.at(i);
-				r.hold(i);
-				std::size_t position = i;
-				while (position > 0)
-				{
-					const SortItem candidate = r.at(position - 1);
-					r.compare(key, candidate, i, position - 1, "main", "main", SemanticRole::HeldKey, SemanticRole::ComparedItem);
-					if (compareItems(key, candidate, r.trace.direction) != ComparisonResult::Less) break;
-					r.shift(position - 1, position);
-					--position;
-				}
-				r.place(position, key);
-			}
-			r.addMetric("insertion_passes");
-		}
-
-		std::pair<std::size_t, std::size_t> pdqThreeWayPartition(Recorder& r, std::size_t first,
-			std::size_t end, std::size_t pivotIndex)
-		{
-			const SortItem pivot = r.at(pivotIndex);
-			std::size_t pivotPosition = pivotIndex;
-			std::size_t lessEnd = first, scan = first, greaterBegin = end;
-			while (scan < greaterBegin)
-			{
-				r.chargeWork();
-				const SortItem item = r.at(scan);
-				r.compare(item, pivot, scan, pivotPosition, "main", "main", SemanticRole::ComparedItem, SemanticRole::Pivot);
-				const ComparisonResult order = compareItems(item, pivot, r.trace.direction);
-				const bool isLess = order == ComparisonResult::Less;
-				const bool isGreater = order == ComparisonResult::Greater;
-				if (isLess)
-				{
-					if (lessEnd != scan)
-					{
-						r.swap(lessEnd, scan);
-						if (pivotPosition == lessEnd) pivotPosition = scan;
-						else if (pivotPosition == scan) pivotPosition = lessEnd;
-					}
-					++lessEnd;
-					++scan;
-				}
-				else if (isGreater)
-				{
-					--greaterBegin;
-					if (scan != greaterBegin)
-					{
-						r.swap(scan, greaterBegin);
-						if (pivotPosition == scan) pivotPosition = greaterBegin;
-						else if (pivotPosition == greaterBegin) pivotPosition = scan;
-					}
-				}
-				else ++scan;
-			}
-			return std::make_pair(lessEnd, greaterBegin);
-		}
-
-		void pdqSort(Recorder& r, bool branchless)
-		{
-			const std::size_t count = r.state.slots.size();
-			for (const char* key : { "pdq_partitions", "pdq_comparisons", "pdq_bad_partitions", "pdq_heap_fallbacks",
-				"pdq_maximum_depth", "pdq_equal_ranges", "pdq_insertion_ranges" }) r.declareMetric(key);
-			if (count < 2) return;
-			std::size_t log = 0;
-			for (std::size_t n = count; n > 1; n >>= 1) ++log;
-			const std::size_t depthLimit = 2 * log;
-			std::function<void(std::size_t, std::size_t, std::size_t, std::size_t, std::size_t)> sortRange;
-			sortRange = [&r, &sortRange, branchless](std::size_t first, std::size_t end,
-				std::size_t remainingDepth, std::size_t depth, std::size_t badPartitions)
-			{
-				const std::size_t length = end - first;
-				if (length < 2) return;
-				r.setMetric("pdq_maximum_depth", (std::max)(r.state.metrics.algorithm["pdq_maximum_depth"],
-					static_cast<std::uint64_t>(depth)));
-				if (length <= 16)
-				{
-					strategies::binaryInsertionRange(r, first, end);
-					r.addMetric("pdq_insertion_ranges");
-					return;
-				}
-				if (remainingDepth == 0)
-				{
-					r.addMetric("pdq_heap_fallbacks");
-					introHeapSortRange(r, first, end);
-					return;
-				}
-				const std::size_t middle = first + length / 2;
-				const std::uint64_t comparisonsBefore = r.state.metrics.comparisons;
-				const std::size_t pivotIndex = introMedianOfThree(r, first, middle, end - 1);
-				const std::size_t annotationBegin = r.trace.events.size();
-				std::size_t leftEnd = first, rightBegin = end;
-				if (branchless)
-				{
-					const std::pair<std::size_t, std::size_t> equalRange = pdqThreeWayPartition(r, first, end, pivotIndex);
-					leftEnd = equalRange.first;
-					rightBegin = equalRange.second;
-					if (rightBegin > leftEnd) r.addMetric("pdq_equal_ranges");
-				}
-				else
-				{
-					leftEnd = introPartition(r, first, end, pivotIndex);
-					rightBegin = leftEnd;
-				}
-				r.addMetric("pdq_partitions");
-				r.addMetric("pdq_comparisons", r.state.metrics.comparisons - comparisonsBefore);
-				r.annotate("main", RegionKind::Contiguous, first, end, 1, -1,
-					branchless ? "PDQ branchless three-way partition" : "PDQ Hoare partition", annotationBegin);
-				const std::size_t leftSize = leftEnd - first, rightSize = end - rightBegin;
-				const std::size_t smaller = (std::min)(leftSize, rightSize);
-				const std::size_t nextBadPartitions = smaller < length / 8 ? badPartitions + 1 : 0;
-				if (smaller < length / 8)
-				{
-					r.addMetric("pdq_bad_partitions");
-				}
-				if (nextBadPartitions >= 2 || (remainingDepth <= 2 && nextBadPartitions != 0))
-				{
-					if (leftSize > 16) { r.addMetric("pdq_heap_fallbacks"); introHeapSortRange(r, first, leftEnd); }
-					if (rightSize > 16) { r.addMetric("pdq_heap_fallbacks"); introHeapSortRange(r, rightBegin, end); }
-					return;
-				}
-				if (leftSize > 1) sortRange(first, leftEnd, remainingDepth - 1, depth + 1, nextBadPartitions);
-				if (rightSize > 1) sortRange(rightBegin, end, remainingDepth - 1, depth + 1, nextBadPartitions);
-			};
-			sortRange(0, count, depthLimit, 1, 0);
-		}
-
 		void bufferPartitionMergeSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -6110,15 +5873,15 @@ namespace sortinglogic
 					--depthLimit;
 					const std::size_t middle = low + (high - low) / 2;
 					const std::uint64_t comparisonsBefore = r.state.metrics.comparisons;
-					const std::size_t pivot = introMedianOfThree(r, low, middle, high - 1);
-					const std::size_t split = introPartition(r, low, high, pivot);
+					const std::size_t pivot = detail::traceMedianOfThree(r, low, middle, high - 1);
+					const std::size_t split = detail::traceHoarePartition(r, low, high, pivot);
 					r.addMetric("buffer_partition_comparisons", r.state.metrics.comparisons - comparisonsBefore);
 					r.addMetric("buffer_partition_select_passes");
 					if (split == target) return target;
 					if (split <= low || split >= high)
 					{
 						r.addMetric("buffer_partition_fallbacks");
-						introHeapSortRange(r, low, high);
+						detail::traceHeapSortRange(r, low, high);
 						return target;
 					}
 					if (split < target) low = split;
@@ -6780,8 +6543,6 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvGrail: grailSort(recorder); break;
 				case SortAlgorithm::ArrayvParallelGrail: parallelGrailSort(recorder); break;
 				case SortAlgorithm::ArrayvAdaptiveGrail: adaptiveGrailSort(recorder); break;
-				case SortAlgorithm::ArrayvPDQBranched: pdqSort(recorder, false); break;
-				case SortAlgorithm::ArrayvPDQBranchless: pdqSort(recorder, true); break;
 				case SortAlgorithm::ArrayvSqrt: sqrtMergeSort(recorder, false); break;
 				case SortAlgorithm::ArrayvSynchronousSqrt: sqrtMergeSort(recorder, true); break;
 				case SortAlgorithm::ArrayvEcta: ectaSort(recorder); break;
@@ -6803,7 +6564,6 @@ namespace sortinglogic
 				case SortAlgorithm::ArrayvBlockInsertion: blockInsertionSort(recorder); break;
 				case SortAlgorithm::ArrayvDoubleInsertion: doubleInsertion(recorder, false); break;
 				case SortAlgorithm::ArrayvBinaryDoubleInsertion: doubleInsertion(recorder, true); break;
-				case SortAlgorithm::ArrayvIntroSort: introSort(recorder); break;
 				case SortAlgorithm::ArrayvPatience: patienceSort(recorder); break;
 				case SortAlgorithm::ArrayvShellParallel: shellSortParallel(recorder); break;
 				case SortAlgorithm::ArrayvMergeInsertion: mergeInsertionSort(recorder); break;
@@ -6922,8 +6682,8 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvGrailRequest, ArrayvGrail)
 		SORT_REQUEST_BUILDER(buildArrayvParallelGrailRequest, ArrayvParallelGrail)
 		SORT_REQUEST_BUILDER(buildArrayvAdaptiveGrailRequest, ArrayvAdaptiveGrail)
-		SORT_REQUEST_BUILDER(buildArrayvPDQBranchedRequest, ArrayvPDQBranched)
-		SORT_REQUEST_BUILDER(buildArrayvPDQBranchlessRequest, ArrayvPDQBranchless)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvPDQBranchedRequest, ArrayvPDQBranched, &strategies::pdqBranchedStrategy)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvPDQBranchlessRequest, ArrayvPDQBranchless, &strategies::pdqBranchlessStrategy)
 		SORT_REQUEST_BUILDER(buildArrayvSqrtRequest, ArrayvSqrt)
 		SORT_REQUEST_BUILDER(buildArrayvSynchronousSqrtRequest, ArrayvSynchronousSqrt)
 		SORT_REQUEST_BUILDER(buildArrayvEctaRequest, ArrayvEcta)
@@ -6947,7 +6707,7 @@ namespace sortinglogic
 		SORT_REQUEST_BUILDER(buildArrayvBlockInsertionRequest, ArrayvBlockInsertion)
 		SORT_REQUEST_BUILDER(buildArrayvDoubleInsertionRequest, ArrayvDoubleInsertion)
 		SORT_REQUEST_BUILDER(buildArrayvBinaryDoubleInsertionRequest, ArrayvBinaryDoubleInsertion)
-		SORT_REQUEST_BUILDER(buildArrayvIntroSortRequest, ArrayvIntroSort)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvIntroSortRequest, ArrayvIntroSort, &strategies::introSortStrategy)
 		SORT_REQUEST_BUILDER(buildArrayvPatienceRequest, ArrayvPatience)
 		SORT_REQUEST_BUILDER(buildArrayvShellParallelRequest, ArrayvShellParallel)
 		SORT_REQUEST_BUILDER(buildArrayvMergeInsertionRequest, ArrayvMergeInsertion)
