@@ -1207,3 +1207,18 @@ Verification:
 - `git diff --check` passed. `SortingLogic.cpp` is now 8,694 physical lines, down 502 lines from the tree extraction checkpoint. This records source relocation, not runtime speed.
 
 Next: continue with the remaining partition hybrids and merge strategies. Keep shared insertion/heap kernels explicit, and extract merge helpers only with the strategies that own their trace conventions.
+## 2026-10-20 — extract stackless partition strategies
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved Stackless Hybrid Quick Sort and Stackless Dual-Pivot Quick Sort, including their local scan, partition, binary-insertion, and duplicate-skip helpers, into `StacklessPartitionStrategies.cpp`.
+- Added direct strategy entry points and removed both algorithms from the central fallback switch. Their catalog IDs, operation streams, metrics, and phase annotations are unchanged.
+- Added `--stackless-partition-only` to run the existing focused correctness suites together.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- Focused stackless partition tests passed 668,471 checks in Debug and Release; catalog coverage passed 1,741 checks and core contracts passed 39,535 checks in both configurations. All reported 0 failures.
+- `git diff --check` passed. `SortingLogic.cpp` is now 8,391 physical lines, down 303 lines from the preceding Quick partition slice. This measures code relocation, not runtime speed.
+
+Next: move shared IntroSort/PDQ partition kernels behind a sorting-internal boundary, then continue extracting the larger merge implementations with their actual shared buffer kernels.

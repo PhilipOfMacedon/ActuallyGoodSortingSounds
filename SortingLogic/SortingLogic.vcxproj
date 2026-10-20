@@ -53,6 +53,7 @@
     <ClCompile Include="HeapStrategies.cpp" />
     <ClCompile Include="TreeStrategies.cpp" />
     <ClCompile Include="PartitionStrategies.cpp" />
+    <ClCompile Include="StacklessPartitionStrategies.cpp" />
     <ClCompile Include="PermutationTraceUtilities.cpp" />
     <ClCompile Include="SelectionStrategies.cpp" />
     <ClCompile Include="PancakeStrategies.cpp" />

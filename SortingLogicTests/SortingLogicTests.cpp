@@ -5712,6 +5712,14 @@ int main(int argc, char* argv[])
 			std::cout << "Focused New Shuffle Merge tests: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
+		if (argc > 1 && std::string(argv[1]) == "--stackless-partition-only")
+		{
+			stage = "stackless partition strategies";
+			testStacklessHybridQuickSort();
+			testStacklessDualPivotQuickSort();
+			std::cout << "Focused stackless partition tests: " << checks << " checks, " << failures << " failures.\n";
+			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
 		if (argc > 1 && std::string(argv[1]) == "--partition-quick-only")
 		{
 			stage = "partition quick strategy family";

@@ -62,6 +62,8 @@ namespace sortinglogic
 		void forcedStableQuick(detail::Recorder& recorder);
 		void ternaryLeftLeftQuick(detail::Recorder& recorder);
 		void ternaryLeftRightQuick(detail::Recorder& recorder);
+		void stacklessHybridQuick(detail::Recorder& recorder);
+		void stacklessDualPivotQuick(detail::Recorder& recorder);
 		void optimizedBubble(detail::Recorder& recorder);
 		void optimizedCocktail(detail::Recorder& recorder);
 		void selection(detail::Recorder& recorder);
