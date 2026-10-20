@@ -320,6 +320,7 @@ void SettingsPanelView::setPanelBounds(const UiRect& panelBounds, bool modalOpen
 {
 	panelBounds_ = panelBounds;
 	controls_.layoutContainer("settings_panel", panelBounds_);
+	contentBounds_ = calculateSettingsPanelGeometry(panelBounds_, model_.page()).content;
 	if (modalOpen)
 		controls_.setModalBounds(panelBounds_, UiAction::ViewCommand::CloseSettings);
 }
@@ -394,30 +395,29 @@ void SettingsPanelView::layoutControls(const std::vector<std::string>& activeCon
 	}
 }
 
-SettingsPanelChrome::SettingsPanelChrome()
-	: screenWidth(0), screenHeight(0), panelBounds(), contentBounds(), footerBounds(), title(), footer()
+void SettingsPanelView::compose(int screenWidth, int screenHeight, const std::string& title,
+	const std::string& footer, const SettingsPanelPalette& palette, UiPaintContext& paintContext) const
 {
-}
-
-void SettingsPanelView::compose(const SettingsPanelChrome& chrome, const SettingsPanelPalette& palette,
-	UiPaintContext& paintContext) const
-{
-	const UiRect screen(0.0f, 0.0f, static_cast<float>(chrome.screenWidth), static_cast<float>(chrome.screenHeight));
+	const UiRect screen(0.0f, 0.0f, static_cast<float>(screenWidth), static_cast<float>(screenHeight));
 	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, screen, palette.overlayDim, std::string(), std::string(),
 		UiPaintMaterial::ModalDim, UiPaintLayer::Backdrop, UiRect(), false, 0.0f));
-	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, chrome.panelBounds, palette.panel, std::string(), std::string(),
+	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, panelBounds_, palette.panel, std::string(), std::string(),
 		UiPaintMaterial::Panel, UiPaintLayer::Panel, screen, true, 0.0f));
 	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle,
-		UiRect(chrome.panelBounds.x, chrome.panelBounds.y, chrome.panelBounds.width, 2.0f), palette.accent,
+		UiRect(panelBounds_.x, panelBounds_.y, panelBounds_.width, 2.0f), palette.accent,
 		std::string(), std::string(), UiPaintMaterial::Accent, UiPaintLayer::Accent, screen, true, 0.0f));
 	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Text,
-		UiRect(chrome.panelBounds.x + 16.0f, chrome.panelBounds.y + 13.0f, chrome.panelBounds.width - 32.0f, 28.0f),
-		palette.text, chrome.title, "#settings_title", UiPaintMaterial::Solid, UiPaintLayer::SettingsText,
+		UiRect(panelBounds_.x + 16.0f, panelBounds_.y + 13.0f, panelBounds_.width - 32.0f, 28.0f),
+		palette.text, title, "#settings_title", UiPaintMaterial::Solid, UiPaintLayer::SettingsText,
 		screen, true, 17.0f));
-	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, chrome.contentBounds, palette.background,
+	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, contentBounds_, palette.background,
 		std::string(), std::string(), UiPaintMaterial::Panel, UiPaintLayer::Panel, screen, true, 0.0f));
-	if (!chrome.footer.empty() && chrome.footerBounds.width > 0.0f && chrome.footerBounds.height > 0.0f)
-		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Text, chrome.footerBounds, palette.mutedText, chrome.footer,
+	const float footerWidth = panelBounds_.width - (model_.isPage(SettingsPanelPage::GeneralAudio) ? 130.0f : 120.0f);
+	const float footerOffset = model_.isPage(SettingsPanelPage::GeneralAudio) ? 62.0f : 58.0f;
+	const UiRect footerBounds(panelBounds_.x + 16.0f, panelBounds_.y + panelBounds_.height - footerOffset,
+		footerWidth, 16.0f);
+	if (!footer.empty() && footerBounds.width > 0.0f && footerBounds.height > 0.0f)
+		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Text, footerBounds, palette.mutedText, footer,
 			"#settings_footer", UiPaintMaterial::Solid, UiPaintLayer::SettingsText, screen, true, 11.0f));
 
 	if (!controls_.find("appearance_tab")) return;
@@ -464,7 +464,7 @@ void SettingsPanelView::compose(const SettingsPanelChrome& chrome, const Setting
 			id == "audio_basic_tab" || id == "audio_advanced_tab" ||
 			id == "settings_close" || id == "audio_retry") continue;
 		submitControl(widget, palette.text, UiPaintMaterial::Solid,
-			UiPaintLayer::SettingsControls, chrome.contentBounds, true, false);
+			UiPaintLayer::SettingsControls, contentBounds_, true, false);
 	}
 	submitControl(controls_.find("settings_close"), palette.button, UiPaintMaterial::Solid,
 		UiPaintLayer::SettingsControls, screen, true, false);

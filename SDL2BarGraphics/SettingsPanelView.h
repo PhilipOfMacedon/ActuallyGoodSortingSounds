@@ -15,18 +15,6 @@ namespace sortinglogic
 	struct RenderSnapshot;
 }
 
-struct SettingsPanelChrome
-{
-	int screenWidth;
-	int screenHeight;
-	UiRect panelBounds;
-	UiRect contentBounds;
-	UiRect footerBounds;
-	std::string title;
-	std::string footer;
-	SettingsPanelChrome();
-};
-
 struct SettingsPanelPalette
 {
 	UiColor panel;
@@ -71,8 +59,8 @@ public:
 		float scrollbarThickness);
 	void layoutControls(const std::vector<std::string>& activeControlIds, float scrollbarThickness);
 
-	void compose(const SettingsPanelChrome& chrome, const SettingsPanelPalette& palette,
-		UiPaintContext& paintContext) const;
+	void compose(int screenWidth, int screenHeight, const std::string& title, const std::string& footer,
+		const SettingsPanelPalette& palette, UiPaintContext& paintContext) const;
 
 private:
 	struct AlgorithmOptionBinding

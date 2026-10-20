@@ -1831,3 +1831,11 @@ The x64 Debug profile measured `sizeof(SemanticEvent)` at 440 bytes. Insertion 2
 All x64/Win32 Debug/Release solution builds passed. SortingLogic core contracts passed 39,541 checks in all four configurations, and both x64 profile runs completed for all three representative traces. `git diff --check` passed. The profiler does not alter the running application path, trace events, replay, or audio.
 
 Next: use the updated storage evidence to decide whether a narrowly scoped budget-accounting correction is worth its changed partial-trace boundary; keep compact event-format work separate until per-cursor replay equivalence and process allocation measurements can be compared.
+
+## 2026-10-20 — keep settings paint geometry inside its view
+
+Removed the temporary `SettingsPanelChrome` bundle that `ControlPanel` populated with panel/content/footer bounds and immediately passed into `SettingsPanelView`. The settings view now composes its own panel, page-specific content region, title, and footer placement from retained panel bounds and page state. The host supplies only window dimensions, text, palette, and the existing paint adapter. Updated headless composition checks to use the production view state directly.
+
+The full solution built in x64 Debug/Release and x86 Debug/Release, and `AppFrameworkTests` passed in all four configurations. `git diff --check` passed. No control action, clipping, painter order, settings value, renderer resource, or window behavior changed; the smoke window remained closed. This is an ownership cleanup with no performance claim.
+
+Next: continue with a measured frame-coordination or sorting-core boundary from the audit; avoid another UI extraction unless it moves a complete policy with useful headless coverage. Keep the structural refactor goal active.

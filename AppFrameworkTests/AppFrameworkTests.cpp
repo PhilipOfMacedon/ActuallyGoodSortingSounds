@@ -2311,14 +2311,7 @@ namespace
 
 	void testSettingsPanelPaintComposition()
 	{
-		SettingsPanelChrome chrome;
-		chrome.screenWidth = 1280;
-		chrome.screenHeight = 720;
-		chrome.panelBounds = UiRect(760.0f, 40.0f, 500.0f, 620.0f);
-		chrome.contentBounds = UiRect(776.0f, 112.0f, 468.0f, 500.0f);
-		chrome.footerBounds = UiRect(776.0f, 598.0f, 370.0f, 16.0f);
-		chrome.title = "Settings | Appearance";
-		chrome.footer = "Preferences saved.";
+		const UiRect panel(760.0f, 40.0f, 500.0f, 620.0f);
 		SettingsPanelPalette palette;
 		palette.panel = UiColor(0.1f, 0.1f, 0.1f, 1.0f);
 		palette.accent = UiColor(0.2f, 0.6f, 0.8f, 1.0f);
@@ -2328,26 +2321,26 @@ namespace
 		palette.overlayDim = UiColor(0.0f, 0.0f, 0.0f, 0.5f);
 
 		SettingsPanelView view;
+		view.setPanelBounds(panel, false);
 		RecordingUiPaintContext recorder;
-		view.compose(chrome, palette, recorder);
+		view.compose(1280, 720, "Settings | Appearance", "Preferences saved.", palette, recorder);
 		const std::vector<UiPaintCommand>& commands = recorder.commands();
 		check(commands.size() == 6 && commands[0].layer == UiPaintLayer::Backdrop &&
 			commands[0].material == UiPaintMaterial::ModalDim &&
 			commands[0].bounds.width == 1280.0f && commands[0].bounds.height == 720.0f,
 			"settings chrome starts with a full-window dim command");
-		check(commands.size() > 4 && commands[1].bounds.x == chrome.panelBounds.x &&
+		check(commands.size() > 4 && commands[1].bounds.x == panel.x &&
 			commands[1].layer == UiPaintLayer::Panel && commands[2].layer == UiPaintLayer::Accent &&
-			commands[2].bounds.height == 2.0f && commands[4].bounds.y == chrome.contentBounds.y,
+			commands[2].bounds.height == 2.0f && commands[4].bounds.y == view.contentBounds().y,
 			"settings chrome keeps panel, accent strip, and content surface in painter order");
 		check(commands.size() == 6 && commands[3].elementId == "#settings_title" &&
-			commands[3].text == chrome.title && commands[3].layer == UiPaintLayer::SettingsText &&
-			commands[5].elementId == "#settings_footer" && commands[5].text == chrome.footer &&
+			commands[3].text == "Settings | Appearance" && commands[3].layer == UiPaintLayer::SettingsText &&
+			commands[5].elementId == "#settings_footer" && commands[5].text == "Preferences saved." &&
 			commands[5].color.r == palette.mutedText.r,
 			"settings title and muted footer are emitted through the shared text contract");
 
-		chrome.footer.clear();
 		recorder.clear();
-		view.compose(chrome, palette, recorder);
+		view.compose(1280, 720, "Settings | Appearance", std::string(), palette, recorder);
 		check(recorder.commands().size() == 5,
 			"settings chrome omits an empty footer instead of emitting an invisible label");
 	}
@@ -2361,11 +2354,6 @@ namespace
 		view.setPanelBounds(panel, true);
 		view.layoutControls(settingsPanelControlIds(SettingsPanelPage::Appearance, SettingsAudioGroup::Basic, nullptr), 8.0f);
 
-		SettingsPanelChrome chrome;
-		chrome.screenWidth = 1280;
-		chrome.screenHeight = 800;
-		chrome.panelBounds = panel;
-		chrome.contentBounds = view.contentBounds();
 		SettingsPanelPalette palette;
 		palette.panel = UiColor(0.1f, 0.1f, 0.1f, 1.0f);
 		palette.accent = UiColor(0.2f, 0.6f, 0.8f, 1.0f);
@@ -2376,7 +2364,7 @@ namespace
 		palette.overlayDim = UiColor(0.0f, 0.0f, 0.0f, 0.5f);
 
 		RecordingUiPaintContext recorder;
-		view.compose(chrome, palette, recorder);
+		view.compose(1280, 800, "Settings | Appearance", "Preferences saved.", palette, recorder);
 		std::vector<std::string> controlIds;
 		bool selectedAppearanceTab = false;
 		bool activeUnderline = false;
@@ -2390,8 +2378,8 @@ namespace
 				if (command.elementId == "appearance_tab")
 					selectedAppearanceTab = command.material == UiPaintMaterial::Accent;
 				if (command.elementId == "palette")
-					paletteControlClipped = command.hasClip && command.clip.y == chrome.contentBounds.y &&
-						command.clip.height == chrome.contentBounds.height;
+					paletteControlClipped = command.hasClip && command.clip.y == view.contentBounds().y &&
+						command.clip.height == view.contentBounds().height;
 			}
 			if (command.layer == UiPaintLayer::SettingsControlsOverlay && command.bounds.height == 2.0f)
 				activeUnderline = true;
@@ -2406,7 +2394,7 @@ namespace
 		view.controls().handleEvent(UiInputEvent(UiInputType::PointerDown,
 			paletteBounds.x + paletteBounds.width * 0.5f, paletteBounds.y + paletteBounds.height * 0.5f), opened);
 		recorder.clear();
-		view.compose(chrome, palette, recorder);
+		view.compose(1280, 800, "Settings | Appearance", "Preferences saved.", palette, recorder);
 		bool palettePopup = false;
 		for (std::size_t i = 0; i < recorder.commands().size(); ++i)
 			if (recorder.commands()[i].primitive == UiPaintPrimitive::Control &&
@@ -2418,9 +2406,8 @@ namespace
 
 		view.handleNavigation(UiAction::ViewCommand::ShowGeneralAudioSettings);
 		view.layoutControls(settingsPanelControlIds(SettingsPanelPage::GeneralAudio, SettingsAudioGroup::Basic, nullptr), 8.0f);
-		chrome.contentBounds = view.contentBounds();
 		recorder.clear();
-		view.compose(chrome, palette, recorder);
+		view.compose(1280, 800, "Settings | General Audio", "Audio ready.", palette, recorder);
 		bool audioSubtabs = false;
 		bool audioRetry = false;
 		bool audioContent = false;

@@ -889,12 +889,7 @@ void ControlPanel::drawMainControlPaintCommand(const UiPaintCommand& command, co
 
 void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::string& audioStatus)
 {
-	SettingsPanelChrome chrome;
-	chrome.screenWidth = width_;
-	chrome.screenHeight = height_;
-	chrome.panelBounds = settingsPanelView_.panelBounds();
-	chrome.contentBounds = settingsPanelView_.contentBounds();
-	chrome.title = settingsTitle_->text();
+	std::string footer;
 	SettingsPanelPalette chromePalette;
 	chromePalette.panel = toUiColor(palette.panel);
 	chromePalette.accent = toUiColor(palette.accent);
@@ -925,20 +920,9 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 		const std::string profileStatus = std::string(referenceProfile && neutralAlgorithmGains
 			? "Reconstructed reference | " : "Customized | ") + audioStatus;
 		audioDeviceStatus_->setContent(profileStatus);
-		chrome.footer = profileStatus;
-		const UiRect& panelBounds = settingsPanelView_.panelBounds();
-		chrome.footerBounds = UiRect(panelBounds.x + 16.0f,
-			panelBounds.y + panelBounds.height - 62.0f,
-			panelBounds.width - 130.0f, 16.0f);
+		footer = profileStatus;
 	}
-	else
-	{
-		chrome.footer = settingsSaveStatus_->text();
-		const UiRect& panelBounds = settingsPanelView_.panelBounds();
-		chrome.footerBounds = UiRect(panelBounds.x + 16.0f,
-			panelBounds.y + panelBounds.height - 58.0f,
-			panelBounds.width - 120.0f, 16.0f);
-	}
+	else footer = settingsSaveStatus_->text();
 	auto renderCommand = [this, &palette](const UiPaintCommand& command)
 	{
 		if (command.primitive == UiPaintPrimitive::Control)
@@ -946,7 +930,7 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 		else drawUiPaintCommand(command);
 	};
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
-	settingsPanelView_.compose(chrome, chromePalette, paintContext);
+	settingsPanelView_.compose(width_, height_, settingsTitle_->text(), footer, chromePalette, paintContext);
 }
 
 void ControlPanel::drawSettingsPaintCommand(const UiPaintCommand& command, const ThemePalette& palette)
