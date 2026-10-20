@@ -15,7 +15,7 @@ public:
 		SdlAudioOutput& output);
 
 	bool audioClockAvailable() const;
-	std::string updateAudioPresentation(AppController& app, const sortinglogic::RenderSnapshot& snapshot);
+	std::string updateAudioPresentation(AppController& app);
 
 private:
 	LatestAudioStateMailbox& mailbox_;

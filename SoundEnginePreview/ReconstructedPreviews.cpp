@@ -131,13 +131,13 @@ namespace
 			scenario.bridge.reset(new AudioPresentationBridge());
 			for (unsigned int attempt = 0; attempt < 30000; ++attempt)
 			{
-				scenario.bridge->update(*scenario.simulation, scenario.simulation->snapshot(), scenario.legacy,
+				scenario.bridge->update(*scenario.simulation, scenario.simulation->playbackState(), scenario.legacy,
 					scenario.mailbox, scenario.reconstructed, timing, false);
 				if (scenario.bridge->timelineReady())
 				{
 					if (!scenario.mailbox.consumeLatest(scenario.audio))
 					{
-						scenario.bridge->update(*scenario.simulation, scenario.simulation->snapshot(), scenario.legacy,
+						scenario.bridge->update(*scenario.simulation, scenario.simulation->playbackState(), scenario.legacy,
 							scenario.mailbox, scenario.reconstructed, timing, false);
 						scenario.mailbox.consumeLatest(scenario.audio);
 					}

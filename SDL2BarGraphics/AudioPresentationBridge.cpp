@@ -184,7 +184,7 @@ AudioPresentationBridge::~AudioPresentationBridge()
 }
 
 void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
-	const sortinglogic::RenderSnapshot& snapshot, const SoundEngine::Parameters& parameters,
+	const sortinglogic::SimulationPlaybackState& playbackState, const SoundEngine::Parameters& parameters,
 	LatestAudioStateMailbox& mailbox, const SoundEngine::ReconstructedParameters& reconstructedParameters,
 	SoundEngine::PlaybackTimingMode timingMode, bool audioDeviceAvailable)
 {
@@ -226,18 +226,18 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		hasComparison_ = false;
 		lastComparisonIsProbe_ = false;
 	}
-	const bool rebuildTimeline = traceChanged || lastTimelineDurationSeconds_ != snapshot.durationSeconds ||
+	const bool rebuildTimeline = traceChanged || lastTimelineDurationSeconds_ != playbackState.durationSeconds ||
 		lastTimingMode_ != timingMode;
 	if (rebuildTimeline)
 	{
 		++timelineGeneration_;
-		requestTimelineBuild(trace, snapshot.durationSeconds, timingMode, parameters);
-		lastTimelineDurationSeconds_ = snapshot.durationSeconds;
+		requestTimelineBuild(trace, playbackState.durationSeconds, timingMode, parameters);
+		lastTimelineDurationSeconds_ = playbackState.durationSeconds;
 		lastTimingMode_ = timingMode;
 	}
 
 	SoundEngine::EventAccentSummary crossedAccents;
-	if (!rawTrace || !snapshot.hasTrace)
+	if (!rawTrace || !playbackState.hasTrace)
 	{
 		hasComparison_ = false;
 		lastComparison_ = SoundEngine::AudioComparison();
@@ -245,15 +245,15 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		lastCursor_ = 0;
 		lastComparisonIsProbe_ = false;
 	}
-	else if (snapshot.cursor < lastCursor_)
+	else if (playbackState.cursor < lastCursor_)
 	{
-		recomputeComparison(rawTrace, snapshot.cursor, lastComparison_, hasComparison_, lastComparisonIsProbe_);
-		lastCursor_ = snapshot.cursor;
+		recomputeComparison(rawTrace, playbackState.cursor, lastComparison_, hasComparison_, lastComparisonIsProbe_);
+		lastCursor_ = playbackState.cursor;
 		lastEventAccents_ = SoundEngine::EventAccentSummary();
 	}
 	else
 	{
-		const std::size_t end = std::min(snapshot.cursor, rawTrace->events.size());
+		const std::size_t end = std::min(playbackState.cursor, rawTrace->events.size());
 		for (std::size_t i = lastCursor_; i < end; ++i)
 		{
 			const sortinglogic::SemanticEvent& event = rawTrace->events[i];
@@ -318,7 +318,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		lastEventAccents_ = crossedAccents;
 	}
 
-	if (snapshot.cursor == 0 || snapshot.complete)
+	if (playbackState.cursor == 0 || playbackState.complete)
 	{
 		hasComparison_ = false;
 		lastComparisonIsProbe_ = false;
@@ -336,10 +336,10 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	for (std::size_t i = 0; i < SoundEngine::RoleCount; ++i)
 		current.timelineGains.roleGain[i] = gainFromDecibels(parameters.roleBoostDb[i]);
 	current.eventAccents = lastEventAccents_;
-	current.traceLoaded = rawTrace != nullptr && snapshot.hasTrace;
+	current.traceLoaded = rawTrace != nullptr && playbackState.hasTrace;
 	current.hasComparison = current.traceLoaded && hasComparison_;
-	current.transportPlaying = snapshot.playing;
-	current.releaseSelection = current.hasComparison && !snapshot.playing &&
+	current.transportPlaying = playbackState.playing;
+	current.releaseSelection = current.hasComparison && !playbackState.playing &&
 		reconstructedParameters.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
 	current.comparison = lastComparison_;
 	SoundEngine::AudioComparison burstOrder = lastComparison_;
@@ -373,13 +373,13 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	current.timeline = currentTimeline_;
 	current.timelineGeneration = timelineGeneration_;
 	current.transport.generation = timelineGeneration_;
-	current.transport.sourceCursor = snapshot.cursor;
-	current.transport.playing = snapshot.playing;
-	current.transport.holdSelection = !snapshot.playing && current.hasComparison && !snapshot.complete &&
+	current.transport.sourceCursor = playbackState.cursor;
+	current.transport.playing = playbackState.playing;
+	current.transport.holdSelection = !playbackState.playing && current.hasComparison && !playbackState.complete &&
 		reconstructedParameters.idlePolicy == SoundEngine::ReconstructedIdlePolicy::HoldSelection;
-	current.transport.stopAtEnd = snapshot.complete || !current.traceLoaded;
-	const bool playbackChanged = !hasPublished_ || snapshot.playing != lastPublished_.transportPlaying;
-	const bool cursorChangedWhilePaused = !snapshot.playing && snapshot.cursor != lastTransportCursor_;
+	current.transport.stopAtEnd = playbackState.complete || !current.traceLoaded;
+	const bool playbackChanged = !hasPublished_ || playbackState.playing != lastPublished_.transportPlaying;
+	const bool cursorChangedWhilePaused = !playbackState.playing && playbackState.cursor != lastTransportCursor_;
 	const bool timelineInstallationChanged = currentTimeline_ != lastPublished_.timeline;
 	const bool clockRecovery = audioDeviceAvailable && !lastAudioDeviceAvailable_;
 	const bool audioSettingsChanged = hasPublished_ &&
@@ -387,12 +387,12 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		 !sameTimelineGains(current.timelineGains, lastPublished_.timelineGains));
 	if (audioSettingsChanged) ++audioParameterRevision_;
 	const bool transportChanged = rebuildTimeline || timelineInstallationChanged || playbackChanged || cursorChangedWhilePaused || clockRecovery;
-	current.transport.releaseSelection = !snapshot.playing && (playbackChanged || cursorChangedWhilePaused) && current.hasComparison &&
+	current.transport.releaseSelection = !playbackState.playing && (playbackChanged || cursorChangedWhilePaused) && current.hasComparison &&
 		reconstructedParameters.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
 	if (transportChanged)
 	{
 		++transportRevision_;
-		current.transport.timelineFrame = currentTimeline_ ? currentTimeline_->frameForCursor(snapshot.cursor) : 0;
+		current.transport.timelineFrame = currentTimeline_ ? currentTimeline_->frameForCursor(playbackState.cursor) : 0;
 		current.transport.revision = transportRevision_;
 	}
 	else
@@ -400,9 +400,9 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		current.transport.timelineFrame = lastPublished_.transport.timelineFrame;
 		current.transport.revision = lastPublished_.transport.revision;
 	}
-	lastTransportCursor_ = snapshot.cursor;
+	lastTransportCursor_ = playbackState.cursor;
 	lastAudioDeviceAvailable_ = audioDeviceAvailable;
-	if (seekPreparing_ && (!currentTimeline_ || snapshot.cursor == 0 || snapshot.complete))
+	if (seekPreparing_ && (!currentTimeline_ || playbackState.cursor == 0 || playbackState.complete))
 	{
 		std::lock_guard<std::mutex> lock(timelineBuildMutex_);
 		++requestedSeekRevision_;
@@ -412,7 +412,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		timelinePreparing_ = false;
 		currentSeekState_ = nullptr;
 	}
-	const bool seekRequired = currentTimeline_ && snapshot.cursor > 0 && !snapshot.complete &&
+	const bool seekRequired = currentTimeline_ && playbackState.cursor > 0 && !playbackState.complete &&
 		(timelineInstallationChanged || cursorChangedWhilePaused || clockRecovery || (seekPreparing_ && audioSettingsChanged));
 	if (seekRequired)
 		requestSeekBuild(current.transport, reconstructedParameters, current.timelineGains);

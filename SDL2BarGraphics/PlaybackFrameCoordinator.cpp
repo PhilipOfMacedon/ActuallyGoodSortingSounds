@@ -13,10 +13,9 @@ bool PlaybackFrameCoordinator::audioClockAvailable() const
 	return output_.available() && bridge_.playheadReady(output_.timelineAcknowledgement());
 }
 
-std::string PlaybackFrameCoordinator::updateAudioPresentation(AppController& app,
-	const sortinglogic::RenderSnapshot& snapshot)
+std::string PlaybackFrameCoordinator::updateAudioPresentation(AppController& app)
 {
-	bridge_.update(app.simulation(), snapshot, app.effectiveAudio(), mailbox_,
+	bridge_.update(app.simulation(), app.simulation().playbackState(), app.effectiveAudio(), mailbox_,
 		app.effectiveReconstructedAudio(), app.preferences().simulation.playbackTimingMode,
 		output_.available());
 	const AudioTimelineAcknowledgement acknowledgement = output_.timelineAcknowledgement();

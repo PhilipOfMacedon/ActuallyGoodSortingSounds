@@ -621,6 +621,17 @@ namespace sortinglogic
 		return result;
 	}
 
+	SimulationPlaybackState Simulation::playbackState() const
+	{
+		SimulationPlaybackState result;
+		result.cursor = cursor_;
+		result.durationSeconds = durationSeconds_;
+		result.hasTrace = static_cast<bool>(trace_);
+		result.complete = trace_ && cursor_ >= trace_->events.size();
+		result.playing = playing_;
+		return result;
+	}
+
 	std::shared_ptr<const SortTrace> Simulation::currentTrace() const { return trace_; }
 
 }

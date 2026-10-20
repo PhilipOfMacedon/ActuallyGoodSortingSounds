@@ -487,6 +487,16 @@ namespace sortinglogic
 		RenderSnapshot();
 	};
 
+	// Compact cursor/transport view for consumers that do not need a copy of the
+	// simulation workspace, such as the app-side audio presentation bridge.
+	struct SimulationPlaybackState
+	{
+		std::size_t cursor;
+		float durationSeconds;
+		bool hasTrace, complete, playing;
+		SimulationPlaybackState() : cursor(0), durationSeconds(0.0f), hasTrace(false), complete(false), playing(false) {}
+	};
+
 	struct CommandResult
 	{
 		bool accepted;
@@ -545,6 +555,7 @@ namespace sortinglogic
 		void advance(float deltaSeconds);
 		void synchronizePlaybackPosition(std::size_t eventCursor, double elapsedSeconds,
 			double playbackDurationSeconds, bool playing);
+		SimulationPlaybackState playbackState() const;
 		RenderSnapshot snapshot() const;
 		std::shared_ptr<const SortTrace> currentTrace() const;
 		const std::vector<SortItem>& preparedInput() const { return preparedInput_; }

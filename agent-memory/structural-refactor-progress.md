@@ -847,3 +847,22 @@ Verification:
 - x64 Debug and Release `AppFrameworkTests` passed.
 - `AppFrameworkTests --render-cost-profile` completed in both configurations and reported the figures above.
 - `git diff --check` passed; Git reported only the configured LF-to-CRLF working-tree notices.
+
+## 2026-10-20 — keep audio coordination on compact playback state
+
+Status: implementation and focused verification complete.
+
+- Added `SimulationPlaybackState` with only cursor, duration, trace-present, complete, and playing fields. `AudioPresentationBridge` now accepts this compact value instead of a full `RenderSnapshot`.
+- `PlaybackFrameCoordinator` obtains the small playback state directly. The main loop now builds one full render snapshot after audio playhead feedback, rather than copying the complete workspace once before and once after the handoff. The ordering of audio feedback and rendered state remains the same.
+- Updated the offline reconstructed-audio preview and transport tests to use the compact contract. The preview no longer copies the sorting workspace while preparing audio timelines.
+- Added parity checks for no-trace, trace-start, stepped, playing, and complete states against the corresponding full snapshot fields.
+- Based on the prior deterministic 800-item profile, this removes one full snapshot copy from the frame; at the largest range-write cursor, one snapshot measured 2,521.968 us in x64 Debug and 36.909 us in x64 Release. These are per-snapshot medians, not a full-frame benchmark.
+
+Verification:
+
+- x64 Debug and Release Visual Studio solution builds passed, including `SoundEnginePreview`.
+- x64 Debug and Release `AppFrameworkTests` passed.
+- Separate x64 Debug and Release `AudioDeviceTransportTests` builds and SDL dummy-device runs passed, including fixed/reference timing, pause/resume, stepping, seeking, and 80/800-item scenarios.
+- `git diff --check` passed; Git reported only the configured LF-to-CRLF working-tree notices.
+
+Next: profile the remaining state copy, role construction, and region filtering within the single render snapshot before considering snapshot caching.

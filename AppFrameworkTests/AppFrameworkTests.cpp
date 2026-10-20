@@ -102,6 +102,47 @@ namespace
 		lookup.release();
 	}
 
+	void testSimulationPlaybackState()
+	{
+		sortinglogic::Simulation simulation(4, 0xA710u);
+		sortinglogic::SimulationPlaybackState playback = simulation.playbackState();
+		sortinglogic::RenderSnapshot render = simulation.snapshot();
+		check(!playback.hasTrace && !playback.complete && !playback.playing && playback.cursor == render.cursor &&
+			playback.durationSeconds == render.durationSeconds,
+			"compact playback state matches a full snapshot before trace creation");
+
+		simulation.prepareInstaInvert();
+		sortinglogic::TraceBuildRequest request;
+		check(simulation.beginTraceBuild(request).accepted, "playback-state fixture starts a trace build");
+		sortinglogic::TraceBuildResult result;
+		result.succeeded = true;
+		result.trace = sortinglogic::SortTraceBuilder::build(request);
+		simulation.completeTraceBuild(std::move(result));
+		playback = simulation.playbackState();
+		render = simulation.snapshot();
+		check(playback.hasTrace && !playback.complete && !playback.playing && playback.cursor == render.cursor &&
+			playback.durationSeconds == render.durationSeconds,
+			"compact playback state matches a full snapshot at the initial trace cursor");
+
+		check(simulation.nextEvent().accepted, "playback-state fixture advances one event");
+		playback = simulation.playbackState();
+		render = simulation.snapshot();
+		check(playback.hasTrace == render.hasTrace && playback.complete == render.complete &&
+			playback.playing == render.playing && playback.cursor == render.cursor &&
+			playback.durationSeconds == render.durationSeconds,
+			"compact playback state tracks a stepped trace cursor");
+		check(simulation.togglePlayback().accepted && simulation.playbackState().playing,
+			"compact playback state reflects transport start");
+		const std::size_t eventCount = simulation.currentTrace()->events.size();
+		check(simulation.seekTo(eventCount).accepted, "playback-state fixture seeks to trace completion");
+		playback = simulation.playbackState();
+		render = simulation.snapshot();
+		check(playback.hasTrace == render.hasTrace && playback.complete == render.complete &&
+			playback.playing == render.playing && playback.cursor == render.cursor &&
+			playback.durationSeconds == render.durationSeconds,
+			"compact playback state matches a full snapshot at trace completion");
+	}
+
 	double medianSnapshotMicros(sortinglogic::Simulation& simulation, std::size_t cursor, std::size_t iterations,
 		std::size_t& sink)
 	{
@@ -240,7 +281,7 @@ namespace
 	{
 		for (unsigned int attempt = 0; attempt < 5000; ++attempt)
 		{
-			bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, audioDeviceAvailable);
+			bridge.update(simulation, simulation.playbackState(), parameters, mailbox, reconstructed, mode, audioDeviceAvailable);
 			if (!bridge.timelinePreparing()) return;
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
@@ -2290,10 +2331,10 @@ namespace
 		SoundEngine::Parameters parameters;
 		SoundEngine::ReconstructedParameters reconstructed;
 		const auto mode = SoundEngine::PlaybackTimingMode::FixedDuration;
-		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+		bridge.update(simulation, simulation.playbackState(), parameters, mailbox, reconstructed, mode, true);
 		waitForAudioTimeline(bridge, simulation, parameters, mailbox, reconstructed, mode, true);
 		simulation.seekTo(simulation.snapshot().eventCount / 2);
-		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+		bridge.update(simulation, simulation.playbackState(), parameters, mailbox, reconstructed, mode, true);
 		check(!bridge.playheadReady(AudioTimelineAcknowledgement(bridge.timelineGeneration(), ~std::uint64_t(0))),
 			"a preparing seek rejects playhead feedback even with an older callback acknowledgement");
 		waitForAudioTimeline(bridge, simulation, parameters, mailbox, reconstructed, mode, true);
@@ -2305,16 +2346,16 @@ namespace
 			"temporary stopped feedback stays fenced until the callback acknowledges the installed seek");
 		const auto revision = bridge.transportRevision();
 		for (unsigned frame = 0; frame < 100; ++frame)
-			bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+			bridge.update(simulation, simulation.playbackState(), parameters, mailbox, reconstructed, mode, true);
 		check(!bridge.timelinePreparing() && bridge.transportRevision() == revision,
 			"finishing preparation is not mistaken for device recovery and does not start another seek");
-		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, false);
-		bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+		bridge.update(simulation, simulation.playbackState(), parameters, mailbox, reconstructed, mode, false);
+		bridge.update(simulation, simulation.playbackState(), parameters, mailbox, reconstructed, mode, true);
 		check(bridge.timelinePreparing() && bridge.transportRevision() == revision + 1,
 			"a real device recovery reconstructs the inspected position once");
 		waitForAudioTimeline(bridge, simulation, parameters, mailbox, reconstructed, mode, true);
 		for (unsigned frame = 0; frame < 100; ++frame)
-			bridge.update(simulation, simulation.snapshot(), parameters, mailbox, reconstructed, mode, true);
+			bridge.update(simulation, simulation.playbackState(), parameters, mailbox, reconstructed, mode, true);
 		check(!bridge.timelinePreparing() && bridge.transportRevision() == revision + 1,
 			"device recovery settles instead of recursively preparing audio");
 	}
@@ -2346,7 +2387,7 @@ namespace
 		LatestAudioStateMailbox traceMailbox;
 		SoundEngine::Parameters parameters;
 		sortinglogic::RenderSnapshot snapshot = simulation.snapshot();
-		bridge.update(simulation, snapshot, parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		waitForAudioTimeline(bridge, simulation, parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.traceLoaded && !latest.hasComparison,
 			"loaded trace publishes the continuous bed with no initial comparison focus");
@@ -2364,7 +2405,7 @@ namespace
 		check(firstCompareCursor > 0, "Insertion Sort trace contains comparisons for audio mapping");
 		simulation.seekTo(firstCompareCursor);
 		snapshot = simulation.snapshot();
-		bridge.update(simulation, snapshot, parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		waitForAudioTimeline(bridge, simulation, parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.hasComparison &&
 			latest.comparison.heldKey == SoundEngine::HeldKeyParticipant::Second &&
@@ -2413,7 +2454,7 @@ namespace
 			gnome.seekTo(gnomeCompareCursor + 1);
 			AudioPresentationBridge gnomeBridge;
 			LatestAudioStateMailbox gnomeMailbox;
-			gnomeBridge.update(gnome, gnome.snapshot(), parameters, gnomeMailbox);
+			gnomeBridge.update(gnome, gnome.playbackState(), parameters, gnomeMailbox);
 			waitForAudioTimeline(gnomeBridge, gnome, parameters, gnomeMailbox);
 			AudioPresentationState gnomeState;
 			const bool gnomePublished = gnomeMailbox.consumeLatest(gnomeState);
@@ -2432,18 +2473,18 @@ namespace
 		}
 		SoundEngine::ReconstructedParameters releasePreferences;
 		releasePreferences.idlePolicy = SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
-		bridge.update(simulation, snapshot, parameters, traceMailbox, releasePreferences);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox, releasePreferences);
 		check(traceMailbox.consumeLatest(latest) && latest.hasComparison && latest.releaseSelection && !latest.transportPlaying,
 			"paused inspection publishes the configured special-release policy to the audio callback");
 		const SoundEngine::PreparedAudioTimeline* stableTimeline = latest.timeline;
 		parameters.heldKeyBoostDb = 0.0f;
-		bridge.update(simulation, snapshot, parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.parameters.heldKeyBoostDb == 0.0f &&
 			latest.timeline == stableTimeline && std::fabs(latest.timelineGains.heldKeyGain - 1.0) < 1.0e-9 &&
 			latest.comparison.heldKey == SoundEngine::HeldKeyParticipant::Second,
 			"audio bridge applies live held-key gain changes without rebuilding the immutable timeline");
 		parameters.heldKeyBoostDb = 18.0f;
-		bridge.update(simulation, snapshot, parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.parameters.heldKeyBoostDb == 18.0f &&
 			std::fabs(latest.timelineGains.heldKeyGain - std::pow(10.0, 18.0 / 20.0)) < 1.0e-6 &&
 			latest.comparison.heldKey == SoundEngine::HeldKeyParticipant::Second,
@@ -2451,22 +2492,22 @@ namespace
 
 		const std::size_t laterCursor = trace->events.size() / 2;
 		simulation.seekTo(laterCursor);
-		bridge.update(simulation, simulation.snapshot(), parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) &&
 			latest.eventAccents.counts[static_cast<std::size_t>(SoundEngine::AccentCategory::Movement)] > 0,
 			"coalesced frame summary includes movement events crossed during playback");
 		simulation.seekTo(firstCompareCursor);
-		bridge.update(simulation, simulation.snapshot(), parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.hasComparison &&
 			latest.eventAccents.counts[static_cast<std::size_t>(SoundEngine::AccentCategory::Movement)] == 0 &&
 			std::fabs(latest.comparison.firstPosition - SoundEngine::normalizeValue(firstValue, minimum, maximum)) < 1e-6f,
 			"rewinding restores the comparison selected by the destination cursor");
 		simulation.seekTo(trace->events.size());
-		bridge.update(simulation, simulation.snapshot(), parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.traceLoaded && !latest.hasComparison,
 			"completed trace retains the bed and clears comparison focus");
 		simulation.reset();
-		bridge.update(simulation, simulation.snapshot(), parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && latest.traceLoaded && !latest.hasComparison,
 			"reset retains the loaded bed and clears the comparison");
 
@@ -2488,7 +2529,7 @@ namespace
 			counting.seekTo(firstCountingProbe + 1);
 			AudioPresentationBridge probeBridge;
 			LatestAudioStateMailbox probeMailbox;
-			probeBridge.update(counting, counting.snapshot(), parameters, probeMailbox);
+			probeBridge.update(counting, counting.playbackState(), parameters, probeMailbox);
 			AudioPresentationState probeState;
 			check(probeMailbox.consumeLatest(probeState) && probeState.hasComparison && probeState.burstComparison.probeOnly &&
 				probeState.burstComparison.firstRole == static_cast<std::uint8_t>(SoundEngine::ComparisonRole::ProbedItem),
@@ -2510,13 +2551,13 @@ namespace
 			counting.seekTo(upperBucketWrite + 1);
 			AudioPresentationBridge countingBridge;
 			LatestAudioStateMailbox countingMailbox;
-			countingBridge.update(counting, counting.snapshot(), parameters, countingMailbox);
+			countingBridge.update(counting, counting.playbackState(), parameters, countingMailbox);
 			check(countingMailbox.consumeLatest(latest) &&
 				std::fabs(latest.eventAccents.representativePositions[static_cast<std::size_t>(SoundEngine::AccentCategory::Distribution)] - 1.0f) < 1e-6f,
 				"counter accents normalize against the counter workspace range rather than the primary array");
 		}
 		simulation.prepareShuffle(0x4321u);
-		bridge.update(simulation, simulation.snapshot(), parameters, traceMailbox);
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);
 		check(traceMailbox.consumeLatest(latest) && !latest.traceLoaded && !latest.hasComparison,
 			"preparing a replacement input fades the loaded trace bed out");
 
@@ -2543,32 +2584,32 @@ namespace
 			"800-item reverse trace remains dense and returns a playable prefix at the accounted memory cap");
 		AudioPresentationBridge denseBridge;
 		LatestAudioStateMailbox denseMailbox;
-		denseBridge.update(dense, dense.snapshot(), parameters, denseMailbox);
+		denseBridge.update(dense, dense.playbackState(), parameters, denseMailbox);
 		denseMailbox.consumeLatest(latest);
 		const std::size_t middleCursor = denseTrace->events.size() / 2;
 		dense.seekTo(middleCursor);
-		denseBridge.update(dense, dense.snapshot(), parameters, denseMailbox);
+		denseBridge.update(dense, dense.playbackState(), parameters, denseMailbox);
 		check(denseMailbox.consumeLatest(latest) && latest.traceLoaded && latest.hasComparison,
 			"dense 800-item seek publishes the current comparison without waiting for skipped events");
 		const std::uint64_t middleRevision = latest.revision;
 		dense.seekTo(denseTrace->events.size() * 3 / 4);
-		denseBridge.update(dense, dense.snapshot(), parameters, denseMailbox);
+		denseBridge.update(dense, dense.playbackState(), parameters, denseMailbox);
 		check(denseMailbox.consumeLatest(latest) && latest.revision > middleRevision && latest.hasComparison,
 			"dense forward playback replaces the prior mailbox state with the latest comparison");
 		dense.seekTo(denseTrace->events.size());
-		denseBridge.update(dense, dense.snapshot(), parameters, denseMailbox);
+		denseBridge.update(dense, dense.playbackState(), parameters, denseMailbox);
 		check(denseMailbox.consumeLatest(latest) && latest.traceLoaded && !latest.hasComparison,
 			"dense completion leaves only the bed in the audio state");
 		dense.reset();
 		dense.togglePlayback();
 		dense.advance(0.5f);
 		const sortinglogic::RenderSnapshot halfway = dense.snapshot();
-		denseBridge.update(dense, halfway, parameters, denseMailbox);
+		denseBridge.update(dense, dense.playbackState(), parameters, denseMailbox);
 		check(halfway.playing && halfway.cursor == denseTrace->events.size() / 2 &&
 			denseMailbox.consumeLatest(latest) && latest.traceLoaded && latest.hasComparison,
 			"800-item playback reaches the halfway comparison without an audio-event backlog");
 		dense.advance(0.5f);
-		denseBridge.update(dense, dense.snapshot(), parameters, denseMailbox);
+		denseBridge.update(dense, dense.playbackState(), parameters, denseMailbox);
 		check(dense.snapshot().complete && denseMailbox.consumeLatest(latest) &&
 			latest.traceLoaded && !latest.hasComparison,
 			"800-item playback completes on schedule and leaves the harmonic bed running");
@@ -3007,6 +3048,7 @@ int main(int argc, char* argv[])
 		}
 	}
 	testActiveRoleLookup();
+	testSimulationPlaybackState();
 	testSpacing();
 	testPreferenceValueEquality();
 	testBarCountSteps();

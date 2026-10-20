@@ -45,7 +45,7 @@ public:
         const auto now = std::chrono::steady_clock::now();
         const float elapsed = std::chrono::duration<float>(now-last).count(); last=now;
         app.update(elapsed, playbackFrame.audioClockAvailable());
-        playbackFrame.updateAudioPresentation(app, app.snapshot());
+        playbackFrame.updateAudioPresentation(app);
         const bool preparing=bridge.timelinePreparing();
         if (preparing && !wasPreparing) ++preparations;
         wasPreparing=preparing;

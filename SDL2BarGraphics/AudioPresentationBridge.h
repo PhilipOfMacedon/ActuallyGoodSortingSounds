@@ -66,7 +66,7 @@ public:
 	AudioPresentationBridge& operator=(const AudioPresentationBridge&) = delete;
 	// Pass open-device availability here, even while a timeline/seek is preparing.
 	void update(const sortinglogic::Simulation& simulation,
-		const sortinglogic::RenderSnapshot& snapshot,
+		const sortinglogic::SimulationPlaybackState& playbackState,
 		const SoundEngine::Parameters& parameters,
 		LatestAudioStateMailbox& mailbox,
 		const SoundEngine::ReconstructedParameters& reconstructedParameters = SoundEngine::ReconstructedParameters(),

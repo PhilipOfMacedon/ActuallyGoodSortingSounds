@@ -154,9 +154,8 @@ int main(int argc, char** argv)
 		handleEvents(mainWindow, controlPanel, app, audioOutput, audioBridge, audioMailbox);
 		audioOutput.serviceDiagnosticCapture();
 
+		const std::string audioStatus = playbackFrameCoordinator.updateAudioPresentation(app);
 		sortinglogic::RenderSnapshot snapshot = app.snapshot();
-		const std::string audioStatus = playbackFrameCoordinator.updateAudioPresentation(app, snapshot);
-		snapshot = app.snapshot();
 		const UiThemeCustomization& activeTheme = app.preferences().appearance.themes.find(app.preferences().appearance.activePreset)->second;
 		const ThemePalette palette = paletteForAppearance(app.preferences().appearance.activePreset, activeTheme);
 		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());
