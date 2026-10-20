@@ -26,7 +26,7 @@ Next: freeze the behavioral baselines described in the audit before starting the
 
 ## 2026-10-19 — resolved styles and cached wrapped text
 
-Status: second UI text slice implemented; pending commit.
+Status: second UI text slice committed and pushed as `0d48b56`.
 
 - Added `ResolvedTextStyle` so width measurement, rasterization, line height, and drawing use the same font, raster size, DPI, and logical height.
 - Added renderer-independent `TextBlockLayout`, which caches wrapped lines and invalidates when content, available width, or any resolved style field changes. Its text-width callback keeps font measurement outside the layout value.
@@ -39,7 +39,26 @@ Verification:
 - x64 Debug solution build: passed. x64 Debug `AppFrameworkTests`: passed.
 - x64 Release solution build: passed. Release `AppFrameworkTests` and `SoundEngineTests`: passed; the sound suite reported 417,371 assertions.
 - The Release `AppFrameworkTests` link continues to emit existing LNK4020 PDB type-record warnings for `SoundEngine.pdb` and `SortingLogic.pdb`; linking and execution succeed. The warning is not isolated by this slice.
-- Debug `SortingLogicTests` and `SoundEngineTests` were started but stopped after several minutes of CPU-active execution without results. These suites are unrelated to the text-layout change; their incomplete runs are not counted as passes.
-- `git diff --check` passed. The current worktree has no changes to sorting, sound, or settings behavior.
+- `git diff --check` passed. The current worktree had no changes to sorting, sound, or settings behavior in this slice.
 
-Next: capture fixed-seed trace signatures, Counting/Radix audio operands and PCM fixtures, settings migration/persistence fixtures, and baseline measurement counters. Only after those regression boundaries are recorded should the mechanical `SortingLogic` extraction begin.
+## 2026-10-19 — isolate trace state and replay
+
+Status: first `SortingLogic` extraction implemented; pending commit.
+
+- Moved `SemanticEvent`, `SortTrace`, and `RenderSnapshot` construction, initial-state creation, comparison, forward/backward event application, state validation, and Shell-gap generation from `SortingLogic.cpp` into `TraceState.cpp`.
+- Added `SortingLogicInternal.h` for invariant helpers shared by the recorder and replay code. The public `SortingLogic.h` API remains unchanged.
+- Verified the moved implementation block matches the pre-extraction source byte-for-byte after newline normalization.
+- Added `SortingLogicTests.exe --core-contracts-only` to run trace, replay, partial-budget, annotation, playback, workspace, and Counting/Radix event/audio-eligibility fixture checks without running every expensive algorithm case.
+
+Verification:
+
+- x64 Debug and Release solution builds: passed.
+- Debug and Release core-contract runs: each passed 8,218 checks with 0 failures.
+- Debug and Release catalog-coverage runs: each passed 1,678 checks with 0 failures.
+- Debug and Release `AppFrameworkTests`: passed. Release `SoundEngineTests`: passed with 417,371 assertions; no sound code changed in this slice.
+- Full `SortingLogicTests` was attempted in Debug and Release but stopped before completion after high CPU use; the Release process had grown to about 455 MiB. This resource-heavy path is not counted as a pass. Targeted core and coverage suites passed instead.
+- Release app-framework linking continues to emit LNK4020 warnings about PDB type records. They do not prevent linking or test execution and remain unisolated.
+
+Existing baseline coverage was verified before extraction: `testDistributionAudioBaselines` freezes Counting/Radix trace and eligible-audio event order; `SoundEngineTests` compares PCM bit-for-bit to independent `LegacySoundEngine`; settings tests cover migrations through v8; focused Lazierest tests include the reported 400-item seed. The full-run cost means the broad suite should be decomposed into reusable focused contracts before it is used as the only regression gate.
+
+Next: extract Simulation and input-generation ownership behind the existing facade, then split catalog/build routing and algorithm family strategies. Keep baselines fixed and run focused tests for each moved boundary.

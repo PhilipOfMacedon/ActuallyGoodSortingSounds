@@ -49,10 +49,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="SortingLogic.cpp" />
+    <ClCompile Include="TraceState.cpp" />
     <ClCompile Include="TraceBuildService.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="SortingLogic.h" />
+    <ClInclude Include="SortingLogicInternal.h" />
     <ClInclude Include="TraceBuildService.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

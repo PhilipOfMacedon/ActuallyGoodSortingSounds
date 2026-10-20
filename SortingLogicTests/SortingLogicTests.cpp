@@ -4902,6 +4902,33 @@ int main(int argc, char* argv[])
 			std::cout << "Pinned ArrayV catalog coverage: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
+		if (argc > 1 && std::string(argv[1]) == "--core-contracts-only")
+		{
+			stage = "testDistributionAudioBaselines";
+			testDistributionAudioBaselines();
+			stage = "testBurntPancakeOrientation";
+			testBurntPancakeOrientation();
+			stage = "testSortingNetworkSchedules";
+			testSortingNetworkSchedules();
+			stage = "testMergeWritebackModes";
+			testMergeWritebackModes();
+			stage = "testSimulationAndProfiles";
+			testSimulationAndProfiles();
+			stage = "testSnapshotAnnotations";
+			testSnapshotAnnotations();
+			stage = "testTraceServiceAndPlayback";
+			testTraceServiceAndPlayback();
+			stage = "testStressAndValidation";
+			testStressAndValidation();
+			stage = "testPartialTraceBudget";
+			testPartialTraceBudget();
+			stage = "testDomainsAndPatterns";
+			testDomainsAndPatterns();
+			stage = "testSemanticProbeDiscardAndPhases";
+			testSemanticProbeDiscardAndPhases();
+			std::cout << "SortingLogic core contracts: " << checks << " checks, " << failures << " failures.\n";
+			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
 		if (argc > 1 && std::string(argv[1]) == "--bogo-only")
 		{
 			stage = "testAdditionalBogoVariants";
