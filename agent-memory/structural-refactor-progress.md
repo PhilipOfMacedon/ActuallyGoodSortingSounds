@@ -1634,3 +1634,10 @@ Moved Shell Sort, linear and binary Double Insertion, parallel Shell, and recurs
 Added focused cursor-reconstruction coverage for Shell and recursive Shell over boundary, duplicate, sorted, reversed, and mixed inputs in both directions; the existing double-insertion and parallel-Shell suites run in the same focused command. x64 Debug and Release solution builds passed. The focused suite passed in both configurations with 73,700 checks and zero failures. `git diff --check` passed. `SortingLogic.cpp` is now 4371 lines; this is an ownership refactor and makes no runtime-performance claim.
 
 Next: continue moving the remaining merge and hybrid strategies behind the strategy interface, then reassess the residual coordinator dispatch and builder duplication.
+## 2026-10-20 — move Weave Merge into the merge strategy module
+
+Moved the standalone Weave Merge recursion and range kernel into MergeStrategies.cpp, with the recursive helper file-local and its catalog builder bound through weaveMergeSortStrategy. Removed the coordinator implementation and fallback case; trace event ordering and the variant’s existing unstable behavior remain the same.
+
+The x64 Debug and Release solution builds passed. The focused Weave Merge suite passed in both configurations with 6,290 checks and zero failures. git diff --check passed. SortingLogic.cpp is now 4310 lines. No runtime-performance change is claimed.
+
+Next: continue extracting remaining merge and hybrid implementation clusters, then reassess the residual fallback dispatch.

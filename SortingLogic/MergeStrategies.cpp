@@ -322,8 +322,74 @@ namespace sortinglogic
 				r.resizeAuxiliary("merge", 0);
 				r.resizeAuxiliary("ecta_buffer", 0);
 			}
+		static void weaveMergeRange(Recorder& r, std::size_t first, std::size_t last)
+		{
+			if (last <= first) return;
+			if (last - first == 1)
+			{
+				const SortItem left = r.at(first), right = r.at(last);
+				r.compare(left, right, first, last, "main", "main", SemanticRole::ComparedItem, SemanticRole::ComparedItem);
+				r.addMetric("weave_base_comparisons");
+				if (compareItems(left, right, r.trace.direction) == ComparisonResult::Greater)
+				{
+					r.swap(first, last);
+					r.addMetric("weave_base_swaps");
+				}
+				return;
+			}
+
+			const std::size_t middle = first + (last - first) / 2;
+			weaveMergeRange(r, first, middle);
+			weaveMergeRange(r, middle + 1, last);
+			r.addMetric("weave_recursive_merges");
+			const std::size_t mergeBegin = r.trace.events.size();
+
+			// Move each right-run item left into its alternating position. Adjacent
+			// swaps preserve the relative order of the cells shifted by the weave.
+			for (std::size_t offset = 1; offset <= middle - first; ++offset)
+			{
+				std::size_t source = middle + offset;
+				const std::size_t target = first + offset * 2 - 1;
+				while (source > target)
+				{
+					r.swap(source - 1, source, SemanticRole::WriteTarget);
+					--source;
+					r.addMetric("weave_interleave_swaps");
+				}
+			}
+
+			// ArrayV's weave kernel finishes each interleaved range with a leftward
+			// insertion pass rather than a conventional two-way merge.
+			for (std::size_t index = first; index <= last; ++index)
+			{
+				std::size_t position = index;
+				while (position > first)
+				{
+					const SortItem current = r.at(position), previous = r.at(position - 1);
+					r.compare(current, previous, position, position - 1, "main", "main",
+						SemanticRole::HeldKey, SemanticRole::ComparedItem);
+					r.addMetric("weave_insertion_comparisons");
+					if (compareItems(current, previous, r.trace.direction) == ComparisonResult::Greater) break;
+					r.swap(position - 1, position, SemanticRole::HeldKey);
+					--position;
+					r.addMetric("weave_insertion_swaps");
+				}
+			}
+			r.annotate("main", RegionKind::Contiguous, first, middle + 1, 1, -1, "Weave left run", mergeBegin);
+			r.annotate("main", RegionKind::Contiguous, middle + 1, last + 1, 1, -1, "Weave right run", mergeBegin);
 		}
 
+		static void weaveMergeSort(Recorder& r)
+		{
+			const std::size_t count = r.state.slots.size();
+			for (const char* key : { "weave_recursive_merges", "weave_interleave_swaps", "weave_insertion_comparisons",
+				"weave_insertion_swaps", "weave_base_comparisons", "weave_base_swaps" }) r.declareMetric(key);
+			if (count > 1) weaveMergeRange(r, 0, count - 1);
+		}
+
+		}
+
+		void weaveMergeSortStrategy(Recorder& r) { weaveMergeSort(r); }
 		void ectaStrategy(Recorder& r) { ectaSortInternal(r); }
 		void mergeSortStrategy(Recorder& r) { mergeSort(r); }
 		void binaryMergeStrategy(Recorder& r) { binaryMergeSort(r); }

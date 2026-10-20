@@ -118,6 +118,7 @@ namespace sortinglogic
 		void pdqBranchedStrategy(detail::Recorder& recorder);
 		void pdqBranchlessStrategy(detail::Recorder& recorder);
 		void mergeSortStrategy(detail::Recorder& recorder);
+		void weaveMergeSortStrategy(detail::Recorder& recorder);
 		void pdMergeSortStrategy(detail::Recorder& recorder);
 		void binaryMergeStrategy(detail::Recorder& recorder);
 		void iterativeTopDownMergeStrategy(detail::Recorder& recorder);
