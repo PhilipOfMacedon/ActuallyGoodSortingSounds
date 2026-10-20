@@ -1095,3 +1095,19 @@ Verification:
 - `git diff --check` passed.
 
 Next: continue extracting cohesive recorder-only algorithm families from `SortingLogic.cpp`, first checking helper dependencies and existing focused tests so shared kernels move together rather than being copied into new silos.
+
+## 2026-10-20 — extract pancake strategy family
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved Pancake Sort, ArrayV Burnt Pancake, Canonical Burnt Pancake, Pancake Insertion, and their shared flip/search helpers into `PancakeStrategies.cpp`.
+- Routed the four stable algorithm IDs through direct strategy builders and removed their fallback-switch cases. Recorder operation order, phase labels, orientation mutations, annotations, and catalog metadata were retained.
+- Added a focused regression command for the pancake family covering empty, singleton, duplicate, all-equal, sorted, reversed, and randomized inputs in both directions; burnt variants also verify upright orientation and exact rewind.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86 Debug/Release and x64 Debug/Release.
+- Focused Pancake family tests passed 7,087 checks; pinned catalog coverage passed 1,741 checks; SortingLogic core contracts passed 39,535 checks. Each reported 0 failures.
+- `git diff --check` passed.
+
+Next: continue removing cohesive algorithm families from the central implementation file; inspect shared helper ownership before moving the remaining exchange and heap kernels.

@@ -644,6 +644,24 @@ namespace
 			}
 	}
 
+	void testPancakeStrategyFamily()
+	{
+		using namespace sortinglogic;
+		const SortAlgorithm algorithms[] = { SortAlgorithm::Pancake, SortAlgorithm::ArrayvBurntPancake,
+			SortAlgorithm::CanonicalBurntPancake, SortAlgorithm::ArrayvPancakeInsertion };
+		const std::vector<std::vector<float> > cases = {
+			{}, { 0.5f }, { 0.4f, 0.2f, 0.4f, 0.2f }, { 0.3f, 0.3f, 0.3f, 0.3f },
+			{ 0.1f, 0.2f, 0.3f, 0.4f }, { 0.5f, 0.4f, 0.3f, 0.2f }, { 0.6f, 0.1f, 0.8f, 0.2f, 0.7f, 0.3f }
+		};
+		for (std::size_t algorithm = 0; algorithm < sizeof(algorithms) / sizeof(algorithms[0]); ++algorithm)
+			for (std::size_t input = 0; input < cases.size(); ++input)
+				for (int direction = 0; direction < 2; ++direction)
+					verifyAlgorithmCase(std::string(algorithmDisplayName(algorithms[algorithm])) + " pancake case " + std::to_string(input),
+						floats(cases[input]), InputProfile::NormalizedFloat, algorithms[algorithm],
+						direction == 0 ? SortDirection::Ascending : SortDirection::Descending);
+		testBurntPancakeOrientation();
+	}
+
 	void testSortingNetworkSchedules()
 	{
 		using namespace sortinglogic;
@@ -5149,6 +5167,13 @@ int main(int argc, char* argv[])
 		if (argc > 1 && std::string(argv[1]) == "--catalog-coverage-only")
 		{
 			std::cout << "Pinned ArrayV catalog coverage: " << checks << " checks, " << failures << " failures.\n";
+			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+		if (argc > 1 && std::string(argv[1]) == "--pancake-family-only")
+		{
+			stage = "testPancakeStrategyFamily";
+			testPancakeStrategyFamily();
+			std::cout << "Focused Pancake family tests: " << checks << " checks, " << failures << " failures.\n";
 			return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 		if (argc > 1 && std::string(argv[1]) == "--core-contracts-only")
