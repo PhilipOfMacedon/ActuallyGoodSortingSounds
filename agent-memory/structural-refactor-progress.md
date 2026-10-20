@@ -959,4 +959,20 @@ Verification:
 - Release links emit `LNK4020` warnings about type records in static-library PDBs; linking succeeds and the resulting app/test executables pass. Debug-symbol type data remains a separate build-quality issue.
 - `git diff --check` passed; configured LF-to-CRLF notices only.
 
-Next: make the external library root locally overridable without changing the current fallback, then review remaining UI/rendering ownership and measured duplication.
+Follow-up: the next section records the external library root override and its build verification.
+
+## 2026-10-20 — allow local external library roots
+
+Status: implementation and build verification complete.
+
+- Made `ExternalLibsRoot` conditional in `ExternalDependencies.props`. A Visual Studio user property sheet, environment/property injection, or `/p:ExternalLibsRoot=...` can now select the local dependency directory.
+- Kept the existing project-relative `External Libs` directory as the unchanged fallback, so current machines and solutions need no migration.
+
+Verification:
+
+- Built the full solution in x64 Debug/Release and Win32 Debug/Release with `ExternalLibsRoot` explicitly supplied on the MSBuild command line.
+- The supplied path pointed to the current dependency folder and all four configurations succeeded.
+- Release links still report `LNK4020` static-library PDB type-record warnings; executables link successfully. This issue is tracked separately from dependency path resolution.
+- `git diff --check` passed; configured LF-to-CRLF notices only.
+
+Next: review the Release PDB warnings and continue the remaining UI/rendering ownership items with small, behavior-preserving changes.
