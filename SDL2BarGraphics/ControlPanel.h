@@ -56,7 +56,7 @@ public:
 	bool settingsOpen() const { return overlayState_.settingsSurfaceOpen(); }
 	bool textEntryActive() const
 	{
-		return inlineEdit_.active() || appearanceSearchFocused_ ||
+		return inlineEdit_.active() || appearanceEditorView_.searchFocused() ||
 			(overlayState_.is(UiOverlayId::AlgorithmBrowser) && algorithmBrowser_.searchFocused);
 	}
 	bool modalUiOpen() const { return overlayState_.modalOpen(); }
@@ -90,7 +90,6 @@ private:
 	std::string displayedSaveStatus_;
 	UiRect headerBounds_;
 	UiRect gearBounds_;
-	bool appearanceSearchFocused_;
 	bool drawingAppearanceEditor_;
 	UiRect chartViewport_;
 	int width_;

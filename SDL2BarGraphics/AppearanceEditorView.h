@@ -63,6 +63,12 @@ public:
 	bool beginInlineValueEdit(AppearanceInlineEditField field, std::string& initialText);
 	void showInlineValueEdit(AppearanceInlineEditField field, const std::string& text);
 	bool commitInlineValueEdit(AppearanceInlineEditField field, bool parsedSuccessfully, double value);
+	bool searchFocused() const { return searchFocused_; }
+	void focusSearch() { searchFocused_ = true; }
+	void blurSearch() { searchFocused_ = false; }
+	void appendSearchText(const std::string& text) { session_.model().appendSearch(text); }
+	void eraseSearchCharacter() { session_.model().eraseSearchCharacter(); }
+	void clearSearch() { session_.model().clearSearch(); }
 	void synchronizeControls(const AppearanceFontFamilyProvider& fontFamilies,
 		const AppearanceFontStyleProvider& fontStyles);
 	AppearanceEditorActionResult handleAction(const UiAction& action,
@@ -86,4 +92,5 @@ private:
 	AppearanceEditorSession session_;
 	AppearanceEditorLayoutResult layout_;
 	std::string description_;
+	bool searchFocused_;
 };

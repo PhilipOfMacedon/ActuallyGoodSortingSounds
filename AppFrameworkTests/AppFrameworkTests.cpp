@@ -1622,6 +1622,30 @@ namespace
 			"appearance view retains modal pointer capture and outside-click dismissal");
 	}
 
+	void testAppearanceEditorViewOwnsSearchFocus()
+	{
+		UiAppearancePreferences initial;
+		AppearanceEditorView view(std::vector<std::string>{ "Current", "Flat VGA DOS", "Classic Windows 95" },
+			std::vector<std::string>{ "Cyan", "Amber", "Monochrome", "Light" }, initial, 0);
+		check(!view.searchFocused(), "appearance search starts without keyboard focus");
+
+		view.focusSearch();
+		view.appendSearchText("layout tokens");
+		check(view.searchFocused() && view.session().model().search() == "layout tokens",
+			"appearance view owns search focus and forwards text to its token model");
+		view.eraseSearchCharacter();
+		check(view.session().model().search() == "layout token",
+			"appearance view owns search backspace behavior");
+		view.clearSearch();
+		check(view.searchFocused() && view.session().model().search().empty(),
+			"clearing appearance search preserves its focused text-entry state");
+		view.blurSearch();
+		check(!view.searchFocused(), "appearance view releases search focus independently of SDL text input");
+		view.focusSearch();
+		view.begin(initial);
+		check(!view.searchFocused(), "starting an appearance edit session resets transient search focus");
+	}
+
 	void testAppearanceEditorViewSynchronizesControls()
 	{
 		UiAppearancePreferences initial;
@@ -4347,6 +4371,7 @@ int main(int argc, char* argv[])
 	testLayoutAndWidgets();
 	testAppearanceEditorLayout();
 	testAppearanceEditorViewComposition();
+	testAppearanceEditorViewOwnsSearchFocus();
 	testAppearanceEditorViewSynchronizesControls();
 	testAppearanceEditorViewActions();
 	testAlgorithmProfileView();

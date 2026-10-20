@@ -27,7 +27,7 @@ namespace
 AppearanceEditorView::AppearanceEditorView(const std::vector<std::string>& presetNames,
 	const std::vector<std::string>& paletteNames, const UiAppearancePreferences& initial,
 	int initialPaletteIndex)
-	: controls_(), session_(), layout_(), description_()
+	: controls_(), session_(), layout_(), description_(), searchFocused_(false)
 {
 	controls_.addComboBox("appearance_preset", presetNames, static_cast<int>(initial.activePreset));
 	controls_.addComboBox("appearance_palette", paletteNames, initialPaletteIndex);
@@ -61,6 +61,7 @@ AppearanceEditorView::AppearanceEditorView(const std::vector<std::string>& prese
 void AppearanceEditorView::begin(const UiAppearancePreferences& current)
 {
 	session_.begin(current);
+	searchFocused_ = false;
 	controls_.find("appearance_preset")->setSelectedIndex(static_cast<int>(current.activePreset));
 	description_.clear();
 }

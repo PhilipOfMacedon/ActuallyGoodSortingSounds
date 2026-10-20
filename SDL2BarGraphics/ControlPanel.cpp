@@ -285,7 +285,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	audioDeviceStatus_(new TextLabel("Audio device is not initialized.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	displayedSaveStatus_(),
 	headerBounds_(), gearBounds_(),
-	appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
+	drawingAppearanceEditor_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false),
 	inlineEdit_()
 {
@@ -296,7 +296,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 
 ControlPanel::~ControlPanel()
 {
-	if (inlineEdit_.active() || algorithmBrowserOpen() || appearanceSearchFocused_) SDL_StopTextInput();
+	if (inlineEdit_.active() || algorithmBrowserOpen() || appearanceEditorView_.searchFocused()) SDL_StopTextInput();
 }
 
 bool ControlPanel::isReady() const
@@ -514,7 +514,7 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 
 bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 {
-	if (!appearanceEditorOpen() && !algorithmBrowserOpen() && !appearanceSearchFocused_ && !inlineEdit_.active() &&
+	if (!appearanceEditorOpen() && !algorithmBrowserOpen() && !appearanceEditorView_.searchFocused() && !inlineEdit_.active() &&
 		event.type == SDL_KEYDOWN && !event.key.repeat &&
 		event.key.keysym.sym == SDLK_F12 && (event.key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT)) == (KMOD_CTRL | KMOD_SHIFT))
 	{
@@ -1463,7 +1463,6 @@ void ControlPanel::openAppearanceEditor()
 	if (!overlayState_.openAppearanceEditor()) return;
 	appearanceEditorView_.begin(settings_.appearance);
 	settingsPanelView_.handleNavigation(UiAction::ViewCommand::ShowAppearanceSettings);
-	appearanceSearchFocused_ = false;
 	mainUi_.closeCombo();
 	settingsPanelView_.controls().closeCombo();
 	appearanceEditorView_.controls().closeCombo();
@@ -1475,9 +1474,9 @@ void ControlPanel::closeAppearanceEditor(bool restore)
 {
 	if (!appearanceEditorOpen()) return;
 	if (inlineEdit_.active()) cancelInlineEdit();
-	if (appearanceSearchFocused_)
+	if (appearanceEditorView_.searchFocused())
 	{
-		appearanceSearchFocused_ = false;
+		appearanceEditorView_.blurSearch();
 		SDL_StopTextInput();
 	}
 	if (restore)
@@ -1580,7 +1579,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
 	{
 		cancelInlineEdit();
-		appearanceSearchFocused_ = false;
+		appearanceEditorView_.blurSearch();
 		SDL_StopTextInput();
 		UiAction lost;
 		appearanceEditorView_.controls().handleEvent(UiInputEvent(UiInputType::FocusLost), lost);
@@ -1615,11 +1614,11 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 			return true;
 		}
 	}
-	if (appearanceSearchFocused_)
+	if (appearanceEditorView_.searchFocused())
 	{
 		if (event.type == SDL_TEXTINPUT)
 		{
-			appearanceEditorView_.session().model().appendSearch(event.text.text);
+			appearanceEditorView_.appendSearchText(event.text.text);
 			synchronizeAppearanceEditorControls();
 			return true;
 		}
@@ -1635,10 +1634,10 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 				closeAppearanceEditor(true); return true;
 			}
 			if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)
-			{ appearanceSearchFocused_ = false; SDL_StopTextInput(); return true; }
+			{ appearanceEditorView_.blurSearch(); SDL_StopTextInput(); return true; }
 			if (event.key.keysym.sym == SDLK_TAB)
 			{
-				appearanceSearchFocused_ = false; SDL_StopTextInput();
+				appearanceEditorView_.blurSearch(); SDL_StopTextInput();
 				UiAction navigation;
 				appearanceEditorView_.controls().handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Tab,
 					(event.key.keysym.mod & KMOD_SHIFT) != 0), navigation);
@@ -1646,18 +1645,18 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 			}
 			if (event.key.keysym.sym == SDLK_BACKSPACE)
 			{
-				appearanceEditorView_.session().model().eraseSearchCharacter();
+				appearanceEditorView_.eraseSearchCharacter();
 				synchronizeAppearanceEditorControls(); return true;
 			}
 			if (event.key.keysym.sym == SDLK_a && (event.key.keysym.mod & KMOD_CTRL) != 0)
-			{ appearanceEditorView_.session().model().clearSearch(); synchronizeAppearanceEditorControls(); return true; }
+			{ appearanceEditorView_.clearSearch(); synchronizeAppearanceEditorControls(); return true; }
 			return true;
 		}
 	}
-	if (appearanceSearchFocused_ && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+	if (appearanceEditorView_.searchFocused() && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
 		!inRect(appearanceEditorView_.controls().find("appearance_search")->bounds(), event.button.x, event.button.y))
 	{
-		appearanceSearchFocused_ = false;
+		appearanceEditorView_.blurSearch();
 		SDL_StopTextInput();
 	}
 	if (inlineEdit_.active() && inlineEdit_.isAppearanceEdit() && event.type == SDL_MOUSEBUTTONDOWN &&
@@ -1680,7 +1679,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 	{
 		if (uiAction.event.controlId == "appearance_search" && uiAction.event.kind == UiEventKind::Activated)
 		{
-			appearanceSearchFocused_ = true;
+			appearanceEditorView_.focusSearch();
 			SDL_StartTextInput();
 		}
 		else if (uiAction.event.kind != UiEventKind::None)

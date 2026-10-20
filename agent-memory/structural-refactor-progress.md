@@ -1765,3 +1765,11 @@ Added an isolated Release profile for settings synchronization. One pre-change r
 The x64 Debug and Release solution builds passed, as did `AppFrameworkTests` in both configurations. `git diff --check` passed. No sorting trace, audio, or settings-file format behavior changed. The smoke window remained closed; this was verified headlessly.
 
 Next: continue extracting cohesive `ControlPanel` responsibilities and evaluate the remaining renderer/text and application boundaries against measurements before adding caches. Keep the structural refactor goal active.
+
+## 2026-10-20 — move appearance token search state into its view
+
+`AppearanceEditorView` now owns token-search focus and exposes search append, backspace, and clear operations through its view API. `ControlPanel` no longer stores a duplicate appearance-search focus flag or reaches through the view into `AppearanceEditorModel` for text operations; it keeps SDL text-input start/stop and event translation at the platform boundary. Opening a new appearance edit session resets this transient focus state.
+
+Added headless checks for initial focus, search text updates, deletion, clearing, blur, and session reset. The full x64 Debug and Release solution builds passed, as did `AppFrameworkTests` in both configurations. `git diff --check` passed. This does not change search behavior, settings data, renderer output, sorting, or audio. No GUI smoke run was needed for this ownership-only change.
+
+Next: continue the UI boundary audit at the shared inline editor and remaining `ControlPanel` composition responsibilities, then continue the settings/playback and measured renderer boundaries. Keep the structural refactor goal active.
