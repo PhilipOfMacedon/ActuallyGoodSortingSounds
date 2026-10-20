@@ -19,6 +19,11 @@ namespace sortinglogic
 		void cycleSort(detail::Recorder& recorder);
 		void doubleSelection(detail::Recorder& recorder);
 		void gnome(detail::Recorder& recorder);
+		void shell(detail::Recorder& recorder);
+		void linearDoubleInsertion(detail::Recorder& recorder);
+		void binaryDoubleInsertion(detail::Recorder& recorder);
+		void recursiveShell(detail::Recorder& recorder);
+		void shellSortParallel(detail::Recorder& recorder);
 		void insertion(detail::Recorder& recorder);
 		void binaryInsertion(detail::Recorder& recorder);
 		void binaryInsertionRange(detail::Recorder& recorder, std::size_t first, std::size_t end);

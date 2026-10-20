@@ -1626,3 +1626,11 @@ Moved Stooge, Buffered/Optimized/Studio/Quad Stooge, Slow, Circloid, Silly, Snuf
 Added plain Stooge and Circloid to the existing family cases and introduced a focused command covering the recursive novelty tests plus sorting-network schedules for Complete Graph. x64 Debug and Release solution builds passed; both focused suites passed with 33,979 checks and zero failures. `git diff --check` passed.
 
 Next: continue extracting coordinator-owned algorithms and then reassess the remaining implementation switch, catalog, and request builder boundaries.
+
+## 2026-10-20 — extract insertion and Shell strategy family
+
+Moved Shell Sort, linear and binary Double Insertion, parallel Shell, and recursive Shell implementations into `GapInsertionStrategies.cpp`. The gap traversal, comparison, mutation, annotation, phase, and metric recording bodies were transferred without algorithm changes. Their request builders now bind to named strategy functions, while the old coordinator fallback cases are removed. The shared `doubleInsertion` implementation and its gap helpers are file-local.
+
+Added focused cursor-reconstruction coverage for Shell and recursive Shell over boundary, duplicate, sorted, reversed, and mixed inputs in both directions; the existing double-insertion and parallel-Shell suites run in the same focused command. x64 Debug and Release solution builds passed. The focused suite passed in both configurations with 73,700 checks and zero failures. `git diff --check` passed. `SortingLogic.cpp` is now 4371 lines; this is an ownership refactor and makes no runtime-performance claim.
+
+Next: continue moving the remaining merge and hybrid strategies behind the strategy interface, then reassess the residual coordinator dispatch and builder duplication.

@@ -61,6 +61,7 @@
     <ClCompile Include="RunBasedStrategies.cpp" />
     <ClCompile Include="StochasticStrategies.cpp" />
     <ClCompile Include="RecursiveNoveltyStrategies.cpp" />
+    <ClCompile Include="GapInsertionStrategies.cpp" />
     <ClCompile Include="PartitionStrategies.cpp" />
     <ClCompile Include="StacklessPartitionStrategies.cpp" />
     <ClCompile Include="PartitionTraceUtilities.cpp" />
