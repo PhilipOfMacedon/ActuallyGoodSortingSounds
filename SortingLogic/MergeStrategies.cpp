@@ -50,8 +50,63 @@ namespace sortinglogic
 					if (width > n / 2) break;
 				}
 			}
+
+			void binaryMergeSort(Recorder& r)
+			{
+				const std::size_t n = r.state.slots.size();
+				if (n < 2) return;
+				std::function<void(std::size_t, std::size_t, std::size_t)> sortRange;
+				sortRange = [&r, &sortRange](std::size_t first, std::size_t end, std::size_t depth)
+				{
+					const std::size_t length = end - first;
+					if (length < 2) return;
+					if (length < 64)
+					{
+						strategies::binaryInsertionRange(r, first, end);
+						r.addMetric("binary_insertion_runs");
+						return;
+					}
+					const std::size_t middle = first + length / 2;
+					sortRange(first, middle, depth + 1);
+					sortRange(middle, end, depth + 1);
+					detail::traceMergeRange(r, first, middle, end);
+					r.addMetric("merged_ranges");
+					r.setMetric("maximum_merge_depth", std::max<std::uint64_t>(
+						r.state.metrics.algorithm["maximum_merge_depth"], static_cast<std::uint64_t>(depth)));
+				};
+				sortRange(0, n, 1);
+			}
+
+			void iterativeTopDownMergeSort(Recorder& r)
+			{
+				const std::size_t count = r.state.slots.size();
+				if (count < 2) return;
+				r.declareMetric("merge_passes");
+				r.resizeAuxiliary("merge", count);
+
+				std::size_t subarrayCount = 1;
+				while (subarrayCount < count) subarrayCount <<= 1;
+				while (subarrayCount > 1)
+				{
+					const int phase = r.beginPhase("Iterative top-down merge layer");
+					for (std::size_t i = 0; i < subarrayCount; i += 2)
+					{
+						r.chargeWork();
+						const std::size_t first = count * i / subarrayCount;
+						const std::size_t middle = count * (i + 1) / subarrayCount;
+						const std::size_t last = count * (std::min)(i + 2, subarrayCount) / subarrayCount;
+						if (first < middle && middle < last)
+							detail::traceMergeRange(r, first, middle, last);
+					}
+					r.endPhase(phase, "Iterative top-down merge layer");
+					r.addMetric("merge_passes");
+					subarrayCount >>= 1;
+				}
+			}
 		}
 
 		void mergeSortStrategy(Recorder& r) { mergeSort(r); }
+		void binaryMergeStrategy(Recorder& r) { binaryMergeSort(r); }
+		void iterativeTopDownMergeStrategy(Recorder& r) { iterativeTopDownMergeSort(r); }
 	}
 }

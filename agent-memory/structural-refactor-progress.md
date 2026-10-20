@@ -1253,3 +1253,19 @@ Verification:
 - `git diff --check` passed. `SortingLogic.cpp` is now 8,085 physical lines, down 66 lines from the preceding partition-kernel slice. This is a source ownership change, not a runtime speed claim.
 
 Next: continue extracting cohesive merge implementations and their shared buffer/rotation kernels, then resume the configuration and view-ownership items in the audit.
+
+## 2026-10-20 — extract Binary and Iterative Top-down Merge strategies
+
+Status: implementation and focused verification complete; ready for review.
+
+- Moved Binary Merge Sort and Iterative Top-down Merge Sort into `SortingLogic/MergeStrategies.cpp` and registered both through direct strategy builders.
+- Binary Merge continues to call the shared Binary Insertion range strategy and `detail::traceMergeRange`; Iterative Top-down Merge retains its proportional subranges, merge-layer phases, work charges, and metrics.
+- Removed both implementations from the central fallback switch. Stable IDs, catalog descriptors, workspace usage, event order, and rewind behavior are unchanged.
+
+Verification:
+
+- Full Visual Studio solution builds passed for x86/x64 Debug and Release.
+- In each configuration: core contracts passed 39,535 checks; merge-family tests passed 44,531; Iterative Top-down Merge passed 228,782; pinned catalog coverage passed 1,741. All reported 0 failures.
+- `git diff --check` passed. This is a source ownership change, not a runtime speed claim.
+
+Next: extract the in-place merge strategy, then continue through merge kernels with dedicated existing replay suites.
