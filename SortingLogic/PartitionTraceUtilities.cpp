@@ -2,11 +2,39 @@
 #include "TraceRecorder.h"
 
 #include <cstddef>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace sortinglogic
 {
 	namespace detail
 	{
+		std::pair<SortItem, std::size_t> sampledMedian(Recorder& r,
+			const std::vector<std::size_t>& positions, const char* metricPrefix)
+		{
+			std::vector<std::pair<SortItem, std::size_t> > samples;
+			for (std::size_t i = 0; i < positions.size(); ++i)
+				samples.push_back(std::make_pair(r.at(positions[i]), positions[i]));
+			for (std::size_t i = 1; i < samples.size(); ++i)
+			{
+				const std::pair<SortItem, std::size_t> value = samples[i];
+				std::size_t j = i;
+				while (j > 0)
+				{
+					r.chargeWork();
+					r.compare(value.first, samples[j - 1].first, value.second, samples[j - 1].second,
+						"main", "main", SemanticRole::Pivot, SemanticRole::ComparedItem);
+					r.addMetric(std::string(metricPrefix) + "_pivot_comparisons");
+					if (compareItems(value.first, samples[j - 1].first, r.trace.direction) != ComparisonResult::Less) break;
+					samples[j] = samples[j - 1];
+					--j;
+				}
+				samples[j] = value;
+			}
+			return samples[samples.size() / 2];
+		}
+
 		std::size_t traceMedianOfThree(Recorder& r, std::size_t first, std::size_t middle, std::size_t last)
 		{
 			SortItem a = r.at(first), b = r.at(middle), c = r.at(last);

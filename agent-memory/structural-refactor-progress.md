@@ -1655,3 +1655,10 @@ Moved the Laziest and Lazierest in-place stable merge implementations into Merge
 The x64 Debug and Release solution builds passed after adding the header. Focused suites passed in both configurations: Laziest (5,497 checks) and Lazierest (305,466 checks), all with zero failures. git diff --check passed. SortingLogic.cpp is now 3891 lines; no runtime-performance claim is made.
 
 Next: extract the shared run/merge helper into the merge utility boundary and move Remi, Chalice, and Fifth Merge behind the merge strategy interface.
+## 2026-10-20 — isolate shared merge run logic and move Remi, Chalice, and Fifth Merge
+
+Moved Remi Sort, Chalice Sort, Fifth Merge Sort, and their shared stable binary-run helper into MergeStrategies.cpp; their builders now bind directly to named strategies. Chalice's sampled-pivot selector was also used by Flan and Flux, so it now lives in PartitionTraceUtilities and both remaining callers use the shared detail interface. This keeps merge-specific run construction with the merge family while partition pivot sampling has a reusable owner.
+
+The x64 Debug and Release solution builds passed. Focused tests passed in both configurations: Remi (3,789 checks), the merge roster tail including Chalice (17,048), and Fifth/Quad Merge (189,394), all with zero failures. git diff --check passed. SortingLogic.cpp is now 3720 lines. No runtime-performance change is claimed.
+
+Next: continue extracting merge and hybrid implementations, prioritizing coherent groups with existing shared utilities and focused replay suites.

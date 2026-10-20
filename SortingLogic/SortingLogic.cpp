@@ -101,77 +101,6 @@ namespace sortinglogic
 			r.resizeCounters(consumedLane, 0);
 		}
 
-		void stableBinaryMergeSortRange(Recorder& r, std::size_t first, std::size_t last, const std::string& metricPrefix)
-		{
-			for (std::size_t start = first; start < last; start += 8)
-			{
-				strategies::binaryInsertionRange(r, start, (std::min)(last, start + 8));
-				r.addMetric(metricPrefix + "_insertion_runs");
-			}
-			for (std::size_t width = 8; width < last - first;)
-			{
-				const int phase = r.beginPhase(metricPrefix + " binary merge pass");
-				for (std::size_t start = first; start < last;)
-				{
-					const std::size_t middle = (std::min)(last, start + width);
-					const std::size_t end = (std::min)(last, middle + width);
-					if (middle < end) detail::traceMergeRange(r, start, middle, end);
-					start = end;
-				}
-				r.addMetric(metricPrefix + "_binary_merge_passes");
-				r.endPhase(phase, metricPrefix + " binary merge pass");
-				if (width > (last - first) / 2) break;
-				width *= 2;
-			}
-		}
-
-		void remiSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			for (const char* key : { "remi_branching_factor", "remi_run_length", "remi_initial_runs", "remi_merge_passes",
-				"remi_merges", "remi_comparisons", "remi_auxiliary_writes", "remi_insertion_runs", "remi_binary_merge_passes" }) r.declareMetric(key);
-			if (count < 2) return;
-
-			std::size_t branchingFactor = 1;
-			while (branchingFactor * branchingFactor * branchingFactor < count) ++branchingFactor;
-			const std::size_t runLength = branchingFactor * branchingFactor;
-			r.setMetric("remi_branching_factor", static_cast<std::uint64_t>(branchingFactor));
-			r.setMetric("remi_run_length", static_cast<std::uint64_t>(runLength));
-			r.resizeAuxiliary("remi_buffer", count);
-			std::size_t runCount = 0;
-			for (std::size_t first = 0; first < count; first += runLength)
-			{
-				stableBinaryMergeSortRange(r, first, (std::min)(count, first + runLength), "remi");
-				r.addMetric("remi_initial_runs");
-				++runCount;
-			}
-
-			std::size_t width = runLength;
-			while (width < count && runCount > 1)
-			{
-				const std::size_t groupSpan = width * branchingFactor;
-				const int phase = r.beginPhase("Remi " + std::to_string(branchingFactor) + "-way merge level width " + std::to_string(width));
-				std::size_t nextRunCount = 0;
-				for (std::size_t first = 0; first < count; first += groupSpan)
-				{
-					std::vector<std::size_t> boundaries;
-					boundaries.push_back(first);
-					for (std::size_t boundary = first + width; boundary < (std::min)(count, first + groupSpan); boundary += width)
-						boundaries.push_back(boundary);
-					boundaries.push_back((std::min)(count, first + groupSpan));
-					if (boundaries.size() > 2)
-						detail::traceStableKWayMerge(r, boundaries, "remi_buffer", "remi", "Remi run-heap merge group");
-					++nextRunCount;
-				}
-				r.endPhase(phase, "Remi multiway merge level");
-				r.addMetric("remi_merge_passes");
-				runCount = nextRunCount;
-				if (width > count / branchingFactor) break;
-				width *= branchingFactor;
-			}
-			r.resizeAuxiliary("remi_buffer", 0);
-		}
-
 		void recursiveRotationMerge(Recorder& r, std::size_t first, std::size_t middle, std::size_t last,
 			const char* metricPrefix)
 		{
@@ -504,86 +433,6 @@ namespace sortinglogic
 			r.resizeAuxiliary("kota_block_buffer", 0);
 		}
 
-		void chaliceSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			for (const char* key : { "chalice_distinct_keys", "chalice_blocks", "chalice_merge_levels", "chalice_merges",
-				"chalice_comparisons", "chalice_key_probes", "chalice_auxiliary_writes", "chalice_run_cursors",
-				"chalice_insertion_runs", "chalice_binary_merge_passes" }) r.declareMetric(key);
-			if (count < 2) return;
-			const std::size_t root = (std::max)(std::size_t(2), static_cast<std::size_t>(std::sqrt(static_cast<double>(count))));
-			r.resizeAuxiliary("chalice_keys", (std::min)(root, count));
-			for (std::size_t i = 0; i < count && r.state.auxiliaryItems["chalice_keys"].size() > 0; ++i)
-			{
-				bool distinct = true;
-				for (std::size_t k = 0; k < r.state.auxiliaryItems["chalice_keys"].size(); ++k)
-				{
-					if (r.state.auxiliaryItems["chalice_keys"][k].occupied)
-					{
-						const SortItem candidate = r.at(i), key = r.auxiliaryAt("chalice_keys", k);
-						r.compare(candidate, key, i, k, "main", "chalice_keys", SemanticRole::ProbedItem, SemanticRole::AuxiliaryCopy);
-						r.addMetric("chalice_comparisons"); r.addMetric("chalice_key_probes");
-						if (compareItems(candidate, key, r.trace.direction) == ComparisonResult::Equal) { distinct = false; break; }
-					}
-				}
-				if (!distinct) continue;
-				for (std::size_t k = 0; k < r.state.auxiliaryItems["chalice_keys"].size(); ++k)
-					if (!r.state.auxiliaryItems["chalice_keys"][k].occupied)
-						{ r.writeAuxiliary("chalice_keys", k, r.at(i)); r.addMetric("chalice_distinct_keys"); r.addMetric("chalice_auxiliary_writes"); break; }
-			}
-			r.resizeAuxiliary("chalice_keys", 0);
-			r.resizeAuxiliary("chalice_buffer", count);
-			const std::size_t runLength = root * root;
-			for (std::size_t first = 0; first < count; first += runLength)
-			{
-				stableBinaryMergeSortRange(r, first, (std::min)(count, first + runLength), "chalice");
-				r.addMetric("chalice_blocks");
-			}
-			std::size_t width = runLength;
-			while (width < count)
-			{
-				const int phase = r.beginPhase("Chalice key-block merge width " + std::to_string(width));
-				std::vector<std::size_t> next(1, 0);
-				for (std::size_t first = 0; first < count; first += width * 2)
-				{
-					const std::size_t middle = (std::min)(count, first + width), last = (std::min)(count, middle + width);
-					if (middle < last)
-					{
-						std::vector<std::size_t> pairBoundaries; pairBoundaries.push_back(first); pairBoundaries.push_back(middle); pairBoundaries.push_back(last);
-						detail::traceStableKWayMerge(r, pairBoundaries, "chalice_buffer", "chalice", "Chalice block merge");
-					}
-					next.push_back(last);
-				}
-				r.addMetric("chalice_merge_levels"); r.endPhase(phase, "Chalice block merge level");
-				if (width > count / 2) break;
-				width *= 2;
-			}
-			r.resizeAuxiliary("chalice_buffer", 0);
-		}
-
-		std::pair<SortItem, std::size_t> sampledMedian(Recorder& r, const std::vector<std::size_t>& positions,
-			const char* metricPrefix)
-		{
-			std::vector<std::pair<SortItem, std::size_t> > samples;
-			for (std::size_t i = 0; i < positions.size(); ++i) samples.push_back(std::make_pair(r.at(positions[i]), positions[i]));
-			for (std::size_t i = 1; i < samples.size(); ++i)
-			{
-				const std::pair<SortItem, std::size_t> value = samples[i];
-				std::size_t j = i;
-				while (j > 0)
-				{
-					r.chargeWork();
-					r.compare(value.first, samples[j - 1].first, value.second, samples[j - 1].second,
-						"main", "main", SemanticRole::Pivot, SemanticRole::ComparedItem);
-					r.addMetric(std::string(metricPrefix) + "_pivot_comparisons");
-					if (compareItems(value.first, samples[j - 1].first, r.trace.direction) != ComparisonResult::Less) break;
-					samples[j] = samples[j - 1]; --j;
-				}
-				samples[j] = value;
-			}
-			return samples[samples.size() / 2];
-		}
-
 		void flanSort(Recorder& r)
 		{
 			const std::size_t count = r.state.slots.size();
@@ -604,7 +453,7 @@ namespace sortinglogic
 				const std::size_t n = range.last - range.first;
 				std::vector<std::size_t> positions;
 				for (std::size_t i = 0; i < 9; ++i) positions.push_back(range.first + ((n - 1) * i) / 8);
-				const SortItem pivot = sampledMedian(r, positions, "flan").first;
+				const SortItem pivot = detail::sampledMedian(r, positions, "flan").first;
 				std::size_t less = range.first, scan = range.first, greater = range.last;
 				const std::size_t pivotIndex = positions[4];
 				const std::size_t partitionBegin = r.trace.events.size();
@@ -675,7 +524,7 @@ namespace sortinglogic
 				const std::size_t n = range.last - range.first;
 				const std::vector<std::size_t> positions = { range.first, range.first + n / 4, range.first + n / 2,
 					range.first + (3 * n) / 4, range.last - 1 };
-				const SortItem pivot = sampledMedian(r, positions, "flux").first;
+				const SortItem pivot = detail::sampledMedian(r, positions, "flux").first;
 				const std::size_t pivotIndex = positions[2];
 				std::size_t less = range.first, scan = range.first, greater = range.last;
 				const std::size_t partitionBegin = r.trace.events.size();
@@ -700,30 +549,6 @@ namespace sortinglogic
 				if (left.last - left.first > right.last - right.first) { pending.push_back(left); pending.push_back(right); }
 				else { pending.push_back(right); pending.push_back(left); }
 			}
-		}
-
-		void fifthMergeSort(Recorder& r)
-		{
-			const std::size_t count = r.state.slots.size();
-			for (const char* key : { "fifth_partition_count", "fifth_insertion_runs", "fifth_binary_merge_passes",
-				"fifth_merges", "fifth_comparisons", "fifth_auxiliary_writes" }) r.declareMetric(key);
-			if (count < 2) return;
-			r.resizeAuxiliary("merge", count);
-			const std::size_t fifthLength = count / 5;
-			const std::size_t firstLength = count - fifthLength * 4;
-			std::vector<std::size_t> boundaries;
-			boundaries.push_back(0);
-			boundaries.push_back(firstLength);
-			for (std::size_t part = 1; part <= 4; ++part) boundaries.push_back(firstLength + fifthLength * part);
-			for (std::size_t part = 0; part + 1 < boundaries.size(); ++part)
-			{
-				stableBinaryMergeSortRange(r, boundaries[part], boundaries[part + 1], "fifth");
-				r.addMetric("fifth_partition_count");
-			}
-			r.resizeAuxiliary("merge", 0);
-			r.resizeAuxiliary("fifth_buffer", count);
-			detail::traceStableKWayMerge(r, boundaries, "fifth_buffer", "fifth", "Five-part stable merge");
-			r.resizeAuxiliary("fifth_buffer", 0);
 		}
 
 		void quadMergeSort(Recorder& r)
@@ -2447,15 +2272,15 @@ namespace sortinglogic
 
 
 
-				case SortAlgorithm::ArrayvFifthMerge: fifthMergeSort(recorder); break;
+
 				case SortAlgorithm::ArrayvQuadMerge: quadMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvBufferPartitionMerge: bufferPartitionMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvParallelBlockMerge: parallelBlockMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvOptimizedRotateMerge: optimizedRotateMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvDropMerge: dropMergeSort(recorder); break;
 				case SortAlgorithm::ArrayvMedianMerge: medianMergeSort(recorder); break;
-				case SortAlgorithm::ArrayvRemi: remiSort(recorder); break;
-				case SortAlgorithm::ArrayvChalice: chaliceSort(recorder); break;
+
+
 				case SortAlgorithm::ArrayvFlan: flanSort(recorder); break;
 				case SortAlgorithm::ArrayvFlux: fluxSort(recorder); break;
 				case SortAlgorithm::ArrayvKota: kotaSort(recorder); break;
@@ -2533,7 +2358,7 @@ namespace sortinglogic
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvLazierestRequest, ArrayvLazierest, &strategies::lazierestStableSortStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvLazyStableRequest, ArrayvLazyStable, &strategies::lazyStableSortStrategy)
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvOptimizedLazyStableRequest, ArrayvOptimizedLazyStable, &strategies::optimizedLazyStableSortStrategy)
-		SORT_REQUEST_BUILDER(buildArrayvFifthMergeRequest, ArrayvFifthMerge)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvFifthMergeRequest, ArrayvFifthMerge, &strategies::fifthMergeSortStrategy)
 		SORT_REQUEST_BUILDER(buildArrayvQuadMergeRequest, ArrayvQuadMerge)
 		SORT_REQUEST_BUILDER(buildArrayvBufferPartitionMergeRequest, ArrayvBufferPartitionMerge)
 		SORT_REQUEST_BUILDER(buildArrayvParallelBlockMergeRequest, ArrayvParallelBlockMerge)
@@ -2550,8 +2375,8 @@ namespace sortinglogic
 		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvUnstableGrailRequest, ArrayvUnstableGrail, &strategies::unstableGrailSort)
 		SORT_REQUEST_BUILDER(buildArrayvDropMergeRequest, ArrayvDropMerge)
 		SORT_REQUEST_BUILDER(buildArrayvMedianMergeRequest, ArrayvMedianMerge)
-		SORT_REQUEST_BUILDER(buildArrayvRemiRequest, ArrayvRemi)
-		SORT_REQUEST_BUILDER(buildArrayvChaliceRequest, ArrayvChalice)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvRemiRequest, ArrayvRemi, &strategies::remiSortStrategy)
+		SORT_STRATEGY_REQUEST_BUILDER(buildArrayvChaliceRequest, ArrayvChalice, &strategies::chaliceSortStrategy)
 		SORT_REQUEST_BUILDER(buildArrayvFlanRequest, ArrayvFlan)
 		SORT_REQUEST_BUILDER(buildArrayvFluxRequest, ArrayvFlux)
 		SORT_REQUEST_BUILDER(buildArrayvKotaRequest, ArrayvKota)

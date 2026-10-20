@@ -121,6 +121,9 @@ namespace sortinglogic
 		void weaveMergeSortStrategy(detail::Recorder& recorder);
 		void lazyStableSortStrategy(detail::Recorder& recorder);
 		void laziestStableSortStrategy(detail::Recorder& recorder);
+		void remiSortStrategy(detail::Recorder& recorder);
+		void chaliceSortStrategy(detail::Recorder& recorder);
+		void fifthMergeSortStrategy(detail::Recorder& recorder);
 		void lazierestStableSortStrategy(detail::Recorder& recorder);
 		void optimizedLazyStableSortStrategy(detail::Recorder& recorder);
 		void pdMergeSortStrategy(detail::Recorder& recorder);
