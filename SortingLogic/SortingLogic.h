@@ -565,7 +565,7 @@ namespace sortinglogic
 		std::size_t cursor() const { return cursor_; }
 		SortDirection direction() const { return direction_; }
 		SortAlgorithm algorithm() const { return algorithm_; }
-		InputProfile profile() const { return profile_; }
+		InputProfile profile() const { return inputProfileForDomain(domain_); }
 		InputDomain domain() const { return domain_; }
 		InputPattern pattern() const { return pattern_; }
 		ShellGapSequence shellGapSequence() const { return algorithmConfiguration_.shellGapSequence; }
@@ -590,7 +590,6 @@ namespace sortinglogic
 		float durationSeconds_, elapsedSeconds_;
 		SortDirection direction_;
 		SortAlgorithm algorithm_;
-		InputProfile profile_;
 		InputDomain domain_;
 		InputPattern pattern_;
 		AlgorithmConfiguration algorithmConfiguration_;

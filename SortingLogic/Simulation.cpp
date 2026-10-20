@@ -21,7 +21,7 @@ namespace sortinglogic
 	Simulation::Simulation(std::size_t initialItemCount, std::uint32_t startupSeed, InputProfile profile)
 		: preparedInput_(), currentState_(), trace_(), itemCount_(initialItemCount), cursor_(0), inputSeed_(startupSeed),
 		durationSeconds_(10.0f), elapsedSeconds_(0.0f), direction_(SortDirection::Ascending), algorithm_(SortAlgorithm::Insertion),
-		profile_(profile), domain_(profile == InputProfile::NormalizedFloat ? InputDomain::NormalizedFloats : InputDomain::NonnegativeIntegerKeys),
+		domain_(profile == InputProfile::NormalizedFloat ? InputDomain::NormalizedFloats : InputDomain::NonnegativeIntegerKeys),
 		pattern_(InputPattern::Random), algorithmConfiguration_(),
 		mergeBufferVisualizationEnabled_(true),
 		completionScanEnabled_(false),
@@ -40,7 +40,6 @@ namespace sortinglogic
 	{
 		if (!inputPatternCompatible(domain, pattern)) throw std::invalid_argument("The selected input pattern is incompatible with this data domain.");
 		domain_ = domain;
-		profile_ = inputProfileForDomain(domain);
 		pattern_ = pattern;
 		if (pattern_ == InputPattern::AndrutReference) itemCount_ = 100;
 		prepareItems(BaselineKind::Shuffle, startupSeed);
@@ -250,7 +249,6 @@ namespace sortinglogic
 			return CommandResult(true, status_);
 		}
 		domain_ = nextDomain;
-		profile_ = inputProfileForDomain(nextDomain);
 		if (patternChanged) pattern_ = InputPattern::Random;
 		algorithm_ = algorithm;
 		prepareItems(baselineKind_, baselineKind_ == BaselineKind::Shuffle ? inputSeed_ : 0);
@@ -278,7 +276,6 @@ namespace sortinglogic
 			return CommandResult(false, std::string(inputPatternName(pattern_)) + " is unavailable for " + inputDomainName(domain) + ".");
 		if (domain_ == domain) return CommandResult(true, "Input domain is unchanged.");
 		domain_ = domain;
-		profile_ = inputProfileForDomain(domain);
 		prepareItems(baselineKind_, baselineKind_ == BaselineKind::Shuffle ? inputSeed_ : 0);
 		status_ = canRun() ? std::string("Input domain set to ") + inputDomainName(domain) + "; regenerated from the current seed."
 			: std::string("Input domain set to ") + inputDomainName(domain) + "; selected algorithm does not support this domain.";
@@ -296,7 +293,6 @@ namespace sortinglogic
 				return CommandResult(false, status_);
 			}
 			domain_ = InputDomain::NormalizedFloats;
-			profile_ = InputProfile::NormalizedFloat;
 			itemCount_ = 100;
 		}
 		if (!inputPatternCompatible(domain_, pattern))
@@ -416,7 +412,7 @@ namespace sortinglogic
 		const AlgorithmDescriptor* selected = algorithmDescriptor(algorithm_);
 		request.familyId = selected ? selected->familyId : FamilyId();
 		request.variantId = selected ? selected->variantId : VariantId();
-		request.profile = profile_; request.domain = domain_; request.pattern = pattern_;
+		request.profile = inputProfileForDomain(domain_); request.domain = domain_; request.pattern = pattern_;
 		request.shellGapSequence = algorithmConfiguration_.shellGapSequence;
 		request.mergeWritebackMode = algorithmConfiguration_.mergeWritebackMode;
 		request.mergeExecutionMode = algorithmConfiguration_.mergeExecutionMode;
@@ -591,7 +587,8 @@ namespace sortinglogic
 		result.metrics = currentState_.metrics;
 		rolesAtCursor(result.activeRoles);
 		result.activeRegions.clear();
-		result.direction = direction_; result.algorithm = algorithm_; result.profile = profile_; result.domain = domain_; result.pattern = pattern_;
+		result.direction = direction_; result.algorithm = algorithm_; result.profile = inputProfileForDomain(domain_);
+		result.domain = domain_; result.pattern = pattern_;
 		const AlgorithmDescriptor* selected = algorithmDescriptor(algorithm_);
 		result.familyId = selected ? selected->familyId : FamilyId();
 		result.variantId = selected ? selected->variantId : VariantId();

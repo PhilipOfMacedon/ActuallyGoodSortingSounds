@@ -1731,3 +1731,11 @@ Next: keep reducing configuration duplication at one compatibility seam at a tim
 `Simulation::beginTraceBuild` now copies its owned typed `AlgorithmConfiguration` into the request alongside the existing compatibility fields. `AppController` no longer reaches back into `Simulation` to patch that state after request creation. Added a core contract that selects a non-default Grail buffer mode through the stable option ID and builds directly from the Simulation-produced request, checking both typed configuration and legacy trace projection.
 
 The x64 Debug and Release solution builds passed. `SortingLogicTests --core-contracts-only` passed in both configurations with 39,539 checks and zero failures; `AppFrameworkTests` passed in both configurations. The added trace contract checks that a non-default Grail mode reaches the builder and still produces an ordered result. No settings, UI, audio, trace-order, or playback behavior change is intended.
+
+## 2026-10-20 — derive the legacy profile from the input domain
+
+Removed `Simulation`'s stored `InputProfile` mirror. `InputDomain` is now its only input-domain state; the legacy profile is derived by the getter and at snapshot/request boundaries. The two-field representation remains at settings and request compatibility edges, including the existing migration behavior.
+
+The x64 Debug and Release solution builds passed. `SortingLogicTests --core-contracts-only` passed in both configurations with 39,539 checks and zero failures; `AppFrameworkTests` passed in both configurations. Existing profile/domain compatibility and settings round-trip checks remain green. No behavior or performance change is claimed.
+
+Next: continue reducing the request's legacy profile/config mirrors at explicit adapters, then resume the remaining UI ownership boundaries. Do not remove serialized settings keys or public compatibility fields without a focused migration and call-site audit.
