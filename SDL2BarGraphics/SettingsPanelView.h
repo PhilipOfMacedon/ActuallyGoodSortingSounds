@@ -43,6 +43,7 @@ struct SettingsPanelPalette
 class SettingsPanelView
 {
 public:
+	SettingsPanelView();
 	void initializeControls(const UserPreferences& preferences);
 	void synchronizeControls(const UserPreferences& preferences, const UserPreferences& renderPreferences,
 		const sortinglogic::RenderSnapshot& snapshot, bool setupBusy);
@@ -72,9 +73,19 @@ public:
 		UiPaintContext& paintContext) const;
 
 private:
+	struct AlgorithmOptionBinding
+	{
+		std::string controlId;
+		std::string groupId;
+	};
+
 	UIRoot controls_;
 	SettingsPanelModel model_;
 	std::map<std::string, std::string> captions_;
+	std::map<int, const sortinglogic::AlgorithmDescriptor*> algorithmDescriptorsById_;
+	std::map<int, std::vector<AlgorithmOptionBinding> > algorithmOptionsById_;
+	std::vector<std::string> activeAlgorithmOptionControlIds_;
+	int activeAlgorithmOptionId_;
 	UiRect panelBounds_;
 	UiRect contentBounds_;
 };

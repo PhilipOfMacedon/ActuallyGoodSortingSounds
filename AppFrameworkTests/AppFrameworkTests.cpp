@@ -415,6 +415,61 @@ namespace
 			<< " sink=" << sink << '\n';
 	}
 
+	void runSettingsSynchronizationProfile()
+	{
+		const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
+		const sortinglogic::AlgorithmDescriptor* selected = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
+		if (!selected) throw std::runtime_error("Merge descriptor missing for settings synchronization profile");
+
+		UserPreferences preferences;
+		preferences.simulation.algorithm = static_cast<int>(selected->id);
+		preferences.simulation.familyId = selected->familyId;
+		preferences.simulation.variantId = selected->variantId;
+		sortinglogic::RenderSnapshot snapshot;
+		snapshot.algorithm = selected->id;
+		SettingsPanelView view;
+		view.initializeControls(preferences);
+
+		const std::size_t iterations = 200;
+		for (std::size_t i = 0; i < 50; ++i)
+			view.synchronizeControls(preferences, preferences, snapshot, false);
+		std::vector<double> samples;
+		std::size_t sink = 0;
+		for (std::size_t batch = 0; batch < 9; ++batch)
+		{
+			const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+			for (std::size_t i = 0; i < iterations; ++i)
+			{
+				view.synchronizeControls(preferences, preferences, snapshot, false);
+				const UiWidget* timing = view.controls().find("playback_timing");
+				const UiWidget* option = view.controls().find("algorithm_audio_00");
+				sink += (timing ? static_cast<std::size_t>(timing->selectedIndex() + 1) : 0) +
+					(option ? static_cast<std::size_t>(option->enabled() ? 1 : 0) : 0);
+			}
+			const double elapsed = std::chrono::duration<double, std::micro>(
+				std::chrono::steady_clock::now() - start).count();
+			samples.push_back(elapsed / static_cast<double>(iterations));
+		}
+		std::sort(samples.begin(), samples.end());
+		std::size_t optionGroupCount = 0;
+		for (std::size_t algorithm = 0; algorithm < catalog.size(); ++algorithm)
+		{
+			std::set<std::string> groups;
+			for (std::size_t option = 0; option < catalog[algorithm].supportedOptions.size(); ++option)
+				groups.insert(catalog[algorithm].supportedOptions[option].groupId);
+			optionGroupCount += groups.size();
+		}
+		std::set<std::string> selectedGroups;
+		for (std::size_t option = 0; option < selected->supportedOptions.size(); ++option)
+			selectedGroups.insert(selected->supportedOptions[option].groupId);
+		std::cout << std::fixed << std::setprecision(3)
+			<< "settings-sync-profile descriptors=" << catalog.size()
+			<< " option_groups=" << optionGroupCount
+			<< " selected_groups=" << selectedGroups.size()
+			<< " median_us_per_sync=" << samples[samples.size() / 2]
+			<< " sink=" << sink << '\n';
+	}
+
 	void waitForAudioTimeline(AudioPresentationBridge& bridge, const sortinglogic::Simulation& simulation,
 		const SoundEngine::Parameters& parameters, LatestAudioStateMailbox& mailbox,
 		const SoundEngine::ReconstructedParameters& reconstructed = SoundEngine::ReconstructedParameters(),
@@ -2834,6 +2889,34 @@ namespace
 		check(domain->enabled() && pattern->enabled() && timing->enabled() && mergeBuffer->enabled() &&
 			completionScan->enabled() && mergeOption->enabled(),
 			"settings view restores setup controls when the simulation is no longer busy");
+
+		const sortinglogic::AlgorithmDescriptor* shell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
+		check(shell && !shell->supportedOptions.empty(), "settings synchronization fixture resolves Shell options");
+		if (shell && !shell->supportedOptions.empty())
+		{
+			const std::string groupId = shell->supportedOptions.front().groupId;
+			const std::string shellOptionId = settingsAlgorithmOptionControlId(shell->familyId, shell->variantId, groupId);
+			const UiWidget* shellOption = view.controls().find(shellOptionId);
+			int expectedIndex = 0;
+			for (std::size_t i = 0; i < shell->supportedOptions.size(); ++i)
+				if (groupId == shell->supportedOptions[i].groupId)
+				{
+					preferences.algorithmOptions[algorithmOptionSettingsKey(shell->familyId, shell->variantId, groupId)] =
+						shell->supportedOptions[i].stableId;
+					expectedIndex = 0;
+					for (std::size_t previous = 0; previous < i; ++previous)
+						if (groupId == shell->supportedOptions[previous].groupId) ++expectedIndex;
+				}
+			preferences.simulation.algorithm = static_cast<int>(shell->id);
+			preferences.simulation.familyId = shell->familyId;
+			preferences.simulation.variantId = shell->variantId;
+			snapshot.algorithm = shell->id;
+			view.synchronizeControls(preferences, preferences, snapshot, false);
+			check(shellOption && shellOption->enabled() && shellOption->selectedIndex() == expectedIndex &&
+				shellOption->action().familyId == shell->familyId && shellOption->action().variantId == shell->variantId &&
+				mergeOption && !mergeOption->enabled(),
+				"settings synchronization enables and updates only the selected algorithm options when the algorithm changes");
+		}
 		check(settingsInputPatternEnabled(sortinglogic::InputDomain::NormalizedFloats, merge->id,
 			sortinglogic::InputPattern::AndrutReference) &&
 			!settingsInputPatternEnabled(sortinglogic::InputDomain::NonnegativeIntegerKeys, merge->id,
@@ -4238,6 +4321,15 @@ int main(int argc, char* argv[])
 		catch (const std::exception& error)
 		{
 			std::cerr << "Render cost profile failed: " << error.what() << '\n';
+			return 1;
+		}
+	}
+	if (argc == 2 && std::string(argv[1]) == "--settings-sync-profile")
+	{
+		try { runSettingsSynchronizationProfile(); return 0; }
+		catch (const std::exception& error)
+		{
+			std::cerr << "Settings synchronization profile failed: " << error.what() << '\n';
 			return 1;
 		}
 	}

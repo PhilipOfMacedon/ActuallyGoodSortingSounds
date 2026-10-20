@@ -29,6 +29,12 @@ namespace
 	}
 }
 
+SettingsPanelView::SettingsPanelView()
+	: controls_(), model_(), captions_(), algorithmDescriptorsById_(), algorithmOptionsById_(),
+	  activeAlgorithmOptionControlIds_(), activeAlgorithmOptionId_(-1), panelBounds_(), contentBounds_()
+{
+}
+
 void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 {
 	controls_.addButton("appearance_tab", "Appearance", AppAction(), UiAction::ViewCommand::ShowAppearanceSettings);
@@ -67,9 +73,15 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 	captions_["completion_scan"] = "Completion scan";
 
 	const std::vector<sortinglogic::AlgorithmDescriptor>& algorithms = sortinglogic::algorithmCatalog();
+	algorithmDescriptorsById_.clear();
+	algorithmOptionsById_.clear();
+	activeAlgorithmOptionControlIds_.clear();
+	activeAlgorithmOptionId_ = -1;
 	for (std::size_t algorithmIndex = 0; algorithmIndex < algorithms.size(); ++algorithmIndex)
 	{
 		const sortinglogic::AlgorithmDescriptor& algorithm = algorithms[algorithmIndex];
+		const int algorithmKey = static_cast<int>(algorithm.id);
+		algorithmDescriptorsById_[algorithmKey] = &algorithm;
 		std::set<std::string> groups;
 		for (std::size_t optionIndex = 0; optionIndex < algorithm.supportedOptions.size(); ++optionIndex)
 		{
@@ -89,6 +101,11 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 			const std::string id = settingsAlgorithmOptionControlId(algorithm.familyId, algorithm.variantId, groupId);
 			controls_.addComboBox(id, optionNames, selectedIndex,
 				AppAction(AppActionKind::SetAlgorithmOption, algorithm.familyId, algorithm.variantId, groupId));
+			controls_.setWidgetEnabled(id, false);
+			AlgorithmOptionBinding binding;
+			binding.controlId = id;
+			binding.groupId = groupId;
+			algorithmOptionsById_[algorithmKey].push_back(binding);
 			captions_[id] = settingsAlgorithmOptionCaption(groupId);
 		}
 	}
@@ -170,34 +187,50 @@ void SettingsPanelView::synchronizeControls(const UserPreferences& preferences,
 		!setupBusy && snapshot.algorithm == sortinglogic::SortAlgorithm::Merge);
 	controls_.setWidgetEnabled("completion_scan", !setupBusy);
 
-	const std::vector<sortinglogic::AlgorithmDescriptor>& algorithms = sortinglogic::algorithmCatalog();
-	for (std::size_t algorithmIndex = 0; algorithmIndex < algorithms.size(); ++algorithmIndex)
+	const int algorithmKey = static_cast<int>(snapshot.algorithm);
+	if (activeAlgorithmOptionId_ != algorithmKey)
 	{
-		const sortinglogic::AlgorithmDescriptor& algorithm = algorithms[algorithmIndex];
-		std::set<std::string> groups;
-		for (std::size_t optionIndex = 0; optionIndex < algorithm.supportedOptions.size(); ++optionIndex)
+		for (std::size_t i = 0; i < activeAlgorithmOptionControlIds_.size(); ++i)
+			controls_.setWidgetEnabled(activeAlgorithmOptionControlIds_[i], false);
+		activeAlgorithmOptionControlIds_.clear();
+		const std::map<int, std::vector<AlgorithmOptionBinding> >::const_iterator groups =
+			algorithmOptionsById_.find(algorithmKey);
+		if (groups != algorithmOptionsById_.end())
 		{
-			const std::string groupId(algorithm.supportedOptions[optionIndex].groupId);
-			if (!groups.insert(groupId).second) continue;
-			const std::string id = settingsAlgorithmOptionControlId(algorithm.familyId, algorithm.variantId, groupId);
-			UiWidget* widget = controls_.find(id);
-			if (!widget) continue;
-
-			const std::string selectedId = algorithmOptionStableId(preferences, algorithm, groupId);
-			int selectedIndex = 0;
-			for (std::size_t candidateIndex = 0, visibleIndex = 0;
-				candidateIndex < algorithm.supportedOptions.size(); ++candidateIndex)
-			{
-				const sortinglogic::AlgorithmOptionDescriptor& candidate = algorithm.supportedOptions[candidateIndex];
-				if (groupId != candidate.groupId) continue;
-				if (selectedId == candidate.stableId) selectedIndex = static_cast<int>(visibleIndex);
-				++visibleIndex;
-			}
-			widget->setSelectedIndex(selectedIndex);
-			widget->setAction(AppAction(AppActionKind::SetAlgorithmOption,
-				algorithm.familyId, algorithm.variantId, groupId));
-			controls_.setWidgetEnabled(id, !setupBusy && snapshot.algorithm == algorithm.id);
+			for (std::size_t i = 0; i < groups->second.size(); ++i)
+				activeAlgorithmOptionControlIds_.push_back(groups->second[i].controlId);
 		}
+		activeAlgorithmOptionId_ = algorithmKey;
+	}
+
+	const std::map<int, const sortinglogic::AlgorithmDescriptor*>::const_iterator selectedAlgorithm =
+		algorithmDescriptorsById_.find(algorithmKey);
+	const sortinglogic::AlgorithmDescriptor* selectedDescriptor = selectedAlgorithm == algorithmDescriptorsById_.end()
+		? nullptr : selectedAlgorithm->second;
+	if (selectedDescriptor)
+	{
+		const std::map<int, std::vector<AlgorithmOptionBinding> >::const_iterator groups =
+			algorithmOptionsById_.find(algorithmKey);
+		if (groups != algorithmOptionsById_.end())
+			for (std::size_t i = 0; i < groups->second.size(); ++i)
+			{
+				const AlgorithmOptionBinding& binding = groups->second[i];
+				UiWidget* widget = controls_.find(binding.controlId);
+				if (!widget) continue;
+
+				const std::string selectedId = algorithmOptionStableId(preferences, *selectedDescriptor, binding.groupId);
+				int selectedIndex = 0;
+				for (std::size_t candidateIndex = 0, visibleIndex = 0;
+					candidateIndex < selectedDescriptor->supportedOptions.size(); ++candidateIndex)
+				{
+					const sortinglogic::AlgorithmOptionDescriptor& candidate = selectedDescriptor->supportedOptions[candidateIndex];
+					if (binding.groupId != candidate.groupId) continue;
+					if (selectedId == candidate.stableId) selectedIndex = static_cast<int>(visibleIndex);
+					++visibleIndex;
+				}
+				widget->setSelectedIndex(selectedIndex);
+				controls_.setWidgetEnabled(binding.controlId, !setupBusy);
+			}
 	}
 
 	const UiWidget* pattern = controls_.find("pattern");
@@ -208,7 +241,7 @@ void SettingsPanelView::synchronizeControls(const UserPreferences& preferences,
 				settingsInputPatternEnabled(snapshot.domain, snapshot.algorithm,
 					static_cast<sortinglogic::InputPattern>(value)));
 
-	synchronizeAudioControls(preferences, sortinglogic::algorithmDescriptor(snapshot.algorithm));
+	synchronizeAudioControls(preferences, selectedDescriptor);
 }
 
 void SettingsPanelView::synchronizeAudioControls(const UserPreferences& preferences,

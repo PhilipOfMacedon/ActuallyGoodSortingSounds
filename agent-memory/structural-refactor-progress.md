@@ -1755,3 +1755,13 @@ Next: extract the main item-count/duration edit semantics or keep them in the ho
 The x64 Debug and Release solution builds passed. `AppFrameworkTests` passed in both configurations. `SortingLogicTests --core-contracts-only` passed in both configurations with 39,539 checks and zero failures; `SoundEngineTests` passed in both configurations with 417,376 assertions. The full SortingLogic catalog suite was started but remained CPU-bound for several minutes and was stopped because this UI-only slice does not change sorting behavior. `git diff --check` passed. The user closed the smoke window; it was not reopened for this headless UI change.
 
 Next: continue reducing `ControlPanel` ownership at a view boundary with headless tests, then proceed through the audit's remaining settings, renderer, and application/configuration seams. Keep the structural refactor goal active.
+
+## 2026-10-20 — cache settings option bindings and synchronize only the active algorithm
+
+`SettingsPanelView` now builds descriptor and option-group bindings once during control initialization. Per-frame synchronization looks up the selected descriptor and updates only its option groups; on an algorithm change, it disables the previous selection's option controls and enables the new selection according to the existing setup-busy rule. Stable widget actions remain the catalog-created values rather than being reassigned every frame.
+
+Added an isolated Release profile for settings synchronization. One pre-change run measured 34.123 us per call; seven post-change runs had a 17.903 us median (16.549–21.957 us range), about 48% lower than that baseline. The profile covers the view's settings sync and is machine-load sensitive; it does not establish a full-frame or GPU improvement. App framework tests cover Merge-to-Shell selection, restoring the selected stable option, disabling the former algorithm's controls, and preserving the action identity.
+
+The x64 Debug and Release solution builds passed, as did `AppFrameworkTests` in both configurations. `git diff --check` passed. No sorting trace, audio, or settings-file format behavior changed. The smoke window remained closed; this was verified headlessly.
+
+Next: continue extracting cohesive `ControlPanel` responsibilities and evaluate the remaining renderer/text and application boundaries against measurements before adding caches. Keep the structural refactor goal active.
