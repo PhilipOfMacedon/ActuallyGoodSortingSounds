@@ -1,5 +1,50 @@
 #include "SettingsPanelView.h"
 
+#include "UiActionRouting.h"
+
+void SettingsPanelView::configureScroll(const UiRect& viewport, float contentExtent,
+	float rowExtent, float requestedOffset)
+{
+	model_.scrollViewport().configure(viewport, contentExtent, rowExtent, requestedOffset);
+}
+
+UiRect SettingsPanelView::scrollItemBounds(std::size_t index, float itemExtent) const
+{
+	return model_.scrollViewport().itemBounds(index, itemExtent);
+}
+
+bool SettingsPanelView::scrollItemIntersectsViewport(std::size_t index, float itemExtent) const
+{
+	return model_.scrollViewport().itemIntersectsViewport(index, itemExtent);
+}
+
+void SettingsPanelView::selectAudioBand(int index, int bandCount)
+{
+	model_.selectAudioBand(index, bandCount);
+}
+
+bool SettingsPanelView::handleNavigation(UiAction::ViewCommand command)
+{
+	const ui::SettingsNavigation navigation = ui::settingsNavigationFor(command);
+	if (navigation.kind == ui::SettingsNavigationKind::None) return false;
+	if (navigation.kind == ui::SettingsNavigationKind::AudioGroup)
+		model_.showAudioGroup(navigation.audioGroup);
+	else
+		model_.showPage(navigation.page);
+	controls_.closeCombo();
+	return true;
+}
+
+bool SettingsPanelView::isScrollablePage() const
+{
+	return model_.isPage(SettingsPanelPage::Algorithm) || model_.isPage(SettingsPanelPage::GeneralAudio);
+}
+
+bool SettingsPanelView::handleScrollWheel(float x, float y, int wheelDelta)
+{
+	return isScrollablePage() && model_.scrollViewport().scrollWheel(x, y, wheelDelta);
+}
+
 SettingsPanelChrome::SettingsPanelChrome()
 	: screenWidth(0), screenHeight(0), panelBounds(), contentBounds(), footerBounds(), title(), footer()
 {

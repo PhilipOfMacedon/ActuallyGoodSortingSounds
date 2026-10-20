@@ -1450,3 +1450,17 @@ Verification:
 - `git diff --check` passed. Control IDs, filtering order, and visible options are unchanged; no runtime performance claim is made.
 
 Next: extract ownership of the main/settings widget roots and their layout/action state through the existing paint/action contracts, keeping renderer and SDL adapters at the boundary.
+
+## 2026-10-20 — move settings root and navigation ownership into the view
+
+`SettingsPanelView` now owns the retained settings `UIRoot`, settings page/audio-group and scroll model, and settings captions. It handles typed navigation commands and settings-wheel scrolling. `ControlPanel` routes those events to the view and no longer stores the settings root, navigation model, or caption map; it remains responsible for SDL translation, control construction and state synchronization, responsive placement, renderer submission, and modal lifetime.
+
+Added view-level checks for initial page behavior, typed navigation, audio subpage preservation, inside/outside scroll hit testing, scroll reset on page changes, and leaving modal opening to the overlay coordinator.
+
+Verification:
+
+- Full Visual Studio solution builds passed in x64/x86 Debug and Release.
+- `AppFrameworkTests` passed in all four configurations.
+- `git diff --check` passed. Control geometry and paint order did not change; no performance improvement is claimed.
+
+Next: move settings control construction, page layout/visibility, state synchronization, and shared-command paint composition into the view using prepared catalog data; then isolate the main-control root.

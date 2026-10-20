@@ -2212,6 +2212,41 @@ namespace
 		check(model.selectedAudioBand() == 0, "empty audio band catalogs resolve safely to index zero");
 	}
 
+	void testSettingsPanelViewOwnsNavigationAndScrolling()
+	{
+		SettingsPanelView view;
+		check(view.page() == SettingsPanelPage::Appearance && !view.isScrollablePage(),
+			"settings view starts on Appearance and keeps that short page non-scrollable");
+		view.controls().addButton("view_owned_control", "Owned by settings view");
+		check(view.controls().find("view_owned_control") != nullptr,
+			"settings view owns the retained widget root used by the platform adapter");
+
+		check(view.handleNavigation(UiAction::ViewCommand::ShowAlgorithmSettings) &&
+			view.page() == SettingsPanelPage::Algorithm && view.audioGroup() == SettingsAudioGroup::Basic,
+			"settings view applies algorithm-tab navigation and preserves audio subpage state");
+		view.configureScroll(UiRect(20.0f, 30.0f, 200.0f, 100.0f), 700.0f, 48.0f, 0.0f);
+		check(view.isScrollablePage() && view.handleScrollWheel(40.0f, 50.0f, -1) && view.scrollOffset() > 0.0f,
+			"settings view owns wheel scrolling for long algorithm settings");
+		const float offsetAfterScroll = view.scrollOffset();
+		check(!view.handleScrollWheel(400.0f, 50.0f, -1) && view.scrollOffset() == offsetAfterScroll,
+			"settings view does not scroll when the pointer is outside its viewport");
+
+		check(view.handleNavigation(UiAction::ViewCommand::ShowAudioAdvanced) &&
+			view.page() == SettingsPanelPage::GeneralAudio && view.audioGroup() == SettingsAudioGroup::Advanced &&
+			view.scrollOffset() == 0.0f,
+			"audio subpage navigation changes the view state and resets its transient scroll offset");
+		check(view.handleNavigation(UiAction::ViewCommand::ShowGeneralAudioSettings) &&
+			view.page() == SettingsPanelPage::GeneralAudio && view.audioGroup() == SettingsAudioGroup::Advanced,
+			"direct General Audio navigation preserves the selected audio subpage");
+		check(view.handleScrollWheel(40.0f, 50.0f, -1) && view.scrollOffset() > 0.0f,
+			"settings view can scroll the selected long audio subpage");
+		check(view.handleNavigation(UiAction::ViewCommand::ShowAppearanceSettings) &&
+			view.page() == SettingsPanelPage::Appearance && view.scrollOffset() == 0.0f && !view.isScrollablePage(),
+			"switching back to Appearance resets transient scrolling and page-specific input behavior");
+		check(!view.handleNavigation(UiAction::ViewCommand::OpenSettings),
+			"settings view leaves modal opening to the app-level overlay coordinator");
+	}
+
 	void testSettingsPanelControlCatalog()
 	{
 		const std::vector<std::string> appearance = settingsPanelControlIds(
@@ -3642,6 +3677,7 @@ int main(int argc, char* argv[])
 	testAlgorithmBrowserPaintComposition();
 	testSettingsPanelPaintComposition();
 	testSettingsPanelModel();
+	testSettingsPanelViewOwnsNavigationAndScrolling();
 	testSettingsPanelControlCatalog();
 	testSettingsPanelLayout();
 	testSettingsStore();

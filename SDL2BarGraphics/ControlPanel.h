@@ -11,7 +11,6 @@
 #include "AlgorithmBrowserModel.h"
 #include "RenderingTypes.h"
 #include "SettingsPanelView.h"
-#include "SettingsPanelModel.h"
 #include "SettingsPanelControls.h"
 #include "SettingsPanelLayout.h"
 #include "AlgorithmProfileView.h"
@@ -66,9 +65,7 @@ private:
 	Renderer2D& renderer_;
 	const UserPreferences& settings_;
 	UIRoot mainUi_;
-	UIRoot settingsUi_;
 	AppearanceEditorView appearanceEditorView_;
-	SettingsPanelModel settingsPanelModel_;
 	UiOverlayState overlayState_;
 	AlgorithmBrowserModel algorithmBrowser_;
 	AlgorithmBrowserView algorithmBrowserView_;
@@ -78,7 +75,6 @@ private:
 	UiLayoutResult layoutResult_;
 	UserPreferences renderPreferences_;
 	std::map<std::string, std::unique_ptr<TextLabel> > labels_;
-	std::map<std::string, std::string> settingsCaptions_;
 	std::unique_ptr<TextLabel> paletteCaption_;
 	std::unique_ptr<TextLabel> spacingCaption_;
 	std::unique_ptr<TextLabel> title_;
