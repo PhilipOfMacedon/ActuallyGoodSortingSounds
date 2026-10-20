@@ -2441,6 +2441,55 @@ namespace
 			"main controls view keeps action routing, semantic roles, and menu heading behavior in its tree");
 	}
 
+	void testMainControlsViewSynchronizesTextPresentation()
+	{
+		UserPreferences preferences;
+		MainControlsView view;
+		sortinglogic::RenderSnapshot snapshot;
+		UiScreenModel screen;
+		snapshot.algorithm = sortinglogic::SortAlgorithm::Insertion;
+		snapshot.durationSeconds = 10.0f;
+		snapshot.status = "Ready.";
+		screen.algorithm = "Insertion Sort";
+		screen.direction = "Ascending";
+		screen.itemCount = 80;
+		screen.inputDomain = "Normalized floats";
+		screen.inputPattern = "Random";
+		screen.algorithmCapabilities.available = true;
+		screen.algorithmCapabilities.stable = true;
+		screen.algorithmCapabilities.inPlace = true;
+		screen.algorithmCapabilities.timeComplexity = "O(n^2)";
+		screen.algorithmCapabilities.spaceComplexity = "O(1)";
+		screen.algorithmCapabilities.metrics.push_back(UiTelemetryValue("passes", "Passes", "0"));
+
+		view.synchronizeText(preferences, UiPresetId::Current, snapshot, screen, 1000);
+		check(view.text().title == "Sorting Simulation | deterministic event trace" &&
+			view.text().detail == "Insertion Sort  |  Ascending  |  80 bars  |  Normalized floats / Random  |  Stable, in-place  |  O(n^2) time, O(1) space  |  No trace  |  0.0/10.0 sec" &&
+			view.text().status == "Ready." && view.text().collapsedSummary == "Insertion Sort - 0%",
+			"main view formats the current preset's title, algorithm facts, status, and collapsed progress");
+
+		snapshot.hasTrace = true;
+		snapshot.playing = true;
+		snapshot.cursor = 1;
+		snapshot.eventCount = 10;
+		snapshot.elapsedSeconds = 0.1f;
+		snapshot.metrics.comparisons = 1;
+		snapshot.status = "Playing.";
+		view.synchronizeText(preferences, UiPresetId::Current, snapshot, screen, 1100);
+		check(view.text().detail.find("Event 1/10") == std::string::npos && view.text().status == "Ready.",
+			"live telemetry remains throttled between 200 ms updates during playback");
+		snapshot.elapsedSeconds = 0.2f;
+		snapshot.metrics.comparisons = 2;
+		view.synchronizeText(preferences, UiPresetId::Current, snapshot, screen, 1200);
+		check(view.text().detail.find("Event 1/10") != std::string::npos &&
+			view.text().status.find("Cmp 2") != std::string::npos && view.text().collapsedSummary == "Insertion Sort - 10%",
+			"main view refreshes telemetry and progress at the established live text cadence");
+
+		view.synchronizeText(preferences, UiPresetId::ClassicWindows95, snapshot, screen, 1250);
+		check(view.text().title == "Actually Good Sorting Sounds",
+			"main view updates the title immediately when the active UI preset changes");
+	}
+
 	void testMainControlsViewAppliesLayoutAndVisibility()
 	{
 		UserPreferences preferences;
@@ -4085,6 +4134,7 @@ int main(int argc, char* argv[])
 	testSettingsPanelViewOwnsNavigationAndScrolling();
 	testSettingsPanelViewInitializesItsControls();
 	testMainControlsViewInitializesTypedControls();
+	testMainControlsViewSynchronizesTextPresentation();
 	testMainControlsViewAppliesLayoutAndVisibility();
 	testMainControlsViewSynchronizesPresentationState();
 	testMainControlsViewComposesControlPaintCommands();

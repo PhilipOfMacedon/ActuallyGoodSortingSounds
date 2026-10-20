@@ -288,7 +288,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	settingsTitle_(new TextLabel("Settings", "Courier New Bold", 17, { 238, 246, 249, 255 })),
 	settingsSaveStatus_(new TextLabel("Preferences save automatically.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	audioDeviceStatus_(new TextLabel("Audio device is not initialized.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
-	displayedDetail_(), displayedStatus_(), displayedCollapsedSummary_(), displayedSaveStatus_(), lastDetailUpdate_(0),
+	displayedSaveStatus_(),
 	timelineBounds_(), timelineControlBounds_(), timelineLeftArrowBounds_(), timelineRightArrowBounds_(),
 	headerBounds_(), gearBounds_(), draggingTimeline_(false),
 	appearanceSearchFocused_(false), drawingAppearanceEditor_(false),
@@ -507,85 +507,13 @@ void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
 			i->second->setContent(text);
 		}
 	}
-	title_->setContent(renderPreferences_.appearance.activePreset == UiPresetId::ClassicWindows95
-		? "Actually Good Sorting Sounds" : "Sorting Simulation | deterministic event trace");
-	std::ostringstream detailText;
-	const UiAlgorithmCapabilities& facts = screenModel_.algorithmCapabilities;
-	if (renderPreferences_.appearance.activePreset != UiPresetId::Current)
-	{
-		if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
-		else if (snapshot.buildingTrace) detailText << "Building trace";
-		else detailText << "No trace";
-		detailText << " | " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
-		if (settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
-			detailText << playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount);
-		else detailText << snapshot.durationSeconds;
-		detailText << " sec | seed " << snapshot.inputSeed;
-	}
-	else
-	{
-		detailText << screenModel_.algorithm << "  |  " << screenModel_.direction << "  |  " << screenModel_.itemCount << " bars  |  ";
-		detailText << screenModel_.inputDomain << " / " << screenModel_.inputPattern << "  |  ";
-		if (facts.available) detailText << (facts.stable ? "Stable" : "Unstable") << (facts.inPlace ? ", in-place" : ", auxiliary space")
-			<< "  |  " << facts.timeComplexity << " time, " << facts.spaceComplexity << " space  |  ";
-		if (!screenModel_.shellGapSequence.empty()) detailText << "Gap sequence: " << screenModel_.shellGapSequence << "  |  ";
-		if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
-		else if (snapshot.buildingTrace) detailText << "Building trace";
-		else detailText << "No trace";
-		detailText << "  |  " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
-		if (settings_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
-			detailText << playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount);
-		else detailText << snapshot.durationSeconds;
-		detailText << " sec";
-		if (snapshot.inputSeed) detailText << "  |  seed " << snapshot.inputSeed;
-	}
-	const std::string nextDetail = detailText.str();
-	const Uint32 now = SDL_GetTicks();
-	const bool allowLiveTextUpdate = !snapshot.playing || now - lastDetailUpdate_ >= 200;
-	if (nextDetail != displayedDetail_ && allowLiveTextUpdate)
-	{
-		detail_->setContent(nextDetail);
-		displayedDetail_ = nextDetail;
-		lastDetailUpdate_ = now;
-	}
-	std::ostringstream statusText;
-	if (renderPreferences_.appearance.activePreset != UiPresetId::Current)
-	{
-		if (!snapshot.runCompatible) statusText << facts.compatibilityMessage << " | ";
-		else statusText << screenModel_.algorithm << " | " << screenModel_.inputDomain << "/" << screenModel_.inputPattern << " | ";
-		if (snapshot.hasTrace)
-			statusText << "Cmp " << snapshot.metrics.comparisons << " | Swap " << snapshot.metrics.swaps
-				<< " | Main " << snapshot.metrics.primaryWrites << " | Aux " << snapshot.metrics.auxiliaryItemWrites
-				<< "/" << snapshot.metrics.auxiliaryCounterUpdates << " | Peak " << snapshot.metrics.peakAuxiliaryCapacity;
-		else statusText << snapshot.status;
-	}
-	else if (!snapshot.runCompatible) statusText << facts.compatibilityMessage << " | ";
-	if (renderPreferences_.appearance.activePreset == UiPresetId::Current && snapshot.hasTrace)
-	{
-		statusText << "Cmp " << snapshot.metrics.comparisons << "  Swap " << snapshot.metrics.swaps
-			<< "  Main " << snapshot.metrics.primaryWrites << "  Aux " << snapshot.metrics.auxiliaryItemWrites
-			<< "/" << snapshot.metrics.auxiliaryCounterUpdates << "  Peak " << snapshot.metrics.peakAuxiliaryCapacity;
-		for (std::size_t metric = 0; metric < facts.metrics.size(); ++metric)
-			statusText << "  " << facts.metrics[metric].caption << " " << facts.metrics[metric].value;
-		statusText << "  |  " << snapshot.status;
-	}
-	else if (renderPreferences_.appearance.activePreset == UiPresetId::Current) statusText << snapshot.status;
-	const std::string statusValue = statusText.str();
-	const std::string nextStatus = statusValue.size() > 220 ? statusValue.substr(0, 217) + "..." : statusValue;
-	if (nextStatus != displayedStatus_ && allowLiveTextUpdate)
-	{
-		status_->setContent(nextStatus);
-		displayedStatus_ = nextStatus;
-	}
-	std::ostringstream collapsedSummary;
-	collapsedSummary << sortinglogic::algorithmDisplayName(snapshot.algorithm) << " - "
-		<< traceProgressPercent(snapshot.hasTrace, snapshot.complete, snapshot.cursor, snapshot.eventCount) << "%";
-	const std::string nextCollapsedSummary = collapsedSummary.str();
-	if (nextCollapsedSummary != displayedCollapsedSummary_ && allowLiveTextUpdate)
-	{
-		collapsedSummary_->setContent(nextCollapsedSummary);
-		displayedCollapsedSummary_ = nextCollapsedSummary;
-	}
+	mainControlsView_.synchronizeText(settings_, renderPreferences_.appearance.activePreset,
+		snapshot, screenModel_, SDL_GetTicks());
+	const MainControlsText& mainText = mainControlsView_.text();
+	title_->setContent(mainText.title);
+	detail_->setContent(mainText.detail);
+	status_->setContent(mainText.status);
+	collapsedSummary_->setContent(mainText.collapsedSummary);
 	settingsTitle_->setContent(settingsTabTitle(settingsPanelView_.page(), settings_));
 	const UiTokenValue requestedFont = effectiveUiTokenValue(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_), "typeface.primary");
 	const std::string saveStatus = fontFallbackActive_ && requestedFont.type == UiTokenType::Font
@@ -827,7 +755,6 @@ void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const st
 {
 	if (!isReady()) return;
 	const ThemePalette palette = paletteForAppearance(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_));
-	syncLabels(snapshot);
 	fontFallbackActive_ = false;
 	drawMainPanel(snapshot, palette);
 	if (overlayState_.is(UiOverlayId::Settings)) drawSettingsPanel(palette, audioStatus);
@@ -844,6 +771,7 @@ void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
 	updateLayout();
 	updateWidgetStates(snapshot, playbackPending);
 	layoutAlgorithmMenu();
+	if (isReady()) syncLabels(snapshot);
 }
 
 void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette)

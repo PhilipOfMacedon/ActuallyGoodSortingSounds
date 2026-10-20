@@ -1538,3 +1538,11 @@ Next: move the remaining main-panel composition decisions (title/telemetry/profi
 Headless checks cover current, Flat VGA DOS, and Classic Windows 95 layouts in expanded and collapsed states. `AppFrameworkTests` passed in x64 Debug and Release; the x64 Debug app linked to an isolated output directory and the full x64 Release solution built in an isolated output directory. `git diff --check` passed. The user closed the earlier smoke window; no fresh visual claim is made for this layout-only move.
 
 Next: move remaining main-panel composition metadata (title, telemetry, profile, and timeline where useful) behind the view without relocating renderer-specific drawing, then continue the sorting-core and configuration boundaries. The goal remains active; no performance improvement is claimed.
+
+## 2026-10-20 — move main text presentation into the view
+
+`MainControlsView` now formats the title, algorithm/input facts, trace timing, live statistics, status, and collapsed progress summary. It owns the existing 200 ms live-text throttle. `ControlPanel` adapts the prepared strings to its renderer-owned `TextLabel` objects; text synchronization now happens in `prepareFrame`, while `render` only paints the prepared frame.
+
+Added headless checks for current-preset content, collapsed progress, live update throttling, and immediate title changes across presets. `AppFrameworkTests` passed in x64 Debug and Release; full x64 Debug and Release solution builds passed. `git diff --check` passed. No font-raster or whole-frame performance claim is made.
+
+Next: move remaining main-panel composition metadata (profile, timeline, and section ordering where useful) behind view contracts while keeping GPU-specific drawing in the host; then continue the sorting-core and configuration boundaries.

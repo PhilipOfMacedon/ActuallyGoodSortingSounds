@@ -85,11 +85,7 @@ private:
 	std::unique_ptr<TextLabel> settingsTitle_;
 	std::unique_ptr<TextLabel> settingsSaveStatus_;
 	std::unique_ptr<TextLabel> audioDeviceStatus_;
-	std::string displayedDetail_;
-	std::string displayedStatus_;
-	std::string displayedCollapsedSummary_;
 	std::string displayedSaveStatus_;
-	Uint32 lastDetailUpdate_;
 	UiRect timelineBounds_;
 	UiRect timelineControlBounds_;
 	UiRect timelineLeftArrowBounds_;

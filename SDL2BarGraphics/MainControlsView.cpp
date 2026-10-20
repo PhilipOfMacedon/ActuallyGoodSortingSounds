@@ -1,9 +1,12 @@
 #include "MainControlsView.h"
 
+#include <iomanip>
 #include <map>
+#include <sstream>
 #include <vector>
 
 #include "AppActions.h"
+#include "PlaybackTimebase.h"
 #include "SettingsPanelCatalog.h"
 #include "UiActionRouting.h"
 #include "UserSettings.h"
@@ -19,6 +22,17 @@ namespace
 		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Control, widget->bounds(), UiColor(), std::string(),
 			id, material, layer, screen, true, 0.0f, popup));
 	}
+}
+
+MainControlsText::MainControlsText()
+	: title("Sorting Simulation | deterministic event trace"), detail("No trace"), status("Ready."),
+	collapsedSummary("Insertion Sort - 0%")
+{
+}
+
+MainControlsView::MainControlsView()
+	: controls_(), text_(), lastLiveTextUpdateMs_(0)
+{
 }
 
 void MainControlsView::initializeControls(const UserPreferences& preferences, const std::string& algorithmLabel)
@@ -120,6 +134,85 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 	controls_.setWidgetVisible("seed_readout", hasClassicRail && wideLayout && expanded);
 	controls_.setWidgetVisible("start_overlay", !expanded);
 	controls_.find("panel_toggle")->setLabel(expanded ? "v" : ">");
+}
+
+void MainControlsView::synchronizeText(const UserPreferences& preferences, UiPresetId activePreset,
+	const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel, std::uint32_t nowMs)
+{
+	text_.title = activePreset == UiPresetId::ClassicWindows95
+		? "Actually Good Sorting Sounds" : "Sorting Simulation | deterministic event trace";
+
+	std::ostringstream detailText;
+	const UiAlgorithmCapabilities& facts = screenModel.algorithmCapabilities;
+	if (activePreset != UiPresetId::Current)
+	{
+		if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
+		else if (snapshot.buildingTrace) detailText << "Building trace";
+		else detailText << "No trace";
+		detailText << " | " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
+		if (preferences.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			detailText << playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount);
+		else detailText << snapshot.durationSeconds;
+		detailText << " sec | seed " << snapshot.inputSeed;
+	}
+	else
+	{
+		detailText << screenModel.algorithm << "  |  " << screenModel.direction << "  |  " << screenModel.itemCount << " bars  |  ";
+		detailText << screenModel.inputDomain << " / " << screenModel.inputPattern << "  |  ";
+		if (facts.available) detailText << (facts.stable ? "Stable" : "Unstable") << (facts.inPlace ? ", in-place" : ", auxiliary space")
+			<< "  |  " << facts.timeComplexity << " time, " << facts.spaceComplexity << " space  |  ";
+		if (!screenModel.shellGapSequence.empty()) detailText << "Gap sequence: " << screenModel.shellGapSequence << "  |  ";
+		if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
+		else if (snapshot.buildingTrace) detailText << "Building trace";
+		else detailText << "No trace";
+		detailText << "  |  " << std::fixed << std::setprecision(1) << snapshot.elapsedSeconds << "/";
+		if (preferences.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			detailText << playbacktimebase::durationForReferenceEvents(snapshot.audioEligibleEventCount);
+		else detailText << snapshot.durationSeconds;
+		detailText << " sec";
+		if (snapshot.inputSeed) detailText << "  |  seed " << snapshot.inputSeed;
+	}
+
+	const bool allowLiveTextUpdate = !snapshot.playing || nowMs - lastLiveTextUpdateMs_ >= 200;
+	const std::string nextDetail = detailText.str();
+	if (nextDetail != text_.detail && allowLiveTextUpdate)
+	{
+		text_.detail = nextDetail;
+		lastLiveTextUpdateMs_ = nowMs;
+	}
+
+	std::ostringstream statusText;
+	if (activePreset != UiPresetId::Current)
+	{
+		if (!snapshot.runCompatible) statusText << facts.compatibilityMessage << " | ";
+		else statusText << screenModel.algorithm << " | " << screenModel.inputDomain << "/" << screenModel.inputPattern << " | ";
+		if (snapshot.hasTrace)
+			statusText << "Cmp " << snapshot.metrics.comparisons << " | Swap " << snapshot.metrics.swaps
+				<< " | Main " << snapshot.metrics.primaryWrites << " | Aux " << snapshot.metrics.auxiliaryItemWrites
+				<< "/" << snapshot.metrics.auxiliaryCounterUpdates << " | Peak " << snapshot.metrics.peakAuxiliaryCapacity;
+		else statusText << snapshot.status;
+	}
+	else if (!snapshot.runCompatible) statusText << facts.compatibilityMessage << " | ";
+	if (activePreset == UiPresetId::Current && snapshot.hasTrace)
+	{
+		statusText << "Cmp " << snapshot.metrics.comparisons << "  Swap " << snapshot.metrics.swaps
+			<< "  Main " << snapshot.metrics.primaryWrites << "  Aux " << snapshot.metrics.auxiliaryItemWrites
+			<< "/" << snapshot.metrics.auxiliaryCounterUpdates << "  Peak " << snapshot.metrics.peakAuxiliaryCapacity;
+		for (std::size_t metric = 0; metric < facts.metrics.size(); ++metric)
+			statusText << "  " << facts.metrics[metric].caption << " " << facts.metrics[metric].value;
+		statusText << "  |  " << snapshot.status;
+	}
+	else if (activePreset == UiPresetId::Current) statusText << snapshot.status;
+	const std::string statusValue = statusText.str();
+	const std::string nextStatus = statusValue.size() > 220 ? statusValue.substr(0, 217) + "..." : statusValue;
+	if (nextStatus != text_.status && allowLiveTextUpdate) text_.status = nextStatus;
+
+	std::ostringstream collapsedSummary;
+	collapsedSummary << sortinglogic::algorithmDisplayName(snapshot.algorithm) << " - "
+		<< traceProgressPercent(snapshot.hasTrace, snapshot.complete, snapshot.cursor, snapshot.eventCount) << "%";
+	const std::string nextCollapsedSummary = collapsedSummary.str();
+	if (nextCollapsedSummary != text_.collapsedSummary && allowLiveTextUpdate)
+		text_.collapsedSummary = nextCollapsedSummary;
 }
 
 void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetId activePreset,
