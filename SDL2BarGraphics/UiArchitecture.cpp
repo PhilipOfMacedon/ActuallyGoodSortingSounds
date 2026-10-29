@@ -127,6 +127,20 @@ bool UiOverlayState::closeAppearanceEditor()
 	return true;
 }
 
+bool UiOverlayState::openDemoEditor()
+{
+	if (active_ != UiOverlayId::None && active_ != UiOverlayId::DemoEditor) return false;
+	active_ = UiOverlayId::DemoEditor;
+	return true;
+}
+
+bool UiOverlayState::closeDemoEditor()
+{
+	if (active_ != UiOverlayId::DemoEditor) return false;
+	active_ = UiOverlayId::None;
+	return true;
+}
+
 UiScreenModel::UiScreenModel()
 	: preset(UiPresetId::Current), transport(UiTransportState::NoTrace), setupEnabled(true), runEnabled(false), playEnabled(false),
 		countEditable(true), durationEditable(true), descending(false), hasTrace(false), buildingTrace(false), playing(false), completed(false),
@@ -182,6 +196,11 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 	{
 		result.controlBounds["settings"] = UiRect(std::max(0.0f, width - 42.0f), headerButtonY, 30.0f, 28.0f);
 		result.focusOrder.push_back("settings");
+	}
+	if (preset == UiPresetId::Current && std::find(controlIds.begin(), controlIds.end(), "demo_editor") != controlIds.end())
+	{
+		result.controlBounds["demo_editor"] = UiRect(std::max(0.0f, width - 82.0f), headerButtonY, 34.0f, 28.0f);
+		result.focusOrder.push_back("demo_editor");
 	}
 	if (menuHeight > 0.0f)
 	{

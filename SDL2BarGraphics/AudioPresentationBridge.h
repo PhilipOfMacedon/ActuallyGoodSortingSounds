@@ -71,7 +71,7 @@ public:
 		LatestAudioStateMailbox& mailbox,
 		const SoundEngine::ReconstructedParameters& reconstructedParameters = SoundEngine::ReconstructedParameters(),
 		SoundEngine::PlaybackTimingMode timingMode = SoundEngine::PlaybackTimingMode::FixedDuration,
-		bool audioDeviceAvailable = false);
+		bool audioDeviceAvailable = false, std::uint64_t sessionIdentity = 0);
 	void collectRetiredTimelines(const AudioTimelineAcknowledgement& acknowledgement, bool callbackAvailable);
 	void republish(LatestAudioStateMailbox& mailbox);
 	std::uint64_t timelineGeneration() const { return timelineGeneration_; }
@@ -86,6 +86,7 @@ public:
 
 private:
 	const sortinglogic::SortTrace* lastTrace_;
+	std::uint64_t lastSessionIdentity_;
 	sortinglogic::TraceAudioPresentationPolicy tracePolicy_;
 	std::size_t lastCursor_;
 	SoundEngine::AudioComparison lastComparison_;

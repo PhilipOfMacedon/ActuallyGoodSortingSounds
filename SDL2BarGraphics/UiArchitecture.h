@@ -9,7 +9,7 @@
 
 enum class UiTransportState { NoTrace, Ready, Playing, Building, Queued, Preparing, Replay };
 
-enum class UiOverlayId { None, Settings, AlgorithmBrowser, AppearanceEditor };
+enum class UiOverlayId { None, Settings, AlgorithmBrowser, AppearanceEditor, DemoEditor };
 
 // Keeps modal ownership in one place. The appearance editor may be opened from
 // Settings and returns there when dismissed; all other overlays are exclusive.
@@ -29,6 +29,8 @@ public:
 	bool closeAlgorithmBrowser();
 	bool openAppearanceEditor();
 	bool closeAppearanceEditor();
+	bool openDemoEditor();
+	bool closeDemoEditor();
 
 private:
 	UiOverlayId active_;

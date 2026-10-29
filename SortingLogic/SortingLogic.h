@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <string>
@@ -157,6 +158,11 @@ namespace sortinglogic
 	};
 	enum class ComparisonResult : int { Less = -1, Equal = 0, Greater = 1 };
 	enum class ComparisonBasis : std::uint8_t { ValueOnly, ValueThenStableId };
+	enum class DemoComplexityClass : std::uint8_t
+	{
+		Linear, NLogN, NLogSquaredN, NSqrtN, Quadratic, N2LogN,
+		HigherPolynomial, GapDependent, KeyDependent, Superpolynomial, DemonstrationUnknown
+	};
 	enum class SemanticRole
 	{
 		ComparedItem, HeldKey, Gap, ShiftedItem, WriteTarget, Pivot,
@@ -321,6 +327,8 @@ namespace sortinglogic
 		const char* familyDisplayName;
 		const char* displayName;
 		const char* timeComplexity;
+		DemoComplexityClass demoComplexity;
+		InputDomain preferredDemoDomain;
 		const char* spaceComplexity;
 		bool stable;
 		bool inPlace;
@@ -344,7 +352,9 @@ namespace sortinglogic
 			const std::vector<SemanticRole>& audioRoles = std::vector<SemanticRole>(), bool reverseAudioOperands = false,
 			const std::vector<InputDomain>& domains = std::vector<InputDomain>())
 			: id(valueId), stableId(key), familyId(familyKey ? familyKey : key), variantId(methodKey ? methodKey : key),
-			familyDisplayName(familyName ? familyName : name), displayName(name), timeComplexity(time), spaceComplexity(space), stable(isStable),
+			familyDisplayName(familyName ? familyName : name), displayName(name), timeComplexity(time),
+			demoComplexity(DemoComplexityClass::DemonstrationUnknown), preferredDemoDomain(InputDomain::NormalizedFloats),
+			spaceComplexity(space), stable(isStable),
 			inPlace(isInPlace), supportsNormalizedFloat(floats), supportsIntegerKeys(integers), safeMaxItemCount(maximumItems),
 			behavior(behaviorLabel), buildRequest(requestBuilder),
 			supportedOptions(options), metrics(applicableMetrics), comparisonAudioRoles(audioRoles), reverseAudioOperandOrder(reverseAudioOperands),
@@ -352,6 +362,8 @@ namespace sortinglogic
 	};
 
 	const std::vector<AlgorithmDescriptor>& algorithmCatalog();
+	const char* demoComplexityClassName(DemoComplexityClass value);
+	bool demoComplexityClassFor(SortAlgorithm algorithm, DemoComplexityClass& value);
 	const AlgorithmDescriptor* algorithmDescriptor(SortAlgorithm algorithm);
 	const AlgorithmDescriptor* algorithmDescriptorById(const FamilyId& family, const VariantId& variant);
 	bool algorithmAcceptsItemCount(SortAlgorithm algorithm, std::size_t itemCount);
@@ -421,6 +433,9 @@ namespace sortinglogic
 		bool completionScanEnabled;
 		bool mergeBufferVisualizationEnabled;
 		std::uint32_t inputSeed;
+		std::uint64_t sessionId;
+		std::uint64_t requestGeneration;
+		std::shared_ptr<std::atomic<bool> > cancellation;
 		std::size_t maxOperations;
 		std::size_t maxWorkSteps;
 		// Approximate accounted trace-payload budget, not a hard resident-memory limit.
@@ -436,7 +451,7 @@ namespace sortinglogic
 			hasExplicitConfiguration(false),
 			shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
 			mergeExecutionMode(MergeExecutionMode::BottomUp), completionScanEnabled(false),
-			mergeBufferVisualizationEnabled(true), inputSeed(0),
+			mergeBufferVisualizationEnabled(true), inputSeed(0), sessionId(0), requestGeneration(0), cancellation(),
 			maxOperations(DefaultTraceOperationLimit), maxWorkSteps(DefaultTraceWorkLimit),
 			maxTraceBytes(DefaultTraceByteLimit), radixBase(0), bucketCount(0), timeMagnitude(10), rotateMergeBufferSize(64) {}
 		void setConfiguration(const AlgorithmConfiguration& value)
@@ -446,7 +461,7 @@ namespace sortinglogic
 		}
 	};
 
-	enum class TraceBuildStatus { Complete, Partial, Failed };
+	enum class TraceBuildStatus { Complete, Partial, Failed, Cancelled };
 
 	struct TraceBuildResult
 	{
@@ -454,7 +469,9 @@ namespace sortinglogic
 		TraceBuildStatus status;
 		SortTrace trace;
 		std::string error;
-		TraceBuildResult() : succeeded(false), status(TraceBuildStatus::Failed), trace(), error() {}
+		std::uint64_t sessionId;
+		std::uint64_t requestGeneration;
+		TraceBuildResult() : succeeded(false), status(TraceBuildStatus::Failed), trace(), error(), sessionId(0), requestGeneration(0) {}
 	};
 
 	struct ActiveRole

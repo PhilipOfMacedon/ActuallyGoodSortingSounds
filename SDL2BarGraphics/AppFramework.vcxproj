@@ -51,6 +51,9 @@
     <ClCompile Include="AppearanceEditorView.cpp" />
     <ClCompile Include="InlineEditModel.cpp" />
     <ClCompile Include="SeedLibrary.cpp" />
+    <ClCompile Include="DemoModels.cpp" />
+    <ClCompile Include="DemoRunner.cpp" />
+    <ClCompile Include="DemoEditorView.cpp" />
     <ClCompile Include="InlineEditView.cpp" />
     <ClCompile Include="AppearanceEditorLayout.cpp" />
     <ClCompile Include="AppearanceEditorModel.cpp" />

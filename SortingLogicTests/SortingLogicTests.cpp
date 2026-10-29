@@ -550,6 +550,8 @@ namespace sortinglogic_tests
 			"worker publishes successful trace to narrow simulation queries");
 		check(simulation.snapshot().hasTrace, "render snapshot still reports the published trace");
 		const std::shared_ptr<const SortTrace> trace = simulation.currentTrace();
+		check(trace != nullptr && trace->algorithm == simulation.algorithm(),
+			"worker result belongs to the requested algorithm session");
 		if (trace)
 		{
 			std::vector<SortState> states(1, trace->initialState);
@@ -601,6 +603,26 @@ namespace sortinglogic_tests
 			if (!delivered) std::this_thread::yield();
 		}
 		check(delivered, "worker delivers its bounded partial trace");
+
+		TraceBuildRequest cancelled;
+		cancelled.input = floats(std::vector<float>{ 0.9f, 0.1f, 0.5f, 0.3f });
+		cancelled.sessionId = 73;
+		cancelled.requestGeneration = 19;
+		cancelled.cancellation.reset(new std::atomic<bool>(true));
+		check(service.submit(cancelled, &error), "worker accepts an owned cancellable request");
+		delivered = false;
+		const auto cancelledDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		while (!delivered && std::chrono::steady_clock::now() < cancelledDeadline)
+		{
+			TraceBuildResult result;
+			delivered = service.poll(result);
+			if (delivered)
+				check(result.status == TraceBuildStatus::Cancelled && !result.succeeded &&
+					result.sessionId == 73 && result.requestGeneration == 19,
+					"worker returns cancellation with its session and generation fence");
+			if (!delivered) std::this_thread::yield();
+		}
+		check(delivered, "worker delivers a cooperative cancellation result");
 	}
 
 	void testStressAndValidation()

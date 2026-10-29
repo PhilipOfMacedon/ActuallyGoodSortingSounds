@@ -125,9 +125,10 @@ void MainControlsView::initializeControls(const UserPreferences& preferences, co
 {
 	controls_.addButton("panel_toggle", ">>", AppAction(AppActionKind::TogglePanelExpanded));
 	controls_.addButton("settings", "[=]", AppAction(), UiAction::ViewCommand::OpenSettings);
+	controls_.addButton("demo_editor", "DEMO", AppAction(AppActionKind::OpenDemoEditor));
 	controls_.addComboBox("menu_file", std::vector<std::string>{ "File", "Build Trace", "Generate & Play", "Reset" }, 0);
 	controls_.addComboBox("menu_view", std::vector<std::string>{ "View", "Toggle Setup", "Borderless Fullscreen" }, 0);
-	controls_.addComboBox("menu_tools", std::vector<std::string>{ "Tools", "Algorithm Browser...", "Settings...", "Appearance..." }, 0);
+	controls_.addComboBox("menu_tools", std::vector<std::string>{ "Tools", "Algorithm Browser...", "Settings...", "Appearance...", "Demo Editor..." }, 0);
 	controls_.find("menu_file")->setOptionEnabled(0, false);
 	controls_.find("menu_view")->setOptionEnabled(0, false);
 	controls_.find("menu_tools")->setOptionEnabled(0, false);
@@ -198,6 +199,16 @@ void MainControlsView::setSeedHistoryNavigation(bool canPrevious, bool canNext)
 	controls_.setWidgetEnabled("seed_next", canNext);
 }
 
+void MainControlsView::setControlActionAndPresentation(const std::string& id, const AppAction& action,
+	const std::string& label, bool enabled)
+{
+	UiWidget* widget = controls_.find(id);
+	if (!widget) return;
+	widget->setAction(action);
+	widget->setLabel(label);
+	widget->setEnabled(enabled);
+}
+
 void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layout, int logicalWidth, bool expanded)
 {
 	controls_.setFocusOrder(layout.focusOrder);
@@ -223,7 +234,7 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 		for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 		{
 			const std::string& id = controls_.widgets()[i]->id();
-			const bool headerControl = (preset != UiPresetId::ClassicWindows95 && (id == "panel_toggle" || id == "settings")) ||
+			const bool headerControl = (preset != UiPresetId::ClassicWindows95 && (id == "panel_toggle" || id == "settings" || id == "demo_editor")) ||
 				(preset != UiPresetId::Current && (id == "menu_file" || id == "menu_view" || id == "menu_tools"));
 			controls_.setWidgetVisible(id, headerControl || id == "start_overlay");
 		}
@@ -241,6 +252,7 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 	controls_.setWidgetVisible("run", !hasClassicRail);
 	controls_.setWidgetVisible("panel_toggle", preset != UiPresetId::ClassicWindows95);
 	controls_.setWidgetVisible("settings", preset != UiPresetId::ClassicWindows95);
+	controls_.setWidgetVisible("demo_editor", preset == UiPresetId::Current);
 	const bool wideLayout = logicalWidth >= 900;
 	controls_.setWidgetVisible("domain", hasClassicRail && wideLayout && expanded);
 	controls_.setWidgetVisible("pattern", hasClassicRail && wideLayout && expanded);
@@ -437,7 +449,7 @@ void MainControlsView::compose(MainControlsPaintSection section, const UiRect& s
 	UiPaintContext& paintContext) const
 {
 	if (screen.width <= 0.0f || screen.height <= 0.0f) return;
-	const char* headerButtons[] = { "panel_toggle", "settings" };
+	const char* headerButtons[] = { "panel_toggle", "settings", "demo_editor" };
 	const char* menus[] = { "menu_file", "menu_view", "menu_tools" };
 	if (section == MainControlsPaintSection::HeaderButtons)
 	{
@@ -465,7 +477,7 @@ void MainControlsView::compose(MainControlsPaintSection section, const UiRect& s
 		{
 			const UiWidget& widget = *controls_.widgets()[i];
 			const std::string& id = widget.id();
-			if (id == "panel_toggle" || id == "settings" || id == "menu_file" ||
+			if (id == "panel_toggle" || id == "settings" || id == "demo_editor" || id == "menu_file" ||
 				id == "menu_view" || id == "menu_tools") continue;
 			submitControl(controls_, paintContext, id, UiPaintLayer::MainControls,
 				UiPaintMaterial::Button, screen);

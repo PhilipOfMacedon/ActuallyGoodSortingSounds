@@ -16,8 +16,8 @@ bool PlaybackFrameCoordinator::audioClockAvailable() const
 std::string PlaybackFrameCoordinator::updateAudioPresentation(AppController& app)
 {
 	bridge_.update(app.simulation(), app.simulation().playbackState(), app.effectiveAudio(), mailbox_,
-		app.effectiveReconstructedAudio(), app.preferences().simulation.playbackTimingMode,
-		output_.available());
+		app.effectiveReconstructedAudio(), app.activeTimingMode(),
+		output_.available(), app.activeSessionIdentity());
 	const AudioTimelineAcknowledgement acknowledgement = output_.timelineAcknowledgement();
 	const bool playheadReady = bridge_.playheadReady(acknowledgement);
 	app.setAudioPreparationPending(bridge_.timelinePreparing() ||

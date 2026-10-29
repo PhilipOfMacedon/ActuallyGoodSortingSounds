@@ -8,6 +8,9 @@
     <ClCompile Include="ActiveRoleLookup.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AppearanceEditorView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="InlineEditView.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="DemoModels.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="DemoRunner.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="DemoEditorView.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AppearanceEditorLayout.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AppearanceEditorModel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlgorithmBrowserModel.cpp"><Filter>Source Files</Filter></ClCompile>

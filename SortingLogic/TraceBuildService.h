@@ -20,6 +20,7 @@ namespace sortinglogic
 
 		bool submit(const TraceBuildRequest& request, std::string* error = nullptr);
 		bool poll(TraceBuildResult& result);
+		bool cancelActive();
 		bool isBusy() const;
 
 	private:
@@ -28,6 +29,7 @@ namespace sortinglogic
 		bool busy_;
 		bool completionReady_;
 		TraceBuildResult completion_;
+		std::shared_ptr<std::atomic<bool> > activeCancellation_;
 
 		void build(TraceBuildRequest request);
 	};

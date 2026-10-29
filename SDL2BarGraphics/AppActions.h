@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -63,10 +64,61 @@ enum class AppActionKind
 	RemoveSeedBookmark,
 	PreviousSeed,
 	NextSeed,
+	OpenDemoEditor,
+	CloseDemoEditor,
+	SelectDemoPreset,
+	SelectDemoStep,
+	StartDemo,
+	StopDemo,
+	ToggleDemoPlayback,
+	PreviousDemoStep,
+	NextDemoStep,
+	DemoSetClassRecipe,
+	DemoSetIntermission,
+	DemoSetLoop,
+	DemoAddStep,
+	DemoRemoveStep,
+	DemoMoveStepUp,
+	DemoMoveStepDown,
+	DemoSetStepAlgorithm,
+	DemoSetStepTiming,
+	DemoSetStepDirection,
+	DemoSetStepOption,
+	DemoSetStepOverride,
+	DemoClearStepOverride,
+	SaveDemoPreset,
+	RenameDemoPreset,
+	DeleteDemoPreset,
 	SetReconstructedAudioParameter,
 	RestoreReconstructedDefaults,
 	SelectAudioBand,
 	RetryAudioDevice
+};
+
+// The action kind defines the operation; this payload keeps its editor fields
+// strongly grouped and independent from SDL/UI widget classes.
+struct DemoActionPayload
+{
+	std::string presetId;
+	std::string presetName;
+	std::string familyId;
+	std::string variantId;
+	std::string optionGroupId;
+	std::string optionStableId;
+	std::size_t stepIndex;
+	int complexityClass;
+	std::uint32_t seed;
+	std::size_t itemCount;
+	int inputDomain;
+	int inputPattern;
+	int direction;
+	int timingMode;
+	float value;
+	bool flag;
+	bool hasInputOverride;
+	DemoActionPayload() : presetId(), presetName(), familyId(), variantId(), optionGroupId(), optionStableId(), stepIndex(0),
+		complexityClass(0), seed(0), itemCount(0), inputDomain(0), inputPattern(0), direction(0), timingMode(0), value(0.0f),
+		flag(false), hasInputOverride(false) {}
 };
 
 enum class AudioParameterId
@@ -102,6 +154,7 @@ struct AppAction
 	ReconstructedAudioParameterId reconstructedAudioParameter;
 	int index;
 	std::shared_ptr<const UiAppearancePreferences> appearance;
+	std::shared_ptr<const DemoActionPayload> demo;
 
 	AppAction(AppActionKind action = AppActionKind::None, float argument = 0.0f, int selected = 0,
 		AudioParameterId parameter = AudioParameterId::MasterLevel, int arrayIndex = 0)

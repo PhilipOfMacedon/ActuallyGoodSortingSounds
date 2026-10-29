@@ -4,6 +4,7 @@
 #include <cmath>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <utility>
 
 #include "BarCountSteps.h"
@@ -45,6 +46,42 @@ namespace
 	ISeedBookmarkPersistence& defaultSeedBookmarkPersistence()
 	{
 		static LocalSeedBookmarkPersistence persistence;
+		return persistence;
+	}
+
+	class LocalDemoPresetPersistence : public IDemoPresetPersistence
+	{
+	public:
+		bool load(std::vector<DemoPreset>& presets, std::vector<std::string>* issues, std::string* error) override
+		{
+			presets.clear();
+			if (issues) issues->clear();
+			const std::wstring path = settingsfile::pathForFile(L"demo-presets.ini");
+			std::string content;
+			if (path.empty() || !settingsfile::readAll(path, content))
+			{
+				if (error) error->clear();
+				return true;
+			}
+			return DemoPresetStore::decode(content, presets, issues, error);
+		}
+
+		bool save(const std::vector<DemoPreset>& presets, std::string* error) override
+		{
+			const std::wstring path = settingsfile::pathForFile(L"demo-presets.ini");
+			if (path.empty())
+			{
+				if (error) *error = "LOCALAPPDATA is unavailable.";
+				return false;
+			}
+			return settingsfile::replaceAtomically(path, DemoPresetStore::encode(presets),
+				DemoPresetStore::CurrentVersion, error, false);
+		}
+	};
+
+	IDemoPresetPersistence& defaultDemoPresetPersistence()
+	{
+		static LocalDemoPresetPersistence persistence;
 		return persistence;
 	}
 
@@ -111,6 +148,30 @@ namespace
 		case AppActionKind::RemoveSeedBookmark:
 		case AppActionKind::PreviousSeed:
 		case AppActionKind::NextSeed:
+		case AppActionKind::OpenDemoEditor:
+		case AppActionKind::CloseDemoEditor:
+		case AppActionKind::SelectDemoPreset:
+		case AppActionKind::StartDemo:
+		case AppActionKind::StopDemo:
+		case AppActionKind::ToggleDemoPlayback:
+		case AppActionKind::PreviousDemoStep:
+		case AppActionKind::NextDemoStep:
+		case AppActionKind::DemoSetClassRecipe:
+		case AppActionKind::DemoSetIntermission:
+		case AppActionKind::DemoSetLoop:
+		case AppActionKind::DemoAddStep:
+		case AppActionKind::DemoRemoveStep:
+		case AppActionKind::DemoMoveStepUp:
+		case AppActionKind::DemoMoveStepDown:
+		case AppActionKind::DemoSetStepAlgorithm:
+		case AppActionKind::DemoSetStepTiming:
+		case AppActionKind::DemoSetStepDirection:
+		case AppActionKind::DemoSetStepOption:
+		case AppActionKind::DemoSetStepOverride:
+		case AppActionKind::DemoClearStepOverride:
+		case AppActionKind::SaveDemoPreset:
+		case AppActionKind::RenameDemoPreset:
+		case AppActionKind::DeleteDemoPreset:
 			return false;
 		default:
 			// New commands take the conservative path until explicitly classified.
@@ -163,31 +224,42 @@ UserPreferences AppController::loadPreferences(ISettingsPersistence& persistence
 	return loaded.isValid() ? loaded : UserPreferences();
 }
 
+RunSession::RunSession(std::size_t itemCount, std::uint32_t seed, sortinglogic::InputDomain domain,
+	sortinglogic::InputPattern pattern, SoundEngine::PlaybackTimingMode timing,
+	std::uint64_t sessionIdentity, bool isTemporary)
+	: simulation(itemCount, seed, domain, pattern), playback(), identity(sessionIdentity), requestGeneration(0),
+	temporary(isTemporary), timingMode(timing), step(), effectiveInput(seed, itemCount, domain, pattern)
+{
+}
+
 AppController::AppController(ISettingsPersistence& settingsPersistence,
-	ISeedBookmarkPersistence* seedBookmarkPersistence)
+	ISeedBookmarkPersistence* seedBookmarkPersistence, IDemoPresetPersistence* demoPresetPersistence)
 	: settingsPersistence_(settingsPersistence),
 	seedBookmarkPersistence_(seedBookmarkPersistence ? seedBookmarkPersistence : &defaultSeedBookmarkPersistence()),
+	demoPresetPersistence_(demoPresetPersistence ? demoPresetPersistence : &defaultDemoPresetPersistence()),
 	preferences_(loadPreferences(settingsPersistence)),
-		simulation_(static_cast<std::size_t>(preferences_.simulation.itemCount), freshStartupOrShuffleSeed(),
-			preferences_.simulation.domain, preferences_.simulation.pattern),
-		traceBuildService_(), playbackCoordinator_(), persistenceStatus_("Preferences loaded."), commandStatus_(), seedHistory_(), seedBookmarks_()
+	manualSession_(static_cast<std::size_t>(preferences_.simulation.itemCount), freshStartupOrShuffleSeed(),
+		preferences_.simulation.domain, preferences_.simulation.pattern, preferences_.simulation.playbackTimingMode, 1, false),
+	demoSession_(), traceBuildService_(), persistenceStatus_("Preferences loaded."), commandStatus_(), seedHistory_(),
+	seedBookmarks_(), demoPresetStore_(), demoRunner_(), demoEditorDraft_(), selectedDemoPresetId_("prefab.classic-five"),
+	demoEditorSelectedStep_(0), editorPrefabSourceId_(), demoEditorOpen_(false), pendingDemoStepPreparation_(false), nextSessionIdentity_(2), demoPersistenceIssue_()
 {
-	seedHistory_.reset(simulation_.snapshot().inputSeed);
+	seedHistory_.reset(activeSimulation().snapshot().inputSeed);
 	std::vector<SeedBookmark> loadedBookmarks;
 	if (seedBookmarkPersistence_->load(loadedBookmarks))
 		for (std::size_t i = 0; i < loadedBookmarks.size(); ++i)
 			seedBookmarks_.save(loadedBookmarks[i].seed, loadedBookmarks[i].name);
-	simulation_.setDuration(static_cast<float>(preferences_.simulation.durationSeconds));
-	simulation_.setDirection(preferences_.simulation.descending
+	activeSimulation().setDuration(static_cast<float>(preferences_.simulation.durationSeconds));
+	activeSimulation().setDirection(preferences_.simulation.descending
 		? sortinglogic::SortDirection::Descending
 		: sortinglogic::SortDirection::Ascending);
 	const sortinglogic::AlgorithmDescriptor* savedAlgorithm = sortinglogic::algorithmDescriptorById(
 		preferences_.simulation.familyId, preferences_.simulation.variantId);
 	if (savedAlgorithm && sortinglogic::algorithmSupports(savedAlgorithm->id, preferences_.simulation.domain))
-		simulation_.selectAlgorithm(savedAlgorithm->id);
-	simulation_.setMergeBufferVisualizationEnabled(preferences_.simulation.mergeBufferVisualizationEnabled);
-	simulation_.setCompletionScanEnabled(preferences_.simulation.completionScanEnabled);
-	const sortinglogic::AlgorithmDescriptor* activeAlgorithm = sortinglogic::algorithmDescriptor(simulation_.algorithm());
+		activeSimulation().selectAlgorithm(savedAlgorithm->id);
+	activeSimulation().setMergeBufferVisualizationEnabled(preferences_.simulation.mergeBufferVisualizationEnabled);
+	activeSimulation().setCompletionScanEnabled(preferences_.simulation.completionScanEnabled);
+	const sortinglogic::AlgorithmDescriptor* activeAlgorithm = sortinglogic::algorithmDescriptor(activeSimulation().algorithm());
 	if (activeAlgorithm)
 	{
 		std::set<std::string> configuredGroups;
@@ -197,19 +269,51 @@ AppController::AppController(ISettingsPersistence& settingsPersistence,
 			const std::string group(option.groupId);
 			if (!configuredGroups.insert(group).second) continue;
 			const std::string stableId = algorithmOptionStableId(preferences_, *activeAlgorithm, group);
-			if (!stableId.empty()) simulation_.setAlgorithmOption(group, stableId);
+			if (!stableId.empty()) activeSimulation().setAlgorithmOption(group, stableId);
 		}
 	}
+	std::vector<DemoPreset> loadedPresets;
+	std::vector<std::string> loadIssues;
+	std::string loadError;
+	if (demoPresetPersistence_->load(loadedPresets, &loadIssues, &loadError))
+	{
+		for (std::size_t i = 0; i < loadedPresets.size(); ++i)
+		{
+			std::string presetError;
+			if (!demoPresetStore_.saveUserPreset(loadedPresets[i], &presetError) && demoPersistenceIssue_.empty())
+				demoPersistenceIssue_ = "A saved demo could not be loaded: " + presetError;
+		}
+		if (!loadIssues.empty() && demoPersistenceIssue_.empty()) demoPersistenceIssue_ = loadIssues.front();
+	}
+	else demoPersistenceIssue_ = loadError.empty() ? "Saved demos could not be read." : loadError;
 }
 
 AppController::~AppController() = default;
 
+RunSession& AppController::activeSession()
+{
+	return demoSession_ ? *demoSession_ : manualSession_;
+}
+
+const RunSession& AppController::activeSession() const
+{
+	return demoSession_ ? *demoSession_ : manualSession_;
+}
+
+sortinglogic::Simulation& AppController::activeSimulation() { return activeSession().simulation; }
+const sortinglogic::Simulation& AppController::activeSimulation() const { return activeSession().simulation; }
+PlaybackCoordinator& AppController::activePlaybackCoordinator() { return activeSession().playback; }
+const PlaybackCoordinator& AppController::activePlaybackCoordinator() const { return activeSession().playback; }
+SoundEngine::PlaybackTimingMode AppController::activeTimingMode() const { return activeSession().timingMode; }
+
 sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 {
-	playbackCoordinator_.traceBuildRequested(false);
+	activePlaybackCoordinator().traceBuildRequested(false);
 	sortinglogic::TraceBuildRequest request;
-	sortinglogic::CommandResult result = simulation_.beginTraceBuild(request);
+	sortinglogic::CommandResult result = activeSimulation().beginTraceBuild(request);
 	if (!result.accepted) return result;
+	request.sessionId = activeSession().identity;
+	request.requestGeneration = ++activeSession().requestGeneration;
 	const sortinglogic::AlgorithmDescriptor* traceAlgorithm = sortinglogic::algorithmDescriptor(request.algorithm);
 	if (traceAlgorithm)
 	{
@@ -219,19 +323,27 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 			const sortinglogic::AlgorithmOptionDescriptor& option = traceAlgorithm->supportedOptions[optionIndex];
 			const std::string group(option.groupId);
 			if (!configuredGroups.insert(group).second) continue;
-			const std::string stableId = algorithmOptionStableId(preferences_, *traceAlgorithm, group);
+			std::string stableId;
+			if (activeSession().temporary)
+			{
+				const std::map<std::string, std::string>::const_iterator selected = activeSession().step.optionSelections.find(group);
+				if (selected != activeSession().step.optionSelections.end()) stableId = selected->second;
+			}
+			else stableId = algorithmOptionStableId(preferences_, *traceAlgorithm, group);
 			if (!stableId.empty()) request.optionSelections[group] = stableId;
 		}
 	}
 
-	playbackCoordinator_.traceBuildRequested(playWhenReady);
+	activePlaybackCoordinator().traceBuildRequested(playWhenReady);
 	std::string error;
 	if (!traceBuildService_.submit(request, &error))
 	{
 		sortinglogic::TraceBuildResult failed;
 		failed.error = error.empty() ? "Trace worker is unavailable." : error;
-		simulation_.completeTraceBuild(failed);
-		playbackCoordinator_.traceBuildFailed();
+		failed.sessionId = request.sessionId;
+		failed.requestGeneration = request.requestGeneration;
+		activeSimulation().completeTraceBuild(failed);
+		activePlaybackCoordinator().traceBuildFailed();
 		return sortinglogic::CommandResult(false, failed.error);
 	}
 	if (playWhenReady)
@@ -241,7 +353,7 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 
 void AppController::setAudioPreparationPending(bool pending)
 {
-	playbackCoordinator_.setAudioPreparationPending(pending);
+	activePlaybackCoordinator().setAudioPreparationPending(pending);
 	startPendingPlaybackIfReady();
 }
 
@@ -280,42 +392,81 @@ bool AppController::applyAppearance(const UiAppearancePreferences& appearance, s
 
 void AppController::startPendingPlaybackIfReady()
 {
-	if (!playbackCoordinator_.consumeQueuedPlayback(simulation_.isBuildingTrace(), simulation_.hasTrace())) return;
-	const bool wasPlaying = simulation_.isPlaying();
-	const sortinglogic::CommandResult started = simulation_.togglePlayback();
-	if (started.accepted && preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+	if (!activePlaybackCoordinator().consumeQueuedPlayback(activeSimulation().isBuildingTrace(), activeSimulation().hasTrace())) return;
+	const bool wasPlaying = activeSimulation().isPlaying();
+	const sortinglogic::CommandResult started = activeSimulation().togglePlayback();
+	if (started.accepted && activeTimingMode() == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 		synchronizeReferenceTransport(wasPlaying);
+	if (started.accepted && demoRunner_.active()) demoRunner_.markPlaying();
 }
 
 sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 {
+	if (action.kind >= AppActionKind::OpenDemoEditor && action.kind <= AppActionKind::DeleteDemoPreset)
+		return dispatchDemoAction(action);
+	if (demoRunner_.active() && (action.kind == AppActionKind::TogglePlayback || action.kind == AppActionKind::GenerateAndPlay))
+		return dispatchDemoAction(AppAction(AppActionKind::ToggleDemoPlayback));
+	if (demoRunner_.active())
+	{
+		bool permitted = false;
+		switch (action.kind)
+		{
+		case AppActionKind::TogglePlayback:
+		case AppActionKind::GenerateAndPlay:
+		case AppActionKind::PreviousEvent:
+		case AppActionKind::NextEvent:
+		case AppActionKind::SeekFraction:
+		case AppActionKind::SetUiPreset:
+		case AppActionKind::ApplyAppearance:
+		case AppActionKind::SetPalette:
+		case AppActionKind::SetSpacing:
+		case AppActionKind::SetPanelExpanded:
+		case AppActionKind::TogglePanelExpanded:
+		case AppActionKind::ToggleBorderlessFullscreen:
+		case AppActionKind::SetAudioParameter:
+		case AppActionKind::SetVariantAudioLevel:
+		case AppActionKind::ResetVariantAudioLevels:
+		case AppActionKind::SetReconstructedAudioParameter:
+		case AppActionKind::RestoreReconstructedDefaults:
+		case AppActionKind::SelectAudioBand:
+		case AppActionKind::RetryAudioDevice:
+		case AppActionKind::CopySeed:
+		case AppActionKind::SaveSeedBookmark:
+			permitted = true;
+			break;
+		default:
+			break;
+		}
+		if (!permitted)
+			return sortinglogic::CommandResult(false, "Manual setup is locked during a demo. Stop the demo to change its inputs or run configuration.");
+	}
 	sortinglogic::CommandResult result(true, "");
 	const PreferenceChangeSnapshot previous(preferences_, needsFullPreferenceSnapshot(action.kind));
-	const bool wasPlaying = simulation_.isPlaying();
-	const std::shared_ptr<const sortinglogic::SortTrace> previousTrace = simulation_.currentTrace();
+	const bool wasPlaying = activeSimulation().isPlaying();
+	const std::shared_ptr<const sortinglogic::SortTrace> previousTrace = activeSimulation().currentTrace();
 	switch (action.kind)
 	{
 	case AppActionKind::Shuffle:
-		result = simulation_.prepareShuffle(freshStartupOrShuffleSeed());
-		if (result.accepted) seedHistory_.append(simulation_.snapshot().inputSeed);
+		result = activeSimulation().prepareShuffle(freshStartupOrShuffleSeed());
+		if (result.accepted) seedHistory_.append(activeSimulation().snapshot().inputSeed);
 		break;
 	case AppActionKind::SetSeed:
-		if (simulation_.isPlaying() || simulation_.isBuildingTrace())
+		if (activeSimulation().isPlaying() || activeSimulation().isBuildingTrace())
 			result = sortinglogic::CommandResult(false, "Pause playback and wait for trace preparation before applying a seed.");
-		else if (simulation_.snapshot().inputSeed == action.seed)
+		else if (activeSimulation().snapshot().inputSeed == action.seed)
 			result = sortinglogic::CommandResult(true, "Seed unchanged.");
 		else
 		{
-			result = simulation_.prepareShuffle(action.seed);
+			result = activeSimulation().prepareShuffle(action.seed);
 			if (result.accepted) seedHistory_.append(action.seed);
 		}
 		break;
 	case AppActionKind::CopySeed:
-		result = sortinglogic::CommandResult(true, "Copy seed " + std::to_string(simulation_.snapshot().inputSeed) + " to the clipboard.");
+		result = sortinglogic::CommandResult(true, "Copy seed " + std::to_string(activeSimulation().snapshot().inputSeed) + " to the clipboard.");
 		break;
 	case AppActionKind::SaveSeedBookmark:
 	{
-		const std::uint32_t seed = simulation_.snapshot().inputSeed;
+		const std::uint32_t seed = activeSimulation().snapshot().inputSeed;
 		const bool existed = seedBookmarks_.contains(seed);
 		const SeedBookmarkStore previousBookmarks = seedBookmarks_;
 		const bool added = seedBookmarks_.save(seed, action.text);
@@ -340,12 +491,12 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		else
 		{
 			const std::uint32_t seed = seedBookmarks_.bookmarks()[static_cast<std::size_t>(action.selection)].seed;
-			if (simulation_.isPlaying() || simulation_.isBuildingTrace())
+			if (activeSimulation().isPlaying() || activeSimulation().isBuildingTrace())
 				result = sortinglogic::CommandResult(false, "Pause playback and wait for trace preparation before applying a saved seed.");
 			else
 			{
-				result = seed == simulation_.snapshot().inputSeed
-					? sortinglogic::CommandResult(true, "Saved seed selected.") : simulation_.prepareShuffle(seed);
+				result = seed == activeSimulation().snapshot().inputSeed
+					? sortinglogic::CommandResult(true, "Saved seed selected.") : activeSimulation().prepareShuffle(seed);
 				if (result.accepted)
 				{
 					seedBookmarks_.select(static_cast<std::size_t>(action.selection));
@@ -358,14 +509,14 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::NextSeed:
 	{
 		const bool previousSeed = action.kind == AppActionKind::PreviousSeed;
-		if (simulation_.isPlaying() || simulation_.isBuildingTrace())
+		if (activeSimulation().isPlaying() || activeSimulation().isBuildingTrace())
 			result = sortinglogic::CommandResult(false, "Pause playback and wait for trace preparation before browsing seed history.");
 		else if (previousSeed ? !seedHistory_.canGoPrevious() : !seedHistory_.canGoNext())
 			result = sortinglogic::CommandResult(false, previousSeed ? "There is no previous seed." : "There is no next seed.");
 		else
 		{
 			const std::uint32_t seed = previousSeed ? seedHistory_.previous() : seedHistory_.next();
-			result = simulation_.prepareShuffle(seed);
+			result = activeSimulation().prepareShuffle(seed);
 			if (result.accepted)
 				previousSeed ? seedHistory_.movePrevious() : seedHistory_.moveNext();
 		}
@@ -399,10 +550,10 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		break;
 	}
 	case AppActionKind::InstaSort:
-		result = simulation_.prepareInstaSort();
+		result = activeSimulation().prepareInstaSort();
 		break;
 	case AppActionKind::InstaInvert:
-		result = simulation_.prepareInstaInvert();
+		result = activeSimulation().prepareInstaInvert();
 		break;
 	case AppActionKind::SelectAlgorithm:
 	{
@@ -410,31 +561,34 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		if (!descriptor)
 			result = sortinglogic::CommandResult(false, "The selected algorithm family and variant are not registered.");
 		else
-			result = simulation_.selectAlgorithm(descriptor->id);
+			result = activeSimulation().selectAlgorithm(descriptor->id);
 		break;
 	}
 	case AppActionKind::SetDirection:
-		result = simulation_.setDirection(action.selection == 1
+		result = activeSimulation().setDirection(action.selection == 1
 			? sortinglogic::SortDirection::Descending
 			: sortinglogic::SortDirection::Ascending);
 		break;
 	case AppActionKind::SetPlaybackTimingMode:
-		if (simulation_.isPlaying() || simulation_.isBuildingTrace())
+		if (activeSimulation().isPlaying() || activeSimulation().isBuildingTrace())
 			result = sortinglogic::CommandResult(false, "Pause playback and wait for trace preparation before changing timing mode.");
 		else if (action.selection < static_cast<int>(SoundEngine::PlaybackTimingMode::FixedDuration) ||
 			action.selection > static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence))
 			result = sortinglogic::CommandResult(false, "The selected playback timing mode is invalid.");
 		else
+		{
 			preferences_.simulation.playbackTimingMode = static_cast<SoundEngine::PlaybackTimingMode>(action.selection);
+			manualSession_.timingMode = preferences_.simulation.playbackTimingMode;
+		}
 		break;
 	case AppActionKind::SetCompletionScan:
 		if (action.selection < 0 || action.selection > 1)
 			result = sortinglogic::CommandResult(false, "The selected completion scan setting is invalid.");
 		else
 		{
-			result = simulation_.setCompletionScanEnabled(action.selection == 1);
+			result = activeSimulation().setCompletionScanEnabled(action.selection == 1);
 			if (result.accepted)
-				preferences_.simulation.completionScanEnabled = simulation_.completionScanEnabled();
+				preferences_.simulation.completionScanEnabled = activeSimulation().completionScanEnabled();
 		}
 		break;
 	case AppActionKind::SetMergeBufferVisualization:
@@ -442,53 +596,53 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected Merge Sort buffer visualization setting is invalid.");
 		else
 		{
-			result = simulation_.setMergeBufferVisualizationEnabled(action.selection == 1);
+			result = activeSimulation().setMergeBufferVisualizationEnabled(action.selection == 1);
 			if (result.accepted)
-				preferences_.simulation.mergeBufferVisualizationEnabled = simulation_.mergeBufferVisualizationEnabled();
+				preferences_.simulation.mergeBufferVisualizationEnabled = activeSimulation().mergeBufferVisualizationEnabled();
 		}
 		break;
 	case AppActionKind::BuildTrace:
 		result = requestTraceBuild(false);
 		break;
 	case AppActionKind::GenerateAndPlay:
-		if (simulation_.isPlaying())
+		if (activeSimulation().isPlaying())
 		{
-			playbackCoordinator_.cancelQueuedPlayback();
-			result = simulation_.togglePlayback();
+			activePlaybackCoordinator().cancelQueuedPlayback();
+			result = activeSimulation().togglePlayback();
 		}
-		else if (playbackCoordinator_.playbackQueued())
+		else if (activePlaybackCoordinator().playbackQueued())
 		{
-			playbackCoordinator_.cancelQueuedPlayback();
+			activePlaybackCoordinator().cancelQueuedPlayback();
 			result = sortinglogic::CommandResult(true, "Queued playback cancelled.");
 		}
-		else if (simulation_.isBuildingTrace())
+		else if (activeSimulation().isBuildingTrace())
 		{
-			playbackCoordinator_.queuePlayback();
+			activePlaybackCoordinator().queuePlayback();
 			result = sortinglogic::CommandResult(true, "Playback queued; it will start when the trace and audio timeline are ready.");
 		}
-		else if (!simulation_.currentTrace())
+		else if (!activeSimulation().currentTrace())
 			result = requestTraceBuild(true);
-		else if (playbackCoordinator_.audioPreparationBlocksStart())
+		else if (activePlaybackCoordinator().audioPreparationBlocksStart())
 		{
-			playbackCoordinator_.queuePlayback();
+			activePlaybackCoordinator().queuePlayback();
 			result = sortinglogic::CommandResult(true, "Playback queued until audio preparation finishes.");
 		}
 		else
-			result = simulation_.togglePlayback();
+			result = activeSimulation().togglePlayback();
 		break;
 	case AppActionKind::TogglePlayback:
-		if (playbackCoordinator_.audioPreparationBlocksStart() && !simulation_.isPlaying())
+		if (activePlaybackCoordinator().audioPreparationBlocksStart() && !activeSimulation().isPlaying())
 			result = sortinglogic::CommandResult(false, "Preparing audio timeline. Playback will be available as soon as preparation finishes.");
-		else result = simulation_.togglePlayback();
+		else result = activeSimulation().togglePlayback();
 		break;
 	case AppActionKind::Reset:
-		result = simulation_.reset();
+		result = activeSimulation().reset();
 		break;
 	case AppActionKind::PreviousEvent:
-		result = simulation_.previousEvent();
+		result = activeSimulation().previousEvent();
 		break;
 	case AppActionKind::NextEvent:
-		result = simulation_.nextEvent();
+		result = activeSimulation().nextEvent();
 		break;
 	case AppActionKind::DecreaseCountFine:
 	case AppActionKind::DecreaseCountCoarse:
@@ -497,45 +651,45 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	{
 		const bool increase = action.kind == AppActionKind::IncreaseCountFine || action.kind == AppActionKind::IncreaseCountCoarse;
 		const bool coarse = action.kind == AppActionKind::DecreaseCountCoarse || action.kind == AppActionKind::IncreaseCountCoarse;
-		const int next = adjustBarCount(static_cast<int>(simulation_.itemCount()), increase, coarse,
+		const int next = adjustBarCount(static_cast<int>(activeSimulation().itemCount()), increase, coarse,
 			static_cast<int>(sortinglogic::MinItemCount), static_cast<int>(sortinglogic::MaxItemCount));
-		result = simulation_.setItemCount(static_cast<std::size_t>(next));
+		result = activeSimulation().setItemCount(static_cast<std::size_t>(next));
 		break;
 	}
 	case AppActionKind::AdjustItemCount:
 	{
 		const int delta = static_cast<int>(std::lround(action.value));
 		const int next = std::max(static_cast<int>(sortinglogic::MinItemCount),
-			std::min(static_cast<int>(sortinglogic::MaxItemCount), static_cast<int>(simulation_.itemCount()) + delta));
-		result = simulation_.setItemCount(static_cast<std::size_t>(next));
+			std::min(static_cast<int>(sortinglogic::MaxItemCount), static_cast<int>(activeSimulation().itemCount()) + delta));
+		result = activeSimulation().setItemCount(static_cast<std::size_t>(next));
 		break;
 	}
 	case AppActionKind::SetItemCount:
-		result = simulation_.setItemCount(action.selection < 0 ? 0U : static_cast<std::size_t>(action.selection));
+		result = activeSimulation().setItemCount(action.selection < 0 ? 0U : static_cast<std::size_t>(action.selection));
 		break;
 	case AppActionKind::DecreaseDuration:
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
-		else result = simulation_.setDuration(std::max(sortinglogic::MinRunDurationSeconds, simulation_.durationSeconds() - 1.0f));
+		else result = activeSimulation().setDuration(std::max(sortinglogic::MinRunDurationSeconds, activeSimulation().durationSeconds() - 1.0f));
 		break;
 	case AppActionKind::AdjustDuration:
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
-		else result = simulation_.setDuration(std::max(sortinglogic::MinRunDurationSeconds,
-			std::min(sortinglogic::MaxRunDurationSeconds, simulation_.durationSeconds() + action.value)));
+		else result = activeSimulation().setDuration(std::max(sortinglogic::MinRunDurationSeconds,
+			std::min(sortinglogic::MaxRunDurationSeconds, activeSimulation().durationSeconds() + action.value)));
 		break;
 	case AppActionKind::IncreaseDuration:
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
-		else result = simulation_.setDuration(std::min(sortinglogic::MaxRunDurationSeconds, simulation_.durationSeconds() + 1.0f));
+		else result = activeSimulation().setDuration(std::min(sortinglogic::MaxRunDurationSeconds, activeSimulation().durationSeconds() + 1.0f));
 		break;
 	case AppActionKind::SetDuration:
 		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 			result = sortinglogic::CommandResult(false, "Reference cadence calculates run duration from the number of audible events.");
-		else result = simulation_.setDuration(action.value);
+		else result = activeSimulation().setDuration(action.value);
 		break;
 	case AppActionKind::SeekFraction:
-		result = simulation_.seekToFraction(action.value);
+		result = activeSimulation().seekToFraction(action.value);
 		break;
 	case AppActionKind::SetUiPreset:
 		if (action.selection < static_cast<int>(UiPresetId::Current) || action.selection > static_cast<int>(UiPresetId::ClassicWindows95))
@@ -583,9 +737,9 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected data profile is invalid.");
 		else
 		{
-			result = simulation_.setInputProfile(static_cast<sortinglogic::InputProfile>(action.selection));
+			result = activeSimulation().setInputProfile(static_cast<sortinglogic::InputProfile>(action.selection));
 			if (result.accepted)
-				preferences_.simulation.domain = simulation_.domain();
+				preferences_.simulation.domain = activeSimulation().domain();
 		}
 		break;
 	case AppActionKind::SetInputDomain:
@@ -594,9 +748,9 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected input domain is invalid.");
 		else
 		{
-			result = simulation_.setInputDomain(static_cast<sortinglogic::InputDomain>(action.selection));
+			result = activeSimulation().setInputDomain(static_cast<sortinglogic::InputDomain>(action.selection));
 			if (result.accepted)
-				preferences_.simulation.domain = simulation_.domain();
+				preferences_.simulation.domain = activeSimulation().domain();
 		}
 		break;
 	case AppActionKind::SetInputPattern:
@@ -605,8 +759,8 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected input pattern is invalid.");
 		else
 		{
-			result = simulation_.setInputPattern(static_cast<sortinglogic::InputPattern>(action.selection));
-			if (result.accepted) preferences_.simulation.pattern = simulation_.pattern();
+			result = activeSimulation().setInputPattern(static_cast<sortinglogic::InputPattern>(action.selection));
+			if (result.accepted) preferences_.simulation.pattern = activeSimulation().pattern();
 		}
 		break;
 	case AppActionKind::SetAlgorithmOption:
@@ -627,7 +781,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected algorithm option is not available for the active algorithm.");
 		else
 		{
-			result = simulation_.setAlgorithmOption(action.optionGroupId, action.optionStableId);
+			result = activeSimulation().setAlgorithmOption(action.optionGroupId, action.optionStableId);
 		}
 		if (result.accepted && previousStableId != option->stableId)
 			preferences_.algorithmOptions[algorithmOptionSettingsKey(descriptor->familyId, descriptor->variantId,
@@ -640,7 +794,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected Shell gap sequence is invalid.");
 		else
 		{
-			result = simulation_.setShellGapSequence(static_cast<sortinglogic::ShellGapSequence>(action.selection));
+			result = activeSimulation().setShellGapSequence(static_cast<sortinglogic::ShellGapSequence>(action.selection));
 			if (result.accepted)
 			{
 				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
@@ -654,7 +808,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected Merge Sort writeback mode is invalid.");
 		else
 		{
-			result = simulation_.setMergeWritebackMode(static_cast<sortinglogic::MergeWritebackMode>(action.selection));
+			result = activeSimulation().setMergeWritebackMode(static_cast<sortinglogic::MergeWritebackMode>(action.selection));
 			if (result.accepted)
 			{
 				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
@@ -668,7 +822,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 			result = sortinglogic::CommandResult(false, "The selected Merge Sort execution mode is invalid.");
 		else
 		{
-			result = simulation_.setMergeExecutionMode(static_cast<sortinglogic::MergeExecutionMode>(action.selection));
+			result = activeSimulation().setMergeExecutionMode(static_cast<sortinglogic::MergeExecutionMode>(action.selection));
 			if (result.accepted)
 			{
 				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
@@ -718,29 +872,61 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::RetryAudioDevice:
 		// The SDL adapter handles this app-level command; the controller keeps it harmless.
 		break;
+	case AppActionKind::OpenDemoEditor:
+	case AppActionKind::CloseDemoEditor:
+	case AppActionKind::SelectDemoPreset:
+		case AppActionKind::SelectDemoStep:
+	case AppActionKind::StartDemo:
+	case AppActionKind::StopDemo:
+	case AppActionKind::ToggleDemoPlayback:
+	case AppActionKind::PreviousDemoStep:
+	case AppActionKind::NextDemoStep:
+	case AppActionKind::DemoSetClassRecipe:
+	case AppActionKind::DemoSetIntermission:
+	case AppActionKind::DemoSetLoop:
+	case AppActionKind::DemoAddStep:
+	case AppActionKind::DemoRemoveStep:
+	case AppActionKind::DemoMoveStepUp:
+	case AppActionKind::DemoMoveStepDown:
+	case AppActionKind::DemoSetStepAlgorithm:
+	case AppActionKind::DemoSetStepTiming:
+	case AppActionKind::DemoSetStepDirection:
+	case AppActionKind::DemoSetStepOption:
+	case AppActionKind::DemoSetStepOverride:
+	case AppActionKind::DemoClearStepOverride:
+	case AppActionKind::SaveDemoPreset:
+	case AppActionKind::RenameDemoPreset:
+	case AppActionKind::DeleteDemoPreset:
+		return dispatchDemoAction(action);
 	case AppActionKind::None:
 		break;
 	}
 
-	if (result.accepted && preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence &&
+	if (result.accepted && activeTimingMode() == SoundEngine::PlaybackTimingMode::ReferenceCadence &&
 		(action.kind == AppActionKind::BuildTrace || action.kind == AppActionKind::GenerateAndPlay ||
 		 action.kind == AppActionKind::Shuffle || action.kind == AppActionKind::InstaSort ||
 		 action.kind == AppActionKind::InstaInvert || action.kind == AppActionKind::TogglePlayback || action.kind == AppActionKind::Reset ||
 		 action.kind == AppActionKind::PreviousEvent || action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction ||
 		 action.kind == AppActionKind::SetPlaybackTimingMode))
 		synchronizeReferenceTransport(wasPlaying);
-	if (result.accepted && simulation_.hasTrace() &&
+	if (result.accepted && activeSimulation().hasTrace() &&
 		(action.kind == AppActionKind::SetPlaybackTimingMode || action.kind == AppActionKind::DecreaseDuration ||
 		 action.kind == AppActionKind::IncreaseDuration || action.kind == AppActionKind::AdjustDuration || action.kind == AppActionKind::SetDuration))
-		playbackCoordinator_.markAudioPreparationPending(true);
-	if (result.accepted)
+		activePlaybackCoordinator().markAudioPreparationPending(true);
+	if (result.accepted && !demoRunner_.active())
 		synchronizeSimulationPreferences();
-	if (result.accepted && previousTrace && simulation_.currentTrace() != previousTrace &&
+	if (result.accepted && previousTrace && activeSimulation().currentTrace() != previousTrace &&
 		action.kind != AppActionKind::BuildTrace && action.kind != AppActionKind::GenerateAndPlay)
-		playbackCoordinator_.cancelQueuedPlayback();
+		activePlaybackCoordinator().cancelQueuedPlayback();
 	if (result.accepted && (action.kind == AppActionKind::Reset || action.kind == AppActionKind::PreviousEvent ||
 		action.kind == AppActionKind::NextEvent || action.kind == AppActionKind::SeekFraction))
-		playbackCoordinator_.cancelQueuedPlayback();
+		activePlaybackCoordinator().cancelQueuedPlayback();
+	if (result.accepted && demoRunner_.active() &&
+		(action.kind == AppActionKind::TogglePlayback || action.kind == AppActionKind::GenerateAndPlay))
+	{
+		if (activeSimulation().isPlaying()) demoRunner_.markPlaying();
+		else demoRunner_.markPaused();
+	}
 	if (previous.changed(preferences_))
 	{
 		persistPreferences();
@@ -756,28 +942,552 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	return result;
 }
 
+const DemoPreset* AppController::findDemoPreset(const std::string& id) const
+{
+	if (const DemoPreset* prefab = demoPrefabPreset(id)) return prefab;
+	return demoPresetStore_.findUserPreset(id);
+}
+
+bool AppController::persistDemoPresets(std::string* error)
+{
+	const bool saved = demoPresetPersistence_ && demoPresetPersistence_->save(demoPresetStore_.userPresets(), error);
+	if (!saved)
+		persistenceStatus_ = "Could not save demo presets" + (error && !error->empty() ? ": " + *error : ".");
+	else persistenceStatus_ = "Demo presets saved.";
+	return saved;
+}
+
+sortinglogic::CommandResult AppController::startDemo(const std::string& presetId)
+{
+	if (demoRunner_.active()) return sortinglogic::CommandResult(false, "A demo is already active.");
+	if (traceBuildService_.isBusy() || manualSession_.simulation.isBuildingTrace())
+		return sortinglogic::CommandResult(false, "Wait for the current trace build to finish before starting a demo.");
+	const DemoPreset* source = findDemoPreset(presetId.empty() ? selectedDemoPresetId_ : presetId);
+	DemoPreset draft;
+	if (demoEditorOpen_ && (presetId.empty() || presetId == selectedDemoPresetId_) && !demoEditorDraft_.steps.empty())
+	{
+		draft = demoEditorDraft_;
+		source = &draft;
+	}
+	if (!source) return sortinglogic::CommandResult(false, "The selected demo preset is unavailable.");
+	std::string error;
+	if (!demoRunner_.begin(*source, &error))
+		return sortinglogic::CommandResult(false, error.empty() ? "The selected demo preset is invalid." : error);
+	if (manualSession_.simulation.isPlaying()) manualSession_.simulation.stopPlayback();
+	manualSession_.playback.cancelQueuedPlayback();
+	if (manualSession_.simulation.currentTrace())
+		manualSession_.playback.setReferenceElapsedSeconds(referenceElapsedAtCursor(manualSession_.simulation.cursor()));
+	selectedDemoPresetId_ = source->id;
+	demoSession_.reset();
+	demoEditorOpen_ = false;
+	prepareRequestedDemoStep();
+	return sortinglogic::CommandResult(true, "Starting " + source->name + ". " + demoRunner_.message());
+}
+
+sortinglogic::CommandResult AppController::stopDemo(const std::string& message)
+{
+	if (!demoRunner_.active() && !demoSession_)
+		return sortinglogic::CommandResult(true, message.empty() ? "No demo is active." : message);
+	if (demoSession_ && demoSession_->simulation.isBuildingTrace()) traceBuildService_.cancelActive();
+	if (demoSession_) demoSession_->playback.cancelQueuedPlayback();
+	demoSession_.reset();
+	pendingDemoStepPreparation_ = false;
+	demoRunner_.stop();
+	commandStatus_ = message.empty() ? "Demo stopped. Manual session restored paused at its saved event." : message;
+	return sortinglogic::CommandResult(true, commandStatus_);
+}
+
+void AppController::prepareRequestedDemoStep()
+{
+	if (!demoRunner_.active() || !demoRunner_.preparationPending() || traceBuildService_.isBusy()) return;
+	if (!demoRunner_.takePreparationRequest()) return;
+	const DemoStep* step = demoRunner_.currentStep();
+	if (!step)
+	{
+		demoRunner_.fail("The active demo has no algorithm step.");
+		finishDemoIfNeeded();
+		return;
+	}
+	if (!demoRunner_.hasEffectiveInput())
+	{
+		std::string error;
+		const DemoInputRecipe recipe = demoRecipeForStep(demoRunner_.preset(), *step, &error);
+		if (!error.empty())
+		{
+			demoRunner_.fail(error);
+			finishDemoIfNeeded();
+			return;
+		}
+		const DemoInputAdjustment adjusted = adaptDemoInput(demoRunner_.preset(), *step, recipe);
+		if (!adjusted.error.empty())
+		{
+			demoRunner_.fail(adjusted.error);
+			finishDemoIfNeeded();
+			return;
+		}
+		demoRunner_.setEffectiveInput(adjusted.recipe, adjusted.messages);
+	}
+	createDemoSessionForCurrentStep();
+}
+
+void AppController::createDemoSessionForCurrentStep()
+{
+	if (!demoRunner_.active() || traceBuildService_.isBusy()) return;
+	const DemoStep* step = demoRunner_.currentStep();
+	const sortinglogic::AlgorithmDescriptor* descriptor = step
+		? sortinglogic::algorithmDescriptorById(step->familyId, step->variantId) : nullptr;
+	if (!step || !descriptor)
+	{
+		demoRunner_.fail("The requested demo algorithm is unavailable.");
+		finishDemoIfNeeded();
+		return;
+	}
+	const DemoInputRecipe& input = demoRunner_.effectiveInput();
+	try
+	{
+		demoSession_.reset(new RunSession(input.itemCount, input.seed, input.domain, input.pattern,
+			step->timingMode, nextSessionIdentity_++, true));
+	}
+	catch (const std::exception& exception)
+	{
+		demoRunner_.fail(std::string("Could not create the effective demo input: ") + exception.what());
+		finishDemoIfNeeded();
+		return;
+	}
+	demoSession_->step = *step;
+	demoSession_->effectiveInput = input;
+	demoSession_->simulation.setDirection(step->direction);
+	sortinglogic::CommandResult configured = demoSession_->simulation.selectAlgorithm(descriptor->id);
+	if (!configured.accepted)
+	{
+		demoRunner_.fail("Could not configure " + std::string(descriptor->displayName) + ": " + configured.message);
+		finishDemoIfNeeded();
+		return;
+	}
+	if (step->timingMode == SoundEngine::PlaybackTimingMode::FixedDuration)
+	{
+		configured = demoSession_->simulation.setDuration(step->fixedDurationSeconds);
+		if (!configured.accepted)
+		{
+			demoRunner_.fail("Could not apply the fixed step duration: " + configured.message);
+			finishDemoIfNeeded();
+			return;
+		}
+	}
+	for (std::map<std::string, std::string>::const_iterator option = step->optionSelections.begin();
+		option != step->optionSelections.end(); ++option)
+	{
+		configured = demoSession_->simulation.setAlgorithmOption(option->first, option->second);
+		if (!configured.accepted)
+		{
+			demoRunner_.fail("Could not apply option " + option->first + ": " + configured.message);
+			finishDemoIfNeeded();
+			return;
+		}
+	}
+	configured = requestTraceBuild(true);
+	if (!configured.accepted)
+	{
+		demoRunner_.fail("Could not prepare " + std::string(descriptor->displayName) + ": " + configured.message);
+		finishDemoIfNeeded();
+	}
+}
+
+void AppController::handleDemoBuildCompletion(sortinglogic::TraceBuildResult result)
+{
+	if (!demoSession_ || result.sessionId != demoSession_->identity ||
+		result.requestGeneration != demoSession_->requestGeneration) return;
+	if (result.status == sortinglogic::TraceBuildStatus::Cancelled) return;
+	if (result.succeeded && !result.trace.complete)
+	{
+		DemoInputRecipe smaller;
+		std::string error;
+		if (demoRunner_.retryWithSmallerInput(smaller, &error))
+		{
+			const DemoStep* step = demoRunner_.currentStep();
+			const DemoInputAdjustment adjusted = step
+				? adaptDemoInput(demoRunner_.preset(), *step, smaller) : DemoInputAdjustment();
+			if (!step || !adjusted.error.empty())
+			{
+				demoRunner_.fail(step ? adjusted.error : "The retry lost its active step.");
+				finishDemoIfNeeded();
+				return;
+			}
+			std::vector<std::string> messages = demoRunner_.adjustments();
+			messages.insert(messages.end(), adjusted.messages.begin(), adjusted.messages.end());
+			demoRunner_.setEffectiveInput(adjusted.recipe, messages, false);
+			demoSession_.reset();
+			return;
+		}
+		demoRunner_.fail("Step " + std::to_string(demoRunner_.stepIndex() + 1) + " could not fit the trace budgets: " +
+			(result.trace.completionReason.empty() ? error : result.trace.completionReason));
+		finishDemoIfNeeded();
+		return;
+	}
+	if (!result.succeeded)
+	{
+		demoRunner_.fail("Step " + std::to_string(demoRunner_.stepIndex() + 1) + " failed: " +
+			(result.error.empty() ? "trace builder reported an unknown failure." : result.error));
+		finishDemoIfNeeded();
+		return;
+	}
+	activeSimulation().completeTraceBuild(std::move(result));
+	activePlaybackCoordinator().traceBuildCompleted(activeSimulation().hasTrace());
+	if (!activeSimulation().hasTrace())
+	{
+		demoRunner_.fail("The completed trace was not installed in its owning demo session.");
+		finishDemoIfNeeded();
+		return;
+	}
+	demoRunner_.markPrepared();
+	if (activeTimingMode() == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+		synchronizeReferenceTransport(false);
+}
+
+void AppController::finishDemoIfNeeded()
+{
+	if (demoRunner_.state() == DemoRunnerState::Finished || demoRunner_.state() == DemoRunnerState::Failed)
+	{
+		const std::string message = demoRunner_.message();
+		stopDemo(message);
+	}
+}
+
+sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& action)
+{
+	const DemoActionPayload empty;
+	const DemoActionPayload& payload = action.demo ? *action.demo : empty;
+	const std::string presetId = !payload.presetId.empty() ? payload.presetId : action.text;
+	if (action.kind == AppActionKind::OpenDemoEditor)
+	{
+		demoEditorOpen_ = true;
+		if (demoEditorDraft_.steps.empty())
+		{
+			const DemoPreset* preset = findDemoPreset(selectedDemoPresetId_);
+			if (preset) demoEditorDraft_ = *preset;
+		}
+		return sortinglogic::CommandResult(true, "Demo editor opened.");
+	}
+	if (action.kind == AppActionKind::CloseDemoEditor)
+	{
+		demoEditorOpen_ = false;
+		return sortinglogic::CommandResult(true, "Demo editor closed.");
+	}
+	if (action.kind == AppActionKind::SelectDemoPreset)
+	{
+		const DemoPreset* preset = findDemoPreset(presetId);
+		if (!preset) return sortinglogic::CommandResult(false, "The selected demo preset is unavailable.");
+		selectedDemoPresetId_ = preset->id;
+		demoEditorDraft_ = *preset;
+		demoEditorSelectedStep_ = 0;
+		editorPrefabSourceId_ = preset->prefab ? preset->id : std::string();
+		return sortinglogic::CommandResult(true, "Selected " + preset->name + ".");
+	}
+	if (action.kind == AppActionKind::SelectDemoStep)
+	{
+		const std::size_t selected = action.demo ? action.demo->stepIndex : static_cast<std::size_t>((std::max)(0, action.selection));
+		if (selected >= demoEditorDraft_.steps.size()) return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
+		demoEditorSelectedStep_ = selected;
+		return sortinglogic::CommandResult(true, "Selected demo step " + std::to_string(selected + 1) + ".");
+	}
+	if (action.kind == AppActionKind::StartDemo)
+		return startDemo(presetId.empty() ? selectedDemoPresetId_ : presetId);
+	if (action.kind == AppActionKind::StopDemo)
+		return stopDemo();
+	if (action.kind == AppActionKind::ToggleDemoPlayback)
+	{
+		if (!demoRunner_.active()) return startDemo(presetId.empty() ? selectedDemoPresetId_ : presetId);
+		if (activeSimulation().isPlaying())
+		{
+			activePlaybackCoordinator().cancelQueuedPlayback();
+			const sortinglogic::CommandResult paused = activeSimulation().togglePlayback();
+			if (paused.accepted) demoRunner_.markPaused();
+			return paused;
+		}
+		if (demoRunner_.state() == DemoRunnerState::Preparing && activeSimulation().isBuildingTrace())
+		{
+			activePlaybackCoordinator().cancelQueuedPlayback();
+			return sortinglogic::CommandResult(true, "Demo step is preparing; automatic playback was paused.");
+		}
+		if (activePlaybackCoordinator().audioPreparationBlocksStart())
+			return sortinglogic::CommandResult(false, "Preparing audio timeline. Demo playback will start when it is ready.");
+		const sortinglogic::CommandResult started = activeSimulation().togglePlayback();
+		if (started.accepted) demoRunner_.markPlaying();
+		return started;
+	}
+	if (action.kind == AppActionKind::PreviousDemoStep || action.kind == AppActionKind::NextDemoStep)
+	{
+		if (!demoRunner_.active()) return sortinglogic::CommandResult(false, "No demo is active.");
+		const bool moved = action.kind == AppActionKind::PreviousDemoStep ? demoRunner_.previousStep() : demoRunner_.nextStep();
+		if (!moved) return sortinglogic::CommandResult(false, "There is no neighboring algorithm step in that direction.");
+		if (demoSession_ && demoSession_->simulation.isBuildingTrace()) traceBuildService_.cancelActive();
+		if (demoSession_) demoSession_->playback.cancelQueuedPlayback();
+		demoSession_.reset();
+		prepareRequestedDemoStep();
+		return sortinglogic::CommandResult(true, demoRunner_.message());
+	}
+	if (!demoEditorOpen_ && action.kind >= AppActionKind::DemoSetClassRecipe && action.kind <= AppActionKind::DeleteDemoPreset)
+		return sortinglogic::CommandResult(false, "Open the demo editor before changing its draft.");
+
+	if (action.kind == AppActionKind::DemoSetClassRecipe)
+	{
+		if (payload.complexityClass < static_cast<int>(sortinglogic::DemoComplexityClass::Linear) ||
+			payload.complexityClass > static_cast<int>(sortinglogic::DemoComplexityClass::DemonstrationUnknown) ||
+			payload.itemCount < sortinglogic::MinItemCount || payload.itemCount > sortinglogic::MaxItemCount ||
+			payload.seed > (std::numeric_limits<std::uint32_t>::max)())
+			return sortinglogic::CommandResult(false, "The input recipe is outside its supported range.");
+		DemoInputRecipe recipe(payload.seed, payload.itemCount, static_cast<sortinglogic::InputDomain>(payload.inputDomain),
+			static_cast<sortinglogic::InputPattern>(payload.inputPattern));
+		if (static_cast<int>(recipe.domain) < static_cast<int>(sortinglogic::InputDomain::NormalizedFloats) ||
+			static_cast<int>(recipe.domain) > static_cast<int>(sortinglogic::InputDomain::IntegerPermutation) ||
+			static_cast<int>(recipe.pattern) < static_cast<int>(sortinglogic::InputPattern::Random) ||
+			static_cast<int>(recipe.pattern) > static_cast<int>(sortinglogic::InputPattern::AndrutReference))
+			return sortinglogic::CommandResult(false, "The input recipe domain or pattern is invalid.");
+		demoEditorDraft_.classInputs[static_cast<sortinglogic::DemoComplexityClass>(payload.complexityClass)] = recipe;
+		return sortinglogic::CommandResult(true, "Complexity-class input updated in the draft.");
+	}
+	if (action.kind == AppActionKind::DemoSetIntermission)
+	{
+		if (!std::isfinite(payload.value) || payload.value < 0.0f || payload.value > 120.0f)
+			return sortinglogic::CommandResult(false, "Intermission must be between 0 and 120 seconds.");
+		demoEditorDraft_.intermissionSeconds = payload.value;
+		return sortinglogic::CommandResult(true, "Demo intermission updated.");
+	}
+	if (action.kind == AppActionKind::DemoSetLoop)
+	{
+		demoEditorDraft_.loop = payload.flag;
+		return sortinglogic::CommandResult(true, "Demo looping updated.");
+	}
+	if (action.kind == AppActionKind::DemoAddStep)
+	{
+		if (demoEditorDraft_.steps.size() >= DemoPresetStore::MaximumStepsPerPreset)
+			return sortinglogic::CommandResult(false, "The demo step limit has been reached.");
+		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(
+			payload.familyId.empty() ? action.familyId : payload.familyId,
+			payload.variantId.empty() ? action.variantId : payload.variantId);
+		if (!descriptor) return sortinglogic::CommandResult(false, "Select a registered algorithm to add a demo step.");
+		DemoStep step;
+		step.familyId = descriptor->familyId;
+		step.variantId = descriptor->variantId;
+		std::set<std::string> optionGroups;
+		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
+			if (descriptor->supportedOptions[i].isDefault && optionGroups.insert(descriptor->supportedOptions[i].groupId).second)
+				step.optionSelections[descriptor->supportedOptions[i].groupId] = descriptor->supportedOptions[i].stableId;
+		if (demoEditorDraft_.classInputs.find(descriptor->demoComplexity) == demoEditorDraft_.classInputs.end())
+			demoEditorDraft_.classInputs[descriptor->demoComplexity] = DemoInputRecipe(
+			manualSession_.simulation.snapshot().inputSeed, manualSession_.simulation.itemCount(),
+			manualSession_.simulation.domain(), manualSession_.simulation.pattern());
+		const std::size_t insertionIndex = std::min(payload.stepIndex, demoEditorDraft_.steps.size());
+		demoEditorDraft_.steps.insert(demoEditorDraft_.steps.begin() + static_cast<std::ptrdiff_t>(insertionIndex), step);
+		demoEditorSelectedStep_ = insertionIndex;
+		return sortinglogic::CommandResult(true, "Added " + std::string(descriptor->displayName) + " to the demo draft.");
+	}
+	if (action.kind == AppActionKind::DemoRemoveStep || action.kind == AppActionKind::DemoMoveStepUp ||
+		action.kind == AppActionKind::DemoMoveStepDown)
+	{
+		if (payload.stepIndex >= demoEditorDraft_.steps.size())
+			return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
+		if (action.kind == AppActionKind::DemoRemoveStep)
+		{
+			demoEditorDraft_.steps.erase(demoEditorDraft_.steps.begin() + static_cast<std::ptrdiff_t>(payload.stepIndex));
+			demoEditorSelectedStep_ = demoEditorDraft_.steps.empty() ? 0 : (std::min)(payload.stepIndex, demoEditorDraft_.steps.size() - 1);
+		}
+		else
+		{
+			const std::size_t destination = action.kind == AppActionKind::DemoMoveStepUp
+				? (payload.stepIndex == 0 ? 0 : payload.stepIndex - 1)
+				: (std::min)(demoEditorDraft_.steps.size() - 1, payload.stepIndex + 1);
+			if (destination == payload.stepIndex)
+				return sortinglogic::CommandResult(false, "The selected step is already at that end of the sequence.");
+			std::swap(demoEditorDraft_.steps[payload.stepIndex], demoEditorDraft_.steps[destination]);
+			demoEditorSelectedStep_ = destination;
+		}
+		return sortinglogic::CommandResult(true, "Demo step order updated.");
+	}
+	if (action.kind == AppActionKind::DemoSetStepAlgorithm)
+	{
+		if (payload.stepIndex >= demoEditorDraft_.steps.size()) return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
+		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(payload.familyId, payload.variantId);
+		if (!descriptor) return sortinglogic::CommandResult(false, "The selected algorithm is unavailable.");
+		DemoStep& step = demoEditorDraft_.steps[payload.stepIndex];
+		step.familyId = descriptor->familyId;
+		step.variantId = descriptor->variantId;
+		step.optionSelections.clear();
+		std::set<std::string> optionGroups;
+		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
+			if (descriptor->supportedOptions[i].isDefault && optionGroups.insert(descriptor->supportedOptions[i].groupId).second)
+				step.optionSelections[descriptor->supportedOptions[i].groupId] = descriptor->supportedOptions[i].stableId;
+		if (!step.hasInputOverride && demoEditorDraft_.classInputs.find(descriptor->demoComplexity) == demoEditorDraft_.classInputs.end())
+			demoEditorDraft_.classInputs[descriptor->demoComplexity] = DemoInputRecipe(
+				manualSession_.simulation.snapshot().inputSeed, manualSession_.simulation.itemCount(),
+				manualSession_.simulation.domain(), manualSession_.simulation.pattern());
+		return sortinglogic::CommandResult(true, "Demo step algorithm updated.");
+	}
+	if (action.kind == AppActionKind::DemoSetStepTiming || action.kind == AppActionKind::DemoSetStepDirection)
+	{
+		if (payload.stepIndex >= demoEditorDraft_.steps.size()) return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
+		DemoStep& step = demoEditorDraft_.steps[payload.stepIndex];
+		if (action.kind == AppActionKind::DemoSetStepTiming)
+		{
+			if (payload.timingMode < static_cast<int>(SoundEngine::PlaybackTimingMode::FixedDuration) ||
+				payload.timingMode > static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence) ||
+				!std::isfinite(payload.value) || payload.value < 1.0f || payload.value > 120.0f)
+				return sortinglogic::CommandResult(false, "Step timing or fixed duration is invalid.");
+			step.timingMode = static_cast<SoundEngine::PlaybackTimingMode>(payload.timingMode);
+			step.fixedDurationSeconds = payload.value;
+		}
+		else
+		{
+			if (payload.direction < 0 || payload.direction > 1) return sortinglogic::CommandResult(false, "Step direction is invalid.");
+			step.direction = static_cast<sortinglogic::SortDirection>(payload.direction);
+		}
+		return sortinglogic::CommandResult(true, "Demo step settings updated.");
+	}
+	if (action.kind == AppActionKind::DemoSetStepOption)
+	{
+		if (payload.stepIndex >= demoEditorDraft_.steps.size()) return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
+		DemoStep& step = demoEditorDraft_.steps[payload.stepIndex];
+		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(step.familyId, step.variantId);
+		if (!descriptor) return sortinglogic::CommandResult(false, "The step algorithm is unavailable; its option cannot be validated.");
+		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
+			if (payload.optionGroupId == descriptor->supportedOptions[i].groupId &&
+				payload.optionStableId == descriptor->supportedOptions[i].stableId)
+			{
+				step.optionSelections[payload.optionGroupId] = payload.optionStableId;
+				return sortinglogic::CommandResult(true, "Demo step option updated.");
+			}
+		return sortinglogic::CommandResult(false, "That option is not registered for the selected algorithm step.");
+	}
+	if (action.kind == AppActionKind::DemoSetStepOverride || action.kind == AppActionKind::DemoClearStepOverride)
+	{
+		if (payload.stepIndex >= demoEditorDraft_.steps.size()) return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
+		DemoStep& step = demoEditorDraft_.steps[payload.stepIndex];
+		if (action.kind == AppActionKind::DemoClearStepOverride) step.hasInputOverride = false;
+		else
+		{
+			DemoInputRecipe recipe(payload.seed, payload.itemCount, static_cast<sortinglogic::InputDomain>(payload.inputDomain),
+				static_cast<sortinglogic::InputPattern>(payload.inputPattern));
+			if (recipe.itemCount < sortinglogic::MinItemCount || recipe.itemCount > sortinglogic::MaxItemCount ||
+				static_cast<int>(recipe.domain) < static_cast<int>(sortinglogic::InputDomain::NormalizedFloats) ||
+				static_cast<int>(recipe.domain) > static_cast<int>(sortinglogic::InputDomain::IntegerPermutation) ||
+				static_cast<int>(recipe.pattern) < static_cast<int>(sortinglogic::InputPattern::Random) ||
+				static_cast<int>(recipe.pattern) > static_cast<int>(sortinglogic::InputPattern::AndrutReference))
+				return sortinglogic::CommandResult(false, "Step input override is invalid.");
+			step.inputOverride = recipe;
+			step.hasInputOverride = true;
+		}
+		return sortinglogic::CommandResult(true, action.kind == AppActionKind::DemoClearStepOverride
+			? "Step input override removed." : "Step input override updated.");
+	}
+	if (action.kind == AppActionKind::SaveDemoPreset)
+	{
+		DemoPreset candidate = demoEditorDraft_;
+		if (!payload.presetName.empty()) candidate.name = payload.presetName;
+		if (candidate.prefab || candidate.id.empty() || demoPrefabPreset(candidate.id))
+		{
+			candidate.prefab = false;
+			std::size_t serial = demoPresetStore_.userPresets().size() + 1;
+			candidate.id = "user.demo." + std::to_string(serial);
+			while (findDemoPreset(candidate.id)) candidate.id = "user.demo." + std::to_string(++serial);
+		}
+		const DemoPresetStore previous = demoPresetStore_;
+		std::string error;
+		if (!demoPresetStore_.saveUserPreset(candidate, &error)) return sortinglogic::CommandResult(false, error);
+		if (!persistDemoPresets(&error))
+		{
+			demoPresetStore_ = previous;
+			return sortinglogic::CommandResult(false, error.empty() ? "Could not save demo preset." : error);
+		}
+		demoEditorDraft_ = candidate;
+		selectedDemoPresetId_ = candidate.id;
+		editorPrefabSourceId_.clear();
+		return sortinglogic::CommandResult(true, "Saved demo preset " + candidate.name + ".");
+	}
+	if (action.kind == AppActionKind::RenameDemoPreset)
+	{
+		const std::string targetId = presetId.empty() ? selectedDemoPresetId_ : presetId;
+		const DemoPreset* source = findDemoPreset(targetId);
+		if (!source) return sortinglogic::CommandResult(false, "The selected demo preset is unavailable.");
+		DemoPreset candidate = demoEditorDraft_;
+		candidate.name = payload.presetName.empty() ? action.text : payload.presetName;
+		if (source->prefab)
+		{
+			// Renaming an edited prefab creates a user copy of the live draft. The
+			// stored prefab is only the immutable source, not the editor's content.
+			AppAction saveAction(AppActionKind::SaveDemoPreset);
+			DemoActionPayload savePayload;
+			savePayload.presetName = candidate.name;
+			saveAction.demo.reset(new DemoActionPayload(savePayload));
+			return dispatchDemoAction(saveAction);
+		}
+		const DemoPresetStore previous = demoPresetStore_;
+		std::string error;
+		candidate.id = targetId;
+		candidate.prefab = false;
+		if (!demoPresetStore_.saveUserPreset(candidate, &error))
+			return sortinglogic::CommandResult(false, error);
+		if (!persistDemoPresets(&error))
+		{
+			demoPresetStore_ = previous;
+			return sortinglogic::CommandResult(false, error.empty() ? "Could not rename demo preset." : error);
+		}
+		demoEditorDraft_ = candidate;
+		return sortinglogic::CommandResult(true, "Demo preset renamed.");
+	}
+	if (action.kind == AppActionKind::DeleteDemoPreset)
+	{
+		const std::string targetId = presetId.empty() ? selectedDemoPresetId_ : presetId;
+		const DemoPreset* source = findDemoPreset(targetId);
+		if (!source || source->prefab) return sortinglogic::CommandResult(false, "Built-in presets cannot be deleted.");
+		const DemoPresetStore previous = demoPresetStore_;
+		if (!demoPresetStore_.deleteUserPreset(targetId)) return sortinglogic::CommandResult(false, "The user preset was not found.");
+		std::string error;
+		if (!persistDemoPresets(&error))
+		{
+			demoPresetStore_ = previous;
+			return sortinglogic::CommandResult(false, error.empty() ? "Could not delete demo preset." : error);
+		}
+		if (selectedDemoPresetId_ == targetId)
+		{
+			selectedDemoPresetId_ = "prefab.classic-five";
+			demoEditorDraft_ = *demoPrefabPreset(selectedDemoPresetId_);
+		}
+		return sortinglogic::CommandResult(true, "Demo preset deleted.");
+	}
+	return sortinglogic::CommandResult(false, "The demo editor action is not supported.");
+}
+
 void AppController::update(float deltaSeconds, bool audioClockAvailable)
 {
 	sortinglogic::TraceBuildResult completed;
 	if (traceBuildService_.poll(completed))
 	{
-		simulation_.completeTraceBuild(std::move(completed));
-		playbackCoordinator_.traceBuildCompleted(simulation_.hasTrace());
-		if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
-			synchronizeReferenceTransport(false);
+		if (demoSession_ && completed.sessionId == demoSession_->identity &&
+			completed.requestGeneration == demoSession_->requestGeneration)
+			handleDemoBuildCompletion(std::move(completed));
+		else if (!demoSession_ && completed.sessionId == manualSession_.identity &&
+			completed.requestGeneration == manualSession_.requestGeneration)
+		{
+			manualSession_.simulation.completeTraceBuild(std::move(completed));
+			manualSession_.playback.traceBuildCompleted(manualSession_.simulation.hasTrace());
+			if (manualSession_.timingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+				synchronizeReferenceTransport(false);
+		}
 	}
+	prepareRequestedDemoStep();
 	startPendingPlaybackIfReady();
-	const bool audioClockWasLost = playbackCoordinator_.observeAudioClockAvailability(audioClockAvailable);
-	if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence && simulation_.isPlaying())
+	const bool audioClockWasLost = activePlaybackCoordinator().observeAudioClockAvailability(audioClockAvailable);
+	const bool wasPlaying = activeSimulation().isPlaying();
+	if (activeTimingMode() == SoundEngine::PlaybackTimingMode::ReferenceCadence && activeSimulation().isPlaying())
 	{
-		if (!audioClockAvailable && !playbackCoordinator_.audioPreparationBlocksStart())
+		if (!audioClockAvailable && !activePlaybackCoordinator().audioPreparationBlocksStart())
 		{
 			if (audioClockWasLost)
-				playbackCoordinator_.setReferenceElapsedSeconds(referenceElapsedAtCursor(simulation_.cursor()));
-			playbackCoordinator_.advanceReferenceClock(deltaSeconds);
-			const double elapsed = playbackCoordinator_.referenceElapsedSeconds();
+				activePlaybackCoordinator().setReferenceElapsedSeconds(referenceElapsedAtCursor(activeSimulation().cursor()));
+			activePlaybackCoordinator().advanceReferenceClock(deltaSeconds);
+			const double elapsed = activePlaybackCoordinator().referenceElapsedSeconds();
 			const double duration = referenceDurationSeconds();
-			const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
+			const std::shared_ptr<const sortinglogic::SortTrace> trace = activeSimulation().currentTrace();
 			std::size_t cursor = 0;
 			if (trace && !trace->events.empty())
 			{
@@ -785,11 +1495,23 @@ void AppController::update(float deltaSeconds, bool audioClockAvailable)
 				cursor = playbacktimebase::cursorForReferenceElapsed(eligible, trace->events.size(),
 				elapsed, duration);
 			}
-			simulation_.synchronizePlaybackPosition(cursor, elapsed, duration, elapsed < duration);
+			activeSimulation().synchronizePlaybackPosition(cursor, elapsed, duration, elapsed < duration);
 		}
 	}
-	else if (!audioClockAvailable && !playbackCoordinator_.audioPreparationBlocksStart())
-		simulation_.advance(deltaSeconds);
+	else if (!audioClockAvailable && !activePlaybackCoordinator().audioPreparationBlocksStart())
+		activeSimulation().advance(deltaSeconds);
+	if (demoRunner_.active())
+	{
+		const sortinglogic::RenderSnapshot playback = activeSimulation().snapshot();
+		if (demoRunner_.state() == DemoRunnerState::Playing && !activeSimulation().isPlaying())
+		{
+			if (playback.complete) demoRunner_.playbackCompleted();
+			else if (wasPlaying) demoRunner_.markPaused();
+		}
+		demoRunner_.update(deltaSeconds);
+		prepareRequestedDemoStep();
+		finishDemoIfNeeded();
+	}
 }
 
 sortinglogic::RenderSnapshot AppController::snapshot() const
@@ -801,17 +1523,36 @@ sortinglogic::RenderSnapshot AppController::snapshot() const
 
 void AppController::snapshotInto(sortinglogic::RenderSnapshot& result) const
 {
-	simulation_.snapshotInto(result);
-	if (playbackCoordinator_.state(result.buildingTrace, result.hasTrace, result.playing,
+	activeSimulation().snapshotInto(result);
+	if (activePlaybackCoordinator().state(result.buildingTrace, result.hasTrace, result.playing,
 		result.cursor, result.eventCount) == PlaybackCoordinatorState::Queued)
 		result.status = result.buildingTrace
 			? "Playback is queued and will start after trace generation."
 			: "Playback is queued and will start after preparation finishes.";
-	if (preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence && result.hasTrace)
+	if (activeTimingMode() == SoundEngine::PlaybackTimingMode::ReferenceCadence && result.hasTrace)
 	{
 		result.durationSeconds = static_cast<float>(referenceDurationSeconds());
 		result.elapsedSeconds = static_cast<float>((std::max)(0.0, (std::min)(referenceDurationSeconds(),
 			static_cast<double>(result.elapsedSeconds))));
+	}
+	if (demoRunner_.active())
+	{
+		const DemoStep* step = demoRunner_.currentStep();
+		const sortinglogic::AlgorithmDescriptor* algorithm = step
+			? sortinglogic::algorithmDescriptorById(step->familyId, step->variantId) : nullptr;
+		std::ostringstream demoStatus;
+		demoStatus << "DEMO " << (demoRunner_.stepIndex() + 1) << '/' << demoRunner_.preset().steps.size();
+		if (algorithm) demoStatus << " | " << algorithm->displayName;
+		if (demoRunner_.hasEffectiveInput()) demoStatus << " | " << demoRunner_.effectiveInput().itemCount << " bars";
+		if (activeTimingMode() == SoundEngine::PlaybackTimingMode::ReferenceCadence)
+			demoStatus << " | Reference cadence";
+		else demoStatus << " | Fixed " << static_cast<int>(activeSimulation().durationSeconds()) << " sec";
+		if (demoRunner_.state() == DemoRunnerState::Intermission)
+			demoStatus << " | Intermission " << static_cast<int>(std::ceil(demoRunner_.intermissionRemaining())) << " sec";
+		if (!demoRunner_.message().empty()) demoStatus << " | " << demoRunner_.message();
+		for (std::size_t i = 0; i < demoRunner_.adjustments().size(); ++i)
+			demoStatus << " | " << demoRunner_.adjustments()[i];
+		result.status = demoStatus.str();
 	}
 	if (!commandStatus_.empty()) result.status = commandStatus_;
 }
@@ -819,71 +1560,71 @@ void AppController::snapshotInto(sortinglogic::RenderSnapshot& result) const
 void AppController::applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
 	const AudioPlaybackRevision& currentRevision)
 {
-	if (!playbackCoordinator_.acceptsAudioPlayhead(simulation_.isPlaying(), feedback.generation,
+	if (!activePlaybackCoordinator().acceptsAudioPlayhead(activeSimulation().isPlaying(), feedback.generation,
 		feedback.transportRevision, feedback.durationFrames, currentRevision))
 		return;
-	const double duration = preferences_.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence
+	const double duration = activeTimingMode() == SoundEngine::PlaybackTimingMode::ReferenceCadence
 		? playbacktimebase::secondsFromReferenceFrames(feedback.durationFrames)
-		: simulation_.durationSeconds();
+		: activeSimulation().durationSeconds();
 	const double elapsed = playbacktimebase::secondsFromReferenceFrames(feedback.timelineFrame);
-	simulation_.synchronizePlaybackPosition(feedback.sourceCursor, elapsed, duration, feedback.playing);
-	playbackCoordinator_.setReferenceElapsedSeconds(elapsed);
+	activeSimulation().synchronizePlaybackPosition(feedback.sourceCursor, elapsed, duration, feedback.playing);
+	activePlaybackCoordinator().setReferenceElapsedSeconds(elapsed);
 }
 
 PlaybackCoordinatorState AppController::playbackState() const
 {
-	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
-	return playbackCoordinator_.state(simulation_.isBuildingTrace(), static_cast<bool>(trace),
-		simulation_.isPlaying(), simulation_.cursor(), trace ? trace->events.size() : 0);
+	const std::shared_ptr<const sortinglogic::SortTrace> trace = activeSimulation().currentTrace();
+	return activePlaybackCoordinator().state(activeSimulation().isBuildingTrace(), static_cast<bool>(trace),
+		activeSimulation().isPlaying(), activeSimulation().cursor(), trace ? trace->events.size() : 0);
 }
 
 double AppController::referenceDurationSeconds() const
 {
-	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
+	const std::shared_ptr<const sortinglogic::SortTrace> trace = activeSimulation().currentTrace();
 	if (!trace) return 0.0;
 	return playbacktimebase::durationForReferenceEvents(trace->audioEventIndices.size());
 }
 
 double AppController::referenceElapsedAtCursor(std::size_t cursor) const
 {
-	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation_.currentTrace();
+	const std::shared_ptr<const sortinglogic::SortTrace> trace = activeSimulation().currentTrace();
 	if (!trace) return 0.0;
 	return playbacktimebase::elapsedForReferenceCursor(trace->audioEventIndices, cursor);
 }
 
 void AppController::synchronizeReferenceTransport(bool wasPlaying)
 {
-	if (preferences_.simulation.playbackTimingMode != SoundEngine::PlaybackTimingMode::ReferenceCadence) return;
-	const std::size_t currentCursor = simulation_.cursor();
+	if (activeTimingMode() != SoundEngine::PlaybackTimingMode::ReferenceCadence) return;
+	const std::size_t currentCursor = activeSimulation().cursor();
 	const double duration = referenceDurationSeconds();
-	if (!wasPlaying || !simulation_.isPlaying())
-		playbackCoordinator_.setReferenceElapsedSeconds(referenceElapsedAtCursor(currentCursor));
-	simulation_.synchronizePlaybackPosition(currentCursor, playbackCoordinator_.referenceElapsedSeconds(),
-		duration, simulation_.isPlaying());
+	if (!wasPlaying || !activeSimulation().isPlaying())
+		activePlaybackCoordinator().setReferenceElapsedSeconds(referenceElapsedAtCursor(currentCursor));
+	activeSimulation().synchronizePlaybackPosition(currentCursor, activePlaybackCoordinator().referenceElapsedSeconds(),
+		duration, activeSimulation().isPlaying());
 }
 
 SoundEngine::Parameters AppController::effectiveAudio() const
 {
-	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(simulation_.algorithm());
+	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(activeSimulation().algorithm());
 	return descriptor ? effectiveAudioParameters(preferences_, *descriptor) : preferences_.audio;
 }
 
 void AppController::synchronizeSimulationPreferences()
 {
-	preferences_.simulation.itemCount = static_cast<int>(simulation_.itemCount());
-	preferences_.simulation.durationSeconds = simulation_.durationSeconds();
-	preferences_.simulation.descending = simulation_.direction() == sortinglogic::SortDirection::Descending;
-	preferences_.simulation.algorithm = static_cast<int>(simulation_.algorithm());
-	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(simulation_.algorithm());
+	preferences_.simulation.itemCount = static_cast<int>(activeSimulation().itemCount());
+	preferences_.simulation.durationSeconds = activeSimulation().durationSeconds();
+	preferences_.simulation.descending = activeSimulation().direction() == sortinglogic::SortDirection::Descending;
+	preferences_.simulation.algorithm = static_cast<int>(activeSimulation().algorithm());
+	const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(activeSimulation().algorithm());
 	if (descriptor)
 	{
 		preferences_.simulation.familyId = descriptor->familyId;
 		preferences_.simulation.variantId = descriptor->variantId;
 	}
-	preferences_.simulation.domain = simulation_.domain();
-	preferences_.simulation.pattern = simulation_.pattern();
-	preferences_.simulation.mergeBufferVisualizationEnabled = simulation_.mergeBufferVisualizationEnabled();
-	preferences_.simulation.completionScanEnabled = simulation_.completionScanEnabled();
+	preferences_.simulation.domain = activeSimulation().domain();
+	preferences_.simulation.pattern = activeSimulation().pattern();
+	preferences_.simulation.mergeBufferVisualizationEnabled = activeSimulation().mergeBufferVisualizationEnabled();
+	preferences_.simulation.completionScanEnabled = activeSimulation().completionScanEnabled();
 }
 
 void AppController::persistPreferences()

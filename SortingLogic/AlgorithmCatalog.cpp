@@ -2,14 +2,62 @@
 #include "AlgorithmRequestBuilders.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace sortinglogic
 {
+	namespace
+	{
+		bool contains(const std::string& text, const char* token)
+		{
+			return token && text.find(token) != std::string::npos;
+		}
+
+		DemoComplexityClass classifyDemoComplexity(const AlgorithmDescriptor& algorithm)
+		{
+			const std::string stableId = algorithm.stableId ? algorithm.stableId : "";
+			const std::string familyId = algorithm.familyId;
+			std::string time = algorithm.timeComplexity ? algorithm.timeComplexity : "";
+			for (std::size_t i = 0; i < time.size(); ++i)
+				time[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(time[i])));
+			if (!algorithm.supportsNormalizedFloat && algorithm.supportsIntegerKeys)
+				return DemoComplexityClass::KeyDependent;
+			if (algorithm.id == SortAlgorithm::Shell || contains(stableId, "shell") || contains(familyId, "shell"))
+				return DemoComplexityClass::GapDependent;
+			if (contains(stableId, "bogo") || contains(stableId, "guess") || contains(stableId, "stooge"))
+				return DemoComplexityClass::Superpolynomial;
+			if (algorithm.id == SortAlgorithm::Quick || contains(familyId, "quick"))
+				return DemoComplexityClass::NLogN;
+
+			if (contains(time, "2^n") || contains(time, "2ⁿ") || contains(time, "n!") ||
+				contains(time, "n^n") || contains(time, "nⁿ") || contains(time, "factorial"))
+				return DemoComplexityClass::Superpolynomial;
+			if (contains(time, "n² log") || contains(time, "n^2 log") || contains(time, "n^2·log") ||
+				contains(time, "n²·log")) return DemoComplexityClass::N2LogN;
+			if (contains(time, "n log²") || contains(time, "n log^2") || contains(time, "n·log²") ||
+				contains(time, "n·log^2")) return DemoComplexityClass::NLogSquaredN;
+			if (contains(time, "n√n") || contains(time, "n·√n") || contains(time, "n sqrt n"))
+				return DemoComplexityClass::NSqrtN;
+			if (contains(time, "n²") || contains(time, "n^2")) return DemoComplexityClass::Quadratic;
+			if (contains(time, "n³") || contains(time, "n^3") || contains(time, "n⁴") ||
+				contains(time, "n^4") || contains(time, "n⁵") || contains(time, "n^5") ||
+				contains(time, "n^k") || contains(time, "n^m")) return DemoComplexityClass::HigherPolynomial;
+			if (contains(time, "n log n") || contains(time, "n·log n") || contains(time, "n log₂ n") ||
+				contains(time, "n log2 n")) return DemoComplexityClass::NLogN;
+			if (contains(time, "o(n)") || contains(time, "linear") || contains(time, "n + 1"))
+				return DemoComplexityClass::Linear;
+			return DemoComplexityClass::DemonstrationUnknown;
+		}
+	}
+
 	const std::vector<AlgorithmDescriptor>& algorithmCatalog()
 	{
-		static const std::vector<AlgorithmDescriptor> algorithms = {
+		static const std::vector<AlgorithmDescriptor> algorithms = []()
+		{
+			std::vector<AlgorithmDescriptor> descriptors = {
 			AlgorithmDescriptor(SortAlgorithm::Insertion, "insertion", "Insertion Sort", "O(n²)", "O(1)", true, true, true, true, &buildInsertionRequest,
 				std::vector<AlgorithmOptionDescriptor>(), std::vector<AlgorithmMetricDescriptor>(), MaxItemCount, "general permutation sort",
 				"insertion-methods", "insertion", "Insertion Methods", std::vector<SemanticRole>{ SemanticRole::HeldKey }),
@@ -1186,8 +1234,43 @@ namespace sortinglogic
 		AlgorithmDescriptor(SortAlgorithm::ArrayvStacklessBinaryQuick, "arrayv.stackless_binary_quick", "Stackless Binary Quick Sort", "O(w·n)", "O(1)", false, true, false, true, &buildArrayvStacklessBinaryQuickRequest,
 			std::vector<AlgorithmOptionDescriptor>(), std::vector<AlgorithmMetricDescriptor>(), MaxItemCount, "general integer permutation sort", "integer-radix", "stackless_binary_quick", "Integer Distribution Sorts", std::vector<SemanticRole>(), false,
 			std::vector<InputDomain>{ InputDomain::NonnegativeIntegerKeys, InputDomain::SignedIntegerKeys, InputDomain::IntegerPermutation })
-		};
+			};
+			for (std::size_t i = 0; i < descriptors.size(); ++i)
+			{
+				descriptors[i].demoComplexity = classifyDemoComplexity(descriptors[i]);
+				descriptors[i].preferredDemoDomain = descriptors[i].supportsNormalizedFloat
+					? InputDomain::NormalizedFloats : InputDomain::IntegerPermutation;
+			}
+			return descriptors;
+		}();
 		return algorithms;
+	}
+
+	const char* demoComplexityClassName(DemoComplexityClass value)
+	{
+		switch (value)
+		{
+		case DemoComplexityClass::Linear: return "Linear";
+		case DemoComplexityClass::NLogN: return "N log N";
+		case DemoComplexityClass::NLogSquaredN: return "N log² N";
+		case DemoComplexityClass::NSqrtN: return "N√N";
+		case DemoComplexityClass::Quadratic: return "Quadratic";
+		case DemoComplexityClass::N2LogN: return "N² log N";
+		case DemoComplexityClass::HigherPolynomial: return "Higher polynomial";
+		case DemoComplexityClass::GapDependent: return "Gap-dependent";
+		case DemoComplexityClass::KeyDependent: return "Key-dependent";
+		case DemoComplexityClass::Superpolynomial: return "Superpolynomial";
+		case DemoComplexityClass::DemonstrationUnknown: return "Demonstration / unknown";
+		}
+		return "Demonstration / unknown";
+	}
+
+	bool demoComplexityClassFor(SortAlgorithm algorithm, DemoComplexityClass& value)
+	{
+		const AlgorithmDescriptor* descriptor = algorithmDescriptor(algorithm);
+		if (!descriptor) return false;
+		value = descriptor->demoComplexity;
+		return true;
 	}
 
 	const AlgorithmDescriptor* algorithmDescriptor(SortAlgorithm algorithm)

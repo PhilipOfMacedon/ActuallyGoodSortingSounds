@@ -6,12 +6,13 @@
 namespace sortinglogic
 {
 	TraceBuildService::TraceBuildService()
-		: mutex_(), worker_(), busy_(false), completionReady_(false), completion_()
+		: mutex_(), worker_(), busy_(false), completionReady_(false), completion_(), activeCancellation_()
 	{
 	}
 
 	TraceBuildService::~TraceBuildService()
 	{
+		cancelActive();
 		if (worker_.joinable())
 			worker_.join();
 	}
@@ -25,14 +26,18 @@ namespace sortinglogic
 			return false;
 		}
 
+		TraceBuildRequest job = request;
+		if (!job.cancellation) job.cancellation.reset(new std::atomic<bool>(false));
+		activeCancellation_ = job.cancellation;
 		busy_ = true;
 		try
 		{
-			worker_ = std::thread(&TraceBuildService::build, this, request);
+			worker_ = std::thread(&TraceBuildService::build, this, job);
 		}
 		catch (const std::exception& exception)
 		{
 			busy_ = false;
+			activeCancellation_.reset();
 			if (error) *error = std::string("Could not start trace worker: ") + exception.what();
 			return false;
 		}
@@ -49,6 +54,7 @@ namespace sortinglogic
 			result = std::move(completion_);
 			completion_ = TraceBuildResult();
 			completionReady_ = false;
+			activeCancellation_.reset();
 		}
 
 		if (worker_.joinable())
@@ -61,6 +67,14 @@ namespace sortinglogic
 		return true;
 	}
 
+	bool TraceBuildService::cancelActive()
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		if (!busy_ || !activeCancellation_) return false;
+		activeCancellation_->store(true, std::memory_order_relaxed);
+		return true;
+	}
+
 	bool TraceBuildService::isBusy() const
 	{
 		std::lock_guard<std::mutex> lock(mutex_);
@@ -70,6 +84,8 @@ namespace sortinglogic
 	void TraceBuildService::build(TraceBuildRequest request)
 	{
 		TraceBuildResult result;
+		result.sessionId = request.sessionId;
+		result.requestGeneration = request.requestGeneration;
 		try
 		{
 			result.trace = SortTraceBuilder::build(request);
@@ -78,7 +94,12 @@ namespace sortinglogic
 		}
 		catch (const std::exception& exception)
 		{
-			result.error = exception.what();
+			if (request.cancellation && request.cancellation->load(std::memory_order_relaxed))
+			{
+				result.status = TraceBuildStatus::Cancelled;
+				result.error.clear();
+			}
+			else result.error = exception.what();
 		}
 		catch (...)
 		{

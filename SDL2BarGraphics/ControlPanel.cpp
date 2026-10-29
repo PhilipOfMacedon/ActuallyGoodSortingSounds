@@ -261,7 +261,7 @@ namespace
 ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPreferences& settings)
 	: window_(window), renderer_(renderer), settings_(settings),
 	inlineEditView_(), mainControlsView_(), timelineView_(), appearanceEditorView_(settingsUiPresetOptions(), settingsPaletteOptions(), settings.appearance,
-		paletteIndex(activeTheme(settings).palette)), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), algorithmProfileView_(measureLogicalTextWidth), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
+		paletteIndex(activeTheme(settings).palette)), overlayState_(), algorithmBrowser_(algorithmBrowserCatalog()), algorithmBrowserView_(), settingsPanelView_(), algorithmProfileView_(measureLogicalTextWidth), demoEditorView_(), screenModel_(), layoutResult_(), renderPreferences_(settings), labels_(), paletteCaption_(new TextLabel("Palette", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	spacingCaption_(new TextLabel("Bar spacing", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	title_(new TextLabel("Sorting Simulation | deterministic event trace", "Courier New Bold", 18, { 238, 246, 249, 255 })),
 	detail_(new TextLabel("No trace", "Courier New Bold", 14, { 238, 246, 249, 255 })),
@@ -271,6 +271,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	settingsSaveStatus_(new TextLabel("Preferences save automatically.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	audioDeviceStatus_(new TextLabel("Audio device is not initialized.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	displayedSaveStatus_(), seedBookmarkLabels_(), selectedSeedBookmark_(0), canPreviousSeed_(false), canNextSeed_(false), currentSeed_(0),
+	demoPresets_(nullptr), demoDraft_(nullptr), demoRunner_(nullptr), selectedDemoPresetId_(), selectedDemoStep_(0), demoEditorOpen_(false),
 	headerBounds_(), gearBounds_(),
 	drawingAppearanceEditor_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false)
@@ -415,6 +416,16 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 		screenModel_, algorithmLabel(snapshot.algorithm));
 	settingsPanelView_.synchronizeControls(settings_, renderPreferences_, snapshot, busy);
 	inlineEditView_.synchronizePresentation(mainControlsView_, appearanceEditorView_);
+	if (demoRunner_ && demoRunner_->active())
+	{
+		mainControlsView_.setControlActionAndPresentation("play", AppAction(AppActionKind::ToggleDemoPlayback),
+			demoRunner_->state() == DemoRunnerState::Playing ? "Pause Demo" : "Play Demo", true);
+		mainControlsView_.setControlActionAndPresentation("previous", AppAction(AppActionKind::PreviousDemoStep),
+			"Previous Algorithm", demoRunner_->stepIndex() > 0);
+		mainControlsView_.setControlActionAndPresentation("next", AppAction(AppActionKind::NextDemoStep),
+			"Next Algorithm", demoRunner_->stepIndex() + 1 < demoRunner_->preset().steps.size());
+		mainControlsView_.setControlActionAndPresentation("reset", AppAction(AppActionKind::StopDemo), "Stop Demo", true);
+	}
 }
 
 void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
@@ -471,6 +482,8 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		return handleAppearanceEditorEvent(event, action);
 	if (algorithmBrowserOpen())
 		return handleAlgorithmMenuEvent(event, action);
+	if (overlayState_.is(UiOverlayId::DemoEditor))
+		return handleDemoEditorEvent(event, action);
 	if (!settingsOpen() && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 	{
 		const UiWidget* bars = mainControlsView_.findControl("bars_value");
@@ -662,6 +675,7 @@ void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const st
 	if (overlayState_.is(UiOverlayId::Settings)) drawSettingsPanel(palette, audioStatus);
 	if (algorithmBrowserOpen()) drawAlgorithmMenu(palette);
 	if (appearanceEditorOpen()) drawAppearanceEditor();
+	if (overlayState_.is(UiOverlayId::DemoEditor)) drawDemoEditor(palette);
 }
 
 void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
@@ -676,6 +690,19 @@ void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
 	updateWidgetStates(snapshot, playbackPending);
 	mainControlsView_.setSeedHistoryNavigation(canPreviousSeed_ && screenModel_.setupEnabled,
 		canNextSeed_ && screenModel_.setupEnabled);
+	if (demoEditorOpen_ && demoPresets_ && demoDraft_ && demoRunner_)
+	{
+		if (!overlayState_.is(UiOverlayId::DemoEditor)) overlayState_.openDemoEditor();
+		demoEditorView_.setOpen(true);
+		demoEditorView_.synchronize(*demoPresets_, *demoDraft_, selectedDemoPresetId_, selectedDemoStep_,
+			*demoRunner_, screenModel_.setupEnabled, width_, height_);
+	}
+	else
+	{
+		if (overlayState_.is(UiOverlayId::DemoEditor)) overlayState_.closeDemoEditor();
+		demoEditorView_.setOpen(false);
+	}
+	updateOverlayInputCapture();
 	layoutInteractiveViews();
 	if (isReady()) syncLabels(snapshot);
 }
@@ -694,6 +721,17 @@ void ControlPanel::setSeedLibraryState(const std::vector<SeedBookmark>& bookmark
 	selectedSeedBookmark_ = selectedIndex;
 	canPreviousSeed_ = canPrevious;
 	canNextSeed_ = canNext;
+}
+
+void ControlPanel::setDemoEditorState(const DemoPresetStore& presets, const DemoPreset& draft,
+	const std::string& selectedPresetId, std::size_t selectedStep, const DemoRunner& runner, bool editorOpen)
+{
+	demoPresets_ = &presets;
+	demoDraft_ = &draft;
+	demoRunner_ = &runner;
+	selectedDemoPresetId_ = selectedPresetId;
+	selectedDemoStep_ = selectedStep;
+	demoEditorOpen_ = editorOpen;
 }
 
 void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette)
@@ -1297,6 +1335,7 @@ void ControlPanel::updateOverlayInputCapture()
 	mainControlsView_.setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
 	settingsPanelView_.setModalActive(overlayState_.is(UiOverlayId::Settings));
 	appearanceEditorView_.controls().setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
+	demoEditorView_.setOpen(overlayState_.is(UiOverlayId::DemoEditor));
 }
 
 void ControlPanel::openAlgorithmMenu()
@@ -1650,6 +1689,11 @@ void ControlPanel::exportAppearanceProfile()
 
 void ControlPanel::completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result)
 {
+	if (action.kind >= AppActionKind::OpenDemoEditor && action.kind <= AppActionKind::DeleteDemoPreset)
+	{
+		demoEditorView_.setFeedback(result.message.empty() ? (result.accepted ? "Done." : "The demo action was rejected.") : result.message);
+		return;
+	}
 	if (action.kind == AppActionKind::SelectAlgorithm && algorithmBrowserOpen() && algorithmBrowser_.pendingSelection)
 	{
 		algorithmBrowser_.pendingSelection = false;
@@ -1684,6 +1728,76 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 	if (result.selectionRequested)
 		action = AppAction(AppActionKind::SelectAlgorithm, result.familyId, result.variantId);
 	return true;
+}
+
+bool ControlPanel::handleDemoEditorEvent(const SDL_Event& event, AppAction& action)
+{
+	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+	{
+		demoEditorView_.cancelNameEdit();
+		demoEditorView_.cancelNumericEdit();
+		SDL_StopTextInput();
+		return true;
+	}
+	const bool wasEditing = demoEditorView_.editingName() || demoEditorView_.editingNumeric();
+	if (wasEditing)
+	{
+		if (event.type == SDL_TEXTINPUT)
+		{
+			if (demoEditorView_.editingName()) demoEditorView_.appendName(event.text.text);
+			else demoEditorView_.appendNumericText(event.text.text);
+			return true;
+		}
+		if (event.type == SDL_KEYDOWN)
+		{
+			const SDL_Keycode key = event.key.keysym.sym;
+			if (key == SDLK_ESCAPE)
+			{
+				if (demoEditorView_.editingName()) demoEditorView_.cancelNameEdit();
+				else demoEditorView_.cancelNumericEdit();
+				SDL_StopTextInput();
+				return true;
+			}
+			if (key == SDLK_BACKSPACE)
+			{
+				if (demoEditorView_.editingName()) demoEditorView_.eraseNameCharacter();
+				else demoEditorView_.eraseNumericCharacter();
+				return true;
+			}
+			if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
+			{
+				const bool committed = demoEditorView_.editingName()
+					? demoEditorView_.commitNameEdit(action) : demoEditorView_.commitNumericEdit(action);
+				if (!demoEditorView_.editingName() && !demoEditorView_.editingNumeric()) SDL_StopTextInput();
+				return committed || wasEditing;
+			}
+			return true;
+		}
+		return true;
+	}
+	UiInputEvent input(UiInputType::FocusLost);
+	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Controls, sdlUiEventContext(event))) return true;
+	const bool consumed = demoEditorView_.handleInput(input, action);
+	const bool nowEditing = demoEditorView_.editingName() || demoEditorView_.editingNumeric();
+	if (!wasEditing && nowEditing) SDL_StartTextInput();
+	if (wasEditing && !nowEditing) SDL_StopTextInput();
+	return consumed || demoEditorView_.open();
+}
+
+void ControlPanel::drawDemoEditor(const ThemePalette& palette)
+{
+	DemoEditorPalette viewPalette;
+	viewPalette.background = toUiColor(palette.background);
+	viewPalette.panel = toUiColor(palette.panel);
+	viewPalette.button = toUiColor(palette.button);
+	viewPalette.valueButton = toUiColor(palette.valueButton);
+	viewPalette.disabledButton = toUiColor(palette.disabledButton);
+	viewPalette.accent = toUiColor(palette.accent);
+	viewPalette.text = toUiColor(palette.text);
+	viewPalette.mutedText = toUiColor(palette.mutedText);
+	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
+	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
+	demoEditorView_.compose(viewPalette, width_, height_, paintContext);
 }
 
 void ControlPanel::drawUiPaintCommand(const UiPaintCommand& command)

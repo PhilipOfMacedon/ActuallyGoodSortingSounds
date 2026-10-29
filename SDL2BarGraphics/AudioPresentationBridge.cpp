@@ -161,7 +161,7 @@ bool LatestAudioStateMailbox::consumeLatest(AudioPresentationState& state)
 }
 
 AudioPresentationBridge::AudioPresentationBridge()
-	: lastTrace_(nullptr), tracePolicy_(), lastCursor_(0), lastComparison_(), lastEventAccents_(), hasComparison_(false), lastComparisonIsProbe_(false), valuesById_(),
+	: lastTrace_(nullptr), lastSessionIdentity_(0), tracePolicy_(), lastCursor_(0), lastComparison_(), lastEventAccents_(), hasComparison_(false), lastComparisonIsProbe_(false), valuesById_(),
 	  workspaceSizes_(), minimumValue_(0.0f), maximumValue_(0.0f), lastPublished_(), hasPublished_(false), revision_(0),
 	  timelines_(), currentTimeline_(nullptr), timelineGeneration_(0), seekRevision_(0), audioParameterRevision_(1),
 	  transportRevision_(0), lastTransportCursor_(0),
@@ -189,12 +189,22 @@ AudioPresentationBridge::~AudioPresentationBridge()
 void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	const sortinglogic::SimulationPlaybackState& playbackState, const SoundEngine::Parameters& parameters,
 	LatestAudioStateMailbox& mailbox, const SoundEngine::ReconstructedParameters& reconstructedParameters,
-	SoundEngine::PlaybackTimingMode timingMode, bool audioDeviceAvailable)
+	SoundEngine::PlaybackTimingMode timingMode, bool audioDeviceAvailable, std::uint64_t sessionIdentity)
 {
 	pollTimelineBuild();
 	const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation.currentTrace();
 	const sortinglogic::SortTrace* rawTrace = trace.get();
-	const bool traceChanged = rawTrace != lastTrace_;
+	const bool sessionChanged = sessionIdentity != lastSessionIdentity_;
+	if (sessionChanged)
+	{
+		lastSessionIdentity_ = sessionIdentity;
+		// A new RunSession owns a distinct cursor and transport even if allocator
+		// reuse gives its trace the same address as the previous session.
+		lastTrace_ = nullptr;
+		lastTimelineDurationSeconds_ = -1.0;
+		++transportRevision_;
+	}
+	const bool traceChanged = sessionChanged || rawTrace != lastTrace_;
 	if (traceChanged)
 	{
 		valuesById_.clear();

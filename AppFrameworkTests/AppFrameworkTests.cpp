@@ -28,6 +28,9 @@
 #include "../SDL2BarGraphics/InlineEditModel.h"
 #include "../SDL2BarGraphics/InlineEditView.h"
 #include "../SDL2BarGraphics/SeedLibrary.h"
+#include "../SDL2BarGraphics/DemoModels.h"
+#include "../SDL2BarGraphics/DemoRunner.h"
+#include "../SDL2BarGraphics/DemoEditorView.h"
 #include "../SDL2BarGraphics/ActiveRoleLookup.h"
 #include "../SDL2BarGraphics/AlgorithmProfileView.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
@@ -311,6 +314,169 @@ namespace
 		seedEditor.begin(InlineEditTarget::Seed, "0");
 		seedEditor.appendText("-1");
 		check(seedEditor.text() == "1", "unsigned seed editor ignores non-digit characters");
+	}
+
+	void testDemoPresetModelsAndCodec()
+	{
+		using namespace sortinglogic;
+		const std::vector<DemoPreset>& prefabs = demoPrefabPresets();
+		check(prefabs.size() == 2 && prefabs[0].name == "Classic Five" && prefabs[1].name == "Ten-sort Tour",
+			"demo catalog provides the two immutable requested presets");
+		for (std::size_t i = 0; i < algorithmCatalog().size(); ++i)
+		{
+			const int category = static_cast<int>(algorithmCatalog()[i].demoComplexity);
+			check(category >= static_cast<int>(DemoComplexityClass::Linear) &&
+				category <= static_cast<int>(DemoComplexityClass::DemonstrationUnknown),
+				"every registered algorithm has a valid demo complexity class");
+		}
+		const AlgorithmDescriptor* quick = algorithmDescriptor(SortAlgorithm::Quick);
+		const AlgorithmDescriptor* shell = algorithmDescriptor(SortAlgorithm::Shell);
+		const AlgorithmDescriptor* counting = algorithmDescriptor(SortAlgorithm::Counting);
+		check(quick && quick->demoComplexity == DemoComplexityClass::NLogN && shell &&
+			shell->demoComplexity == DemoComplexityClass::GapDependent && counting &&
+			counting->demoComplexity == DemoComplexityClass::KeyDependent,
+			"typical Quick, Shell, and key-dependent classes match their demo behavior");
+		if (prefabs.size() == 2)
+		{
+			check(prefabs[0].steps.size() == 5 && prefabs[1].steps.size() == 10 &&
+				prefabs[0].steps[0].familyId == algorithmDescriptor(SortAlgorithm::Insertion)->familyId &&
+				prefabs[1].steps[5].familyId == algorithmDescriptor(SortAlgorithm::Quick)->familyId,
+				"prefab sequences retain their curated algorithm order");
+			check(prefabs[0].classInputs.at(DemoComplexityClass::Quadratic).itemCount == 80 &&
+				prefabs[0].classInputs.at(DemoComplexityClass::NLogN).itemCount == 320 &&
+				prefabs[1].classInputs.at(DemoComplexityClass::KeyDependent).itemCount == 512 &&
+				prefabs[1].classInputs.at(DemoComplexityClass::KeyDependent).domain == InputDomain::IntegerPermutation,
+				"prefabs define their expected per-class input recipes");
+			check(validateDemoPreset(prefabs[0]).empty() && validateDemoPreset(prefabs[1]).empty(),
+				"both built-in presets satisfy model validation");
+		}
+
+		DemoPreset edited = DemoPresetStore().clonePrefabAsUser("prefab.classic-five", "user.classic-copy", "My Tour");
+		check(!edited.prefab && edited.steps.size() == 5, "editing a prefab starts from a complete user copy");
+		DemoStep unknown;
+		unknown.familyId = "removed-family";
+		unknown.variantId = "old-sort";
+		unknown.hasInputOverride = true;
+		unknown.inputOverride = DemoInputRecipe(42u, 64);
+		unknown.optionSelections["old-option"] = "old-value";
+		edited.steps.push_back(unknown);
+		DemoPresetStore store;
+		std::string error;
+		check(store.saveUserPreset(edited, &error) && error.empty(),
+			"user presets preserve unavailable stable algorithm references for visible repair");
+		check(!store.saveUserPreset(prefabs[0], &error), "prefab presets cannot be overwritten");
+		check(!store.renameUserPreset(prefabs[0].id, "Changed", &error) && !store.deleteUserPreset(prefabs[0].id),
+			"prefab presets cannot be renamed or deleted");
+
+		const std::string encoded = DemoPresetStore::encode(store.userPresets());
+		std::vector<DemoPreset> decoded;
+		std::vector<std::string> issues;
+		check(DemoPresetStore::decode(encoded, decoded, &issues, &error) && decoded.size() == 1 &&
+			decoded[0].steps.size() == 6 && decoded[0].steps[5].familyId == "removed-family" &&
+			decoded[0].steps[5].optionSelections["old-option"] == "old-value" && issues.empty(),
+			"preset codec round-trips order, options, overrides, and unavailable references");
+		const std::string recoverable = encoded + "S\tuser.classic-copy\t99\tbad\tstep\t0\t1\t10\t0\t0\t80\t0\t0\t\n";
+		check(DemoPresetStore::decode(recoverable, decoded, &issues, &error) && decoded.size() == 1 &&
+			!issues.empty(), "preset codec recovers valid presets and records malformed child diagnostics");
+
+		DemoPreset preset = prefabs[0];
+		DemoStep countingStep;
+		countingStep.familyId = algorithmDescriptor(SortAlgorithm::Counting)->familyId;
+		countingStep.variantId = algorithmDescriptor(SortAlgorithm::Counting)->variantId;
+		DemoInputRecipe oversized(77u, 5000, InputDomain::NormalizedFloats, InputPattern::AndrutReference);
+		DemoInputAdjustment adjustment = adaptDemoInput(preset, countingStep, oversized);
+		check(adjustment.recipe.seed == 77u, "demo input adaptation preserves the recipe seed");
+		check(adjustment.recipe.itemCount == algorithmDescriptor(SortAlgorithm::Counting)->safeMaxItemCount,
+			"demo input adaptation clamps the count to the algorithm's supported limit");
+		check(adjustment.recipe.domain == InputDomain::IntegerPermutation,
+			"demo input adaptation selects the algorithm's preferred compatible domain");
+		check(adjustment.recipe.pattern == InputPattern::Random,
+			"demo input adaptation replaces an incompatible pattern");
+		check(adjustment.messages.size() >= 2 && adjustment.error.empty(),
+			"demo input adaptation reports adjustments without treating them as errors");
+
+		DemoRunner runner;
+		check(runner.begin(prefabs[0], &error) && runner.active() && runner.stepIndex() == 0 &&
+			runner.takePreparationRequest() && !runner.takePreparationRequest(),
+			"demo runner snapshots a preset and emits one initial preparation request");
+		check(!runner.previousStep() && runner.nextStep() && runner.stepIndex() == 1 && runner.takePreparationRequest(),
+			"demo runner navigates to a requested neighboring algorithm step");
+		runner.setEffectiveInput(DemoInputRecipe(5489u, 64), std::vector<std::string>());
+		DemoInputRecipe retry;
+		check(runner.retryWithSmallerInput(retry, &error) && retry.seed == 5489u && retry.itemCount == 32 &&
+			runner.retryCount() == 1 && runner.preparationPending(),
+			"demo runner retries a budgeted step at half size with the original seed");
+		runner.markPrepared();
+		runner.markPlaying();
+		runner.playbackCompleted();
+		check(runner.state() == DemoRunnerState::Intermission && runner.intermissionRemaining() == 1.0f,
+			"demo runner applies the preset intermission after playback");
+		runner.update(0.5f);
+		check(runner.stepIndex() == 1 && runner.state() == DemoRunnerState::Intermission,
+			"demo runner does not advance before the full intermission elapses");
+		runner.update(0.5f);
+		check(runner.stepIndex() == 2 && runner.state() == DemoRunnerState::Preparing && runner.preparationPending(),
+			"demo runner requests the next fresh algorithm step after intermission");
+		runner.stop();
+		check(!runner.active() && runner.state() == DemoRunnerState::Inactive && !runner.preparationPending(),
+			"stopping the demo runner clears its temporary sequence state");
+	}
+
+	void clickDemoControl(DemoEditorView& view, const std::string& id, AppAction& action)
+	{
+		const UiWidget* widget = view.control(id);
+		if (!widget) return;
+		const UiRect bounds = widget->bounds();
+		view.handleInput(UiInputEvent(UiInputType::PointerDown, bounds.x + bounds.width * 0.5f,
+			bounds.y + bounds.height * 0.5f), action);
+		view.handleInput(UiInputEvent(UiInputType::PointerUp, bounds.x + bounds.width * 0.5f,
+			bounds.y + bounds.height * 0.5f), action);
+	}
+
+	void testDemoEditorRetainedActions()
+	{
+		DemoPresetStore store;
+		DemoPreset draft = demoPrefabPresets()[0];
+		DemoRunner runner;
+		DemoEditorView view;
+		view.setOpen(true);
+		view.synchronize(store, draft, draft.id, 0, runner, true, 1000, 640);
+		check(view.control("demo_preset") && view.control("demo_step") && view.panelBounds().contains(
+			view.panelBounds().x + view.panelBounds().width * 0.5f, view.panelBounds().y + view.panelBounds().height * 0.5f),
+			"demo editor composes a retained modal panel with preset and ordered-step selectors");
+		RecordingUiPaintContext paint;
+		DemoEditorPalette palette;
+		palette.panel = UiColor(0.1f, 0.1f, 0.1f, 1.0f);
+		palette.button = UiColor(0.2f, 0.2f, 0.2f, 1.0f);
+		palette.valueButton = palette.button;
+		palette.disabledButton = palette.button;
+		palette.accent = UiColor(0.5f, 0.5f, 0.5f, 1.0f);
+		palette.text = UiColor(1.0f, 1.0f, 1.0f, 1.0f);
+		palette.mutedText = palette.text;
+		view.compose(palette, 1000, 640, paint);
+		check(!paint.commands().empty(), "demo editor submits panel, control, and text paint commands through the shared UI contract");
+
+		AppAction editRecipe;
+		clickDemoControl(view, "demo_seed_value", editRecipe);
+		check(view.editingNumeric(), "seed recipe value enters inline numeric editing");
+		view.handleInput(UiInputEvent(UiInputType::TextInput, "0"), editRecipe);
+		view.handleInput(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Enter), editRecipe);
+		check(editRecipe.kind == AppActionKind::DemoSetClassRecipe && editRecipe.demo && editRecipe.demo->seed == 54890u,
+			"demo seed edits emit a typed complexity-recipe action with the unsigned value");
+
+		AppAction addStep;
+		clickDemoControl(view, "demo_add", addStep);
+		const sortinglogic::AlgorithmDescriptor* first = sortinglogic::algorithmDescriptor(
+			sortinglogic::algorithmCatalog().front().id);
+		check(addStep.kind == AppActionKind::DemoAddStep && addStep.demo && first &&
+			addStep.demo->familyId == first->familyId && addStep.demo->variantId == first->variantId &&
+			addStep.demo->stepIndex == draft.steps.size(),
+			"adding a repeated algorithm emits a stable-ID step insertion action at the end of the sequence");
+
+		AppAction dismiss;
+		view.handleInput(UiInputEvent(UiInputType::PointerDown, 2.0f, 2.0f), dismiss);
+		check(dismiss.kind == AppActionKind::CloseDemoEditor,
+			"modal outside-click dismissal emits the typed close action");
 	}
 
 	void testInlineEditViewOwnsSharedEditingFlow()
@@ -740,6 +906,31 @@ namespace
 			return true;
 		}
 		std::vector<SeedBookmark> values;
+		int writes;
+		bool failWrites;
+	};
+
+	class MemoryDemoPresets : public IDemoPresetPersistence
+	{
+	public:
+		MemoryDemoPresets() : values(), writes(0), failWrites(false) {}
+		bool load(std::vector<DemoPreset>& presets, std::vector<std::string>* issues = nullptr,
+			std::string* error = nullptr) override
+		{
+			presets = values;
+			if (issues) issues->clear();
+			if (error) error->clear();
+			return true;
+		}
+		bool save(const std::vector<DemoPreset>& presets, std::string* error = nullptr) override
+		{
+			++writes;
+			if (failWrites) { if (error) *error = "test demo persistence failure"; return false; }
+			values = presets;
+			if (error) error->clear();
+			return true;
+		}
+		std::vector<DemoPreset> values;
 		int writes;
 		bool failWrites;
 	};
@@ -1575,9 +1766,11 @@ namespace
 		const UiAction browser = ui::mainMenuSelectionAction("menu_tools", 1);
 		const UiAction settings = ui::mainMenuSelectionAction("menu_tools", 2);
 		const UiAction appearance = ui::mainMenuSelectionAction("menu_tools", 3);
+		const UiAction demoEditor = ui::mainMenuSelectionAction("menu_tools", 4);
 		check(browser.viewCommand == UiAction::ViewCommand::OpenAlgorithmMenu &&
 			settings.viewCommand == UiAction::ViewCommand::OpenSettings &&
-			appearance.viewCommand == UiAction::ViewCommand::OpenAppearanceEditor,
+			appearance.viewCommand == UiAction::ViewCommand::OpenAppearanceEditor &&
+			demoEditor.appAction.kind == AppActionKind::OpenDemoEditor,
 			"Tools menu selections map to typed view commands rather than string-dispatched actions");
 
 		const UiAction invalidSelection = ui::mainMenuSelectionAction("menu_file", 99);
@@ -3037,8 +3230,9 @@ namespace
 		RecordingUiPaintContext paint;
 
 		view.compose(MainControlsPaintSection::HeaderButtons, screen, paint);
-		check(paint.commands().size() == 2 && paint.commands()[0].elementId == "panel_toggle" &&
-			paint.commands()[1].elementId == "settings" && paint.commands()[0].layer == UiPaintLayer::MainControls,
+		check(paint.commands().size() == 3 && paint.commands()[0].elementId == "panel_toggle" &&
+			paint.commands()[1].elementId == "settings" && paint.commands()[2].elementId == "demo_editor" &&
+			paint.commands()[0].layer == UiPaintLayer::MainControls,
 			"main control paint composition preserves header button order and layer");
 		paint.clear();
 		view.compose(MainControlsPaintSection::Menus, screen, paint);
@@ -3050,7 +3244,8 @@ namespace
 		check(!paint.commands().empty() && paint.commands()[0].elementId == "shuffle" &&
 			std::find_if(paint.commands().begin(), paint.commands().end(), [](const UiPaintCommand& command)
 			{
-				return command.elementId == "menu_tools" || command.elementId == "panel_toggle" || command.elementId == "settings";
+				return command.elementId == "menu_tools" || command.elementId == "panel_toggle" ||
+					command.elementId == "settings" || command.elementId == "demo_editor";
 			}) == paint.commands().end(),
 			"expanded main paint commands include only visible content controls in retained order");
 		paint.clear();
@@ -3856,6 +4051,116 @@ namespace
 			"seed application is rejected during playback without changing the prepared baseline");
 	}
 
+	void testDemoRunSessionIsolationAndCancellation()
+	{
+		MemorySettings preferences;
+		preferences.value.simulation.itemCount = 32;
+		MemorySeedBookmarks seedBookmarks;
+		MemoryDemoPresets demos;
+		const sortinglogic::AlgorithmDescriptor* insertion = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Insertion);
+		const sortinglogic::AlgorithmDescriptor* bubble = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Bubble);
+		DemoPreset preset;
+		preset.id = "user.session-test";
+		preset.name = "Session isolation";
+		preset.classInputs[sortinglogic::DemoComplexityClass::Quadratic] = DemoInputRecipe(9123u, 24);
+		DemoStep first; first.familyId = insertion->familyId; first.variantId = insertion->variantId;
+		DemoStep second; second.familyId = bubble->familyId; second.variantId = bubble->variantId;
+		preset.steps.push_back(first);
+		preset.steps.push_back(second);
+		demos.values.push_back(preset);
+
+		AppController app(preferences, &seedBookmarks, &demos);
+		const std::uint64_t manualIdentity = app.activeSessionIdentity();
+		const std::vector<std::uint32_t> historyBefore = app.seedHistory().entries();
+		check(app.dispatch(AppAction(AppActionKind::BuildTrace)).accepted, "manual session begins a reference trace before demo isolation");
+		const std::chrono::steady_clock::time_point manualDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < manualDeadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		check(app.snapshot().hasTrace && !app.snapshot().buildingTrace, "manual session trace completes before demo start");
+		app.dispatch(AppAction(AppActionKind::SeekFraction, 0.37f));
+		const std::shared_ptr<const sortinglogic::SortTrace> manualTrace = app.simulation().currentTrace();
+		const std::size_t manualCursor = app.snapshot().cursor;
+		const std::uint32_t manualSeed = app.snapshot().inputSeed;
+		const int preferenceWritesBeforeDemo = preferences.writes;
+		const int demoWritesBeforeDemo = demos.writes;
+
+		AppAction start(AppActionKind::StartDemo);
+		start.text = preset.id;
+		check(app.dispatch(start).accepted && app.demoActive() && app.activeSessionIdentity() != manualIdentity,
+			"starting a demo activates a distinct temporary RunSession");
+		const std::uint64_t firstDemoSession = app.activeSessionIdentity();
+		check(app.snapshot().inputSeed == preset.classInputs.begin()->second.seed && app.seedHistory().entries() == historyBefore,
+			"demo input is rebuilt from its recipe without entering manual seed history");
+		check(!app.dispatch(AppAction(AppActionKind::SetItemCount, 0.0f, 64)).accepted,
+			"manual setup commands are visibly rejected during demo playback");
+		check(app.dispatch(AppAction(AppActionKind::SaveSeedBookmark)).accepted && seedBookmarks.writes == 1,
+			"saving the current demo seed remains available during the temporary session");
+
+		check(app.dispatch(AppAction(AppActionKind::NextDemoStep)).accepted && app.demoRunner().stepIndex() == 1,
+			"navigating algorithms cancels the pending step and requests a fresh trace for the next step");
+		const std::chrono::steady_clock::time_point demoDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+		while ((!app.snapshot().hasTrace || app.snapshot().buildingTrace ||
+			(app.demoRunner().state() != DemoRunnerState::Prepared && app.demoRunner().state() != DemoRunnerState::Playing)) &&
+			std::chrono::steady_clock::now() < demoDeadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		if (!((app.demoRunner().state() == DemoRunnerState::Prepared || app.demoRunner().state() == DemoRunnerState::Playing) && app.activeSessionIdentity() != firstDemoSession &&
+			app.snapshot().algorithm == sortinglogic::SortAlgorithm::Bubble))
+			std::cerr << "demo session diagnostics: runner=" << static_cast<int>(app.demoRunner().state()) << " step=" << app.demoRunner().stepIndex()
+				<< " session=" << app.activeSessionIdentity() << " first=" << firstDemoSession << " build=" << app.snapshot().buildingTrace
+				<< " trace=" << app.snapshot().hasTrace << " algorithm=" << static_cast<int>(app.snapshot().algorithm)
+				<< " status=" << app.snapshot().status << " message=" << app.demoRunner().message() << '\n';
+		check((app.demoRunner().state() == DemoRunnerState::Prepared || app.demoRunner().state() == DemoRunnerState::Playing) &&
+			app.activeSessionIdentity() != firstDemoSession &&
+			app.snapshot().algorithm == sortinglogic::SortAlgorithm::Bubble,
+			"the next demo algorithm receives a new session, independently rebuilt trace, and automatic playback handoff");
+		check(app.dispatch(AppAction(AppActionKind::StopDemo)).accepted && !app.demoActive() &&
+			app.activeSessionIdentity() == manualIdentity && app.simulation().currentTrace() == manualTrace &&
+			app.snapshot().cursor == manualCursor && app.snapshot().inputSeed == manualSeed && !app.snapshot().playing,
+			"stopping a demo restores the manual trace, cursor, seed, and paused state exactly");
+		for (unsigned int frame = 0; frame < 20; ++frame)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		check(app.activeSessionIdentity() == manualIdentity && app.simulation().currentTrace() == manualTrace &&
+			app.snapshot().cursor == manualCursor && preferences.writes == preferenceWritesBeforeDemo &&
+			demos.writes == demoWritesBeforeDemo && app.seedHistory().entries() == historyBefore,
+			"stale demo completions cannot install into the manual session or persist demo runtime changes");
+	}
+
+	void testPrefabRenamePreservesDraft()
+	{
+		MemorySettings preferences;
+		MemorySeedBookmarks seeds;
+		MemoryDemoPresets demos;
+		AppController app(preferences, &seeds, &demos);
+		check(app.dispatch(AppAction(AppActionKind::OpenDemoEditor)).accepted,
+			"opening the demo editor prepares the selected prefab draft");
+		AppAction select(AppActionKind::SelectDemoPreset);
+		DemoActionPayload selection; selection.presetId = "prefab.classic-five";
+		select.demo.reset(new DemoActionPayload(selection));
+		app.dispatch(select);
+		DemoActionPayload direction; direction.stepIndex = 0; direction.direction = 1;
+		AppAction edit(AppActionKind::DemoSetStepDirection);
+		edit.demo.reset(new DemoActionPayload(direction));
+		app.dispatch(edit);
+		DemoActionPayload rename; rename.presetName = "Edited Classic";
+		AppAction renameAction(AppActionKind::RenameDemoPreset);
+		renameAction.demo.reset(new DemoActionPayload(rename));
+		const sortinglogic::CommandResult result = app.dispatch(renameAction);
+		const DemoPreset* saved = app.demoPresets().findUserPreset(app.selectedDemoPresetId());
+		check(result.accepted && saved && !saved->prefab && saved->name == "Edited Classic" &&
+			saved->steps.size() == 5 && saved->steps[0].direction == sortinglogic::SortDirection::Descending,
+			"renaming an edited prefab saves its current draft as a user preset without discarding edits");
+		check(demos.writes == 1, "renaming a prefab draft persists exactly one user-preset write");
+	}
+
 	void testAppearanceApplyIsTransactionalAndTransportNeutral()
 	{
 		MemorySettings persistence;
@@ -4045,6 +4350,16 @@ namespace
 		check(latest.transport.generation == latest.timelineGeneration && !latest.transport.playing &&
 			!latest.transport.holdSelection,
 			"initial audio transport installs paused at cursor zero without starting comparison births");
+		AudioPresentationBridge sessionFenceBridge;
+		LatestAudioStateMailbox sessionFenceMailbox;
+		sessionFenceBridge.update(simulation, simulation.playbackState(), parameters, sessionFenceMailbox,
+			SoundEngine::ReconstructedParameters(), SoundEngine::PlaybackTimingMode::FixedDuration, false, 101);
+		const AudioPlaybackRevision previousSessionRevision = sessionFenceBridge.playbackRevision();
+		sessionFenceBridge.update(simulation, simulation.playbackState(), parameters, sessionFenceMailbox,
+			SoundEngine::ReconstructedParameters(), SoundEngine::PlaybackTimingMode::FixedDuration, false, 102);
+		check(sessionFenceBridge.playbackRevision().timelineGeneration > previousSessionRevision.timelineGeneration &&
+			sessionFenceBridge.playbackRevision().transportRevision > previousSessionRevision.transportRevision,
+			"switching run-session identity invalidates pending audio timelines and stale playhead feedback");
 		const std::shared_ptr<const sortinglogic::SortTrace> trace = simulation.currentTrace();
 		std::size_t firstCompareCursor = 0;
 		for (std::size_t i = 0; i < trace->events.size(); ++i)
@@ -4701,6 +5016,8 @@ int main(int argc, char* argv[])
 	testActiveRoleLookup();
 	testInlineEditModel();
 	testSeedHistoryAndBookmarkLibrary();
+	testDemoPresetModelsAndCodec();
+	testDemoEditorRetainedActions();
 	testInlineEditViewOwnsSharedEditingFlow();
 	testSimulationPlaybackState();
 	testSpacing();
@@ -4751,6 +5068,8 @@ int main(int argc, char* argv[])
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();
 	testAppControllerSeedManagement();
+	testDemoRunSessionIsolationAndCancellation();
+	testPrefabRenamePreservesDraft();
 	testAppearanceApplyIsTransactionalAndTransportNeutral();
 	testRestoreReconstructedDefaultsScope();
 	testShowcaseActions();

@@ -172,6 +172,8 @@ int main(int argc, char** argv)
 		const ThemePalette palette = paletteForAppearance(app.preferences().appearance.activePreset, activeTheme);
 		controlPanel.setSeedLibraryState(app.seedBookmarks().bookmarks(), app.seedBookmarks().selectedIndex(),
 			app.seedHistory().canGoPrevious(), app.seedHistory().canGoNext());
+		controlPanel.setDemoEditorState(app.demoPresets(), app.demoEditorDraft(), app.selectedDemoPresetId(),
+			app.demoEditorSelectedStep(), app.demoRunner(), app.demoEditorOpen());
 		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());
 		frameCoordinator.beginFrame(palette.background);
 		arrayRenderer.render(snapshot, app.preferences().visual.spacing, controlPanel.chartViewport(), palette);

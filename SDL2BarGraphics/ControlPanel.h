@@ -21,6 +21,7 @@
 #include "UserSettings.h"
 #include "LayoutMetrics.h"
 #include "SeedLibrary.h"
+#include "DemoEditorView.h"
 
 union SDL_Event;
 class Renderer2D;
@@ -50,6 +51,8 @@ public:
 		bool playbackPending);
 	void setSeedLibraryState(const std::vector<SeedBookmark>& bookmarks, std::size_t selectedIndex,
 		bool canPrevious, bool canNext);
+	void setDemoEditorState(const DemoPresetStore& presets, const DemoPreset& draft, const std::string& selectedPresetId,
+		std::size_t selectedStep, const DemoRunner& runner, bool editorOpen);
 	void completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result);
 	// Paint the frame prepared before chart rendering without recalculating layout.
 	void render(const sortinglogic::RenderSnapshot& snapshot,
@@ -59,7 +62,8 @@ public:
 	bool textEntryActive() const
 	{
 		return inlineEditView_.active() || appearanceEditorView_.searchFocused() ||
-			(overlayState_.is(UiOverlayId::AlgorithmBrowser) && algorithmBrowser_.searchFocused);
+			(overlayState_.is(UiOverlayId::AlgorithmBrowser) && algorithmBrowser_.searchFocused) ||
+			demoEditorView_.editingName() || demoEditorView_.editingNumeric();
 	}
 	bool modalUiOpen() const { return overlayState_.modalOpen(); }
 
@@ -76,6 +80,7 @@ private:
 	AlgorithmBrowserView algorithmBrowserView_;
 	SettingsPanelView settingsPanelView_;
 	AlgorithmProfileView algorithmProfileView_;
+	DemoEditorView demoEditorView_;
 	UiScreenModel screenModel_;
 	UiLayoutResult layoutResult_;
 	UserPreferences renderPreferences_;
@@ -95,6 +100,12 @@ private:
 	bool canPreviousSeed_;
 	bool canNextSeed_;
 	std::uint32_t currentSeed_;
+	const DemoPresetStore* demoPresets_;
+	const DemoPreset* demoDraft_;
+	const DemoRunner* demoRunner_;
+	std::string selectedDemoPresetId_;
+	std::size_t selectedDemoStep_;
+	bool demoEditorOpen_;
 	UiRect headerBounds_;
 	UiRect gearBounds_;
 	bool drawingAppearanceEditor_;
@@ -116,6 +127,8 @@ private:
 	void drawSettingsPanel(const ThemePalette& palette, const std::string& audioStatus);
 	void drawSettingsPaintCommand(const UiPaintCommand& command, const ThemePalette& palette);
 	void drawAppearanceEditor();
+	bool handleDemoEditorEvent(const SDL_Event& event, AppAction& action);
+	void drawDemoEditor(const ThemePalette& palette);
 	void layoutSettingsControls();
 	void drawSettingsControl(const UiWidget& widget, const ThemePalette& palette);
 	void drawSliderControl(const UiWidget& widget, const ThemePalette& palette, const ClipBounds& clip, RenderLayer layer);

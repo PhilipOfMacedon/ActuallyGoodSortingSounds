@@ -22,6 +22,7 @@ namespace ui
 			if (selection == 1) return UiAction(AppAction(), UiAction::ViewCommand::OpenAlgorithmMenu);
 			if (selection == 2) return UiAction(AppAction(), UiAction::ViewCommand::OpenSettings);
 			if (selection == 3) return UiAction(AppAction(), UiAction::ViewCommand::OpenAppearanceEditor);
+			if (selection == 4) return UiAction(AppAction(AppActionKind::OpenDemoEditor));
 		}
 		return UiAction();
 	}

@@ -120,7 +120,7 @@ struct UiEvent
 
 struct UiAction
 {
-	enum class ViewCommand { None, OpenSettings, CloseSettings, OpenAlgorithmMenu, OpenAppearanceEditor, CloseAppearanceEditor,
+	enum class ViewCommand { None, OpenSettings, CloseSettings, OpenAlgorithmMenu, OpenAppearanceEditor, CloseAppearanceEditor, CloseDemoEditor,
 		ShowAppearanceSettings, ShowAlgorithmSettings, ShowAudioSettings, ShowGeneralAudioSettings,
 	ShowAudioBasic, ShowAudioAdvanced };
 	AppAction appAction;

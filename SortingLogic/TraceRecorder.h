@@ -3,6 +3,7 @@
 #include "SortingLogicInternal.h"
 
 #include <algorithm>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -16,7 +17,7 @@ namespace sortinglogic
 			explicit Recorder(const TraceBuildRequest& request)
 				: trace(), state(makeInitialState(request.input)), maxOperations(request.maxOperations),
 				maxWorkSteps(request.maxWorkSteps), maxTraceBytes(request.maxTraceBytes),
-				completionScanEnabled(request.completionScanEnabled), nextGroupId(0)
+				completionScanEnabled(request.completionScanEnabled), cancellation(request.cancellation), nextGroupId(0)
 			{
 				trace.algorithm = request.algorithm;
 				const AlgorithmDescriptor* algorithm = algorithmDescriptor(request.algorithm);
@@ -48,10 +49,13 @@ namespace sortinglogic
 			std::size_t maxWorkSteps;
 			std::size_t maxTraceBytes;
 			bool completionScanEnabled;
+			std::shared_ptr<std::atomic<bool> > cancellation;
 			int nextGroupId;
 
 			void chargeWork(std::size_t amount = 1)
 			{
+				if (cancellation && cancellation->load(std::memory_order_relaxed))
+					throw std::runtime_error("Trace build cancelled.");
 				if (amount > maxWorkSteps - std::min(maxWorkSteps, trace.workSteps))
 					throw TraceBudgetReached("Internal trace work budget reached (" + std::to_string(maxWorkSteps) + " steps).");
 				trace.workSteps += amount;
