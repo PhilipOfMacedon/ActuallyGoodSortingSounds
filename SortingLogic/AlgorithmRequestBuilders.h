@@ -190,6 +190,7 @@ namespace sortinglogic
 	SortTrace buildArrayvSnuffleRequest(const TraceBuildRequest& request);
 	SortTrace buildArrayvCompleteGraphRequest(const TraceBuildRequest& request);
 	SortTrace buildArrayvFunRequest(const TraceBuildRequest& request);
+	SortTrace buildArrayvFunOriginalRequest(const TraceBuildRequest& request);
 	SortTrace buildArrayvOptimizedCocktailRequest(const TraceBuildRequest& request);
 	SortTrace buildArrayvUnoptimizedCocktailRequest(const TraceBuildRequest& request);
 	SortTrace buildArrayvOptimizedGnomeRequest(const TraceBuildRequest& request);

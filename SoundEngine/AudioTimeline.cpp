@@ -21,6 +21,14 @@ std::uint64_t ceilFrames(long double value)
     return value >= maximum ? (std::numeric_limits<std::uint64_t>::max)() :
         static_cast<std::uint64_t>(std::ceil(value));
 }
+
+std::uint64_t floorFrames(long double value)
+{
+    if (value <= 0) return 0;
+    const long double maximum = static_cast<long double>((std::numeric_limits<std::uint64_t>::max)());
+    return value >= maximum ? (std::numeric_limits<std::uint64_t>::max)() :
+        static_cast<std::uint64_t>(std::floor(value));
+}
 }
 
 AudioTimelineInputEvent::AudioTimelineInputEvent()
@@ -43,7 +51,8 @@ PreparedAudioTimeline::PreparedAudioTimeline()
 
 bool PreparedAudioTimeline::prepare(const std::vector<AudioTimelineInputEvent>& input,
     std::size_t sourceEventCount, PlaybackTimingMode mode, double fixedDurationSeconds,
-    std::uint32_t sampleRate, std::uint32_t referenceEventsPerSecond, std::string* error)
+    std::uint32_t sampleRate, std::uint32_t referenceEventsPerSecond, std::string* error,
+    FixedDurationSchedule fixedDurationSchedule)
 {
     ready_ = false;
     events_.clear();
@@ -76,11 +85,33 @@ bool PreparedAudioTimeline::prepare(const std::vector<AudioTimelineInputEvent>& 
     {
         durationFrames_ = ceilFrames(static_cast<long double>(fixedDurationSeconds) * sampleRate);
         events_.reserve(input.size());
+        std::vector<std::uint64_t> frames(input.size(), durationFrames_);
+        if (fixedDurationSchedule == FixedDurationSchedule::EligibleEvents && eligibleEventCount_ > 0)
+        {
+            std::size_t eligibleOrdinal = 0;
+            for (std::size_t i = 0; i < input.size(); ++i)
+                if (input[i].kind != TimelineEventKind::Other)
+                    frames[i] = floorFrames(static_cast<long double>(eligibleOrdinal++) * durationFrames_ /
+                        eligibleEventCount_);
+
+            std::uint64_t upcomingFrame = durationFrames_;
+            for (std::size_t i = input.size(); i > 0; --i)
+            {
+                if (input[i - 1].kind != TimelineEventKind::Other)
+                    upcomingFrame = frames[i - 1];
+                else frames[i - 1] = upcomingFrame;
+            }
+        }
+        else
+        {
+            for (std::size_t i = 0; i < input.size(); ++i)
+                frames[i] = sourceEventCount == 0 ? 0 : ceilFrames(
+                    static_cast<long double>(input[i].sourceCursor) * durationFrames_ / sourceEventCount);
+        }
         for (std::size_t i = 0; i < input.size(); ++i)
         {
             AudioTimelineEvent event;
-            event.frame = sourceEventCount == 0 ? 0 : ceilFrames(
-                static_cast<long double>(input[i].sourceCursor) * durationFrames_ / sourceEventCount);
+            event.frame = frames[i];
             event.sourceCursor = input[i].sourceCursor;
             event.kind = input[i].kind;
             event.firstPosition = input[i].firstPosition;

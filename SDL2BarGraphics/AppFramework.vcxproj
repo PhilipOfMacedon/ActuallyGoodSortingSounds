@@ -50,6 +50,7 @@
     <ClCompile Include="ActiveRoleLookup.cpp" />
     <ClCompile Include="AppearanceEditorView.cpp" />
     <ClCompile Include="InlineEditModel.cpp" />
+    <ClCompile Include="SeedLibrary.cpp" />
     <ClCompile Include="InlineEditView.cpp" />
     <ClCompile Include="AppearanceEditorLayout.cpp" />
     <ClCompile Include="AppearanceEditorModel.cpp" />

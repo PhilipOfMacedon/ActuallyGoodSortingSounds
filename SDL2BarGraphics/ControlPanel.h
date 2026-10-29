@@ -20,6 +20,7 @@
 #include "UiArchitecture.h"
 #include "UserSettings.h"
 #include "LayoutMetrics.h"
+#include "SeedLibrary.h"
 
 union SDL_Event;
 class Renderer2D;
@@ -47,6 +48,8 @@ public:
 	// consumes this prepared frame so the chart and controls share one viewport.
 	void prepareFrame(const sortinglogic::RenderSnapshot& snapshot, const std::string& persistenceStatus,
 		bool playbackPending);
+	void setSeedLibraryState(const std::vector<SeedBookmark>& bookmarks, std::size_t selectedIndex,
+		bool canPrevious, bool canNext);
 	void completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result);
 	// Paint the frame prepared before chart rendering without recalculating layout.
 	void render(const sortinglogic::RenderSnapshot& snapshot,
@@ -87,6 +90,11 @@ private:
 	std::unique_ptr<TextLabel> settingsSaveStatus_;
 	std::unique_ptr<TextLabel> audioDeviceStatus_;
 	std::string displayedSaveStatus_;
+	std::vector<std::string> seedBookmarkLabels_;
+	std::size_t selectedSeedBookmark_;
+	bool canPreviousSeed_;
+	bool canNextSeed_;
+	std::uint32_t currentSeed_;
 	UiRect headerBounds_;
 	UiRect gearBounds_;
 	bool drawingAppearanceEditor_;

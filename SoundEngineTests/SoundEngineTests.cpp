@@ -72,6 +72,19 @@ namespace
 			selected.kind == TimelineEventKind::Probe,
 			"reference cadence did not schedule eligible comparisons into consecutive slots");
 
+		PreparedAudioTimeline comparisonScaled;
+		require(comparisonScaled.prepare(events, 5, PlaybackTimingMode::FixedDuration, 4.0, 44100, 300, &error,
+			FixedDurationSchedule::EligibleEvents),
+			"comparison-scaled fixed-duration timeline preparation failed: " + error);
+		require(comparisonScaled.durationFrames() == 176400 && comparisonScaled.eligibleEventCount() == 2 &&
+			comparisonScaled.frameForCursor(1) == 0 && comparisonScaled.frameForCursor(2) == 0 &&
+			comparisonScaled.frameForCursor(3) == 88200 && comparisonScaled.frameForCursor(4) == 88200 &&
+			comparisonScaled.frameForCursor(5) == comparisonScaled.durationFrames(),
+			"fixed duration scales the eligible event cadence and attaches bookkeeping to adjacent boundaries");
+		require(comparisonScaled.cursorAtFrame(0) == 2 && comparisonScaled.cursorAtFrame(88199) == 2 &&
+			comparisonScaled.cursorAtFrame(88200) == 4 && comparisonScaled.cursorAtFrame(176400) == 5,
+			"comparison-scaled fixed duration retains exact source cursors at each boundary");
+
 		std::vector<AudioTimelineInputEvent> empty;
 		PreparedAudioTimeline noComparisons;
 		require(noComparisons.prepare(empty, 0, PlaybackTimingMode::ReferenceCadence, 0.0, 44100, 300, &error) &&

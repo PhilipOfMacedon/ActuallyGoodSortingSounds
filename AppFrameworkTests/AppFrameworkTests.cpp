@@ -1,5 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#define SDL_MAIN_HANDLED
+#include <SDL.h>
+#include <SDL_ttf.h>
 
 #include <iostream>
 #include <cmath>
@@ -7,6 +10,7 @@
 #include <string>
 #include <chrono>
 #include <algorithm>
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 #include <thread>
@@ -23,6 +27,7 @@
 #include "../SDL2BarGraphics/TimelineView.h"
 #include "../SDL2BarGraphics/InlineEditModel.h"
 #include "../SDL2BarGraphics/InlineEditView.h"
+#include "../SDL2BarGraphics/SeedLibrary.h"
 #include "../SDL2BarGraphics/ActiveRoleLookup.h"
 #include "../SDL2BarGraphics/AlgorithmProfileView.h"
 #include "../SDL2BarGraphics/AppearanceEditorLayout.h"
@@ -46,7 +51,6 @@
 #include "../SDL2BarGraphics/SettingsPanelLayout.h"
 #include "../SDL2BarGraphics/SettingsIniCodec.h"
 #include "../SDL2BarGraphics/SettingsScroll.h"
-#define SDL_MAIN_HANDLED
 #include "../SDL2BarGraphics/SdlUiEventAdapter.h"
 #include "../SDL2BarGraphics/TextBlockLayout.h"
 #include "../SDL2BarGraphics/UiLayer.h"
@@ -55,6 +59,7 @@
 #include "../SDL2BarGraphics/UiActionRouting.h"
 #include "../SDL2BarGraphics/UserSettings.h"
 #include "../SDL2BarGraphics/WindowsFontCatalog.h"
+#include "../SDL2BarGraphics/TextLabel.h"
 
 namespace
 {
@@ -67,6 +72,99 @@ namespace
 			std::cerr << "FAIL: " << message << '\n';
 			++failures;
 		}
+	}
+
+	std::vector<std::uint8_t> readLabelPixels(GLuint texture, int& width, int& height)
+	{
+		glBindTexture(GL_TEXTURE_2D, texture);
+		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+		std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width * height * 4));
+		glPixelStorei(GL_PACK_ALIGNMENT, 1);
+		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.empty() ? nullptr : pixels.data());
+		glPixelStorei(GL_PACK_ALIGNMENT, 4);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		return pixels;
+	}
+
+	void testTextLabelContentRefresh()
+	{
+		if (SDL_Init(SDL_INIT_VIDEO) != 0)
+		{
+			check(false, "SDL video initialization for text raster regression");
+			return;
+		}
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 0);
+		SDL_Window* window = SDL_CreateWindow("TextLabel raster regression", 0, 0, 64, 64,
+			SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+		if (!window)
+		{
+			check(false, "hidden OpenGL window creation for text raster regression");
+			SDL_Quit();
+			return;
+		}
+		SDL_GLContext context = SDL_GL_CreateContext(window);
+		if (!context)
+		{
+			check(false, "OpenGL context creation for text raster regression");
+			SDL_DestroyWindow(window);
+			SDL_Quit();
+			return;
+		}
+		glewExperimental = GL_TRUE;
+		const GLenum glewResult = glewInit();
+		glGetError(); // GLEW may leave GL_INVALID_ENUM on core-profile initialization.
+		if (glewResult != GLEW_OK || TTF_Init() != 0)
+		{
+			check(false, "GLEW and SDL_ttf initialization for text raster regression");
+			SDL_GL_DeleteContext(context);
+			SDL_DestroyWindow(window);
+			SDL_Quit();
+			return;
+		}
+
+		{
+			const UiFontReference fixedFont("Courier New", "Bold");
+			const SDL_Color white = { 255, 255, 255, 255 };
+			TextLabel label("AAAAAA", "Courier New Bold", 20, white);
+			label.setText("AAAAAA", fixedFont, 20, white, 96);
+			int originalWidth = 0, originalHeight = 0;
+			const GLuint originalTexture = label.getTextureId();
+			const std::vector<std::uint8_t> originalPixels = readLabelPixels(originalTexture, originalWidth, originalHeight);
+
+			label.setContent("BBBBBB");
+			label.setText("BBBBBB", fixedFont, 20, white, 96);
+			int changedWidth = 0, changedHeight = 0;
+			const GLuint changedTexture = label.getTextureId();
+			const std::vector<std::uint8_t> changedPixels = readLabelPixels(changedTexture, changedWidth, changedHeight);
+			check(originalWidth > 0 && originalHeight > 0 && changedWidth > 0 && changedHeight > 0 &&
+				(originalWidth != changedWidth || originalHeight != changedHeight || originalPixels != changedPixels),
+				"dirty label content rerasterizes when font, size, and DPI stay fixed");
+
+			label.setText("BBBBBB", fixedFont, 20, white, 96);
+			int reusedWidth = 0, reusedHeight = 0;
+			const GLuint reusedTexture = label.getTextureId();
+			const std::vector<std::uint8_t> reusedPixels = readLabelPixels(reusedTexture, reusedWidth, reusedHeight);
+			check(reusedTexture == changedTexture && reusedWidth == changedWidth && reusedHeight == changedHeight &&
+				changedPixels == reusedPixels,
+				"unchanged label content reuses the rasterized texture cache");
+
+			label.setContent("");
+			label.setText("", fixedFont, 20, white, 96);
+			int emptyWidth = 0, emptyHeight = 0;
+			const std::vector<std::uint8_t> emptyPixels = readLabelPixels(label.getTextureId(), emptyWidth, emptyHeight);
+			check(label.getTextureDimensions().x == 0.0f && label.getTextureDimensions().y == 0.0f &&
+				emptyWidth == 1 && emptyHeight == 1 && emptyPixels.size() == 4 && emptyPixels[3] == 0,
+				"empty label content replaces old glyph pixels and clears the dirty cache state");
+		}
+		TextLabel::clearFontCache();
+		TTF_Quit();
+		SDL_GL_DeleteContext(context);
+		SDL_DestroyWindow(window);
+		SDL_Quit();
 	}
 
 	void testActiveRoleLookup()
@@ -168,6 +266,51 @@ namespace
 		editor.finish();
 		check(!editor.active() && editor.text().empty() && !editor.tryParseDouble(doubleValue),
 			"finishing an inline edit clears its target and input buffer");
+	}
+
+	void testSeedHistoryAndBookmarkLibrary()
+	{
+		SeedHistory history(11u);
+		check(history.current() == 11u && !history.canGoPrevious() && !history.canGoNext(),
+			"seed history starts with the current seed");
+		check(history.append(22u) && history.append(33u) && history.movePrevious() && history.current() == 22u,
+			"seed history moves backward without losing its redo entry");
+		check(history.append(44u) && history.entries().size() == 3 && !history.canGoNext() && history.current() == 44u,
+			"new seed after undo truncates the redo branch");
+		check(!history.append(44u), "reapplying the current seed does not create duplicate history");
+
+		SeedBookmarkStore store;
+		check(store.save(0u, "zero") && store.save(4294967295u, "max%seed"),
+			"bookmark library accepts both ends of the unsigned seed range");
+		check(!store.save(0u) && store.selectedIndex() == 0 && store.bookmarks().size() == 2,
+			"saving an existing seed selects it instead of duplicating it");
+		check(store.rename(1, "maximum\tseed") && store.remove(0) && store.bookmarks().size() == 1 &&
+			store.bookmarks()[0].seed == 4294967295u,
+			"bookmark rename and removal preserve the selected record");
+		const std::string encoded = SeedBookmarkStore::encode(store.bookmarks());
+		std::vector<SeedBookmark> decoded;
+		std::string error;
+		check(SeedBookmarkStore::decode(encoded, decoded, &error) && decoded.size() == 1 &&
+			decoded[0].seed == 4294967295u && decoded[0].name == "maximum\tseed" && error.empty(),
+			"bookmark codec round-trips decimal seed and escaped optional name");
+		check(SeedBookmarkStore::decode("version=1\nseed=12\nseed=broken\nseed=4294967296\nseed=12\tduplicate\nseed=19\n",
+			decoded, &error) && decoded.size() == 2 && decoded[0].seed == 12u && decoded[1].seed == 19u,
+			"bookmark codec recovers valid records and skips malformed or duplicate entries");
+		check(!SeedBookmarkStore::decode("version=9\nseed=12\n", decoded, &error) && decoded.empty(),
+			"bookmark codec rejects an unsupported file version");
+
+		InlineEditModel seedEditor;
+		seedEditor.begin(InlineEditTarget::Seed, "123");
+		seedEditor.appendText("4294967295");
+		std::uint32_t parsedSeed = 0;
+		check(seedEditor.text() == "4294967295" && seedEditor.tryParseUInt32(parsedSeed) && parsedSeed == 4294967295u,
+			"unsigned seed editor accepts the full uint32 range");
+		seedEditor.begin(InlineEditTarget::Seed, "0");
+		seedEditor.appendText("4294967296");
+		check(!seedEditor.tryParseUInt32(parsedSeed), "unsigned seed editor rejects overflow");
+		seedEditor.begin(InlineEditTarget::Seed, "0");
+		seedEditor.appendText("-1");
+		check(seedEditor.text() == "1", "unsigned seed editor ignores non-digit characters");
 	}
 
 	void testInlineEditViewOwnsSharedEditingFlow()
@@ -574,6 +717,33 @@ namespace
 		mutable bool failWrites;
 	};
 
+	class MemorySeedBookmarks : public ISeedBookmarkPersistence
+	{
+	public:
+		MemorySeedBookmarks() : values(), writes(0), failWrites(false) {}
+		bool load(std::vector<SeedBookmark>& bookmarks, std::string* error = nullptr) override
+		{
+			bookmarks = values;
+			if (error) error->clear();
+			return true;
+		}
+		bool save(const std::vector<SeedBookmark>& bookmarks, std::string* error = nullptr) override
+		{
+			++writes;
+			if (failWrites)
+			{
+				if (error) *error = "test bookmark persistence failure";
+				return false;
+			}
+			values = bookmarks;
+			if (error) error->clear();
+			return true;
+		}
+		std::vector<SeedBookmark> values;
+		int writes;
+		bool failWrites;
+	};
+
 	void writeFile(const std::wstring& path, const std::string& text)
 	{
 		HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -791,7 +961,8 @@ namespace
 		const char* const ids[] = { "panel_toggle", "settings", "menu_file", "menu_view", "menu_tools",
 			"shuffle", "insta_sort", "insta_invert", "algorithm",
 			"direction", "run", "play", "reset", "previous", "next", "bars_down", "bars_value", "bars_up",
-			"time_down", "time_value", "time_up", "domain", "pattern", "seed_readout" };
+			"time_down", "time_value", "time_up", "domain", "pattern", "seed_readout", "seed_value", "seed_copy",
+			"seed_save", "seed_bookmarks", "seed_previous", "seed_next", "seed_remove" };
 		std::vector<std::string> controlIds(ids, ids + sizeof(ids) / sizeof(ids[0]));
 		const int sizes[][2] = { { 640, 480 }, { 1000, 640 }, { 1920, 1080 } };
 		for (int p = 0; p < 3; ++p)
@@ -831,8 +1002,9 @@ namespace
 			wide.control("play").x < wide.timeline.x && wide.control("reset").x < wide.timeline.x &&
 			wide.telemetry.x == wide.timeline.x && wide.telemetry.y > wide.timeline.y,
 			"wide VGA groups transport buttons on the left and places seek and telemetry in the right footer");
-		check(wide.control("seed_readout").y > wide.control("time_up").y,
-			"wide VGA gives the seed readout its own row beneath the duration controls");
+		check(wide.control("seed_value").y > wide.control("time_up").y &&
+			wide.control("seed_bookmarks").y > wide.control("seed_value").y,
+			"wide VGA places editable seed and saved-seed navigation on dedicated rows beneath duration controls");
 		check(wide.menuBar.y == 8.0f && wide.control("menu_file").y == wide.menuBar.y &&
 			wide.control("menu_file").y + wide.control("menu_file").height <= wide.header.height &&
 			wide.control("menu_file").x >= wide.control("panel_toggle").x + wide.control("panel_toggle").width,
@@ -2721,7 +2893,8 @@ namespace
 		check(view.findControl("direction")->presentation() == UiWidgetPresentation::RadioGroup &&
 			view.findControl("menu_file")->visible() && !view.findControl("run")->visible() &&
 			view.findControl("domain")->visible() && view.findControl("pattern")->visible() &&
-			view.findControl("seed_readout")->visible(),
+			view.findControl("seed_value")->visible() && view.findControl("seed_copy")->visible() &&
+			view.findControl("seed_bookmarks")->visible(),
 			"wide legacy preset promotes domain controls and radio presentation into its menu rail");
 
 		view.applyLayout(UiPresetId::FlatVgaDos, layout, 1280, false);
@@ -3613,6 +3786,76 @@ namespace
 		DeleteFileW(restartPath.c_str());
 	}
 
+	void testAppControllerSeedManagement()
+	{
+		MemorySettings preferences;
+		MemorySeedBookmarks savedSeeds;
+		AppController app(preferences, &savedSeeds);
+		const std::uint32_t startupSeed = app.snapshot().inputSeed;
+		check(app.seedHistory().entries().size() == 1 && app.seedHistory().current() == startupSeed,
+			"seed history starts with the startup shuffle seed");
+		check(app.dispatch(AppAction(AppActionKind::Shuffle)).accepted && app.seedHistory().entries().size() == 2,
+			"explicit shuffle appends its fresh seed to session history");
+		const std::uint32_t shuffledSeed = app.snapshot().inputSeed;
+		const int preferenceWritesBeforeSeed = preferences.writes;
+		AppAction setSeed(AppActionKind::SetSeed, 4294967295u);
+		check(app.dispatch(setSeed).accepted && app.snapshot().inputSeed == 4294967295u &&
+			app.seedHistory().current() == 4294967295u && preferences.writes == preferenceWritesBeforeSeed,
+			"applying the maximum unsigned seed regenerates input without writing user preferences");
+		check(app.dispatch(AppAction(AppActionKind::PreviousSeed)).accepted && app.snapshot().inputSeed == shuffledSeed &&
+			app.seedHistory().canGoNext(), "previous seed restores its exact deterministic input and retains redo");
+		check(app.dispatch(AppAction(AppActionKind::NextSeed)).accepted && app.snapshot().inputSeed == 4294967295u,
+			"next seed replays the redo entry");
+		app.dispatch(AppAction(AppActionKind::PreviousSeed));
+		AppAction branchSeed(AppActionKind::SetSeed, 7u);
+		check(app.dispatch(branchSeed).accepted && !app.seedHistory().canGoNext(),
+			"applying a new seed after history undo truncates the redo branch");
+
+		const int writesBeforeCount = preferences.writes;
+		const std::uint32_t retainedSeed = app.snapshot().inputSeed;
+		app.dispatch(AppAction(AppActionKind::SetItemCount, 0.0f, 37));
+		check(app.snapshot().inputSeed == retainedSeed && preferences.writes == writesBeforeCount + 1,
+			"resizing regenerates the current input from its retained seed");
+		const std::vector<sortinglogic::SortItem> resizedInput = app.simulation().preparedInput();
+		app.dispatch(AppAction(AppActionKind::SetItemCount, 0.0f, 37));
+		bool samePreparedInput = app.simulation().preparedInput().size() == resizedInput.size();
+		for (std::size_t i = 0; samePreparedInput && i < resizedInput.size(); ++i)
+			samePreparedInput = app.simulation().preparedInput()[i].stableId == resizedInput[i].stableId &&
+				app.simulation().preparedInput()[i].value == resizedInput[i].value;
+		check(samePreparedInput,
+			"repeating the same size and seed reproduces the exact prepared input");
+
+		check(app.dispatch(AppAction(AppActionKind::SaveSeedBookmark)).accepted && savedSeeds.writes == 1 &&
+			savedSeeds.values.size() == 1 && savedSeeds.values[0].seed == retainedSeed,
+			"saving the current seed persists one unique favorite");
+		check(app.dispatch(AppAction(AppActionKind::SaveSeedBookmark)).accepted && savedSeeds.writes == 1,
+			"saving an existing favorite selects it without duplicating or rewriting the library");
+		app.dispatch(AppAction(AppActionKind::Shuffle));
+		AppAction chooseFavorite(AppActionKind::SelectSeedBookmark, 0.0f, 0);
+		check(app.dispatch(chooseFavorite).accepted && app.snapshot().inputSeed == retainedSeed &&
+			app.seedHistory().current() == retainedSeed,
+			"choosing a saved seed applies it to current input settings and appends history");
+		check(app.dispatch(AppAction(AppActionKind::CopySeed)).accepted,
+			"copy-seed command remains transport-neutral and available through the app action boundary");
+		check(app.dispatch(AppAction(AppActionKind::RemoveSeedBookmark, 0.0f, -1)).accepted &&
+			savedSeeds.writes == 2 && savedSeeds.values.empty(),
+			"removing the selected favorite persists the updated library");
+
+		check(app.dispatch(AppAction(AppActionKind::BuildTrace)).accepted,
+			"seed busy-rule fixture starts trace generation");
+		const std::chrono::steady_clock::time_point deadline =
+			std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (app.snapshot().buildingTrace && std::chrono::steady_clock::now() < deadline)
+		{
+			app.update(0.0f);
+			std::this_thread::yield();
+		}
+		app.dispatch(AppAction(AppActionKind::TogglePlayback));
+		AppAction busySeed(AppActionKind::SetSeed, 123u);
+		check(!app.dispatch(busySeed).accepted && app.snapshot().inputSeed == retainedSeed,
+			"seed application is rejected during playback without changing the prepared baseline");
+	}
+
 	void testAppearanceApplyIsTransactionalAndTransportNeutral()
 	{
 		MemorySettings persistence;
@@ -4457,6 +4700,7 @@ int main(int argc, char* argv[])
 	}
 	testActiveRoleLookup();
 	testInlineEditModel();
+	testSeedHistoryAndBookmarkLibrary();
 	testInlineEditViewOwnsSharedEditingFlow();
 	testSimulationPlaybackState();
 	testSpacing();
@@ -4465,6 +4709,7 @@ int main(int argc, char* argv[])
 	testModifierStepSizes();
 	testAppearanceAndPresetArchitecture();
 	testWindowsFontCatalog();
+	testTextLabelContentRefresh();
 	testTextBlockLayoutCache();
 	testRenderPipelineContracts();
 	testLayoutAndWidgets();
@@ -4505,6 +4750,7 @@ int main(int argc, char* argv[])
 	testSettingsStore();
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();
+	testAppControllerSeedManagement();
 	testAppearanceApplyIsTransactionalAndTransportNeutral();
 	testRestoreReconstructedDefaultsScope();
 	testShowcaseActions();

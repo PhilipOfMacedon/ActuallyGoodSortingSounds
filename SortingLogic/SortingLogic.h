@@ -140,7 +140,8 @@ namespace sortinglogic
 		ArrayvRemi = 1202, ArrayvChalice = 1203, ArrayvFlan = 1204,
 		ArrayvFlux = 1205, ArrayvKota = 1206, ArrayvOptimizedWeaveMerge = 1207,
 		ArrayvWiki = 1208, ArrayvYujisBufferedMerge2 = 1209,
-		ArrayvAndrey = 1210, ArrayvNewShuffleMerge = 1211
+		ArrayvAndrey = 1210, ArrayvNewShuffleMerge = 1211,
+		ArrayvFunOriginal = 1212
 	};
 
 	enum class SemanticEventType
@@ -155,6 +156,7 @@ namespace sortinglogic
 		IncompleteDemonstration, DemonstrationOnly
 	};
 	enum class ComparisonResult : int { Less = -1, Equal = 0, Greater = 1 };
+	enum class ComparisonBasis : std::uint8_t { ValueOnly, ValueThenStableId };
 	enum class SemanticRole
 	{
 		ComparedItem, HeldKey, Gap, ShiftedItem, WriteTarget, Pivot,
@@ -202,6 +204,7 @@ namespace sortinglogic
 		std::vector<SortSlot> beforeSlots, afterSlots;
 		std::vector<int> beforeCounters;
 		ComparisonResult comparison;
+		ComparisonBasis comparisonBasis;
 		std::string firstLane, secondLane, workspaceName;
 		SemanticRole firstRole, secondRole;
 		bool completionScan, beforeOccupied, beforeSecondOccupied;
@@ -506,7 +509,8 @@ namespace sortinglogic
 	};
 
 	SortState makeInitialState(const std::vector<SortItem>& items);
-	ComparisonResult compareItems(const SortItem& left, const SortItem& right, SortDirection direction);
+	ComparisonResult compareItems(const SortItem& left, const SortItem& right, SortDirection direction,
+		ComparisonBasis basis = ComparisonBasis::ValueOnly);
 	void applyEventForward(SortState& state, const SemanticEvent& event);
 	void applyEventBackward(SortState& state, const SemanticEvent& event);
 	bool validateState(const SortState& state, std::size_t expectedItemCount, std::string* reason = nullptr);

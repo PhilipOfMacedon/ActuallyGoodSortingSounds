@@ -403,26 +403,74 @@ namespace sortinglogic_tests
 					InputDomain::NonnegativeIntegerKeys);
 	}
 
-	void testFunSortBoundedOutcome()
+	void testFunSortVariants()
 	{
 		using namespace sortinglogic;
-		TraceBuildRequest request;
-		request.algorithm = SortAlgorithm::ArrayvFun;
-		request.input = floats({ 0.4f, 0.2f, 0.4f, 0.2f, 0.4f });
-		request.profile = InputProfile::NormalizedFloat;
-		request.direction = SortDirection::Ascending;
-		const SortTrace trace = SortTraceBuilder::build(request);
-		check(trace.complete && trace.outcome == AlgorithmOutcome::IncompleteDemonstration,
-			"Fun Sort is explicitly presented as a completed trace of an incomplete method");
+		const std::uint32_t reportedSeed = 2688576985u;
+		Simulation fixture(64, reportedSeed, InputDomain::NormalizedFloats, InputPattern::Random);
+		TraceBuildRequest reported;
+		reported.algorithm = SortAlgorithm::ArrayvFun;
+		reported.input = fixture.preparedInput();
+		reported.inputSeed = reportedSeed;
+		reported.domain = InputDomain::NormalizedFloats;
+		reported.pattern = InputPattern::Random;
+		reported.profile = InputProfile::NormalizedFloat;
+		for (int direction = 0; direction < 2; ++direction)
+		{
+			reported.direction = direction == 0 ? SortDirection::Ascending : SortDirection::Descending;
+			const SortTrace trace = SortTraceBuilder::build(reported);
+			SortState replay = trace.initialState;
+			std::map<std::uint64_t, SortItem> itemById;
+			for (std::size_t i = 0; i < reported.input.size(); ++i)
+				itemById[reported.input[i].stableId] = reported.input[i];
+			for (std::size_t i = 0; i < trace.events.size(); ++i)
+			{
+				const SemanticEvent& event = trace.events[i];
+				if (event.type == SemanticEventType::Compare)
+				{
+					check(event.comparisonBasis == ComparisonBasis::ValueThenStableId,
+						"corrected Fun records its total comparison basis");
+					check(event.comparison == compareItems(itemById[event.firstItemId], itemById[event.secondItemId],
+						reported.direction, event.comparisonBasis),
+						"corrected Fun comparison outcome matches the recorded value-plus-ID order");
+				}
+				applyEventForward(replay, event);
+			}
+			std::string reason;
+			check(trace.complete && trace.outcome == AlgorithmOutcome::SortedPermutation &&
+				isSorted(replay, reported.direction) && validateState(replay, reported.input.size(), &reason),
+				"reported 64-item seed is fully sorted and retains every item in both directions");
+			for (std::size_t i = trace.events.size(); i > 0; --i) applyEventBackward(replay, trace.events[i - 1]);
+			check(sameState(replay, trace.initialState), "corrected Fun trace rewinds exactly");
+		}
+
+		const std::vector<std::vector<float> > cases = {
+			{}, { 0.5f }, { 0.4f, 0.2f, 0.4f, 0.2f, 0.4f },
+			{ 0.3f, 0.3f, 0.3f, 0.3f }, { 0.0f, 0.1f, 0.2f, 0.3f },
+			{ 0.3f, 0.2f, 0.1f, 0.0f }, { 0.6f, 0.1f, 0.4f, 0.1f, 0.9f, 0.2f }
+		};
+		for (std::size_t shape = 0; shape < cases.size(); ++shape)
+			for (int direction = 0; direction < 2; ++direction)
+				verifyAlgorithmCase("corrected Fun shape " + std::to_string(shape), floats(cases[shape]),
+					InputProfile::NormalizedFloat, SortAlgorithm::ArrayvFun,
+					direction == 0 ? SortDirection::Ascending : SortDirection::Descending);
+
+		TraceBuildRequest original;
+		original.algorithm = SortAlgorithm::ArrayvFunOriginal;
+		original.input = floats({ 0.4f, 0.2f, 0.4f, 0.2f, 0.4f });
+		original.profile = InputProfile::NormalizedFloat;
+		const SortTrace originalTrace = SortTraceBuilder::build(original);
+		SortState originalState = originalTrace.initialState;
+		for (std::size_t i = 0; i < originalTrace.events.size(); ++i)
+			applyEventForward(originalState, originalTrace.events[i]);
+		const AlgorithmDescriptor* correctedDescriptor = algorithmDescriptor(SortAlgorithm::ArrayvFun);
+		const AlgorithmDescriptor* originalDescriptor = algorithmDescriptor(SortAlgorithm::ArrayvFunOriginal);
+		check(correctedDescriptor && originalDescriptor && !correctedDescriptor->stable && !originalDescriptor->stable &&
+			originalDescriptor->safeMaxItemCount == 64 && !isSorted(originalState, SortDirection::Ascending) &&
+			originalTrace.outcome == AlgorithmOutcome::IncompleteDemonstration,
+			"upstream original remains separately labeled with its duplicate-key limitation and 64-item cap");
 		check(algorithmAcceptsItemCount(SortAlgorithm::ArrayvFun, 64) && !algorithmAcceptsItemCount(SortAlgorithm::ArrayvFun, 65),
-			"Fun Sort enforces its conservative catalog item limit");
-		SortState replay = trace.initialState;
-		for (std::size_t i = 0; i < trace.events.size(); ++i) applyEventForward(replay, trace.events[i]);
-		std::string reason;
-		check(validateState(replay, request.input.size(), &reason), "Fun Sort retains every item despite its incomplete ordering contract");
-		check(!isSorted(replay, request.direction), "Fun Sort fixture captures the pinned method's incomplete duplicate-key ordering");
-		for (std::size_t i = trace.events.size(); i > 0; --i) applyEventBackward(replay, trace.events[i - 1]);
-		check(sameState(replay, trace.initialState), "Fun Sort trace rewinds exactly");
+			"corrected Fun keeps its conservative 64-item catalog limit");
 	}
 
 	std::uint64_t distributionFixtureHash(const sortinglogic::SortTrace& trace, bool includeAudio)

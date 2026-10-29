@@ -21,15 +21,17 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared" />
-  <ImportGroup Label="PropertySheets"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
+	<ImportGroup Label="PropertySheets"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /><Import Project="$(ProjectDir)..\ExternalDependencies.props" /></ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup><OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir><IntDir>$(SolutionDir)$(Platform)\$(Configuration)\$(ProjectName)\</IntDir></PropertyGroup>
+  <PropertyGroup><OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir><IntDir>$(SolutionDir)$(Platform)\$(Configuration)\$(ProjectName)\</IntDir><ApplicationResourcesDir>$(ProjectDir)..\SDL2BarGraphics\</ApplicationResourcesDir></PropertyGroup>
   <ItemDefinitionGroup>
 	<ClCompile><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp14</LanguageStandard><AdditionalIncludeDirectories>$(ProjectDir)..\SDL2BarGraphics;$(ProjectDir)..\..\..\External Libs\SDL2\include;$(ProjectDir)..\..\..\External Libs\GLM;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
 		<Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>dwrite.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AppFrameworkTests.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\AssetPaths.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\TextLabel.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\SdlUiEventAdapter.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\WindowsFontCatalog.cpp" />
   </ItemGroup>

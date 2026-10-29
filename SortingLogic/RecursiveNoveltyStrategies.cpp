@@ -403,17 +403,17 @@ namespace sortinglogic
 			}
 		}
 
-		void funSort(Recorder& r)
+		void funSortImpl(Recorder& r, ComparisonBasis comparisonBasis)
 		{
 			const std::size_t count = r.state.slots.size();
 			if (count < 2) return;
 			for (std::size_t index = 1; index < count; ++index)
 			{
 				bool done = false;
-				std::size_t attempts = 0;
 				while (!done)
 				{
-					if (++attempts > count * 2 + 4) break;
+					done = true;
+					r.chargeWork();
 					done = true;
 					const SortItem key = r.at(index);
 					std::size_t low = 0, high = count - 1;
@@ -422,14 +422,16 @@ namespace sortinglogic
 						r.chargeWork();
 						const std::size_t middle = low + (high - low) / 2;
 						const SortItem probe = r.at(middle);
-						r.compare(probe, key, middle, index, "main", "main", SemanticRole::ComparedItem, SemanticRole::ComparedItem);
-						if (compareItems(probe, key, r.trace.direction) == ComparisonResult::Less) low = middle + 1;
+						r.compare(probe, key, middle, index, "main", "main", SemanticRole::ComparedItem,
+							SemanticRole::ComparedItem, false, comparisonBasis);
+						if (compareItems(probe, key, r.trace.direction, comparisonBasis) == ComparisonResult::Less) low = middle + 1;
 						else high = middle;
 					}
 
 					const SortItem atPosition = r.at(low);
-					r.compare(atPosition, key, low, index, "main", "main", SemanticRole::ComparedItem, SemanticRole::ComparedItem);
-					if (compareItems(atPosition, key, r.trace.direction) != ComparisonResult::Equal)
+					r.compare(atPosition, key, low, index, "main", "main", SemanticRole::ComparedItem,
+						SemanticRole::ComparedItem, false, comparisonBasis);
+					if (compareItems(atPosition, key, r.trace.direction, comparisonBasis) != ComparisonResult::Equal)
 					{
 						if (index + 1 < low) r.swap(index, low - 1);
 						else if (index > low) r.swap(index, low);
@@ -437,6 +439,16 @@ namespace sortinglogic
 					}
 				}
 			}
+		}
+
+		void funSort(Recorder& r)
+		{
+			funSortImpl(r, ComparisonBasis::ValueThenStableId);
+		}
+
+		void funSortOriginal(Recorder& r)
+		{
+			funSortImpl(r, ComparisonBasis::ValueOnly);
 		}
 	}
 
@@ -452,6 +464,13 @@ namespace sortinglogic
 	{
 		SortTrace trace = detail::buildAlgorithmTrace(request, SortAlgorithm::ArrayvFun,
 			&strategies::funSort);
+		return trace;
+	}
+
+	SortTrace buildArrayvFunOriginalRequest(const TraceBuildRequest& request)
+	{
+		SortTrace trace = detail::buildAlgorithmTrace(request, SortAlgorithm::ArrayvFunOriginal,
+			&strategies::funSortOriginal);
 		trace.outcome = AlgorithmOutcome::IncompleteDemonstration;
 		return trace;
 	}

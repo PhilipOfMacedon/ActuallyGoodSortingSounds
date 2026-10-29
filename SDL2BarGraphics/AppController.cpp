@@ -9,9 +9,45 @@
 #include "BarCountSteps.h"
 #include "AudioSettingsActions.h"
 #include "PlaybackTimebase.h"
+#include "SettingsFileStorage.h"
 
 namespace
 {
+	class LocalSeedBookmarkPersistence : public ISeedBookmarkPersistence
+	{
+	public:
+		bool load(std::vector<SeedBookmark>& bookmarks, std::string* error) override
+		{
+			bookmarks.clear();
+			const std::wstring path = settingsfile::pathForFile(L"seed-favorites.ini");
+			std::string content;
+			if (path.empty() || !settingsfile::readAll(path, content))
+			{
+				if (error) error->clear();
+				return true;
+			}
+			return SeedBookmarkStore::decode(content, bookmarks, error);
+		}
+
+		bool save(const std::vector<SeedBookmark>& bookmarks, std::string* error) override
+		{
+			const std::wstring path = settingsfile::pathForFile(L"seed-favorites.ini");
+			if (path.empty())
+			{
+				if (error) *error = "LOCALAPPDATA is unavailable.";
+				return false;
+			}
+			return settingsfile::replaceAtomically(path, SeedBookmarkStore::encode(bookmarks),
+				SeedBookmarkStore::CurrentVersion, error, false);
+		}
+	};
+
+	ISeedBookmarkPersistence& defaultSeedBookmarkPersistence()
+	{
+		static LocalSeedBookmarkPersistence persistence;
+		return persistence;
+	}
+
 	bool needsFullPreferenceSnapshot(AppActionKind action)
 	{
 		// The simulation settings are captured separately for every dispatch.
@@ -67,6 +103,14 @@ namespace
 		case AppActionKind::SelectAudioBand:
 		case AppActionKind::RetryAudioDevice:
 		case AppActionKind::None:
+		case AppActionKind::SetSeed:
+		case AppActionKind::CopySeed:
+		case AppActionKind::SaveSeedBookmark:
+		case AppActionKind::SelectSeedBookmark:
+		case AppActionKind::RenameSeedBookmark:
+		case AppActionKind::RemoveSeedBookmark:
+		case AppActionKind::PreviousSeed:
+		case AppActionKind::NextSeed:
 			return false;
 		default:
 			// New commands take the conservative path until explicitly classified.
@@ -106,6 +150,11 @@ namespace
 		}
 	}
 
+	std::uint32_t freshStartupOrShuffleSeed()
+	{
+		return sortinglogic::Simulation::createFreshSeed();
+	}
+
 }
 
 UserPreferences AppController::loadPreferences(ISettingsPersistence& persistence)
@@ -114,13 +163,20 @@ UserPreferences AppController::loadPreferences(ISettingsPersistence& persistence
 	return loaded.isValid() ? loaded : UserPreferences();
 }
 
-AppController::AppController(ISettingsPersistence& settingsPersistence)
+AppController::AppController(ISettingsPersistence& settingsPersistence,
+	ISeedBookmarkPersistence* seedBookmarkPersistence)
 	: settingsPersistence_(settingsPersistence),
+	seedBookmarkPersistence_(seedBookmarkPersistence ? seedBookmarkPersistence : &defaultSeedBookmarkPersistence()),
 	preferences_(loadPreferences(settingsPersistence)),
-		simulation_(static_cast<std::size_t>(preferences_.simulation.itemCount), sortinglogic::Simulation::createFreshSeed(),
+		simulation_(static_cast<std::size_t>(preferences_.simulation.itemCount), freshStartupOrShuffleSeed(),
 			preferences_.simulation.domain, preferences_.simulation.pattern),
-		traceBuildService_(), playbackCoordinator_(), persistenceStatus_("Preferences loaded.")
+		traceBuildService_(), playbackCoordinator_(), persistenceStatus_("Preferences loaded."), commandStatus_(), seedHistory_(), seedBookmarks_()
 {
+	seedHistory_.reset(simulation_.snapshot().inputSeed);
+	std::vector<SeedBookmark> loadedBookmarks;
+	if (seedBookmarkPersistence_->load(loadedBookmarks))
+		for (std::size_t i = 0; i < loadedBookmarks.size(); ++i)
+			seedBookmarks_.save(loadedBookmarks[i].seed, loadedBookmarks[i].name);
 	simulation_.setDuration(static_cast<float>(preferences_.simulation.durationSeconds));
 	simulation_.setDirection(preferences_.simulation.descending
 		? sortinglogic::SortDirection::Descending
@@ -240,8 +296,108 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	switch (action.kind)
 	{
 	case AppActionKind::Shuffle:
-		result = simulation_.prepareShuffle(sortinglogic::Simulation::createFreshSeed());
+		result = simulation_.prepareShuffle(freshStartupOrShuffleSeed());
+		if (result.accepted) seedHistory_.append(simulation_.snapshot().inputSeed);
 		break;
+	case AppActionKind::SetSeed:
+		if (simulation_.isPlaying() || simulation_.isBuildingTrace())
+			result = sortinglogic::CommandResult(false, "Pause playback and wait for trace preparation before applying a seed.");
+		else if (simulation_.snapshot().inputSeed == action.seed)
+			result = sortinglogic::CommandResult(true, "Seed unchanged.");
+		else
+		{
+			result = simulation_.prepareShuffle(action.seed);
+			if (result.accepted) seedHistory_.append(action.seed);
+		}
+		break;
+	case AppActionKind::CopySeed:
+		result = sortinglogic::CommandResult(true, "Copy seed " + std::to_string(simulation_.snapshot().inputSeed) + " to the clipboard.");
+		break;
+	case AppActionKind::SaveSeedBookmark:
+	{
+		const std::uint32_t seed = simulation_.snapshot().inputSeed;
+		const bool existed = seedBookmarks_.contains(seed);
+		const SeedBookmarkStore previousBookmarks = seedBookmarks_;
+		const bool added = seedBookmarks_.save(seed, action.text);
+		if (!added && !existed)
+			result = sortinglogic::CommandResult(false, "Could not save this seed; the bookmark limit or name limit was reached.");
+		else if (added)
+		{
+			std::string error;
+			if (!persistSeedBookmarks(&error))
+			{
+				seedBookmarks_ = previousBookmarks;
+				result = sortinglogic::CommandResult(false, "Could not save seed favorites: " + error);
+			}
+			else result = sortinglogic::CommandResult(true, "Saved seed " + std::to_string(seed) + " to favorites.");
+		}
+		else result = sortinglogic::CommandResult(true, "This seed is already saved; selected its existing bookmark.");
+		break;
+	}
+	case AppActionKind::SelectSeedBookmark:
+		if (action.selection < 0 || static_cast<std::size_t>(action.selection) >= seedBookmarks_.bookmarks().size())
+			result = sortinglogic::CommandResult(false, "The selected saved seed is unavailable.");
+		else
+		{
+			const std::uint32_t seed = seedBookmarks_.bookmarks()[static_cast<std::size_t>(action.selection)].seed;
+			if (simulation_.isPlaying() || simulation_.isBuildingTrace())
+				result = sortinglogic::CommandResult(false, "Pause playback and wait for trace preparation before applying a saved seed.");
+			else
+			{
+				result = seed == simulation_.snapshot().inputSeed
+					? sortinglogic::CommandResult(true, "Saved seed selected.") : simulation_.prepareShuffle(seed);
+				if (result.accepted)
+				{
+					seedBookmarks_.select(static_cast<std::size_t>(action.selection));
+					seedHistory_.append(seed);
+				}
+			}
+		}
+		break;
+	case AppActionKind::PreviousSeed:
+	case AppActionKind::NextSeed:
+	{
+		const bool previousSeed = action.kind == AppActionKind::PreviousSeed;
+		if (simulation_.isPlaying() || simulation_.isBuildingTrace())
+			result = sortinglogic::CommandResult(false, "Pause playback and wait for trace preparation before browsing seed history.");
+		else if (previousSeed ? !seedHistory_.canGoPrevious() : !seedHistory_.canGoNext())
+			result = sortinglogic::CommandResult(false, previousSeed ? "There is no previous seed." : "There is no next seed.");
+		else
+		{
+			const std::uint32_t seed = previousSeed ? seedHistory_.previous() : seedHistory_.next();
+			result = simulation_.prepareShuffle(seed);
+			if (result.accepted)
+				previousSeed ? seedHistory_.movePrevious() : seedHistory_.moveNext();
+		}
+		break;
+	}
+	case AppActionKind::RenameSeedBookmark:
+	case AppActionKind::RemoveSeedBookmark:
+	{
+		const std::size_t index = action.selection < 0 ? seedBookmarks_.selectedIndex() : static_cast<std::size_t>(action.selection);
+		if (index >= seedBookmarks_.bookmarks().size())
+			result = sortinglogic::CommandResult(false, "Select a saved seed first.");
+		else
+		{
+			const SeedBookmarkStore previousBookmarks = seedBookmarks_;
+			const bool changed = action.kind == AppActionKind::RenameSeedBookmark
+				? seedBookmarks_.rename(index, action.text) : seedBookmarks_.remove(index);
+			if (!changed) result = sortinglogic::CommandResult(action.kind == AppActionKind::RenameSeedBookmark,
+				action.kind == AppActionKind::RenameSeedBookmark ? "Saved seed name was unchanged." : "Saved seed removed.");
+			else
+			{
+				std::string error;
+				if (!persistSeedBookmarks(&error))
+				{
+					seedBookmarks_ = previousBookmarks;
+					result = sortinglogic::CommandResult(false, "Could not update seed favorites: " + error);
+				}
+				else result = sortinglogic::CommandResult(true, action.kind == AppActionKind::RenameSeedBookmark
+					? "Saved seed renamed." : "Saved seed removed.");
+			}
+		}
+		break;
+	}
 	case AppActionKind::InstaSort:
 		result = simulation_.prepareInstaSort();
 		break;
@@ -591,6 +747,12 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		if (result.accepted && persistenceStatus_.find("Could not save") == 0)
 			result.message += " " + persistenceStatus_;
 	}
+	if (action.kind == AppActionKind::CopySeed || action.kind == AppActionKind::SaveSeedBookmark ||
+		action.kind == AppActionKind::SelectSeedBookmark || action.kind == AppActionKind::RenameSeedBookmark ||
+		action.kind == AppActionKind::RemoveSeedBookmark || action.kind == AppActionKind::PreviousSeed ||
+		action.kind == AppActionKind::NextSeed)
+		commandStatus_ = result.message;
+	else commandStatus_.clear();
 	return result;
 }
 
@@ -651,6 +813,7 @@ void AppController::snapshotInto(sortinglogic::RenderSnapshot& result) const
 		result.elapsedSeconds = static_cast<float>((std::max)(0.0, (std::min)(referenceDurationSeconds(),
 			static_cast<double>(result.elapsedSeconds))));
 	}
+	if (!commandStatus_.empty()) result.status = commandStatus_;
 }
 
 void AppController::applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
@@ -730,4 +893,13 @@ void AppController::persistPreferences()
 		persistenceStatus_ = "Could not save preferences" + (error.empty() ? std::string(".") : ": " + error);
 	else
 		persistenceStatus_ = "Preferences saved.";
+}
+
+bool AppController::persistSeedBookmarks(std::string* error)
+{
+	const bool saved = seedBookmarkPersistence_ && seedBookmarkPersistence_->save(seedBookmarks_.bookmarks(), error);
+	if (!saved)
+		persistenceStatus_ = "Could not save seed favorites" + (error && !error->empty() ? ": " + *error : ".");
+	else persistenceStatus_ = "Seed favorites saved.";
+	return saved;
 }

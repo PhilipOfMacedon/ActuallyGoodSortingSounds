@@ -15,6 +15,7 @@ namespace sortinglogic
 SemanticEvent::SemanticEvent()
 		: sequence(0), type(SemanticEventType::Complete), firstIndex(NoGapIndex), secondIndex(NoGapIndex),
 		firstItemId(NoItemId), secondItemId(NoItemId), item(), beforeItem(), beforeSecondItem(), beforeSlots(), afterSlots(), beforeCounters(), comparison(ComparisonResult::Equal),
+		comparisonBasis(ComparisonBasis::ValueOnly),
 		firstLane("main"), secondLane("main"), workspaceName(), firstRole(SemanticRole::ComparedItem),
 			secondRole(SemanticRole::ComparedItem), completionScan(false), beforeOccupied(false), beforeSecondOccupied(false),
 			beforeBoolean(false), afterBoolean(false),
@@ -53,13 +54,16 @@ SemanticEvent::SemanticEvent()
 		return state;
 	}
 
-	ComparisonResult compareItems(const SortItem& left, const SortItem& right, SortDirection direction)
+	ComparisonResult compareItems(const SortItem& left, const SortItem& right, SortDirection direction,
+		ComparisonBasis basis)
 	{
 		int order = 0;
 		if (left.hasIntegerKey && right.hasIntegerKey)
 			order = left.integerKey < right.integerKey ? -1 : (left.integerKey > right.integerKey ? 1 : 0);
 		else order = left.value < right.value ? -1 : (left.value > right.value ? 1 : 0);
-		if (direction == SortDirection::Descending) order = -order;
+		if (order != 0 && direction == SortDirection::Descending) order = -order;
+		if (order == 0 && basis == ComparisonBasis::ValueThenStableId)
+			order = left.stableId < right.stableId ? -1 : (left.stableId > right.stableId ? 1 : 0);
 		return order < 0 ? ComparisonResult::Less : (order > 0 ? ComparisonResult::Greater : ComparisonResult::Equal);
 	}
 

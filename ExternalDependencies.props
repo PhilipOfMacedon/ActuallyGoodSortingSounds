@@ -2,6 +2,7 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <ExternalLibsRoot Condition="'$(ExternalLibsRoot)' == ''">$(ProjectDir)..\..\..\External Libs\</ExternalLibsRoot>
+    <ApplicationResourcesDir Condition="'$(ApplicationResourcesDir)' == ''">$(ProjectDir)</ApplicationResourcesDir>
     <SDL2IncludeDir>$(ExternalLibsRoot)SDL2\include\</SDL2IncludeDir>
     <GLEWIncludeDir>$(ExternalLibsRoot)GLEW\include\</GLEWIncludeDir>
     <GLMIncludeDir>$(ExternalLibsRoot)GLM\</GLMIncludeDir>
@@ -40,7 +41,7 @@
     </ItemGroup>
     <Copy SourceFiles="@(_RuntimeDependency)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
     <MakeDir Directories="$(OutDir)Resources;$(OutDir)Shaders" />
-    <Copy SourceFiles="$(ProjectDir)Resources\Courier New Bold.ttf" DestinationFolder="$(OutDir)Resources" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ProjectDir)Shaders\shader.vert;$(ProjectDir)Shaders\shader.frag" DestinationFolder="$(OutDir)Shaders" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ApplicationResourcesDir)Resources\Courier New Bold.ttf" DestinationFolder="$(OutDir)Resources" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ApplicationResourcesDir)Shaders\shader.vert;$(ApplicationResourcesDir)Shaders\shader.frag" DestinationFolder="$(OutDir)Shaders" SkipUnchangedFiles="true" />
   </Target>
 </Project>

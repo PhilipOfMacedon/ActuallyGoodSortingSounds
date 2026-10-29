@@ -231,7 +231,13 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 			const float rowStride = std::max(36.0f, in.controlHeight + gap);
 			const float secondY = setupTop + rowStride;
 			placeRow(result, second, margin, secondY, available, in.controlHeight, gap);
-			const float timelineY = secondY + in.controlHeight + 12.0f;
+			const char* seedRow[] = { "seed_value", "seed_copy", "seed_save", "seed_bookmarks", "seed_previous", "seed_next", "seed_remove" };
+			std::vector<std::string> third;
+			for (std::size_t i = 0; i < sizeof(seedRow) / sizeof(seedRow[0]); ++i)
+				if (std::find(controlIds.begin(), controlIds.end(), seedRow[i]) != controlIds.end()) third.push_back(seedRow[i]);
+			const float thirdY = secondY + in.controlHeight + gap;
+			placeRow(result, third, margin, thirdY, available, in.controlHeight, gap);
+			const float timelineY = thirdY + in.controlHeight + 12.0f;
 			result.timeline = UiRect(margin, timelineY, available, 10.0f);
 			layoutTimelineParts(result, 0.0f, false);
 			const float inset = std::max(0.0f, in.chartInset);
@@ -241,15 +247,19 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 		}
 		else
 		{
+			const char* seedRow[] = { "seed_value", "seed_copy", "seed_save", "seed_bookmarks", "seed_previous", "seed_next", "seed_remove" };
 			const std::vector<std::string> rows[] = {
 				selectIds(controlIds, row0, sizeof(row0) / sizeof(row0[0])),
 				selectIds(controlIds, row1, sizeof(row1) / sizeof(row1[0])),
 				selectIds(controlIds, row2, sizeof(row2) / sizeof(row2[0])),
-				selectIds(controlIds, row3, sizeof(row3) / sizeof(row3[0])) };
+				selectIds(controlIds, row3, sizeof(row3) / sizeof(row3[0])),
+				selectIds(controlIds, seedRow, sizeof(seedRow) / sizeof(seedRow[0])) };
 			const float rowStride = std::max(35.0f, in.controlHeight + std::max(0.0f, gap - 1.0f));
 			for (int row = 0; row < 4; ++row)
 				placeRow(result, rows[row], margin, setupTop + row * rowStride, available, in.controlHeight, gap);
-			const float timelineY = setupTop + 3.0f * rowStride + in.controlHeight + 11.0f;
+			const float seedY = setupTop + 4.0f * rowStride;
+			placeRow(result, rows[4], margin, seedY, available, in.controlHeight, gap);
+			const float timelineY = seedY + in.controlHeight + 11.0f;
 			result.timeline = UiRect(margin, timelineY, available, 10.0f);
 			layoutTimelineParts(result, 0.0f, false);
 			const float inset = std::max(0.0f, in.chartInset);
@@ -313,7 +323,7 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 			const float innerTop = result.setupRail.y + railInset;
 			const float innerHeight = std::max(0.0f, result.setupRail.height - railInset * 2.0f);
 			const float rowGap = std::min(layoutGap, 8.0f);
-			const int rowCount = 7;
+			const int rowCount = 8;
 			const float fittingHeight = std::max(0.0f, (innerHeight - rowGap * (rowCount - 1)) / rowCount);
 			const float rowHeight = std::min(controlHeight, fittingHeight);
 			const char* row0[] = { "shuffle", "insta_sort", "insta_invert" };
@@ -322,9 +332,10 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 			const char* row3[] = { "direction" };
 			const char* row4[] = { "bars_down", "bars_value", "bars_up" };
 			const char* row5[] = { "time_down", "time_value", "time_up" };
-			const char* row6[] = { "seed_readout" };
-			const char* const* rowIds[] = { row0, row1, row2, row3, row4, row5, row6 };
-			const std::size_t rowSizes[] = { 3, 1, 2, 1, 3, 3, 1 };
+			const char* row6[] = { "seed_value", "seed_copy", "seed_save" };
+			const char* row7[] = { "seed_bookmarks", "seed_previous", "seed_next", "seed_remove" };
+			const char* const* rowIds[] = { row0, row1, row2, row3, row4, row5, row6, row7 };
+			const std::size_t rowSizes[] = { 3, 1, 2, 1, 3, 3, 3, 4 };
 			for (int row = 0; row < rowCount; ++row)
 				addExisting(result, std::vector<std::string>(rowIds[row], rowIds[row] + rowSizes[row]), controlIds,
 					innerX, innerTop + row * (rowHeight + rowGap), innerWidth, rowHeight, rowGap);
@@ -367,15 +378,16 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 			const float rowGap = std::min(layoutGap, 6.0f);
 			const float setupSpace = std::max(0.0f, transportTop - setupTop - contentGap - layoutGap);
 			const float rowHeight = std::min(controlHeight,
-				std::max(0.0f, (setupSpace - rowGap * 4.0f) / 5.0f));
+				std::max(0.0f, (setupSpace - rowGap * 5.0f - 120.0f) / 6.0f));
 			const char* row0[] = { "shuffle", "insta_sort", "insta_invert" };
 			const char* row1[] = { "algorithm" };
 			const char* row2[] = { "direction" };
 			const char* row3[] = { "bars_down", "bars_value", "bars_up" };
 			const char* row4[] = { "time_down", "time_value", "time_up" };
-			const char* const* rowIds[] = { row0, row1, row2, row3, row4 };
-			const std::size_t rowSizes[] = { 3, 1, 1, 3, 3 };
-			for (int row = 0; row < 5; ++row)
+			const char* row5[] = { "seed_value", "seed_copy", "seed_save", "seed_bookmarks", "seed_previous", "seed_next", "seed_remove" };
+			const char* const* rowIds[] = { row0, row1, row2, row3, row4, row5 };
+			const std::size_t rowSizes[] = { 3, 1, 1, 3, 3, 7 };
+			for (int row = 0; row < 6; ++row)
 				addExisting(result, std::vector<std::string>(rowIds[row], rowIds[row] + rowSizes[row]), controlIds,
 					margin, setupTop + row * (rowHeight + rowGap), setupWidth, rowHeight, rowGap);
 			const UiRect direction = result.control("direction");
@@ -385,7 +397,7 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 				result.interactiveSubregions["direction"].push_back(UiRect(direction.x + direction.width * 0.5f, direction.y,
 					direction.width * 0.5f, direction.height));
 			}
-			const float chartY = setupTop + 5.0f * rowHeight + 4.0f * rowGap + contentGap;
+			const float chartY = setupTop + 6.0f * rowHeight + 5.0f * rowGap + contentGap;
 			result.setupRail = UiRect(margin, setupTop, setupWidth, std::max(0.0f, chartY - setupTop - contentGap));
 			result.chartViewport = UiRect(margin + inset, chartY,
 				std::max(0.0f, setupWidth - inset * 2.0f),

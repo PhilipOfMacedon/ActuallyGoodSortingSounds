@@ -22,15 +22,24 @@ public:
 	const std::string& text() const { return editor_.text(); }
 	bool editsControl(const std::string& controlId) const;
 
-	bool beginForControl(const std::string& controlId, int itemCount, float durationSeconds,
+	bool beginForControl(const std::string& controlId, int itemCount, float durationSeconds, std::uint32_t seed,
 		MainControlsView& mainControls, AppearanceEditorView& appearanceEditor);
+	bool beginForControl(const std::string& controlId, int itemCount, float durationSeconds,
+		MainControlsView& mainControls, AppearanceEditorView& appearanceEditor)
+	{
+		return beginForControl(controlId, itemCount, durationSeconds, 0u, mainControls, appearanceEditor);
+	}
 	bool appendText(const char* text, MainControlsView& mainControls, AppearanceEditorView& appearanceEditor);
 	bool backspace(MainControlsView& mainControls, AppearanceEditorView& appearanceEditor);
 	bool clear(MainControlsView& mainControls, AppearanceEditorView& appearanceEditor);
 	void synchronizePresentation(MainControlsView& mainControls, AppearanceEditorView& appearanceEditor);
 	bool commit(MainControlsView& mainControls, AppearanceEditorView& appearanceEditor,
 		AppAction& action, bool& appearanceNeedsSynchronization);
-	InlineEditTarget cancel(MainControlsView& mainControls, int itemCount, float durationSeconds);
+	InlineEditTarget cancel(MainControlsView& mainControls, int itemCount, float durationSeconds, std::uint32_t seed);
+	InlineEditTarget cancel(MainControlsView& mainControls, int itemCount, float durationSeconds)
+	{
+		return cancel(mainControls, itemCount, durationSeconds, 0u);
+	}
 
 private:
 	InlineEditModel editor_;

@@ -58,11 +58,22 @@ public:
 	void setInputCaptured(bool captured) { controls_.setInputCaptured(captured); }
 	void resetMenuSelection(const std::string& id);
 	void setControlVisible(const std::string& id, bool visible) { controls_.setWidgetVisible(id, visible); }
-	bool beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds,
+	bool beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds, std::uint32_t seed,
 		std::string& initialText) const;
+	bool beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds,
+		std::string& initialText) const
+	{
+		return beginInlineValueEdit(target, itemCount, durationSeconds, 0u, initialText);
+	}
 	void showInlineValueEdit(InlineEditTarget target, const std::string& text);
-	void restoreInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds);
+	void restoreInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds, std::uint32_t seed);
+	void restoreInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds)
+	{
+		restoreInlineValueEdit(target, itemCount, durationSeconds, 0u);
+	}
 	bool commitInlineValueEdit(InlineEditTarget target, const InlineEditModel& editor, AppAction& action) const;
+	void setSeedBookmarks(const std::vector<std::string>& labels, std::size_t selectedIndex);
+	void setSeedHistoryNavigation(bool canPrevious, bool canNext);
 
 	const MainControlsText& text() const { return text_; }
 

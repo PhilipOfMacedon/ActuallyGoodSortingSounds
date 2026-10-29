@@ -45,6 +45,7 @@ bool InlineEditModel::appendText(const char* text)
 			(target_ == InlineEditTarget::Duration || isAppearanceEdit());
 		const bool sign = *character == '-' && isAppearanceEdit();
 		if (!digit && !decimal && !sign) continue;
+		if (target_ == InlineEditTarget::Seed && !digit) continue;
 		if (replaceOnNextAcceptedCharacter_)
 		{
 			text_.clear();
@@ -83,6 +84,21 @@ bool InlineEditModel::tryParseInteger(int& value) const
 		parsed = parsed * 10 + digit;
 	}
 	value = parsed;
+	return true;
+}
+
+bool InlineEditModel::tryParseUInt32(std::uint32_t& value) const
+{
+	if (text_.empty() || text_.size() > 10) return false;
+	std::uint64_t parsed = 0;
+	for (std::size_t i = 0; i < text_.size(); ++i)
+	{
+		const unsigned char character = static_cast<unsigned char>(text_[i]);
+		if (character < '0' || character > '9') return false;
+		parsed = parsed * 10 + (character - '0');
+		if (parsed > (std::numeric_limits<std::uint32_t>::max)()) return false;
+	}
+	value = static_cast<std::uint32_t>(parsed);
 	return true;
 }
 

@@ -9,6 +9,7 @@ namespace SoundEngine
 {
 enum class PlaybackTimingMode : std::uint8_t { FixedDuration, ReferenceCadence };
 enum class TimelineEventKind : std::uint8_t { Other, Comparison, Probe, Auxiliary };
+enum class FixedDurationSchedule : std::uint8_t { SourceCursor, EligibleEvents };
 
 static const std::size_t AudioTimelineRoleCount = 8;
 
@@ -62,7 +63,8 @@ public:
         std::size_t sourceEventCount, PlaybackTimingMode mode,
         double fixedDurationSeconds, std::uint32_t sampleRate = 44100,
         std::uint32_t referenceEventsPerSecond = 300,
-        std::string* error = nullptr);
+        std::string* error = nullptr,
+        FixedDurationSchedule fixedDurationSchedule = FixedDurationSchedule::SourceCursor);
 
     std::uint64_t durationFrames() const { return durationFrames_; }
     std::uint32_t sampleRate() const { return sampleRate_; }

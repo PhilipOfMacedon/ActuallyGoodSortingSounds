@@ -102,7 +102,18 @@ namespace
 						window.toggleBorderlessFullscreen();
 						continue;
 					}
-					const sortinglogic::CommandResult result = app.dispatch(action);
+					sortinglogic::CommandResult result = app.dispatch(action);
+					if (action.kind == AppActionKind::CopySeed && result.accepted)
+					{
+						const std::string seedText = std::to_string(app.snapshot().inputSeed);
+						if (SDL_SetClipboardText(seedText.c_str()) == 0)
+							app.setCommandFeedback("Copied seed " + seedText + " to the clipboard.");
+						else
+						{
+						app.setCommandFeedback(std::string("Could not copy seed: ") + SDL_GetError());
+						result = sortinglogic::CommandResult(false, app.snapshot().status);
+					}
+					}
 					controls.completeActionResult(action, result);
 					if (result.accepted && (action.kind == AppActionKind::SetUiPreset || action.kind == AppActionKind::ApplyAppearance))
 						window.setClassicWindows95Caption(app.preferences().appearance.activePreset == UiPresetId::ClassicWindows95);
@@ -159,6 +170,8 @@ int main(int argc, char** argv)
 		app.snapshotInto(snapshot);
 		const UiThemeCustomization& activeTheme = app.preferences().appearance.themes.find(app.preferences().appearance.activePreset)->second;
 		const ThemePalette palette = paletteForAppearance(app.preferences().appearance.activePreset, activeTheme);
+		controlPanel.setSeedLibraryState(app.seedBookmarks().bookmarks(), app.seedBookmarks().selectedIndex(),
+			app.seedHistory().canGoPrevious(), app.seedHistory().canGoNext());
 		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());
 		frameCoordinator.beginFrame(palette.background);
 		arrayRenderer.render(snapshot, app.preferences().visual.spacing, controlPanel.chartViewport(), palette);

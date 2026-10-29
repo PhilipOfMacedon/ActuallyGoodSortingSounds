@@ -201,7 +201,7 @@ namespace sortinglogic
 		itemCount_ = count;
 		const bool leftAndrutPreset = pattern_ == InputPattern::AndrutReference && itemCount_ != 100;
 		if (leftAndrutPreset) pattern_ = InputPattern::Random;
-		prepareItems(baselineKind_, baselineKind_ == BaselineKind::Shuffle ? createFreshSeed() : 0);
+		prepareItems(baselineKind_, baselineKind_ == BaselineKind::Shuffle ? inputSeed_ : 0);
 		status_ = leftAndrutPreset
 			? "Bar count set to " + std::to_string(itemCount_) + "; input arrangement returned to Random because the Andrut reference contains exactly 100 bars."
 			: "Bar count set to " + std::to_string(itemCount_) + "; prepared baseline refreshed.";

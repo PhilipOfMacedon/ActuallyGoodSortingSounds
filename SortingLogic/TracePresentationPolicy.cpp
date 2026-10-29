@@ -36,6 +36,8 @@ namespace sortinglogic
 			return hasAlgorithmComparisons_
 				? TraceAudioEventKind::ProbeAccent : TraceAudioEventKind::ProbeAsComparison;
 		case SemanticEventType::AuxiliaryItemWrite:
+			if (algorithm_ == SortAlgorithm::Merge)
+				return TraceAudioEventKind::Silent;
 			if (!isWorkspaceVisible(algorithm_, mergeBufferVisualizationEnabled_, event.workspaceName))
 				return TraceAudioEventKind::Silent;
 			return TraceAudioEventKind::AuxiliaryItemWrite;
@@ -85,16 +87,17 @@ namespace sortinglogic
 	bool TraceAudioPresentationPolicy::contributesToReferenceCadence(const SemanticEvent& event) const
 	{
 		const TraceAudioEventKind kind = classify(event);
+		if (usesComparisonCadence())
+			return kind == TraceAudioEventKind::Comparison;
 		return kind == TraceAudioEventKind::Comparison || kind == TraceAudioEventKind::ProbeAsComparison ||
 			kind == TraceAudioEventKind::AuxiliaryItemWrite;
 	}
 
 	bool TraceAudioPresentationPolicy::frameAccentVisible(const SemanticEvent& event) const
 	{
-		// Preserve the existing Merge visualization switch behavior for live frame
-		// accents. Timeline and cadence visibility are determined per merge lane.
-		return algorithm_ != SortAlgorithm::Merge || mergeBufferVisualizationEnabled_ ||
-			event.type == SemanticEventType::Compare;
+		// Canonical Merge follows the reference comparison score regardless of
+		// whether its auxiliary lane is currently visible.
+		return algorithm_ != SortAlgorithm::Merge || event.type == SemanticEventType::Compare;
 	}
 
 	std::vector<std::size_t> collectAudioEventIndices(const SortTrace& trace)

@@ -301,7 +301,8 @@ namespace sortinglogic_tests
 								if (state.slots[item].item.stableId == event.firstItemId) first = state.slots[item].item;
 								if (state.slots[item].item.stableId == event.secondItemId) second = state.slots[item].item;
 							}
-					check(event.comparison == compareItems(first, second, direction), label + " stores exact comparator outcome");
+					check(event.comparison == compareItems(first, second, direction, event.comparisonBasis),
+						label + " stores exact comparator outcome for its declared comparison basis");
 				}
 			}
 			try { applyEventForward(state, event); }
@@ -889,11 +890,18 @@ namespace sortinglogic_tests
 		check(hiddenMergePolicy.classify(mergeWrite) == TraceAudioEventKind::Silent &&
 			!hiddenMergePolicy.contributesToReferenceCadence(mergeWrite) &&
 			!hiddenMergePolicy.frameAccentVisible(mergeMutation),
-			"hidden Merge buffer policy consistently suppresses its buffer and live operation accents");
+			"canonical Merge keeps auxiliary writes and non-comparison accents out of the reference score");
 		check(hiddenMergePolicy.classify(completionCompare) == TraceAudioEventKind::Comparison &&
 			hiddenMergePolicy.contributesToReferenceCadence(completionCompare) &&
-			hiddenMergePolicy.frameAccentVisible(completionCompare),
-			"completion scans stay audible when Merge buffer visualization is disabled");
+			hiddenMergePolicy.frameAccentVisible(completionCompare) && hiddenMergePolicy.usesComparisonCadence(),
+			"completion scans stay audible on the canonical Merge comparison schedule");
+		SortTrace visibleMerge = hiddenMerge;
+		visibleMerge.mergeBufferVisualizationEnabled = true;
+		const TraceAudioPresentationPolicy visibleMergePolicy(visibleMerge);
+		check(visibleMergePolicy.classify(mergeWrite) == TraceAudioEventKind::Silent &&
+			!visibleMergePolicy.contributesToReferenceCadence(mergeWrite) &&
+			collectAudioEventIndices(visibleMerge).size() == collectAudioEventIndices(hiddenMerge).size(),
+			"canonical Merge audio event eligibility is invariant under auxiliary-lane visibility");
 		check(!isWorkspaceVisible(SortAlgorithm::Merge, false, "merge") &&
 			isWorkspaceVisible(SortAlgorithm::Merge, false, "counts") &&
 			isWorkspaceVisible(SortAlgorithm::Merge, true, "merge") &&
@@ -1202,7 +1210,7 @@ namespace sortinglogic_tests
 		{"testIncompleteStoogeOutcome", "testIncompleteStoogeOutcome", testIncompleteStoogeOutcome, true},
 		{"testStoogeFamilyVariants", "testStoogeFamilyVariants", testStoogeFamilyVariants, true},
 		{"testRecursiveExchangeNoveltyVariants", "testRecursiveExchangeNoveltyVariants", testRecursiveExchangeNoveltyVariants, true},
-		{"testFunSortBoundedOutcome", "testFunSortBoundedOutcome", testFunSortBoundedOutcome, true},
+		{"testFunSortVariants", "testFunSortVariants", testFunSortVariants, true},
 		{"testMergeWritebackModes", "testMergeWritebackModes", testMergeWritebackModes, true},
 		{"testSimulationAndProfiles", "testSimulationAndProfiles", testSimulationAndProfiles, true},
 		{"testSnapshotAnnotations", "testSnapshotAnnotations", testSnapshotAnnotations, true},
@@ -1232,7 +1240,7 @@ namespace sortinglogic_tests
 		{"--elementary-tail-only", "Focused elementary exchange tests: ", TestCommandKind::Focused, "testElementaryTailStrategies,testHybridCombAndIntroCircleVariants" },
 		{"--core-contracts-only", "", TestCommandKind::Focused, "testCoreContracts" },
 		{"--bogo-only", "Focused stochastic novelty tests: ", TestCommandKind::Focused, "testStochasticNoveltyVariants,testAdditionalBogoVariants,testNestedBogoVariants" },
-		{"--recursive-novelty-only", "Focused recursive novelty tests: ", TestCommandKind::Focused, "testIncompleteStoogeOutcome,testStoogeFamilyVariants,testRecursiveExchangeNoveltyVariants,testFunSortBoundedOutcome,testBufferedStoogeSort,testSortingNetworkSchedules" },
+			{"--recursive-novelty-only", "Focused recursive novelty tests: ", TestCommandKind::Focused, "testIncompleteStoogeOutcome,testStoogeFamilyVariants,testRecursiveExchangeNoveltyVariants,testFunSortVariants,testBufferedStoogeSort,testSortingNetworkSchedules" },
 		{"--dual-pivot-only", "Focused dual-pivot tests: ", TestCommandKind::Focused, "testDualPivotQuickVariants" },
 		{"--stable-quick-only", "Focused stable Quick tests: ", TestCommandKind::Focused, "testStableQuickVariants" },
 		{"--merge-variants-only", "Focused merge-family tests: ", TestCommandKind::Focused, "testMergeFamilyVariants" },

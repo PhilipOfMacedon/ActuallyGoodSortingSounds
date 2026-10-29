@@ -101,7 +101,7 @@ namespace sortinglogic
 			void compare(const SortItem& first, const SortItem& second, std::size_t firstIndex, std::size_t secondIndex,
 				const std::string& firstLane = "main", const std::string& secondLane = "main",
 				SemanticRole firstRole = SemanticRole::ComparedItem, SemanticRole secondRole = SemanticRole::ComparedItem,
-				bool isCompletionScan = false)
+				bool isCompletionScan = false, ComparisonBasis basis = ComparisonBasis::ValueOnly)
 			{
 				SemanticEvent event;
 				event.type = SemanticEventType::Compare;
@@ -112,7 +112,8 @@ namespace sortinglogic
 				event.secondLane = secondLane;
 				event.firstItemId = first.stableId;
 				event.secondItemId = second.stableId;
-				event.comparison = compareItems(first, second, trace.direction);
+				event.comparisonBasis = basis;
+				event.comparison = compareItems(first, second, trace.direction, basis);
 				event.firstRole = firstRole;
 				event.secondRole = secondRole;
 				append(event);

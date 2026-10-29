@@ -8,7 +8,7 @@
 namespace
 {
 	const wchar_t* SettingsDirectory = L"\\ActuallyGoodSortingSounds";
-	const wchar_t* SettingsFile = L"\\settings.ini";
+	const wchar_t* SettingsFile = L"settings.ini";
 	const wchar_t* SettingsBackupSuffix = L".pre-v8.bak";
 	const std::size_t MaxSettingsFileBytes = 1024 * 1024;
 
@@ -23,13 +23,19 @@ namespace settingsfile
 {
 	std::wstring defaultPath()
 	{
+		return pathForFile(SettingsFile);
+	}
+
+	std::wstring pathForFile(const wchar_t* filename)
+	{
+		if (!filename || !*filename) return std::wstring();
 		DWORD size = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
 		if (size == 0) return std::wstring();
 		std::wstring base(size, L'\0');
 		const DWORD copied = GetEnvironmentVariableW(L"LOCALAPPDATA", &base[0], size);
 		if (copied == 0 || copied >= size) return std::wstring();
 		base.resize(copied);
-		return base + SettingsDirectory + SettingsFile;
+		return base + SettingsDirectory + L"\\" + filename;
 	}
 
 	bool readAll(const std::wstring& path, std::string& content)
@@ -59,7 +65,7 @@ namespace settingsfile
 	}
 
 	bool replaceAtomically(const std::wstring& path, const std::string& content,
-		int currentVersion, std::string* error)
+		int currentVersion, std::string* error, bool preserveMigrationBackup)
 	{
 		const std::wstring directory = directoryOf(path);
 		if (directory.empty() || (!CreateDirectoryW(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS))
@@ -88,7 +94,7 @@ namespace settingsfile
 		}
 
 		const DWORD existingAttributes = GetFileAttributesW(path.c_str());
-		if (existingAttributes != INVALID_FILE_ATTRIBUTES)
+		if (preserveMigrationBackup && existingAttributes != INVALID_FILE_ATTRIBUTES)
 		{
 			const std::wstring backupPath = path + SettingsBackupSuffix;
 			if (GetFileAttributesW(backupPath.c_str()) == INVALID_FILE_ATTRIBUTES)

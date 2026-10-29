@@ -50,6 +50,7 @@ namespace sortinglogic
 		bool projectOperands(const SemanticEvent& event, TraceAudioOperandProjection& projection) const;
 		bool contributesToReferenceCadence(const SemanticEvent& event) const;
 		bool frameAccentVisible(const SemanticEvent& event) const;
+		bool usesComparisonCadence() const { return algorithm_ == SortAlgorithm::Merge; }
 		bool hasAlgorithmComparisons() const { return hasAlgorithmComparisons_; }
 		bool reverseAudioOperandOrder() const { return reverseAudioOperandOrder_; }
 

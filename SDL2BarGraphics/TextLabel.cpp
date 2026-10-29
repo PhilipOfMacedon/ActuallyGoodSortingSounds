@@ -4,6 +4,7 @@
 #include <SDL_ttf.h>
 
 #include <iostream>
+#include <cstdint>
 #include <map>
 #include <utility>
 
@@ -156,7 +157,7 @@ void TextLabel::setText(std::string text, const ResolvedTextStyle& style, SDL_Co
 void TextLabel::setResolvedText(std::string text, const std::string& identity, const std::string& path,
 	int index, int fontSize, int dpiX, int dpiY, SDL_Color color, bool fallback)
 {
-	const bool textureChanged = !hasContent_ || text_ != text || fontFace_ != identity || fontPath_ != path ||
+	const bool textureChanged = !hasContent_ || textureDirty_ || text_ != text || fontFace_ != identity || fontPath_ != path ||
 		fontIndex_ != index || fontSize_ != fontSize || dpiX_ != dpiX || dpiY_ != dpiY;
 	text_ = text;
 	fontFace_ = identity;
@@ -169,6 +170,7 @@ void TextLabel::setResolvedText(std::string text, const std::string& identity, c
 	fontFallback_ = fallback;
 	hasContent_ = true;
 	if (textureChanged) createTextLabel();
+	else textureDirty_ = false;
 }
 
 void TextLabel::createTextLabel()
@@ -190,6 +192,26 @@ void TextLabel::createTextLabel()
 		font = findFont(fontPath_, fontIndex_, fontSize_, dpiX_, dpiY_);
 	}
 	if (!font) return;
+	if (text_.empty())
+	{
+		// Empty labels have no visible glyphs, but they are a valid cache result.
+		// Keep a transparent 1x1 texture so old glyphs cannot remain visible.
+		const std::uint8_t transparentPixel[4] = { 0, 0, 0, 0 };
+		glGenTextures(1, &textureId_);
+		if (!textureId_) return;
+		glBindTexture(GL_TEXTURE_2D, textureId_);
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, transparentPixel);
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		dimensions_ = glm::vec2(0.0f);
+		textureDirty_ = false;
+		return;
+	}
 	const SDL_Color white = { 255, 255, 255, 255 };
 	SDL_Surface* rendered = TTF_RenderUTF8_Blended(font, text_.empty() ? " " : text_.c_str(), white);
 	if (!rendered && fontPath_ != bundledPath)

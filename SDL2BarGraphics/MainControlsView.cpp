@@ -51,7 +51,7 @@ void MainControlsView::resetMenuSelection(const std::string& id)
 	if (menu) menu->setSelectedIndex(0);
 }
 
-bool MainControlsView::beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds,
+bool MainControlsView::beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds, std::uint32_t seed,
 	std::string& initialText) const
 {
 	if (target == InlineEditTarget::ItemCount)
@@ -62,6 +62,7 @@ bool MainControlsView::beginInlineValueEdit(InlineEditTarget target, int itemCou
 		value << std::setprecision(6) << durationSeconds;
 		initialText = value.str();
 	}
+	else if (target == InlineEditTarget::Seed) initialText = std::to_string(seed);
 	else return false;
 	return true;
 }
@@ -69,24 +70,28 @@ bool MainControlsView::beginInlineValueEdit(InlineEditTarget target, int itemCou
 void MainControlsView::showInlineValueEdit(InlineEditTarget target, const std::string& text)
 {
 	const char* controlId = target == InlineEditTarget::ItemCount ? "bars_value" :
-		target == InlineEditTarget::Duration ? "time_value" : "";
+		target == InlineEditTarget::Duration ? "time_value" :
+		target == InlineEditTarget::Seed ? "seed_value" : "";
 	UiWidget* control = controls_.find(controlId);
-	if (control) control->setLabel(text + "|" + (target == InlineEditTarget::ItemCount ? " bars" : " sec"));
+	if (control) control->setLabel(text + "|" + (target == InlineEditTarget::ItemCount ? " bars" :
+		target == InlineEditTarget::Duration ? " sec" : ""));
 }
 
-void MainControlsView::restoreInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds)
+void MainControlsView::restoreInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds, std::uint32_t seed)
 {
 	const char* controlId = target == InlineEditTarget::ItemCount ? "bars_value" :
-		target == InlineEditTarget::Duration ? "time_value" : "";
+		target == InlineEditTarget::Duration ? "time_value" :
+		target == InlineEditTarget::Seed ? "seed_value" : "";
 	UiWidget* control = controls_.find(controlId);
 	if (!control) return;
 	if (target == InlineEditTarget::ItemCount) control->setLabel(std::to_string(itemCount) + " bars");
-	else
+	else if (target == InlineEditTarget::Duration)
 	{
 		std::ostringstream value;
 		value << std::setprecision(6) << durationSeconds << " sec";
 		control->setLabel(value.str());
 	}
+	else control->setLabel(std::to_string(seed));
 }
 
 bool MainControlsView::commitInlineValueEdit(InlineEditTarget target, const InlineEditModel& editor,
@@ -104,6 +109,13 @@ bool MainControlsView::commitInlineValueEdit(InlineEditTarget target, const Inli
 		float value = 0.0f;
 		if (!editor.tryParseFloat(value)) return false;
 		action = AppAction(AppActionKind::SetDuration, value);
+		return true;
+	}
+	if (target == InlineEditTarget::Seed)
+	{
+		std::uint32_t value = 0;
+		if (!editor.tryParseUInt32(value)) return false;
+		action = AppAction(AppActionKind::SetSeed, value);
 		return true;
 	}
 	return false;
@@ -144,6 +156,14 @@ void MainControlsView::initializeControls(const UserPreferences& preferences, co
 	controls_.addComboBox("pattern", settingsInputPatternOptions(), static_cast<int>(preferences.simulation.pattern),
 		AppAction(AppActionKind::SetInputPattern));
 	controls_.addButton("seed_readout", "Seed");
+	controls_.addButton("seed_value", "0");
+	controls_.addButton("seed_copy", "Copy", AppAction(AppActionKind::CopySeed));
+	controls_.addButton("seed_save", "Save", AppAction(AppActionKind::SaveSeedBookmark));
+	controls_.addComboBox("seed_bookmarks", std::vector<std::string>{ "Saved Seeds" }, 0,
+		AppAction(AppActionKind::SelectSeedBookmark));
+	controls_.addButton("seed_previous", "Prev Seed", AppAction(AppActionKind::PreviousSeed));
+	controls_.addButton("seed_next", "Next Seed", AppAction(AppActionKind::NextSeed));
+	controls_.addButton("seed_remove", "Remove", AppAction(AppActionKind::RemoveSeedBookmark, 0.0f, -1));
 	controls_.addButton("start_overlay", "Generate & Play", AppAction(AppActionKind::GenerateAndPlay));
 
 	controls_.find("panel_toggle")->setRole(UiControlRole::PanelToggle);
@@ -154,10 +174,28 @@ void MainControlsView::initializeControls(const UserPreferences& preferences, co
 	controls_.find("reset")->setRole(UiControlRole::Reset);
 	controls_.find("bars_value")->setRole(UiControlRole::EditableValue);
 	controls_.find("time_value")->setRole(UiControlRole::EditableValue);
+	controls_.find("seed_value")->setRole(UiControlRole::EditableValue);
 	controls_.find("start_overlay")->setRole(UiControlRole::Playback);
 	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 		if (controls_.widgets()[i]->kind() == UiWidgetKind::ComboBox)
 			controls_.widgets()[i]->setRole(UiControlRole::Choice);
+}
+
+void MainControlsView::setSeedBookmarks(const std::vector<std::string>& labels, std::size_t selectedIndex)
+{
+	UiWidget* favorites = controls_.find("seed_bookmarks");
+	if (!favorites) return;
+	std::vector<std::string> options = labels;
+	if (options.empty()) options.push_back("Saved Seeds");
+	favorites->setOptions(options);
+	favorites->setSelectedIndex(labels.empty() ? 0 : static_cast<int>(selectedIndex));
+	favorites->setEnabled(!labels.empty());
+}
+
+void MainControlsView::setSeedHistoryNavigation(bool canPrevious, bool canNext)
+{
+	controls_.setWidgetEnabled("seed_previous", canPrevious);
+	controls_.setWidgetEnabled("seed_next", canNext);
 }
 
 void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layout, int logicalWidth, bool expanded)
@@ -178,6 +216,7 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 		? std::vector<UiRect>() : directionRegions->second);
 	controls_.find("bars_value")->setPresentation(UiWidgetPresentation::EditableLabel);
 	controls_.find("time_value")->setPresentation(UiWidgetPresentation::EditableLabel);
+	controls_.find("seed_value")->setPresentation(UiWidgetPresentation::EditableLabel);
 
 	if (!expanded)
 	{
@@ -205,7 +244,14 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 	const bool wideLayout = logicalWidth >= 900;
 	controls_.setWidgetVisible("domain", hasClassicRail && wideLayout && expanded);
 	controls_.setWidgetVisible("pattern", hasClassicRail && wideLayout && expanded);
-	controls_.setWidgetVisible("seed_readout", hasClassicRail && wideLayout && expanded);
+	controls_.setWidgetVisible("seed_readout", false);
+	controls_.find("seed_previous")->setLabel(logicalWidth < 900 ? "Prev" : "Prev Seed");
+	controls_.find("seed_next")->setLabel(logicalWidth < 900 ? "Next" : "Next Seed");
+	controls_.find("seed_remove")->setLabel(logicalWidth < 900 ? "Del" : "Remove");
+	const char* seedControls[] = { "seed_value", "seed_copy", "seed_save", "seed_bookmarks",
+		"seed_previous", "seed_next", "seed_remove" };
+	for (std::size_t i = 0; i < sizeof(seedControls) / sizeof(seedControls[0]); ++i)
+		controls_.setWidgetVisible(seedControls[i], expanded);
 	controls_.setWidgetVisible("start_overlay", !expanded);
 	controls_.find("panel_toggle")->setLabel(expanded ? "v" : ">");
 }
@@ -332,7 +378,7 @@ void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetI
 {
 	const bool busy = !screenModel.setupEnabled;
 	const char* setupIds[] = { "shuffle", "insta_sort", "insta_invert", "algorithm", "direction", "run",
-		"bars_down", "bars_up", "time_down", "time_up" };
+		"bars_down", "bars_up", "time_down", "time_up", "seed_value", "seed_previous", "seed_next", "seed_bookmarks" };
 	for (std::size_t i = 0; i < sizeof(setupIds) / sizeof(setupIds[0]); ++i)
 		controls_.setWidgetEnabled(setupIds[i], !busy);
 	controls_.setWidgetEnabled("run", screenModel.runEnabled);
@@ -356,10 +402,16 @@ void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetI
 	controls_.find("play")->setLabel(playCaption);
 	controls_.find("bars_value")->setLabel(std::to_string(snapshot.itemCount) + " bars");
 	controls_.find("seed_readout")->setLabel("Seed " + std::to_string(snapshot.inputSeed));
+	controls_.find("seed_value")->setLabel(std::to_string(snapshot.inputSeed));
 	controls_.setWidgetEnabled("seed_readout", false);
 	const bool referenceCadence = preferences.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence;
 	controls_.setWidgetEnabled("bars_value", !busy);
 	controls_.setWidgetEnabled("time_value", !busy && !referenceCadence);
+	controls_.setWidgetEnabled("seed_value", !busy);
+	controls_.setWidgetEnabled("seed_bookmarks", !busy && controls_.find("seed_bookmarks")->options().size() > 1);
+	controls_.setWidgetEnabled("seed_copy", true);
+	controls_.setWidgetEnabled("seed_save", true);
+	controls_.setWidgetEnabled("seed_remove", controls_.find("seed_bookmarks")->options().size() > 1);
 	controls_.find("time_value")->setLabel(screenModel.durationCaption);
 	controls_.find("direction")->setSelectedIndex(snapshot.direction == sortinglogic::SortDirection::Descending ? 1 : 0);
 	controls_.find("domain")->setSelectedIndex(static_cast<int>(snapshot.domain));

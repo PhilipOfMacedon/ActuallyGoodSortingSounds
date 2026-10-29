@@ -36,7 +36,7 @@ namespace sortinglogic_tests
 	void testIncompleteStoogeOutcome();
 	void testStoogeFamilyVariants();
 	void testRecursiveExchangeNoveltyVariants();
-	void testFunSortBoundedOutcome();
+	void testFunSortVariants();
 	void testDistributionAudioBaselines();
 	void testStochasticNoveltyVariants();
 	void testAdditionalBogoVariants();

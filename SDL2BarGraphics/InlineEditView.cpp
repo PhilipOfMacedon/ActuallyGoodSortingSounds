@@ -10,6 +10,7 @@ namespace
 	{
 		if (controlId == "bars_value") return InlineEditTarget::ItemCount;
 		if (controlId == "time_value") return InlineEditTarget::Duration;
+		if (controlId == "seed_value") return InlineEditTarget::Seed;
 		if (controlId == "appearance_value") return InlineEditTarget::AppearanceNumber;
 		if (controlId == "appearance_color_alpha") return InlineEditTarget::AppearanceAlpha;
 		return InlineEditTarget::None;
@@ -21,6 +22,7 @@ namespace
 		{
 		case InlineEditTarget::ItemCount: return "bars_value";
 		case InlineEditTarget::Duration: return "time_value";
+		case InlineEditTarget::Seed: return "seed_value";
 		case InlineEditTarget::AppearanceNumber: return "appearance_value";
 		case InlineEditTarget::AppearanceAlpha: return "appearance_color_alpha";
 		case InlineEditTarget::None: return "";
@@ -39,7 +41,7 @@ bool InlineEditView::editsControl(const std::string& controlId) const
 	return active() && controlId == controlForTarget(target());
 }
 
-bool InlineEditView::beginForControl(const std::string& controlId, int itemCount, float durationSeconds,
+bool InlineEditView::beginForControl(const std::string& controlId, int itemCount, float durationSeconds, std::uint32_t seed,
 	MainControlsView& mainControls, AppearanceEditorView& appearanceEditor)
 {
 	if (active()) return false;
@@ -52,7 +54,7 @@ bool InlineEditView::beginForControl(const std::string& controlId, int itemCount
 			? AppearanceInlineEditField::Alpha : AppearanceInlineEditField::Number;
 		if (!appearanceEditor.beginInlineValueEdit(field, initialText)) return false;
 	}
-	else if (!mainControls.beginInlineValueEdit(target, itemCount, durationSeconds, initialText)) return false;
+	else if (!mainControls.beginInlineValueEdit(target, itemCount, durationSeconds, seed, initialText)) return false;
 
 	editor_.begin(target, initialText);
 	present(mainControls, appearanceEditor);
@@ -104,13 +106,14 @@ bool InlineEditView::commit(MainControlsView& mainControls, AppearanceEditorView
 	return true;
 }
 
-InlineEditTarget InlineEditView::cancel(MainControlsView& mainControls, int itemCount, float durationSeconds)
+InlineEditTarget InlineEditView::cancel(MainControlsView& mainControls, int itemCount, float durationSeconds, std::uint32_t seed)
 {
 	if (!active()) return InlineEditTarget::None;
 	const InlineEditTarget cancelledTarget = target();
 	editor_.finish();
-	if (cancelledTarget == InlineEditTarget::ItemCount || cancelledTarget == InlineEditTarget::Duration)
-		mainControls.restoreInlineValueEdit(cancelledTarget, itemCount, durationSeconds);
+	if (cancelledTarget == InlineEditTarget::ItemCount || cancelledTarget == InlineEditTarget::Duration ||
+		cancelledTarget == InlineEditTarget::Seed)
+		mainControls.restoreInlineValueEdit(cancelledTarget, itemCount, durationSeconds, seed);
 	return cancelledTarget;
 }
 

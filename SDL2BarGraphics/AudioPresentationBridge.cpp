@@ -127,7 +127,10 @@ namespace
 		}
 		std::unique_ptr<SoundEngine::PreparedAudioTimeline> timeline(new SoundEngine::PreparedAudioTimeline());
 		if (!timeline->prepare(events, trace.events.size(), timingMode, durationSeconds,
-			playbacktimebase::ReferenceTimelineSampleRate, playbacktimebase::ReferenceCadenceEventsPerSecond, &error))
+			playbacktimebase::ReferenceTimelineSampleRate, playbacktimebase::ReferenceCadenceEventsPerSecond, &error,
+			policy.usesComparisonCadence()
+				? SoundEngine::FixedDurationSchedule::EligibleEvents
+				: SoundEngine::FixedDurationSchedule::SourceCursor))
 			return std::unique_ptr<SoundEngine::PreparedAudioTimeline>();
 		return timeline;
 	}

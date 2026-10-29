@@ -270,7 +270,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	settingsTitle_(new TextLabel("Settings", "Courier New Bold", 17, { 238, 246, 249, 255 })),
 	settingsSaveStatus_(new TextLabel("Preferences save automatically.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	audioDeviceStatus_(new TextLabel("Audio device is not initialized.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
-	displayedSaveStatus_(),
+	displayedSaveStatus_(), seedBookmarkLabels_(), selectedSeedBookmark_(0), canPreviousSeed_(false), canNextSeed_(false), currentSeed_(0),
 	headerBounds_(), gearBounds_(),
 	drawingAppearanceEditor_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false)
@@ -475,11 +475,14 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 	{
 		const UiWidget* bars = mainControlsView_.findControl("bars_value");
 		const UiWidget* duration = mainControlsView_.findControl("time_value");
+		const UiWidget* seed = mainControlsView_.findControl("seed_value");
 		std::string targetWidgetId;
 		if (bars && bars->visible() && bars->enabled() && inRect(bars->bounds(), event.button.x, event.button.y))
 			targetWidgetId = "bars_value";
 		else if (duration && duration->visible() && duration->enabled() && inRect(duration->bounds(), event.button.x, event.button.y))
 			targetWidgetId = "time_value";
+		else if (seed && seed->visible() && seed->enabled() && inRect(seed->bounds(), event.button.x, event.button.y))
+			targetWidgetId = "seed_value";
 		if (!targetWidgetId.empty())
 		{
 			if (inlineEditView_.editsControl(targetWidgetId)) return true;
@@ -664,13 +667,33 @@ void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const st
 void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
 	const std::string& persistenceStatus, bool playbackPending)
 {
+	currentSeed_ = snapshot.inputSeed;
 	renderPreferences_ = settings_;
 	if (appearanceEditorOpen()) renderPreferences_.appearance = appearanceEditorView_.session().draft();
 	displayedSaveStatus_ = persistenceStatus;
+	mainControlsView_.setSeedBookmarks(seedBookmarkLabels_, selectedSeedBookmark_);
 	updateLayout();
 	updateWidgetStates(snapshot, playbackPending);
+	mainControlsView_.setSeedHistoryNavigation(canPreviousSeed_ && screenModel_.setupEnabled,
+		canNextSeed_ && screenModel_.setupEnabled);
 	layoutInteractiveViews();
 	if (isReady()) syncLabels(snapshot);
+}
+
+void ControlPanel::setSeedLibraryState(const std::vector<SeedBookmark>& bookmarks, std::size_t selectedIndex,
+	bool canPrevious, bool canNext)
+{
+	seedBookmarkLabels_.clear();
+	seedBookmarkLabels_.reserve(bookmarks.size());
+	for (std::size_t i = 0; i < bookmarks.size(); ++i)
+	{
+		std::string label = bookmarks[i].name.empty() ? std::string() : bookmarks[i].name + " | ";
+		label += std::to_string(bookmarks[i].seed);
+		seedBookmarkLabels_.push_back(label);
+	}
+	selectedSeedBookmark_ = selectedIndex;
+	canPreviousSeed_ = canPrevious;
+	canNextSeed_ = canNext;
 }
 
 void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette)
@@ -1301,7 +1324,7 @@ void ControlPanel::beginInlineEdit(const std::string& widgetId)
 	const bool appearanceControl = widgetId == "appearance_value" || widgetId == "appearance_color_alpha";
 	if (appearanceControl && !appearanceEditorOpen()) return;
 	if (!inlineEditView_.beginForControl(widgetId, settings_.simulation.itemCount,
-		settings_.simulation.durationSeconds, mainControlsView_, appearanceEditorView_)) return;
+		settings_.simulation.durationSeconds, currentSeed_, mainControlsView_, appearanceEditorView_)) return;
 	SDL_StartTextInput();
 }
 
@@ -1317,7 +1340,7 @@ bool ControlPanel::commitInlineEdit(AppAction& action)
 void ControlPanel::cancelInlineEdit()
 {
 	const InlineEditTarget cancelledTarget = inlineEditView_.cancel(mainControlsView_,
-		settings_.simulation.itemCount, settings_.simulation.durationSeconds);
+		settings_.simulation.itemCount, settings_.simulation.durationSeconds, currentSeed_);
 	if (cancelledTarget == InlineEditTarget::None) return;
 	SDL_StopTextInput();
 	if (cancelledTarget == InlineEditTarget::AppearanceNumber || cancelledTarget == InlineEditTarget::AppearanceAlpha)

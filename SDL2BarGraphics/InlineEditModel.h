@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 enum class InlineEditTarget
@@ -9,7 +10,8 @@ enum class InlineEditTarget
 	ItemCount,
 	Duration,
 	AppearanceNumber,
-	AppearanceAlpha
+	AppearanceAlpha,
+	Seed
 };
 
 // Platform-neutral text-entry state shared by the main setup controls and
@@ -34,6 +36,7 @@ public:
 	void clear();
 
 	bool tryParseInteger(int& value) const;
+	bool tryParseUInt32(std::uint32_t& value) const;
 	bool tryParseFloat(float& value) const;
 	bool tryParseDouble(double& value) const;
 
