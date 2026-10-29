@@ -9,6 +9,7 @@ This directory keeps project-local working context that should survive across im
 - [Structural architecture audit](structural-architecture-audit.md): current ownership and coupling review, concrete duplication, runtime optimization candidates, and a behavior-preserving refactoring sequence.
 - [Structural refactor progress](structural-refactor-progress.md): implementation slices, verification results, and the next open boundary from that audit.
 - [GUI scrolling](gui-scroll-refactor.md): shared viewport geometry, current adoption, and live-verification notes.
+- [Interface ideas](interface-ideas.md): user-approved visual directions that remain proposals until implementation is requested.
 
 ## Local owner guidance
 
