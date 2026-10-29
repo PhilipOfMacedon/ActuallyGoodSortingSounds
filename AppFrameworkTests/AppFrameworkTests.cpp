@@ -4091,6 +4091,9 @@ namespace
 		start.text = preset.id;
 		check(app.dispatch(start).accepted && app.demoActive() && app.activeSessionIdentity() != manualIdentity,
 			"starting a demo activates a distinct temporary RunSession");
+		check(app.snapshot().status.find("DEMO 1/2") != std::string::npos &&
+			app.snapshot().status.find("Insertion Sort") != std::string::npos,
+			"active demo status shows its step and algorithm instead of stale manual-command feedback");
 		const std::uint64_t firstDemoSession = app.activeSessionIdentity();
 		check(app.snapshot().inputSeed == preset.classInputs.begin()->second.seed && app.seedHistory().entries() == historyBefore,
 			"demo input is rebuilt from its recipe without entering manual seed history");

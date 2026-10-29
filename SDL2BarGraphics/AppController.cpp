@@ -1554,7 +1554,7 @@ void AppController::snapshotInto(sortinglogic::RenderSnapshot& result) const
 			demoStatus << " | " << demoRunner_.adjustments()[i];
 		result.status = demoStatus.str();
 	}
-	if (!commandStatus_.empty()) result.status = commandStatus_;
+	if (!demoRunner_.active() && !commandStatus_.empty()) result.status = commandStatus_;
 }
 
 void AppController::applyAudioPlayhead(const SoundEngine::AudioPlayheadFeedback& feedback,
