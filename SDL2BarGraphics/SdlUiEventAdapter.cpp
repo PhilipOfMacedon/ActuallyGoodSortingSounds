@@ -42,10 +42,7 @@ bool translateSdlUiEvent(const SDL_Event& event, UiInputEvent& input, SdlUiKeyPr
 			if (keyProfile != SdlUiKeyProfile::Controls) return false;
 			key = UiKey::Space;
 			break;
-		case SDLK_BACKSPACE:
-			if (keyProfile != SdlUiKeyProfile::Search) return false;
-			key = UiKey::Backspace;
-			break;
+		case SDLK_BACKSPACE: key = UiKey::Backspace; break;
 		case SDLK_ESCAPE: key = UiKey::Escape; break;
 		case SDLK_UP: key = UiKey::Up; break;
 		case SDLK_DOWN: key = UiKey::Down; break;

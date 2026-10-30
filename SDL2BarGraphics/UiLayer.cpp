@@ -1,7 +1,9 @@
 #include "UiLayer.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <cstdlib>
 
 UiScrollViewport::UiScrollViewport()
 	: viewport_(), contentExtent_(0.0f), rowExtent_(1.0f), offset_(0.0f)
@@ -150,9 +152,163 @@ void UiWidget::setVisible(bool value)
 	}
 }
 
+UiTabStrip::UiTabStrip(const std::string& id, const std::vector<std::string>& tabs, int selection, const AppAction& action)
+	: id_(id), tabs_(tabs), selectedIndex_(0), bounds_(), enabled_(true), visible_(true), focused_(false), action_(action)
+{
+	setSelectedIndex(selection);
+}
+
+void UiTabStrip::setTabs(const std::vector<std::string>& tabs)
+{
+	tabs_ = tabs;
+	setSelectedIndex(selectedIndex_);
+}
+
+void UiTabStrip::setSelectedIndex(int index)
+{
+	selectedIndex_ = tabs_.empty() ? 0 : std::max(0, std::min(static_cast<int>(tabs_.size()) - 1, index));
+}
+
+UiRect UiTabStrip::tabBounds(std::size_t index) const
+{
+	if (index >= tabs_.size() || tabs_.empty()) return UiRect();
+	const float width = bounds_.width / static_cast<float>(tabs_.size());
+	return UiRect(bounds_.x + width * static_cast<float>(index), bounds_.y, width, bounds_.height);
+}
+
+UiSelectionList::UiSelectionList(const std::string& id, const AppAction& action)
+	: id_(id), items_(), selectedIndex_(-1), bounds_(), rowHeight_(36.0f), enabled_(true), visible_(true), focused_(false),
+	action_(action), viewport_()
+{
+}
+
+void UiSelectionList::configure(float requestedOffset)
+{
+	const float offset = requestedOffset >= 0.0f ? requestedOffset : viewport_.offset();
+	viewport_.configure(bounds_, rowHeight_ * static_cast<float>(items_.size()), rowHeight_, offset);
+}
+
+void UiSelectionList::setItems(const std::vector<std::string>& items)
+{
+	items_ = items;
+	if (selectedIndex_ >= static_cast<int>(items_.size())) selectedIndex_ = items_.empty() ? -1 : static_cast<int>(items_.size()) - 1;
+	configure();
+}
+
+void UiSelectionList::setSelectedIndex(int index, bool reveal)
+{
+	selectedIndex_ = items_.empty() ? -1 : std::max(0, std::min(static_cast<int>(items_.size()) - 1, index));
+	if (reveal && selectedIndex_ >= 0) viewport_.ensureItemVisible(static_cast<std::size_t>(selectedIndex_), rowHeight_);
+}
+
+void UiSelectionList::setBounds(const UiRect& bounds)
+{
+	const bool changed = bounds_.x != bounds.x || bounds_.y != bounds.y || bounds_.width != bounds.width || bounds_.height != bounds.height;
+	bounds_ = bounds;
+	configure(changed ? viewport_.offset() : -1.0f);
+}
+
+void UiSelectionList::setRowHeight(float value)
+{
+	rowHeight_ = std::max(12.0f, value);
+	configure();
+}
+
+void UiSelectionList::scroll(int wheelDelta)
+{
+	viewport_.scrollWheel(bounds_.x, bounds_.y, wheelDelta);
+}
+
+UiEditableField::UiEditableField(const std::string& id, const std::string& label, UiEditableFieldKind kind,
+	const std::string& value, double minimum, double maximum, std::size_t maximumLength, const AppAction& action)
+	: id_(id), label_(label), value_(value), draft_(value), bounds_(), kind_(kind), minimum_(minimum), maximum_(maximum),
+	maximumLength_(maximumLength), enabled_(true), visible_(true), focused_(false), editing_(false), invalid_(false), action_(action)
+{
+}
+
+void UiEditableField::setValue(const std::string& value)
+{
+	value_ = value;
+	if (!editing_) draft_ = value;
+	invalid_ = false;
+}
+
+void UiEditableField::setEnabled(bool value)
+{
+	enabled_ = value;
+	if (!value) { cancel(); focused_ = false; }
+}
+
+void UiEditableField::setVisible(bool value)
+{
+	visible_ = value;
+	if (!value) { cancel(); focused_ = false; }
+}
+
+bool UiEditableField::append(const std::string& text)
+{
+	if (!editing_ || !enabled_) return false;
+	bool changed = false;
+	for (std::size_t i = 0; i < text.size() && draft_.size() < maximumLength_; ++i)
+	{
+		const char value = text[i];
+		const bool allowed = kind_ == UiEditableFieldKind::BoundedText
+			? value >= 32 && value != 127
+			: (value >= '0' && value <= '9') || (kind_ == UiEditableFieldKind::FiniteDecimal && (value == '.' || value == '-'));
+		if (allowed) { draft_.push_back(value); changed = true; }
+	}
+	invalid_ = !valid(draft_);
+	return changed;
+}
+
+void UiEditableField::erase()
+{
+	if (!editing_ || draft_.empty()) return;
+	draft_.erase(draft_.size() - 1);
+	invalid_ = !draft_.empty() && !valid(draft_);
+}
+
+void UiEditableField::cancel()
+{
+	draft_ = value_;
+	editing_ = false;
+	invalid_ = false;
+}
+
+bool UiEditableField::valid(const std::string& value) const
+{
+	if (kind_ == UiEditableFieldKind::BoundedText) return !value.empty() && value.size() <= maximumLength_;
+	if (value.empty()) return false;
+	if (kind_ == UiEditableFieldKind::UnsignedInteger)
+		for (std::size_t i = 0; i < value.size(); ++i) if (value[i] < '0' || value[i] > '9') return false;
+	errno = 0;
+	char* end = nullptr;
+	const double parsed = std::strtod(value.c_str(), &end);
+	return errno != ERANGE && end && end != value.c_str() && *end == '\0' && std::isfinite(parsed) &&
+		parsed >= minimum_ && parsed <= maximum_;
+}
+
+bool UiEditableField::commit(UiAction& action)
+{
+	if (!editing_) return false;
+	if (!valid(draft_)) { invalid_ = true; return false; }
+	const bool changed = value_ != draft_;
+	value_ = draft_;
+	editing_ = false;
+	invalid_ = false;
+	if (!changed) return true;
+	AppAction appAction = action_;
+	appAction.text = value_;
+	action = UiAction(appAction);
+	action.event.controlId = id_;
+	action.event.kind = UiEventKind::TextEntered;
+	action.event.text = value_;
+	return true;
+}
+
 UIRoot::UIRoot()
-	: widgets_(), focusOrder_(), rootContainer_("root", UiContainerKind::Overlay, nullptr), containers_(), containerLookup_(),
-		openCombo_(nullptr), pressedWidget_(nullptr), focusedWidget_(nullptr), inputCaptured_(false),
+	: widgets_(), tabStrips_(), selectionLists_(), editableFields_(), focusOrder_(), rootContainer_("root", UiContainerKind::Overlay, nullptr), containers_(), containerLookup_(),
+		openCombo_(nullptr), pressedWidget_(nullptr), focusedWidget_(nullptr), focusedCustomId_(), inputCaptured_(false),
 		hasModalBounds_(false), modalBounds_(), dismissCommand_(UiAction::ViewCommand::None),
 		pointerShift_(false), pointerControl_(false), pointerAlt_(false)
 {
@@ -279,6 +435,26 @@ UiWidget& UIRoot::addSlider(const std::string& id, const std::string& label, flo
 	return *widgets_.back();
 }
 
+UiTabStrip& UIRoot::addTabStrip(const std::string& id, const std::vector<std::string>& tabs, int selection, const AppAction& action)
+{
+	tabStrips_.push_back(std::unique_ptr<UiTabStrip>(new UiTabStrip(id, tabs, selection, action)));
+	return *tabStrips_.back();
+}
+
+UiSelectionList& UIRoot::addSelectionList(const std::string& id, const AppAction& action)
+{
+	selectionLists_.push_back(std::unique_ptr<UiSelectionList>(new UiSelectionList(id, action)));
+	return *selectionLists_.back();
+}
+
+UiEditableField& UIRoot::addEditableField(const std::string& id, const std::string& label, UiEditableFieldKind kind,
+	const std::string& value, double minimum, double maximum, std::size_t maximumLength, const AppAction& action)
+{
+	editableFields_.push_back(std::unique_ptr<UiEditableField>(new UiEditableField(id, label, kind, value,
+		minimum, maximum, maximumLength, action)));
+	return *editableFields_.back();
+}
+
 UiWidget* UIRoot::find(const std::string& id)
 {
 	for (std::size_t i = 0; i < widgets_.size(); ++i)
@@ -295,32 +471,98 @@ const UiWidget* UIRoot::find(const std::string& id) const
 	return nullptr;
 }
 
+UiTabStrip* UIRoot::findTabStrip(const std::string& id)
+{
+	for (std::size_t i = 0; i < tabStrips_.size(); ++i) if (tabStrips_[i]->id() == id) return tabStrips_[i].get();
+	return nullptr;
+}
+
+const UiTabStrip* UIRoot::findTabStrip(const std::string& id) const
+{
+	for (std::size_t i = 0; i < tabStrips_.size(); ++i) if (tabStrips_[i]->id() == id) return tabStrips_[i].get();
+	return nullptr;
+}
+
+UiSelectionList* UIRoot::findSelectionList(const std::string& id)
+{
+	for (std::size_t i = 0; i < selectionLists_.size(); ++i) if (selectionLists_[i]->id() == id) return selectionLists_[i].get();
+	return nullptr;
+}
+
+const UiSelectionList* UIRoot::findSelectionList(const std::string& id) const
+{
+	for (std::size_t i = 0; i < selectionLists_.size(); ++i) if (selectionLists_[i]->id() == id) return selectionLists_[i].get();
+	return nullptr;
+}
+
+UiEditableField* UIRoot::findEditableField(const std::string& id)
+{
+	for (std::size_t i = 0; i < editableFields_.size(); ++i) if (editableFields_[i]->id() == id) return editableFields_[i].get();
+	return nullptr;
+}
+
+const UiEditableField* UIRoot::findEditableField(const std::string& id) const
+{
+	for (std::size_t i = 0; i < editableFields_.size(); ++i) if (editableFields_[i]->id() == id) return editableFields_[i].get();
+	return nullptr;
+}
+
 void UIRoot::setWidgetEnabled(const std::string& id, bool enabled)
 {
 	UiWidget* widget = find(id);
-	if (!widget) return;
-	widget->setEnabled(enabled);
-	if (!enabled && openCombo_ == widget)
-		closeCombo();
-	if (!enabled && focusedWidget_ == widget)
+	if (widget)
 	{
-		focus(nullptr);
-		focusNext(false);
+		widget->setEnabled(enabled);
+		if (!enabled && openCombo_ == widget) closeCombo();
+		if (!enabled && focusedWidget_ == widget) { focus(nullptr); focusNext(false); }
+		return;
+	}
+	if (UiTabStrip* tab = findTabStrip(id))
+	{
+		tab->setEnabled(enabled);
+		if (!enabled && focusedCustomId_ == id) focusCustom(std::string());
+		return;
+	}
+	if (UiSelectionList* list = findSelectionList(id))
+	{
+		list->setEnabled(enabled);
+		if (!enabled && focusedCustomId_ == id) focusCustom(std::string());
+		return;
+	}
+	if (UiEditableField* field = findEditableField(id))
+	{
+		field->setEnabled(enabled);
+		if (!enabled && focusedCustomId_ == id) focusCustom(std::string());
 	}
 }
 
 void UIRoot::setWidgetVisible(const std::string& id, bool visible)
 {
 	UiWidget* widget = find(id);
-	if (!widget) return;
-	if (widget->visible() == visible) return;
-	widget->setVisible(visible);
-	if (!visible && openCombo_ == widget)
-		closeCombo();
-	if (!visible && focusedWidget_ == widget)
+	if (widget)
 	{
-		focus(nullptr);
-		focusNext(false);
+		if (widget->visible() == visible) return;
+		widget->setVisible(visible);
+		if (!visible && openCombo_ == widget) closeCombo();
+		if (!visible && focusedWidget_ == widget) { focus(nullptr); focusNext(false); }
+		return;
+	}
+	if (UiTabStrip* tab = findTabStrip(id))
+	{
+		tab->setVisible(visible);
+		if (!visible && focusedCustomId_ == id) focusCustom(std::string());
+		return;
+	}
+	if (UiSelectionList* list = findSelectionList(id))
+	{
+		list->setVisible(visible);
+		if (!visible && focusedCustomId_ == id) focusCustom(std::string());
+		return;
+	}
+	if (UiEditableField* field = findEditableField(id))
+	{
+		field->setVisible(visible);
+		if (!visible && focusedCustomId_ == id) focusCustom(std::string());
 	}
 }
 
@@ -420,15 +662,26 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 	if (event.type == UiInputType::FocusLost)
 	{
 		closeCombo();
+		if (!commitFocusedField(action)) return true;
+		const bool emittedCommit = action.event.kind != UiEventKind::None;
 		if (pressedWidget_) pressedWidget_->pressed_ = false;
 		pressedWidget_ = nullptr;
 		pointerShift_ = pointerControl_ = pointerAlt_ = false;
 		focus(nullptr);
+		focusCustom(std::string());
+		if (emittedCommit) return true;
 		action.event.kind = UiEventKind::FocusLost;
 		return true;
 	}
 	if (event.type == UiInputType::TextInput)
 	{
+		UiEditableField* field = findEditableField(focusedCustomId_);
+		if (field && field->visible() && field->enabled())
+		{
+			if (!field->editing_) { field->editing_ = true; field->draft_ = field->value_; }
+			field->append(event.text);
+			return true;
+		}
 		if (!focusedWidget_ || !isWidgetVisible(focusedWidget_)) return inputCaptured_;
 		action.event.controlId = focusedWidget_->id_;
 		action.event.kind = UiEventKind::TextEntered;
@@ -437,6 +690,12 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 	}
 	if (event.type == UiInputType::Wheel)
 	{
+		UiSelectionList* list = hitSelectionList(event.x, event.y);
+		if (list && list->enabled())
+		{
+			list->viewport_.scrollWheel(event.x, event.y, event.wheelDelta);
+			return true;
+		}
 		if (openCombo_ && openCombo_->optionViewport_.scrollWheel(event.x, event.y, event.wheelDelta))
 		{
 			action.event.controlId = openCombo_->id_;
@@ -468,10 +727,67 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 	{
 		if (inputCaptured_ && hasModalBounds_ && !modalBounds_.contains(event.x, event.y))
 		{
+			if (!commitFocusedField(action)) return true;
+			if (action.event.kind != UiEventKind::None) return true;
 			closeCombo();
 			action = UiAction(AppAction(), dismissCommand_);
 			return true;
 		}
+		UiTabStrip* tab = hitTabStrip(event.x, event.y);
+		UiSelectionList* list = hitSelectionList(event.x, event.y);
+		UiEditableField* field = hitEditableField(event.x, event.y);
+		if (tab || list || field)
+		{
+			if (!commitFocusedField(action)) return true;
+			if (action.event.kind != UiEventKind::None) return true;
+			closeCombo();
+			if (tab)
+			{
+				focusCustom(tab->id_);
+				if (!tab->enabled_) return true;
+				for (std::size_t i = 0; i < tab->tabs_.size(); ++i)
+					if (tab->tabBounds(i).contains(event.x, event.y))
+					{
+						if (tab->selectedIndex_ != static_cast<int>(i))
+						{
+							tab->setSelectedIndex(static_cast<int>(i));
+							action = UiAction(tab->action_);
+							action.appAction.selection = tab->selectedIndex_;
+							action.event.controlId = tab->id_;
+							action.event.kind = UiEventKind::SelectionChanged;
+							action.event.selection = tab->selectedIndex_;
+						}
+						break;
+					}
+				return true;
+			}
+			if (list)
+			{
+				focusCustom(list->id_);
+				if (!list->enabled_) return true;
+				const int selected = list->viewport_.itemAt(event.x, event.y, list->items_.size(), list->rowHeight_);
+				if (selected >= 0 && selected != list->selectedIndex_)
+				{
+					list->setSelectedIndex(selected, false);
+					action = UiAction(list->action_);
+					action.appAction.selection = selected;
+					action.event.controlId = list->id_;
+					action.event.kind = UiEventKind::SelectionChanged;
+					action.event.selection = selected;
+				}
+				return true;
+			}
+			focusCustom(field->id_);
+			if (field->enabled_)
+			{
+				field->editing_ = true;
+				field->draft_ = field->value_;
+				field->invalid_ = false;
+			}
+			return true;
+		}
+		if (!commitFocusedField(action)) return true;
+		if (action.event.kind != UiEventKind::None) return true;
 		if (openCombo_)
 		{
 			for (std::size_t option = 0; option < openCombo_->options_.size(); ++option)
@@ -584,12 +900,56 @@ void UIRoot::setModalBounds(const UiRect& bounds, UiAction::ViewCommand dismissC
 	dismissCommand_ = dismissCommand;
 }
 
+void UIRoot::setInputCaptured(bool value)
+{
+	// The frame coordinator refreshes overlay capture every frame. Reapplying
+	// the same state must not cancel a mouse press, close a popup, or erase focus;
+	// otherwise a normal down/up pair spanning frames never activates its widget.
+	if (inputCaptured_ == value) return;
+	inputCaptured_ = value;
+	if (value) return;
+	hasModalBounds_ = false;
+	closeCombo();
+	if (pressedWidget_) pressedWidget_->pressed_ = false;
+	pressedWidget_ = nullptr;
+	focus(nullptr);
+}
+
 UiWidget* UIRoot::hitWidget(float x, float y) const
 {
 	for (std::vector<std::unique_ptr<UiWidget> >::const_reverse_iterator i = widgets_.rbegin(); i != widgets_.rend(); ++i)
 		if (isWidgetVisible(i->get()) && (*i)->bounds_.contains(x, y))
 			return i->get();
 	return nullptr;
+}
+
+UiTabStrip* UIRoot::hitTabStrip(float x, float y) const
+{
+	for (std::vector<std::unique_ptr<UiTabStrip> >::const_reverse_iterator i = tabStrips_.rbegin(); i != tabStrips_.rend(); ++i)
+		if ((*i)->visible_ && (*i)->bounds_.contains(x, y)) return i->get();
+	return nullptr;
+}
+
+UiSelectionList* UIRoot::hitSelectionList(float x, float y) const
+{
+	for (std::vector<std::unique_ptr<UiSelectionList> >::const_reverse_iterator i = selectionLists_.rbegin(); i != selectionLists_.rend(); ++i)
+		if ((*i)->visible_ && (*i)->bounds_.contains(x, y)) return i->get();
+	return nullptr;
+}
+
+UiEditableField* UIRoot::hitEditableField(float x, float y) const
+{
+	for (std::vector<std::unique_ptr<UiEditableField> >::const_reverse_iterator i = editableFields_.rbegin(); i != editableFields_.rend(); ++i)
+		if ((*i)->visible_ && (*i)->bounds_.contains(x, y)) return i->get();
+	return nullptr;
+}
+
+bool UIRoot::commitFocusedField(UiAction& action)
+{
+	action = UiAction();
+	UiEditableField* field = findEditableField(focusedCustomId_);
+	if (!field || !field->editing_) return true;
+	return field->commit(action);
 }
 
 bool UIRoot::isWidgetVisible(const UiWidget* widget) const
@@ -605,38 +965,73 @@ bool UIRoot::isWidgetVisible(const UiWidget* widget) const
 void UIRoot::focus(UiWidget* widget)
 {
 	if (focusedWidget_) focusedWidget_->focused_ = false;
+	focusedCustomId_.clear();
+	for (std::size_t i = 0; i < tabStrips_.size(); ++i) tabStrips_[i]->focused_ = false;
+	for (std::size_t i = 0; i < selectionLists_.size(); ++i) selectionLists_[i]->focused_ = false;
+	for (std::size_t i = 0; i < editableFields_.size(); ++i) editableFields_[i]->focused_ = false;
 	focusedWidget_ = widget;
 	if (focusedWidget_) focusedWidget_->focused_ = true;
 }
 
+void UIRoot::focusCustom(const std::string& id)
+{
+	if (focusedWidget_) focusedWidget_->focused_ = false;
+	focusedWidget_ = nullptr;
+	for (std::size_t i = 0; i < tabStrips_.size(); ++i) tabStrips_[i]->focused_ = false;
+	for (std::size_t i = 0; i < selectionLists_.size(); ++i) selectionLists_[i]->focused_ = false;
+	for (std::size_t i = 0; i < editableFields_.size(); ++i) editableFields_[i]->focused_ = false;
+	focusedCustomId_ = id;
+	if (UiTabStrip* value = findTabStrip(id)) value->focused_ = true;
+	if (UiSelectionList* value = findSelectionList(id)) value->focused_ = true;
+	if (UiEditableField* value = findEditableField(id)) value->focused_ = true;
+}
+
 void UIRoot::focusNext(bool backwards)
 {
-	if (widgets_.empty()) return;
-	std::vector<UiWidget*> order;
-	if (!focusOrder_.empty())
-	{
-		for (std::size_t i = 0; i < focusOrder_.size(); ++i)
-		{
-			UiWidget* widget = find(focusOrder_[i]);
-			if (widget && std::find(order.begin(), order.end(), widget) == order.end()) order.push_back(widget);
-		}
-		for (std::size_t i = 0; i < widgets_.size(); ++i)
-			if (std::find(order.begin(), order.end(), widgets_[i].get()) == order.end()) order.push_back(widgets_[i].get());
-	}
-	else
-		for (std::size_t i = 0; i < widgets_.size(); ++i) order.push_back(widgets_[i].get());
+	std::vector<std::string> order = focusOrder_;
+	for (std::size_t i = 0; i < widgets_.size(); ++i)
+		if (std::find(order.begin(), order.end(), widgets_[i]->id()) == order.end()) order.push_back(widgets_[i]->id());
+	for (std::size_t i = 0; i < tabStrips_.size(); ++i)
+		if (std::find(order.begin(), order.end(), tabStrips_[i]->id()) == order.end()) order.push_back(tabStrips_[i]->id());
+	for (std::size_t i = 0; i < selectionLists_.size(); ++i)
+		if (std::find(order.begin(), order.end(), selectionLists_[i]->id()) == order.end()) order.push_back(selectionLists_[i]->id());
+	for (std::size_t i = 0; i < editableFields_.size(); ++i)
+		if (std::find(order.begin(), order.end(), editableFields_[i]->id()) == order.end()) order.push_back(editableFields_[i]->id());
 	if (order.empty()) return;
+	const std::string focusedId = focusedWidget_ ? focusedWidget_->id() : focusedCustomId_;
 	int index = -1;
 	for (std::size_t i = 0; i < order.size(); ++i)
-		if (order[i] == focusedWidget_) index = static_cast<int>(i);
+		if (order[i] == focusedId) index = static_cast<int>(i);
 	for (std::size_t attempt = 0; attempt < order.size(); ++attempt)
 	{
 		index = backwards ? (index <= 0 ? static_cast<int>(order.size()) - 1 : index - 1)
 			: (index + 1) % static_cast<int>(order.size());
-		UiWidget* candidate = order[static_cast<std::size_t>(index)];
-		if (isWidgetVisible(candidate) && candidate->enabled_)
+		const std::string& candidateId = order[static_cast<std::size_t>(index)];
+		UiWidget* widget = find(candidateId);
+		if (widget && isWidgetVisible(widget) && widget->enabled_)
 		{
-			focus(candidate);
+			focus(widget);
+			closeCombo();
+			return;
+		}
+		UiTabStrip* tab = findTabStrip(candidateId);
+		if (tab && tab->visible_ && tab->enabled_)
+		{
+			focusCustom(candidateId);
+			closeCombo();
+			return;
+		}
+		UiSelectionList* list = findSelectionList(candidateId);
+		if (list && list->visible_ && list->enabled_)
+		{
+			focusCustom(candidateId);
+			closeCombo();
+			return;
+		}
+		UiEditableField* field = findEditableField(candidateId);
+		if (field && field->visible_ && field->enabled_)
+		{
+			focusCustom(candidateId);
 			closeCombo();
 			return;
 		}
@@ -696,8 +1091,64 @@ bool UIRoot::handleKey(const UiInputEvent& event, UiAction& action)
 {
 	if (event.key == UiKey::Tab)
 	{
+		if (!commitFocusedField(action)) return true;
+		if (action.event.kind != UiEventKind::None) return true;
 		focusNext(event.shift);
 		return true;
+	}
+	if (!focusedCustomId_.empty())
+	{
+		if (UiEditableField* field = findEditableField(focusedCustomId_))
+		{
+			if (!field->visible_ || !field->enabled_) return inputCaptured_;
+			if (event.key == UiKey::Escape) { field->cancel(); return true; }
+			if (event.key == UiKey::Enter && !field->editing_)
+			{
+				field->editing_ = true;
+				field->draft_ = field->value_;
+				return true;
+			}
+			if (event.key == UiKey::Backspace) { field->erase(); return true; }
+			if (event.key == UiKey::Enter) return field->commit(action) || true;
+			return inputCaptured_;
+		}
+		if (UiTabStrip* tab = findTabStrip(focusedCustomId_))
+		{
+			if (!tab->visible_ || !tab->enabled_) return inputCaptured_;
+			if (event.key == UiKey::Left || event.key == UiKey::Right)
+			{
+				const int next = tab->selectedIndex_ + (event.key == UiKey::Left ? -1 : 1);
+				if (next >= 0 && next < static_cast<int>(tab->tabs_.size()) && next != tab->selectedIndex_)
+				{
+					tab->setSelectedIndex(next);
+					action = UiAction(tab->action_);
+					action.appAction.selection = tab->selectedIndex_;
+					action.event.controlId = tab->id_;
+					action.event.kind = UiEventKind::SelectionChanged;
+					action.event.selection = tab->selectedIndex_;
+				}
+				return true;
+			}
+		}
+		if (UiSelectionList* list = findSelectionList(focusedCustomId_))
+		{
+			if (!list->visible_ || !list->enabled_) return inputCaptured_;
+			if (event.key == UiKey::Up || event.key == UiKey::Down)
+			{
+				const int delta = event.key == UiKey::Up ? -1 : 1;
+				const int next = list->selectedIndex_ + delta;
+				if (next >= 0 && next < static_cast<int>(list->items_.size()) && next != list->selectedIndex_)
+				{
+					list->setSelectedIndex(next);
+					action = UiAction(list->action_);
+					action.appAction.selection = next;
+					action.event.controlId = list->id_;
+					action.event.kind = UiEventKind::SelectionChanged;
+					action.event.selection = next;
+				}
+				return true;
+			}
+		}
 	}
 	if (event.key == UiKey::Escape)
 	{

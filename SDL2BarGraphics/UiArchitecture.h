@@ -20,6 +20,7 @@ public:
 
 	UiOverlayId active() const { return active_; }
 	bool is(UiOverlayId overlay) const { return active_ == overlay; }
+	bool hasParent(UiOverlayId overlay) const { return active_ == UiOverlayId::AlgorithmBrowser && algorithmReturnOverlay_ == overlay; }
 	bool settingsSurfaceOpen() const;
 	bool modalOpen() const { return active_ != UiOverlayId::None; }
 
@@ -35,6 +36,7 @@ public:
 private:
 	UiOverlayId active_;
 	UiOverlayId appearanceReturnOverlay_;
+	UiOverlayId algorithmReturnOverlay_;
 };
 
 struct UiTelemetryValue
@@ -181,17 +183,18 @@ struct UiPaintCommand
 	UiTextAlignment textAlignment;
 	UiTextOverflow textOverflow;
 	bool popup;
+	std::uint32_t layerOffset;
 	UiPaintCommand(UiPaintPrimitive kind = UiPaintPrimitive::Rectangle, const UiRect& area = UiRect(),
 		const UiColor& tint = UiColor(), const std::string& label = std::string())
 		: primitive(kind), bounds(area), color(tint), text(label), elementId(), material(UiPaintMaterial::Solid),
 			layer(UiPaintLayer::Content), clip(), hasClip(false), textHeight(12.0f),
-			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit), popup(false) {}
+			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit), popup(false), layerOffset(0) {}
 	UiPaintCommand(UiPaintPrimitive kind, const UiRect& area, const UiColor& tint, const std::string& label,
 		const std::string& stableElementId, UiPaintMaterial paintMaterial, UiPaintLayer paintLayer,
 		const UiRect& clipBounds, bool clipped, float targetTextHeight, bool isPopup = false)
 		: primitive(kind), bounds(area), color(tint), text(label), elementId(stableElementId), material(paintMaterial),
 			layer(paintLayer), clip(clipBounds), hasClip(clipped), textHeight(targetTextHeight),
-			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit), popup(isPopup) {}
+			textAlignment(UiTextAlignment::Center), textOverflow(UiTextOverflow::Fit), popup(isPopup), layerOffset(0) {}
 };
 
 class UiPaintContext

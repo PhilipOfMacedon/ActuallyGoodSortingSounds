@@ -77,6 +77,8 @@ public:
 	const DemoRunner& demoRunner() const { return demoRunner_; }
 	const std::string& selectedDemoPresetId() const { return selectedDemoPresetId_; }
 	const DemoPreset& demoEditorDraft() const { return demoEditorDraft_; }
+	bool demoEditorDraftDirty() const { return demoEditorDraftDirty_; }
+	const std::string& pendingDemoPresetSwitchId() const { return pendingDemoPresetSwitchId_; }
 	std::size_t demoEditorSelectedStep() const { return demoEditorSelectedStep_; }
 	bool demoEditorOpen() const { return demoEditorOpen_; }
 	bool demoActive() const { return demoRunner_.active(); }
@@ -98,10 +100,14 @@ private:
 	DemoPresetStore demoPresetStore_;
 	DemoRunner demoRunner_;
 	DemoPreset demoEditorDraft_;
+	DemoPreset demoEditorBaseline_;
 	std::string selectedDemoPresetId_;
 	std::size_t demoEditorSelectedStep_;
 	std::string editorPrefabSourceId_;
 	bool demoEditorOpen_;
+	bool demoEditorDraftInitialized_;
+	bool demoEditorDraftDirty_;
+	std::string pendingDemoPresetSwitchId_;
 	bool pendingDemoStepPreparation_;
 	std::uint64_t nextSessionIdentity_;
 	std::string demoPersistenceIssue_;
@@ -130,4 +136,6 @@ private:
 	double referenceDurationSeconds() const;
 	double referenceElapsedAtCursor(std::size_t cursor) const;
 	void synchronizeReferenceTransport(bool wasPlaying);
+	void refreshDemoDraftDirty();
+	void adoptDemoDraftBaseline();
 };

@@ -74,7 +74,7 @@ namespace
 }
 
 UiOverlayState::UiOverlayState()
-	: active_(UiOverlayId::None), appearanceReturnOverlay_(UiOverlayId::None)
+	: active_(UiOverlayId::None), appearanceReturnOverlay_(UiOverlayId::None), algorithmReturnOverlay_(UiOverlayId::None)
 {
 }
 
@@ -99,7 +99,8 @@ bool UiOverlayState::closeSettings()
 
 bool UiOverlayState::openAlgorithmBrowser()
 {
-	if (active_ != UiOverlayId::None && active_ != UiOverlayId::AlgorithmBrowser) return false;
+	if (active_ != UiOverlayId::None && active_ != UiOverlayId::DemoEditor && active_ != UiOverlayId::AlgorithmBrowser) return false;
+	if (active_ != UiOverlayId::AlgorithmBrowser) algorithmReturnOverlay_ = active_;
 	active_ = UiOverlayId::AlgorithmBrowser;
 	return true;
 }
@@ -107,7 +108,8 @@ bool UiOverlayState::openAlgorithmBrowser()
 bool UiOverlayState::closeAlgorithmBrowser()
 {
 	if (active_ != UiOverlayId::AlgorithmBrowser) return false;
-	active_ = UiOverlayId::None;
+	active_ = algorithmReturnOverlay_;
+	algorithmReturnOverlay_ = UiOverlayId::None;
 	return true;
 }
 

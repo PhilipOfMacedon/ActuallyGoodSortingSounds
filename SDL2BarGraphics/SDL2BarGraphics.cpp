@@ -173,7 +173,8 @@ int main(int argc, char** argv)
 		controlPanel.setSeedLibraryState(app.seedBookmarks().bookmarks(), app.seedBookmarks().selectedIndex(),
 			app.seedHistory().canGoPrevious(), app.seedHistory().canGoNext());
 		controlPanel.setDemoEditorState(app.demoPresets(), app.demoEditorDraft(), app.selectedDemoPresetId(),
-			app.demoEditorSelectedStep(), app.demoRunner(), app.demoEditorOpen());
+			app.demoEditorSelectedStep(), app.demoRunner(), app.demoEditorOpen(), app.demoEditorDraftDirty(),
+			app.pendingDemoPresetSwitchId());
 		controlPanel.prepareFrame(snapshot, app.persistenceStatus(), app.playbackPending());
 		frameCoordinator.beginFrame(palette.background);
 		arrayRenderer.render(snapshot, app.preferences().visual.spacing, controlPanel.chartViewport(), palette);

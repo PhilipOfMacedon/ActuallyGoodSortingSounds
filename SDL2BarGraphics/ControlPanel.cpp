@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 
 #include <SDL.h>
@@ -272,6 +273,8 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	audioDeviceStatus_(new TextLabel("Audio device is not initialized.", "Courier New Bold", 12, { 238, 246, 249, 255 })),
 	displayedSaveStatus_(), seedBookmarkLabels_(), selectedSeedBookmark_(0), canPreviousSeed_(false), canNextSeed_(false), currentSeed_(0),
 	demoPresets_(nullptr), demoDraft_(nullptr), demoRunner_(nullptr), selectedDemoPresetId_(), selectedDemoStep_(0), demoEditorOpen_(false),
+	demoDraftDirty_(false), pendingDemoPresetSwitchId_(),
+	algorithmPickerRequest_(), pendingPickerAction_(), pickerSelectionPending_(false),
 	headerBounds_(), gearBounds_(),
 	drawingAppearanceEditor_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false)
@@ -679,9 +682,9 @@ void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const st
 	fontFallbackActive_ = false;
 	drawMainPanel(snapshot, palette);
 	if (overlayState_.is(UiOverlayId::Settings)) drawSettingsPanel(palette, audioStatus);
-	if (algorithmBrowserOpen()) drawAlgorithmMenu(palette);
 	if (appearanceEditorOpen()) drawAppearanceEditor();
-	if (overlayState_.is(UiOverlayId::DemoEditor)) drawDemoEditor(palette);
+	if (overlayState_.is(UiOverlayId::DemoEditor) || overlayState_.hasParent(UiOverlayId::DemoEditor)) drawDemoEditor(palette);
+	if (algorithmBrowserOpen()) drawAlgorithmMenu(palette);
 }
 
 void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
@@ -701,7 +704,9 @@ void ControlPanel::prepareFrame(const sortinglogic::RenderSnapshot& snapshot,
 		if (!overlayState_.is(UiOverlayId::DemoEditor)) overlayState_.openDemoEditor();
 		demoEditorView_.setOpen(true);
 		demoEditorView_.synchronize(*demoPresets_, *demoDraft_, selectedDemoPresetId_, selectedDemoStep_,
-			*demoRunner_, screenModel_.setupEnabled, width_, height_);
+			*demoRunner_, screenModel_.setupEnabled, width_, height_, demoDraftDirty_, pendingDemoPresetSwitchId_,
+			renderPreferences_.appearance.activePreset, width_ > 0
+				? static_cast<float>(window_.getDrawableWidth()) / static_cast<float>(width_) : 1.0f);
 	}
 	else
 	{
@@ -730,7 +735,8 @@ void ControlPanel::setSeedLibraryState(const std::vector<SeedBookmark>& bookmark
 }
 
 void ControlPanel::setDemoEditorState(const DemoPresetStore& presets, const DemoPreset& draft,
-	const std::string& selectedPresetId, std::size_t selectedStep, const DemoRunner& runner, bool editorOpen)
+	const std::string& selectedPresetId, std::size_t selectedStep, const DemoRunner& runner, bool editorOpen,
+	bool draftDirty, const std::string& pendingPresetSwitchId)
 {
 	demoPresets_ = &presets;
 	demoDraft_ = &draft;
@@ -738,6 +744,8 @@ void ControlPanel::setDemoEditorState(const DemoPresetStore& presets, const Demo
 	selectedDemoPresetId_ = selectedPresetId;
 	selectedDemoStep_ = selectedStep;
 	demoEditorOpen_ = editorOpen;
+	demoDraftDirty_ = draftDirty;
+	pendingDemoPresetSwitchId_ = pendingPresetSwitchId;
 }
 
 void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette)
@@ -1370,25 +1378,47 @@ void ControlPanel::updateOverlayInputCapture()
 	mainControlsView_.setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
 	settingsPanelView_.setModalActive(overlayState_.is(UiOverlayId::Settings));
 	appearanceEditorView_.controls().setInputCaptured(overlayState_.is(UiOverlayId::AppearanceEditor));
-	demoEditorView_.setOpen(overlayState_.is(UiOverlayId::DemoEditor));
+	demoEditorView_.setOpen(overlayState_.is(UiOverlayId::DemoEditor) || overlayState_.hasParent(UiOverlayId::DemoEditor));
 }
 
 void ControlPanel::openAlgorithmMenu()
 {
-	if (!overlayState_.openAlgorithmBrowser()) return;
 	const sortinglogic::AlgorithmDescriptor* current = sortinglogic::algorithmDescriptor(
 		static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
-	algorithmBrowser_.begin(current ? current->familyId : sortinglogic::FamilyId());
+	AlgorithmPickerRequest request;
+	request.initialFamilyId = current ? current->familyId : sortinglogic::FamilyId();
+	request.initialVariantId = current ? current->variantId : std::string();
+	const UiWidget* anchor = mainControlsView_.findControl("algorithm");
+	request.anchor = anchor ? anchor->bounds() : UiRect(12.0f, 48.0f, 240.0f, 32.0f);
+	request.selectionEnabled = screenModel_.setupEnabled;
+	request.disabledExplanation = "Pause playback and wait for trace preparation before changing algorithms.";
+	request.selectionCallback = [](const std::string& family, const std::string& variant)
+	{
+		return AppAction(AppActionKind::SelectAlgorithm, family, variant);
+	};
+	openAlgorithmPicker(request);
+	mainControlsView_.closeCombo();
+	}
+
+void ControlPanel::openAlgorithmPicker(const AlgorithmPickerRequest& request)
+{
+	if (!overlayState_.openAlgorithmBrowser()) return;
+	algorithmPickerRequest_ = request;
+	algorithmBrowser_.begin(request.initialFamilyId);
+	algorithmBrowser_.status = request.selectionEnabled ? std::string() : request.disabledExplanation;
 	mainControlsView_.closeCombo();
 	updateOverlayInputCapture();
 	SDL_StartTextInput();
-	layoutAlgorithmMenu();
+	algorithmBrowser_.layout(request.anchor, width_, height_);
 }
 
 void ControlPanel::closeAlgorithmMenu()
 {
 	if (!overlayState_.closeAlgorithmBrowser()) return;
 	algorithmBrowser_.reset();
+	algorithmPickerRequest_ = AlgorithmPickerRequest();
+	pendingPickerAction_ = AppAction();
+	pickerSelectionPending_ = false;
 	updateOverlayInputCapture();
 	SDL_StopTextInput();
 }
@@ -1724,6 +1754,17 @@ void ControlPanel::exportAppearanceProfile()
 
 void ControlPanel::completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result)
 {
+	if (pickerSelectionPending_ && action.kind == pendingPickerAction_.kind &&
+		action.familyId == pendingPickerAction_.familyId && action.variantId == pendingPickerAction_.variantId &&
+		algorithmBrowserOpen())
+	{
+		pickerSelectionPending_ = false;
+		algorithmBrowser_.pendingSelection = false;
+		if (result.accepted) closeAlgorithmMenu();
+		else algorithmBrowser_.status = result.message.empty()
+			? "That selection was rejected. Check the command status and try another algorithm." : result.message;
+		return;
+	}
 	if (isDemoActionKind(action.kind))
 	{
 		demoEditorView_.setFeedback(result.message.empty() ? (result.accepted ? "Done." : "The demo action was rejected.") : result.message);
@@ -1749,7 +1790,7 @@ void ControlPanel::completeActionResult(const AppAction& action, const sortinglo
 void ControlPanel::layoutAlgorithmMenu()
 {
 	if (!algorithmBrowserOpen() || width_ <= 0 || height_ <= 0) return;
-	algorithmBrowser_.layout(mainControlsView_.findControl("algorithm")->bounds(), width_, height_);
+	algorithmBrowser_.layout(algorithmPickerRequest_.anchor, width_, height_);
 }
 
 bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action)
@@ -1757,65 +1798,61 @@ bool ControlPanel::handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& a
 	UiInputEvent input(UiInputType::FocusLost);
 	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Search, sdlUiEventContext(event))) return true;
 	const AlgorithmBrowserInputResult result = algorithmBrowser_.handleInput(
-		input, screenModel_.setupEnabled, settings_.simulation.familyId, settings_.simulation.variantId);
+		input, algorithmPickerRequest_.selectionEnabled, algorithmPickerRequest_.initialFamilyId,
+		algorithmPickerRequest_.initialVariantId);
 	if (result.closeRequested)
 		closeAlgorithmMenu();
 	if (result.selectionRequested)
-		action = AppAction(AppActionKind::SelectAlgorithm, result.familyId, result.variantId);
+	{
+		action = algorithmPickerRequest_.selectionCallback
+			? algorithmPickerRequest_.selectionCallback(result.familyId, result.variantId)
+			: AppAction(AppActionKind::SelectAlgorithm, result.familyId, result.variantId);
+		pendingPickerAction_ = action;
+		pickerSelectionPending_ = true;
+	}
 	return true;
 }
 
 bool ControlPanel::handleDemoEditorEvent(const SDL_Event& event, AppAction& action)
 {
-	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
-	{
-		demoEditorView_.cancelNameEdit();
-		demoEditorView_.cancelNumericEdit();
-		SDL_StopTextInput();
-		return true;
-	}
 	const bool wasEditing = demoEditorView_.editingName() || demoEditorView_.editingNumeric();
-	if (wasEditing)
-	{
-		if (event.type == SDL_TEXTINPUT)
-		{
-			if (demoEditorView_.editingName()) demoEditorView_.appendName(event.text.text);
-			else demoEditorView_.appendNumericText(event.text.text);
-			return true;
-		}
-		if (event.type == SDL_KEYDOWN)
-		{
-			const SDL_Keycode key = event.key.keysym.sym;
-			if (key == SDLK_ESCAPE)
-			{
-				if (demoEditorView_.editingName()) demoEditorView_.cancelNameEdit();
-				else demoEditorView_.cancelNumericEdit();
-				SDL_StopTextInput();
-				return true;
-			}
-			if (key == SDLK_BACKSPACE)
-			{
-				if (demoEditorView_.editingName()) demoEditorView_.eraseNameCharacter();
-				else demoEditorView_.eraseNumericCharacter();
-				return true;
-			}
-			if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
-			{
-				const bool committed = demoEditorView_.editingName()
-					? demoEditorView_.commitNameEdit(action) : demoEditorView_.commitNumericEdit(action);
-				if (!demoEditorView_.editingName() && !demoEditorView_.editingNumeric()) SDL_StopTextInput();
-				return committed || wasEditing;
-			}
-			return true;
-		}
-		return true;
-	}
 	UiInputEvent input(UiInputType::FocusLost);
 	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Controls, sdlUiEventContext(event))) return true;
 	const bool consumed = demoEditorView_.handleInput(input, action);
 	const bool nowEditing = demoEditorView_.editingName() || demoEditorView_.editingNumeric();
 	if (!wasEditing && nowEditing) SDL_StartTextInput();
 	if (wasEditing && !nowEditing) SDL_StopTextInput();
+	const DemoAlgorithmPickerIntent intent = demoEditorView_.takeAlgorithmPickerIntent();
+	if (intent != DemoAlgorithmPickerIntent::None && demoDraft_)
+	{
+		AlgorithmPickerRequest request;
+		const DemoStep* selectedStep = selectedDemoStep_ < demoDraft_->steps.size()
+			? &demoDraft_->steps[selectedDemoStep_] : nullptr;
+		const sortinglogic::AlgorithmDescriptor* initial = selectedStep
+			? sortinglogic::algorithmDescriptorById(selectedStep->familyId, selectedStep->variantId)
+			: (sortinglogic::algorithmCatalog().empty() ? nullptr : sortinglogic::algorithmDescriptor(sortinglogic::algorithmCatalog().front().id));
+		request.initialFamilyId = initial ? initial->familyId : sortinglogic::FamilyId();
+		request.initialVariantId = initial ? initial->variantId : std::string();
+		const UiWidget* launcher = demoEditorView_.control(intent == DemoAlgorithmPickerIntent::Add ? "demo_add" : "demo_replace");
+		request.anchor = launcher ? launcher->bounds() : demoEditorView_.panelBounds();
+		request.selectionEnabled = screenModel_.setupEnabled && !(demoRunner_ && demoRunner_->active());
+		request.disabledExplanation = "Demo configuration is read-only while a demo is active.";
+		const std::size_t targetIndex = intent == DemoAlgorithmPickerIntent::Add
+			? demoDraft_->steps.size() : selectedDemoStep_;
+		request.selectionCallback = [intent, targetIndex](const std::string& family, const std::string& variant)
+		{
+			const AppActionKind kind = intent == DemoAlgorithmPickerIntent::Add
+				? AppActionKind::DemoAddStep : AppActionKind::DemoSetStepAlgorithm;
+			AppAction selected(kind, family, variant);
+			DemoActionPayload payload;
+			payload.familyId = family;
+			payload.variantId = variant;
+			payload.stepIndex = targetIndex;
+			selected.demo.reset(new DemoActionPayload(payload));
+			return selected;
+		};
+		openAlgorithmPicker(request);
+	}
 	return consumed || demoEditorView_.open();
 }
 
@@ -1830,7 +1867,11 @@ void ControlPanel::drawDemoEditor(const ThemePalette& palette)
 	viewPalette.accent = toUiColor(palette.accent);
 	viewPalette.text = toUiColor(palette.text);
 	viewPalette.mutedText = toUiColor(palette.mutedText);
-	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
+	const std::function<const UiWidget*(const std::string&)> widgetLookup = [this](const std::string& id)
+	{
+		return demoEditorView_.control(id);
+	};
+	auto renderCommand = [this, &widgetLookup](const UiPaintCommand& command) { drawUiPaintCommand(command, widgetLookup); };
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
 	const ResolvedTextStyle popupStyle = resolveTextStyle(14.0f);
 	demoEditorView_.layoutComboPopups([popupStyle](const std::string& text)
@@ -1841,15 +1882,16 @@ void ControlPanel::drawDemoEditor(const ThemePalette& palette)
 	demoEditorView_.compose(viewPalette, width_, height_, paintContext);
 }
 
-void ControlPanel::drawUiPaintCommand(const UiPaintCommand& command)
+void ControlPanel::drawUiPaintCommand(const UiPaintCommand& command,
+	const std::function<const UiWidget*(const std::string&)>& widgetLookup, std::uint32_t layerDepth)
 {
 	const glm::vec4 color = toGlmColor(command.color);
 	const ClipBounds clip = renderClip(command);
-	const RenderLayer layer = renderLayerForUiPaint(command.layer);
+	const RenderLayer layer = layerOffset(renderLayerForUiPaint(command.layer), command.layerOffset + layerDepth);
 	const ThemePalette palette = uiPaletteForAppearance(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_));
 	if (command.primitive == UiPaintPrimitive::Control)
 	{
-		const UiWidget* widget = demoEditorView_.control(command.elementId);
+		const UiWidget* widget = widgetLookup ? widgetLookup(command.elementId) : nullptr;
 		if (widget) drawWidget(*widget, palette, layer, command.popup);
 		return;
 	}
@@ -1901,8 +1943,14 @@ void ControlPanel::drawAlgorithmMenu(const ThemePalette& palette)
 	viewPalette.mutedText = toUiColor(palette.mutedText);
 	viewPalette.overlayDim = toUiColor(palette.overlayDim);
 
-	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
+	const std::uint32_t layerDepth = overlayState_.hasParent(UiOverlayId::DemoEditor) ? 32u : 0u;
+	auto renderCommand = [this, layerDepth](const UiPaintCommand& source)
+	{
+		UiPaintCommand command = source;
+		command.layerOffset += layerDepth;
+		drawUiPaintCommand(command);
+	};
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
-	algorithmBrowserView_.compose(algorithmBrowser_, viewPalette, screenModel_.setupEnabled,
-		settings_.simulation.familyId, settings_.simulation.variantId, width_, height_, paintContext);
+	algorithmBrowserView_.compose(algorithmBrowser_, viewPalette, algorithmPickerRequest_.selectionEnabled,
+		algorithmPickerRequest_.initialFamilyId, algorithmPickerRequest_.initialVariantId, width_, height_, paintContext);
 }

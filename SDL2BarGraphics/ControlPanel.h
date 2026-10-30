@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -27,6 +28,18 @@ union SDL_Event;
 class Renderer2D;
 class Window;
 
+struct AlgorithmPickerRequest
+{
+	std::string initialFamilyId;
+	std::string initialVariantId;
+	UiRect anchor;
+	bool selectionEnabled;
+	std::string disabledExplanation;
+	std::function<AppAction(const std::string&, const std::string&)> selectionCallback;
+	AlgorithmPickerRequest() : initialFamilyId(), initialVariantId(), anchor(), selectionEnabled(true),
+		disabledExplanation(), selectionCallback() {}
+};
+
 namespace sortinglogic
 {
 	struct AlgorithmDescriptor;
@@ -52,7 +65,8 @@ public:
 	void setSeedLibraryState(const std::vector<SeedBookmark>& bookmarks, std::size_t selectedIndex,
 		bool canPrevious, bool canNext);
 	void setDemoEditorState(const DemoPresetStore& presets, const DemoPreset& draft, const std::string& selectedPresetId,
-		std::size_t selectedStep, const DemoRunner& runner, bool editorOpen);
+		std::size_t selectedStep, const DemoRunner& runner, bool editorOpen, bool draftDirty = false,
+		const std::string& pendingPresetSwitchId = std::string());
 	void completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result);
 	// Paint the frame prepared before chart rendering without recalculating layout.
 	void render(const sortinglogic::RenderSnapshot& snapshot,
@@ -106,6 +120,11 @@ private:
 	std::string selectedDemoPresetId_;
 	std::size_t selectedDemoStep_;
 	bool demoEditorOpen_;
+	bool demoDraftDirty_;
+	std::string pendingDemoPresetSwitchId_;
+	AlgorithmPickerRequest algorithmPickerRequest_;
+	AppAction pendingPickerAction_;
+	bool pickerSelectionPending_;
 	UiRect headerBounds_;
 	UiRect gearBounds_;
 	bool drawingAppearanceEditor_;
@@ -149,10 +168,13 @@ private:
 	void updateOverlayInputCapture();
 	void closeSettings();
 	void layoutAlgorithmMenu();
-	void drawUiPaintCommand(const UiPaintCommand& command);
+	void drawUiPaintCommand(const UiPaintCommand& command,
+		const std::function<const UiWidget*(const std::string&)>& widgetLookup = std::function<const UiWidget*(const std::string&)>(),
+		std::uint32_t layerDepth = 0);
 	void drawAlgorithmMenu(const ThemePalette& palette);
 	bool handleAlgorithmMenuEvent(const SDL_Event& event, AppAction& action);
 	void openAlgorithmMenu();
+	void openAlgorithmPicker(const AlgorithmPickerRequest& request);
 	void closeAlgorithmMenu();
 	void beginInlineEdit(const std::string& widgetId);
 	bool commitInlineEdit(AppAction& action);

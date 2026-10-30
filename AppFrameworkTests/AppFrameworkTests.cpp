@@ -433,12 +433,19 @@ namespace
 	void clickDemoControl(DemoEditorView& view, const std::string& id, AppAction& action)
 	{
 		const UiWidget* widget = view.control(id);
-		if (!widget) return;
-		const UiRect bounds = widget->bounds();
+		UiRect bounds;
+		if (widget) bounds = widget->bounds();
+		else
+		{
+			const UiEditableField* field = view.editableField(id);
+			if (!field) return;
+			bounds = field->bounds();
+		}
 		view.handleInput(UiInputEvent(UiInputType::PointerDown, bounds.x + bounds.width * 0.5f,
 			bounds.y + bounds.height * 0.5f), action);
-		view.handleInput(UiInputEvent(UiInputType::PointerUp, bounds.x + bounds.width * 0.5f,
-			bounds.y + bounds.height * 0.5f), action);
+		if (widget)
+			view.handleInput(UiInputEvent(UiInputType::PointerUp, bounds.x + bounds.width * 0.5f,
+				bounds.y + bounds.height * 0.5f), action);
 	}
 
 	void testDemoEditorRetainedActions()
@@ -449,9 +456,9 @@ namespace
 		DemoEditorView view;
 		view.setOpen(true);
 		view.synchronize(store, draft, draft.id, 0, runner, true, 1000, 640);
-		check(view.control("demo_preset") && view.control("demo_step") && view.panelBounds().contains(
+		check(view.control("demo_preset") && view.selectionList("demo_queue") && view.tabStrip("demo_tabs") && view.panelBounds().contains(
 			view.panelBounds().x + view.panelBounds().width * 0.5f, view.panelBounds().y + view.panelBounds().height * 0.5f),
-			"demo editor composes a retained modal panel with preset and ordered-step selectors");
+			"demo editor composes the preset, retained queue, and shared tab strip");
 		RecordingUiPaintContext paint;
 		DemoEditorPalette palette;
 		palette.panel = UiColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -465,21 +472,38 @@ namespace
 		check(!paint.commands().empty(), "demo editor submits panel, control, and text paint commands through the shared UI contract");
 
 		AppAction editRecipe;
+		const UiTabStrip* tabs = view.tabStrip("demo_tabs");
+		const UiRect classTab = tabs->tabBounds(1);
+		view.handleInput(UiInputEvent(UiInputType::PointerDown, classTab.x + classTab.width * 0.5f,
+			classTab.y + classTab.height * 0.5f), editRecipe);
+		check(view.activeTab() == DemoEditorTab::ClassInputs, "class-input tab owns pointer selection and updates the active page");
 		clickDemoControl(view, "demo_seed_value", editRecipe);
-		check(view.editingNumeric(), "seed recipe value enters inline numeric editing");
+		check(view.editingNumeric(), "shared seed recipe field enters retained numeric editing");
 		view.handleInput(UiInputEvent(UiInputType::TextInput, "0"), editRecipe);
 		view.handleInput(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Enter), editRecipe);
 		check(editRecipe.kind == AppActionKind::DemoSetClassRecipe && editRecipe.demo && editRecipe.demo->seed == 54890u,
-			"demo seed edits emit a typed complexity-recipe action with the unsigned value");
+			"class-input seed edits emit a typed shared-recipe action with the unsigned value");
+		const UiWidget* classSelector = view.control("demo_class");
+		if (classSelector && classSelector->options().size() > 1)
+		{
+			const int otherClass = classSelector->selectedIndex() == 0 ? 1 : 0;
+			const UiRect bounds = classSelector->bounds();
+			AppAction chooseClass;
+			view.layoutComboPopups([](const std::string& text) { return static_cast<float>(text.size() * 8); });
+			view.handleInput(UiInputEvent(UiInputType::PointerDown, bounds.x + bounds.width * 0.5f,
+				bounds.y + bounds.height * 0.5f), chooseClass);
+			const UiRect option = classSelector->optionBounds(static_cast<std::size_t>(otherClass));
+			view.handleInput(UiInputEvent(UiInputType::PointerDown, option.x + option.width * 0.5f,
+				option.y + option.height * 0.5f), chooseClass);
+			view.synchronize(store, draft, draft.id, 0, runner, true, 1000, 640);
+			check(view.control("demo_class")->selectedIndex() == otherClass,
+				"class-input selection survives authoritative frame synchronization while the inspected step stays unchanged");
+		}
 
 		AppAction addStep;
 		clickDemoControl(view, "demo_add", addStep);
-		const sortinglogic::AlgorithmDescriptor* first = sortinglogic::algorithmDescriptor(
-			sortinglogic::algorithmCatalog().front().id);
-		check(addStep.kind == AppActionKind::DemoAddStep && addStep.demo && first &&
-			addStep.demo->familyId == first->familyId && addStep.demo->variantId == first->variantId &&
-			addStep.demo->stepIndex == draft.steps.size(),
-			"adding a repeated algorithm emits a stable-ID step insertion action at the end of the sequence");
+		check(addStep.kind == AppActionKind::None && view.takeAlgorithmPickerIntent() == DemoAlgorithmPickerIntent::Add,
+			"Add algorithm opens the shared family picker instead of choosing an arbitrary catalog entry");
 
 		AppAction dismiss;
 		view.handleInput(UiInputEvent(UiInputType::PointerDown, 2.0f, 2.0f), dismiss);
@@ -1457,6 +1481,8 @@ namespace
 		check(root.handleEvent(UiInputEvent(UiInputType::PointerDown, secondOption.x + 5.0f, secondOption.y + 5.0f), action), "pointer selects a dropdown item");
 		check(action.appAction.kind == AppActionKind::SelectAlgorithm && action.appAction.selection == 1,
 			"dropdown emits a typed selected action");
+		check(root.find("choice")->label() == "Two",
+			"dropdown immediately displays its newly selected item");
 		check(!root.hasOpenCombo(), "selection closes the dropdown");
 		UIRoot widePopupRoot;
 		widePopupRoot.addComboBox("menu", std::vector<std::string>{ "File", "A much longer menu command" }, 0,
@@ -1474,7 +1500,22 @@ namespace
 			"visible combo can be reopened after selection");
 		root.setWidgetVisible("choice", true);
 		check(root.hasOpenCombo(), "reapplying visible state preserves an open combo during layout refresh");
+		root.setInputCaptured(false);
+		check(root.hasOpenCombo(), "reapplying unchanged non-modal capture preserves an open combo during frame refresh");
 		root.closeCombo();
+
+		UIRoot frameBoundaryRoot;
+		frameBoundaryRoot.addButton("frame_button", "Frame button", AppAction(AppActionKind::Run));
+		frameBoundaryRoot.find("frame_button")->setBounds(UiRect(10.0f, 10.0f, 100.0f, 30.0f));
+		UiAction frameBoundaryAction;
+		check(frameBoundaryRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 20.0f, 20.0f), frameBoundaryAction),
+			"button press is captured before the next frame");
+		check(frameBoundaryRoot.find("frame_button")->focused(), "pointer down focuses the pressed button");
+		frameBoundaryRoot.setInputCaptured(false);
+		check(frameBoundaryRoot.handleEvent(UiInputEvent(UiInputType::PointerUp, 20.0f, 20.0f), frameBoundaryAction) &&
+			frameBoundaryAction.appAction.kind == AppActionKind::Run,
+			"reapplying unchanged capture state preserves a button press until the next-frame release");
+		check(frameBoundaryRoot.find("frame_button")->focused(), "redundant capture refresh preserves keyboard focus");
 
 		check(root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Tab), action), "Tab moves keyboard focus");
 		check(root.find("action")->focused(), "first widget receives keyboard focus");
@@ -1754,6 +1795,10 @@ namespace
 			"appearance editing can replace a browser request without retaining stale browser ownership");
 		check(overlays.closeAppearanceEditor() && overlays.active() == UiOverlayId::None,
 			"appearance editing entered outside settings returns to the main view");
+		check(overlays.openDemoEditor() && overlays.openAlgorithmBrowser() && overlays.hasParent(UiOverlayId::DemoEditor),
+			"the reusable algorithm browser can open as a child of the demo editor");
+		check(overlays.closeAlgorithmBrowser() && overlays.is(UiOverlayId::DemoEditor) && overlays.closeDemoEditor(),
+			"closing the nested browser returns ownership to the demo editor without click-through");
 	}
 
 	void testMainMenuSelectionActions()
@@ -1952,9 +1997,9 @@ namespace
 		check(translateSdlUiEvent(event, input) && input.key == UiKey::Space && input.control && input.shift,
 			"control-profile keyboard translation preserves supported keys and modifiers");
 		event.key.keysym.sym = SDLK_BACKSPACE;
-		check(!translateSdlUiEvent(event, input) &&
+		check(translateSdlUiEvent(event, input) && input.key == UiKey::Backspace &&
 			translateSdlUiEvent(event, input, SdlUiKeyProfile::Search) && input.key == UiKey::Backspace,
-			"search-profile translation enables backspace without changing control-profile keys");
+			"shared text fields and search accept Backspace through the same platform event contract");
 		event.key.keysym.sym = SDLK_SPACE;
 		check(!translateSdlUiEvent(event, input, SdlUiKeyProfile::Search),
 			"search-profile translation retains the browser's prior unsupported-space behavior");
@@ -4199,19 +4244,67 @@ namespace
 		editor.synchronize(store, draft, draft.id, 0, runner, true, 1000, 640);
 		editor.layoutComboPopups([](const std::string& text) { return text.size() * 8.0f; });
 		AppAction appAction;
-		clickDemoControl(editor, "demo_algorithm", appAction);
+		clickDemoControl(editor, "demo_preset", appAction);
 		RecordingUiPaintContext paint;
 		editor.compose(DemoEditorPalette(), 1000, 640, paint);
 		bool sharedControl = false, upperPopup = false;
 		for (const UiPaintCommand& command : paint.commands())
 		{
-			if (command.elementId == "demo_algorithm" && command.primitive == UiPaintPrimitive::Control)
+			if (command.elementId == "demo_preset" && command.primitive == UiPaintPrimitive::Control)
 			{
 				sharedControl = sharedControl || !command.popup;
 				upperPopup = upperPopup || (command.popup && command.layer == UiPaintLayer::Content);
 			}
 		}
 		check(sharedControl && upperPopup, "demo editor uses the standard widget painter and a separate upper popup pass");
+	}
+
+	void testRetainedEditorComponents()
+	{
+		UIRoot root;
+		UiTabStrip& tabs = root.addTabStrip("tabs", std::vector<std::string>{ "Step", "Inputs", "Session" });
+		tabs.setBounds(UiRect(10, 10, 300, 36));
+		UiSelectionList& list = root.addSelectionList("queue", AppAction(AppActionKind::SelectDemoStep));
+		std::vector<std::string> items;
+		for (int i = 0; i < 100; ++i) items.push_back("Step " + std::to_string(i + 1));
+		list.setItems(items);
+		list.setBounds(UiRect(10, 60, 180, 48));
+		list.setRowHeight(24);
+		UiEditableField& field = root.addEditableField("count", "Count", UiEditableFieldKind::UnsignedInteger,
+			"", 0, 1000, 5, AppAction());
+		field.setBounds(UiRect(220, 60, 90, 32));
+		UiAction emitted;
+		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 40, 20), emitted);
+		check(tabs.focused(), "tab strips receive keyboard focus through the shared retained root");
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Right), emitted);
+		check(tabs.selectedIndex() == 1 && emitted.event.controlId == "tabs" && emitted.event.selection == 1,
+			"left and right navigation selects tabs and emits a typed selection event");
+		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 240, 70), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::TextInput, "42"), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Enter), emitted);
+		check(field.value() == "42" && emitted.event.kind == UiEventKind::TextEntered && emitted.event.text == "42",
+			"unsigned fields commit validated text and emit a value event");
+		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 240, 70), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::TextInput, "99999"), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Enter), emitted);
+		check(field.invalid() && field.editing(), "invalid numeric input remains visible and blocks commitment");
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Escape), emitted);
+		check(!field.editing() && !field.invalid() && field.value() == "42", "Escape cancels a field draft and restores its authoritative value");
+		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 30, 72), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Down), emitted);
+		check(list.selectedIndex() == 1 && emitted.event.controlId == "queue",
+			"the virtualized queue supports keyboard navigation and typed selection");
+		root.handleEvent(UiInputEvent(UiInputType::Wheel, 30, 72, -2), emitted);
+		check(list.viewport().offset() > 0.0f && list.viewport().firstVisibleItem(24.0f) > 0,
+			"long queue scrolling changes the virtualized first visible row");
+		root.setWidgetVisible("tabs", false);
+		emitted = UiAction();
+		check(!root.handleEvent(UiInputEvent(UiInputType::PointerDown, 40, 20), emitted) && !tabs.focused(),
+			"hidden tab pages release focus and cannot receive pointer input");
+		root.setWidgetEnabled("count", false);
+		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 240, 70), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Enter), emitted);
+		check(!field.editing(), "disabled fields cannot be activated by pointer or keyboard");
 	}
 
 	void testDemoRunSessionIsolationAndCancellation()
@@ -4325,6 +4418,86 @@ namespace
 			saved->steps.size() == 5 && saved->steps[0].direction == sortinglogic::SortDirection::Descending,
 			"renaming an edited prefab saves its current draft as a user preset without discarding edits");
 		check(demos.writes == 1, "renaming a prefab draft persists exactly one user-preset write");
+	}
+
+	void testDemoDraftLifecycleAndPresetSwitch()
+	{
+		{
+			MemorySettings emptyPreferences;
+			MemorySeedBookmarks emptySeeds;
+			MemoryDemoPresets emptyDemos;
+			AppController emptyApp(emptyPreferences, &emptySeeds, &emptyDemos);
+			emptyApp.dispatch(AppAction(AppActionKind::OpenDemoEditor));
+			for (std::size_t i = 0; i < 5; ++i)
+			{
+				DemoActionPayload remove; remove.stepIndex = 0;
+				AppAction removeAction(AppActionKind::DemoRemoveStep);
+				removeAction.demo.reset(new DemoActionPayload(remove));
+				emptyApp.dispatch(removeAction);
+			}
+			const sortinglogic::CommandResult emptySave = emptyApp.dispatch(AppAction(AppActionKind::SaveDemoPreset));
+			check(emptyApp.demoEditorDraft().steps.empty() && !emptySave.accepted && emptyDemos.writes == 0,
+				"an empty demo draft cannot be saved and does not reach persistence");
+		}
+		MemorySettings preferences;
+		MemorySeedBookmarks seeds;
+		MemoryDemoPresets demos;
+		AppController app(preferences, &seeds, &demos);
+		check(!app.demoEditorDraftDirty() && app.demoEditorDraft().id == "prefab.classic-five",
+			"controller initializes the retained draft and its clean saved baseline independently of editor visibility");
+		check(app.dispatch(AppAction(AppActionKind::OpenDemoEditor)).accepted,
+			"opening the editor enables draft configuration actions");
+		DemoActionPayload loop; loop.flag = true;
+		AppAction setLoop(AppActionKind::DemoSetLoop); setLoop.demo.reset(new DemoActionPayload(loop));
+		check(app.dispatch(setLoop).accepted && app.demoEditorDraftDirty(), "an actual draft edit marks the retained configuration dirty");
+		AppAction selectTour(AppActionKind::SelectDemoPreset);
+		DemoActionPayload tour; tour.presetId = "prefab.ten-sort-tour"; selectTour.demo.reset(new DemoActionPayload(tour));
+		check(!app.dispatch(selectTour).accepted && app.pendingDemoPresetSwitchId() == tour.presetId &&
+			app.selectedDemoPresetId() == "prefab.classic-five",
+			"selecting another preset while dirty opens a pending switch without discarding the current draft");
+		DemoActionPayload cancel; cancel.direction = 2;
+		AppAction cancelSwitch(AppActionKind::ResolveDemoPresetSwitch); cancelSwitch.selection = 2;
+		cancelSwitch.demo.reset(new DemoActionPayload(cancel));
+		check(app.dispatch(cancelSwitch).accepted && app.pendingDemoPresetSwitchId().empty() && app.demoEditorDraftDirty(),
+			"Cancel closes the switch prompt while preserving draft edits");
+		app.dispatch(selectTour);
+		DemoActionPayload discard; discard.direction = 1;
+		AppAction discardSwitch(AppActionKind::ResolveDemoPresetSwitch); discardSwitch.selection = 1;
+		discardSwitch.demo.reset(new DemoActionPayload(discard));
+		check(app.dispatch(discardSwitch).accepted && app.selectedDemoPresetId() == "prefab.ten-sort-tour" &&
+			!app.demoEditorDraftDirty() && app.demoEditorDraft().steps.size() == 10,
+			"Discard loads the requested immutable prefab and establishes a clean baseline");
+		DemoActionPayload name; name.presetName = "Tour with edits";
+		AppAction renameDraft(AppActionKind::DemoSetDraftName); renameDraft.demo.reset(new DemoActionPayload(name));
+		app.dispatch(renameDraft);
+		AppAction selectClassic(AppActionKind::SelectDemoPreset);
+		DemoActionPayload classic; classic.presetId = "prefab.classic-five"; selectClassic.demo.reset(new DemoActionPayload(classic));
+		app.dispatch(selectClassic);
+		demos.failWrites = true;
+		DemoActionPayload saveChoice; saveChoice.direction = 0;
+		AppAction saveSwitch(AppActionKind::ResolveDemoPresetSwitch); saveSwitch.selection = 0;
+		saveSwitch.demo.reset(new DemoActionPayload(saveChoice));
+		const sortinglogic::CommandResult failedSave = app.dispatch(saveSwitch);
+		check(!failedSave.accepted && app.demoEditorDraftDirty() &&
+			app.pendingDemoPresetSwitchId() == "prefab.classic-five" && app.demoEditorDraft().name == "Tour with edits",
+			"a failed save preserves both the draft and pending switch destination");
+		demos.failWrites = false;
+		check(app.dispatch(saveSwitch).accepted && app.selectedDemoPresetId() == "prefab.classic-five" &&
+			!app.demoEditorDraftDirty() && demos.writes == 2,
+			"Save creates a user copy of an edited prefab before switching to the requested preset");
+		DemoActionPayload loopOff; loopOff.flag = true;
+		AppAction makeRetainedEdit(AppActionKind::DemoSetLoop); makeRetainedEdit.demo.reset(new DemoActionPayload(loopOff));
+		app.dispatch(makeRetainedEdit);
+		app.dispatch(AppAction(AppActionKind::CloseDemoEditor));
+		check(app.demoEditorDraftDirty() && app.dispatch(AppAction(AppActionKind::StartDemo)).accepted &&
+			app.demoRunner().preset().loop,
+			"closing keeps the unsaved draft, and the main launch command starts that retained draft");
+		const std::string retainedName = app.demoEditorDraft().name;
+		DemoActionPayload forbidden; forbidden.presetName = "attempted mutation";
+		AppAction mutateDuringDemo(AppActionKind::DemoSetDraftName); mutateDuringDemo.demo.reset(new DemoActionPayload(forbidden));
+		check(!app.dispatch(mutateDuringDemo).accepted && app.demoEditorDraft().name == retainedName,
+			"the controller enforces read-only demo configuration even while editor controls are absent");
+		app.dispatch(AppAction(AppActionKind::StopDemo));
 	}
 
 	void testAppearanceApplyIsTransactionalAndTransportNeutral()
@@ -5237,8 +5410,10 @@ int main(int argc, char* argv[])
 	testDemoTransportRestoresManualControls();
 	testDemoAutomaticPlaybackFrameOrdering();
 	testSharedComboAndComponentDefaults();
+	testRetainedEditorComponents();
 	testDemoRunSessionIsolationAndCancellation();
 	testPrefabRenamePreservesDraft();
+	testDemoDraftLifecycleAndPresetSwitch();
 	testAppearanceApplyIsTransactionalAndTransportNeutral();
 	testRestoreReconstructedDefaultsScope();
 	testShowcaseActions();

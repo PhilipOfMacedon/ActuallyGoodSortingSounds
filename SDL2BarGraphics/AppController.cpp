@@ -219,6 +219,31 @@ namespace
 		return sortinglogic::Simulation::createFreshSeed();
 	}
 
+	bool sameDemoRecipe(const DemoInputRecipe& a, const DemoInputRecipe& b)
+	{
+		return a.seed == b.seed && a.itemCount == b.itemCount && a.domain == b.domain && a.pattern == b.pattern;
+	}
+
+	bool sameDemoConfiguration(const DemoPreset& a, const DemoPreset& b)
+	{
+		if (a.name != b.name || a.intermissionSeconds != b.intermissionSeconds || a.loop != b.loop ||
+			a.classInputs.size() != b.classInputs.size() || a.steps.size() != b.steps.size()) return false;
+		std::map<sortinglogic::DemoComplexityClass, DemoInputRecipe>::const_iterator ar = a.classInputs.begin();
+		std::map<sortinglogic::DemoComplexityClass, DemoInputRecipe>::const_iterator br = b.classInputs.begin();
+		for (; ar != a.classInputs.end(); ++ar, ++br)
+			if (ar->first != br->first || !sameDemoRecipe(ar->second, br->second)) return false;
+		for (std::size_t i = 0; i < a.steps.size(); ++i)
+		{
+			const DemoStep& x = a.steps[i];
+			const DemoStep& y = b.steps[i];
+			if (x.familyId != y.familyId || x.variantId != y.variantId || x.optionSelections != y.optionSelections ||
+				x.direction != y.direction || x.timingMode != y.timingMode || x.fixedDurationSeconds != y.fixedDurationSeconds ||
+				x.completionScanEnabled != y.completionScanEnabled || x.hasInputOverride != y.hasInputOverride ||
+				(x.hasInputOverride && !sameDemoRecipe(x.inputOverride, y.inputOverride))) return false;
+		}
+		return true;
+	}
+
 }
 
 UserPreferences AppController::loadPreferences(ISettingsPersistence& persistence)
@@ -244,8 +269,9 @@ AppController::AppController(ISettingsPersistence& settingsPersistence,
 	manualSession_(static_cast<std::size_t>(preferences_.simulation.itemCount), freshStartupOrShuffleSeed(),
 		preferences_.simulation.domain, preferences_.simulation.pattern, preferences_.simulation.playbackTimingMode, 1, false),
 	demoSession_(), traceBuildService_(), persistenceStatus_("Preferences loaded."), commandStatus_(), seedHistory_(),
-	seedBookmarks_(), demoPresetStore_(), demoRunner_(), demoEditorDraft_(), selectedDemoPresetId_("prefab.classic-five"),
-	demoEditorSelectedStep_(0), editorPrefabSourceId_(), demoEditorOpen_(false), pendingDemoStepPreparation_(false), nextSessionIdentity_(2), demoPersistenceIssue_()
+	seedBookmarks_(), demoPresetStore_(), demoRunner_(), demoEditorDraft_(), demoEditorBaseline_(), selectedDemoPresetId_("prefab.classic-five"),
+	demoEditorSelectedStep_(0), editorPrefabSourceId_(), demoEditorOpen_(false), demoEditorDraftInitialized_(false),
+	demoEditorDraftDirty_(false), pendingDemoPresetSwitchId_(), pendingDemoStepPreparation_(false), nextSessionIdentity_(2), demoPersistenceIssue_()
 {
 	seedHistory_.reset(activeSimulation().snapshot().inputSeed);
 	std::vector<SeedBookmark> loadedBookmarks;
@@ -289,6 +315,13 @@ AppController::AppController(ISettingsPersistence& settingsPersistence,
 		if (!loadIssues.empty() && demoPersistenceIssue_.empty()) demoPersistenceIssue_ = loadIssues.front();
 	}
 	else demoPersistenceIssue_ = loadError.empty() ? "Saved demos could not be read." : loadError;
+	const DemoPreset* initialDraft = findDemoPreset(selectedDemoPresetId_);
+	if (!initialDraft) { selectedDemoPresetId_ = "prefab.classic-five"; initialDraft = findDemoPreset(selectedDemoPresetId_); }
+	if (initialDraft)
+	{
+		demoEditorDraft_ = *initialDraft;
+		adoptDemoDraftBaseline();
+	}
 }
 
 AppController::~AppController() = default;
@@ -955,6 +988,18 @@ const DemoPreset* AppController::findDemoPreset(const std::string& id) const
 	return demoPresetStore_.findUserPreset(id);
 }
 
+void AppController::refreshDemoDraftDirty()
+{
+	demoEditorDraftDirty_ = demoEditorDraftInitialized_ && !sameDemoConfiguration(demoEditorDraft_, demoEditorBaseline_);
+}
+
+void AppController::adoptDemoDraftBaseline()
+{
+	demoEditorDraftInitialized_ = true;
+	demoEditorBaseline_ = demoEditorDraft_;
+	demoEditorDraftDirty_ = false;
+}
+
 bool AppController::persistDemoPresets(std::string* error)
 {
 	const bool saved = demoPresetPersistence_ && demoPresetPersistence_->save(demoPresetStore_.userPresets(), error);
@@ -969,14 +1014,22 @@ sortinglogic::CommandResult AppController::startDemo(const std::string& presetId
 	if (demoRunner_.active()) return sortinglogic::CommandResult(false, "A demo is already active.");
 	if (traceBuildService_.isBusy() || manualSession_.simulation.isBuildingTrace())
 		return sortinglogic::CommandResult(false, "Wait for the current trace build to finish before starting a demo.");
-	const DemoPreset* source = findDemoPreset(presetId.empty() ? selectedDemoPresetId_ : presetId);
-	DemoPreset draft;
-	if (demoEditorOpen_ && (presetId.empty() || presetId == selectedDemoPresetId_) && !demoEditorDraft_.steps.empty())
+	if (!presetId.empty() && presetId != selectedDemoPresetId_)
 	{
-		draft = demoEditorDraft_;
-		source = &draft;
+		if (demoEditorDraftDirty_)
+			return sortinglogic::CommandResult(false, "Select the desired preset in the editor after resolving the unsaved draft.");
+		const DemoPreset* requested = findDemoPreset(presetId);
+		if (!requested) return sortinglogic::CommandResult(false, "The selected demo preset is unavailable.");
+		selectedDemoPresetId_ = requested->id;
+		demoEditorDraft_ = *requested;
+		demoEditorSelectedStep_ = 0;
+		editorPrefabSourceId_ = requested->prefab ? requested->id : std::string();
+		adoptDemoDraftBaseline();
 	}
+	const DemoPreset* source = demoEditorDraftInitialized_ ? &demoEditorDraft_ : findDemoPreset(selectedDemoPresetId_);
 	if (!source) return sortinglogic::CommandResult(false, "The selected demo preset is unavailable.");
+	const std::vector<DemoPresetIssue> validation = validateDemoPreset(*source);
+	if (!validation.empty()) return sortinglogic::CommandResult(false, validation.front().message);
 	std::string error;
 	if (!demoRunner_.begin(*source, &error))
 		return sortinglogic::CommandResult(false, error.empty() ? "The selected demo preset is invalid." : error);
@@ -1172,13 +1225,15 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 	const DemoActionPayload empty;
 	const DemoActionPayload& payload = action.demo ? *action.demo : empty;
 	const std::string presetId = !payload.presetId.empty() ? payload.presetId : action.text;
+	if (demoRunner_.active() && isDemoDraftMutationAction(action.kind))
+		return sortinglogic::CommandResult(false, "Demo configuration is read-only while a demo is active, including while paused.");
 	if (action.kind == AppActionKind::OpenDemoEditor)
 	{
 		demoEditorOpen_ = true;
-		if (demoEditorDraft_.steps.empty())
+		if (!demoEditorDraftInitialized_)
 		{
 			const DemoPreset* preset = findDemoPreset(selectedDemoPresetId_);
-			if (preset) demoEditorDraft_ = *preset;
+			if (preset) { demoEditorDraft_ = *preset; adoptDemoDraftBaseline(); }
 		}
 		return sortinglogic::CommandResult(true, "Demo editor opened.");
 	}
@@ -1191,11 +1246,48 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 	{
 		const DemoPreset* preset = findDemoPreset(presetId);
 		if (!preset) return sortinglogic::CommandResult(false, "The selected demo preset is unavailable.");
+		if (preset->id == selectedDemoPresetId_)
+			return sortinglogic::CommandResult(true, "The selected preset is already open.");
+		if (demoEditorDraftInitialized_ && demoEditorDraftDirty_)
+		{
+			pendingDemoPresetSwitchId_ = preset->id;
+			return sortinglogic::CommandResult(false, "This draft has unsaved changes. Save, discard, or cancel the preset switch.");
+		}
 		selectedDemoPresetId_ = preset->id;
 		demoEditorDraft_ = *preset;
 		demoEditorSelectedStep_ = 0;
 		editorPrefabSourceId_ = preset->prefab ? preset->id : std::string();
+		pendingDemoPresetSwitchId_.clear();
+		adoptDemoDraftBaseline();
 		return sortinglogic::CommandResult(true, "Selected " + preset->name + ".");
+	}
+	if (action.kind == AppActionKind::ResolveDemoPresetSwitch)
+	{
+		const int choice = action.demo ? payload.direction : action.selection;
+		if (pendingDemoPresetSwitchId_.empty()) return sortinglogic::CommandResult(false, "There is no preset switch to resolve.");
+		if (choice == 2)
+		{
+			pendingDemoPresetSwitchId_.clear();
+			return sortinglogic::CommandResult(true, "Preset switch cancelled; the current draft was kept.");
+		}
+		const std::string destinationId = pendingDemoPresetSwitchId_;
+		if (choice == 0)
+		{
+			AppAction saveAction(AppActionKind::SaveDemoPreset);
+			const sortinglogic::CommandResult saved = dispatchDemoAction(saveAction);
+			if (!saved.accepted) return saved;
+		}
+		else if (choice != 1)
+			return sortinglogic::CommandResult(false, "The preset switch choice is invalid.");
+		const DemoPreset* destination = findDemoPreset(destinationId);
+		if (!destination) return sortinglogic::CommandResult(false, "The requested preset is no longer available; the draft was kept.");
+		selectedDemoPresetId_ = destination->id;
+		demoEditorDraft_ = *destination;
+		demoEditorSelectedStep_ = 0;
+		editorPrefabSourceId_ = destination->prefab ? destination->id : std::string();
+		pendingDemoPresetSwitchId_.clear();
+		adoptDemoDraftBaseline();
+		return sortinglogic::CommandResult(true, "Switched to " + destination->name + ".");
 	}
 	if (action.kind == AppActionKind::SelectDemoStep)
 	{
@@ -1252,6 +1344,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			static_cast<int>(recipe.pattern) > static_cast<int>(sortinglogic::InputPattern::AndrutReference))
 			return sortinglogic::CommandResult(false, "The input recipe domain or pattern is invalid.");
 		demoEditorDraft_.classInputs[static_cast<sortinglogic::DemoComplexityClass>(payload.complexityClass)] = recipe;
+		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Complexity-class input updated in the draft.");
 	}
 	if (action.kind == AppActionKind::DemoSetIntermission)
@@ -1259,11 +1352,13 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		if (!std::isfinite(payload.value) || payload.value < 0.0f || payload.value > 120.0f)
 			return sortinglogic::CommandResult(false, "Intermission must be between 0 and 120 seconds.");
 		demoEditorDraft_.intermissionSeconds = payload.value;
+		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Demo intermission updated.");
 	}
 	if (action.kind == AppActionKind::DemoSetLoop)
 	{
 		demoEditorDraft_.loop = payload.flag;
+		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Demo looping updated.");
 	}
 	if (action.kind == AppActionKind::DemoAddStep)
@@ -1288,6 +1383,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		const std::size_t insertionIndex = std::min(payload.stepIndex, demoEditorDraft_.steps.size());
 		demoEditorDraft_.steps.insert(demoEditorDraft_.steps.begin() + static_cast<std::ptrdiff_t>(insertionIndex), step);
 		demoEditorSelectedStep_ = insertionIndex;
+		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Added " + std::string(descriptor->displayName) + " to the demo draft.");
 	}
 	if (action.kind == AppActionKind::DemoRemoveStep || action.kind == AppActionKind::DemoMoveStepUp ||
@@ -1310,6 +1406,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			std::swap(demoEditorDraft_.steps[payload.stepIndex], demoEditorDraft_.steps[destination]);
 			demoEditorSelectedStep_ = destination;
 		}
+		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Demo step order updated.");
 	}
 	if (action.kind == AppActionKind::DemoSetStepAlgorithm)
@@ -1329,6 +1426,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			demoEditorDraft_.classInputs[descriptor->demoComplexity] = DemoInputRecipe(
 				manualSession_.simulation.snapshot().inputSeed, manualSession_.simulation.itemCount(),
 				manualSession_.simulation.domain(), manualSession_.simulation.pattern());
+		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Demo step algorithm updated.");
 	}
 	if (action.kind == AppActionKind::DemoSetStepTiming || action.kind == AppActionKind::DemoSetStepDirection ||
@@ -1351,6 +1449,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			step.direction = static_cast<sortinglogic::SortDirection>(payload.direction);
 		}
 		else step.completionScanEnabled = payload.flag;
+		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Demo step settings updated.");
 	}
 	if (action.kind == AppActionKind::DemoSetStepOption)
@@ -1364,6 +1463,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 				payload.optionStableId == descriptor->supportedOptions[i].stableId)
 			{
 				step.optionSelections[payload.optionGroupId] = payload.optionStableId;
+				refreshDemoDraftDirty();
 				return sortinglogic::CommandResult(true, "Demo step option updated.");
 			}
 		return sortinglogic::CommandResult(false, "That option is not registered for the selected algorithm step.");
@@ -1386,13 +1486,26 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			step.inputOverride = recipe;
 			step.hasInputOverride = true;
 		}
+		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, action.kind == AppActionKind::DemoClearStepOverride
 			? "Step input override removed." : "Step input override updated.");
+	}
+	if (action.kind == AppActionKind::DemoSetDraftName)
+	{
+		if (payload.presetName.size() > 64)
+			return sortinglogic::CommandResult(false, "Preset names are limited to 64 characters.");
+		demoEditorDraft_.name = payload.presetName;
+		refreshDemoDraftDirty();
+		return sortinglogic::CommandResult(true, "Draft name updated.");
 	}
 	if (action.kind == AppActionKind::SaveDemoPreset)
 	{
 		DemoPreset candidate = demoEditorDraft_;
 		if (!payload.presetName.empty()) candidate.name = payload.presetName;
+		if (candidate.steps.empty())
+			return sortinglogic::CommandResult(false, "Add at least one algorithm before saving a demo preset.");
+		if (candidate.name.empty())
+			return sortinglogic::CommandResult(false, "Enter a preset name before saving.");
 		if (candidate.prefab || candidate.id.empty() || demoPrefabPreset(candidate.id))
 		{
 			candidate.prefab = false;
@@ -1411,6 +1524,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		demoEditorDraft_ = candidate;
 		selectedDemoPresetId_ = candidate.id;
 		editorPrefabSourceId_.clear();
+		adoptDemoDraftBaseline();
 		return sortinglogic::CommandResult(true, "Saved demo preset " + candidate.name + ".");
 	}
 	if (action.kind == AppActionKind::RenameDemoPreset)
@@ -1442,6 +1556,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			return sortinglogic::CommandResult(false, error.empty() ? "Could not rename demo preset." : error);
 		}
 		demoEditorDraft_ = candidate;
+		adoptDemoDraftBaseline();
 		return sortinglogic::CommandResult(true, "Demo preset renamed.");
 	}
 	if (action.kind == AppActionKind::DeleteDemoPreset)
@@ -1461,6 +1576,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		{
 			selectedDemoPresetId_ = "prefab.classic-five";
 			demoEditorDraft_ = *demoPrefabPreset(selectedDemoPresetId_);
+			adoptDemoDraftBaseline();
 		}
 		return sortinglogic::CommandResult(true, "Demo preset deleted.");
 	}

@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,8 @@ enum class UiWidgetKind
 	ComboBox,
 	Slider
 };
+
+enum class UiEditableFieldKind { UnsignedInteger, FiniteDecimal, BoundedText };
 
 enum class UiWidgetPresentation { Standard, RadioGroup, DosScrollbar, EditableLabel, Toggle };
 enum class UiControlRole { Standard, PanelToggle, Settings, AlgorithmChoice, BuildTrace, Playback, Reset, EditableValue, Choice };
@@ -248,6 +251,112 @@ private:
 		: id_(id), kind_(kind), bounds_(), parent_(parent), visible_(true), children_() {}
 };
 
+class UiTabStrip
+{
+public:
+	const std::string& id() const { return id_; }
+	const std::vector<std::string>& tabs() const { return tabs_; }
+	int selectedIndex() const { return selectedIndex_; }
+	const UiRect& bounds() const { return bounds_; }
+	bool enabled() const { return enabled_; }
+	bool visible() const { return visible_; }
+	bool focused() const { return focused_; }
+	void setTabs(const std::vector<std::string>& tabs);
+	void setSelectedIndex(int index);
+	void setBounds(const UiRect& bounds) { bounds_ = bounds; }
+	void setEnabled(bool value) { enabled_ = value; }
+	void setVisible(bool value) { visible_ = value; }
+	UiRect tabBounds(std::size_t index) const;
+private:
+	friend class UIRoot;
+	UiTabStrip(const std::string& id, const std::vector<std::string>& tabs, int selection, const AppAction& action);
+	std::string id_;
+	std::vector<std::string> tabs_;
+	int selectedIndex_;
+	UiRect bounds_;
+	bool enabled_;
+	bool visible_;
+	bool focused_;
+	AppAction action_;
+};
+
+class UiSelectionList
+{
+public:
+	const std::string& id() const { return id_; }
+	const std::vector<std::string>& items() const { return items_; }
+	int selectedIndex() const { return selectedIndex_; }
+	const UiRect& bounds() const { return bounds_; }
+	const UiScrollViewport& viewport() const { return viewport_; }
+	bool enabled() const { return enabled_; }
+	bool visible() const { return visible_; }
+	bool focused() const { return focused_; }
+	void setItems(const std::vector<std::string>& items);
+	void setSelectedIndex(int index, bool reveal = true);
+	void setBounds(const UiRect& bounds);
+	void setRowHeight(float value);
+	void setEnabled(bool value) { enabled_ = value; }
+	void setVisible(bool value) { visible_ = value; }
+	void scroll(int wheelDelta);
+private:
+	friend class UIRoot;
+	UiSelectionList(const std::string& id, const AppAction& action);
+	void configure(float requestedOffset = -1.0f);
+	std::string id_;
+	std::vector<std::string> items_;
+	int selectedIndex_;
+	UiRect bounds_;
+	float rowHeight_;
+	bool enabled_;
+	bool visible_;
+	bool focused_;
+	AppAction action_;
+	UiScrollViewport viewport_;
+};
+
+class UiEditableField
+{
+public:
+	const std::string& id() const { return id_; }
+	const std::string& label() const { return label_; }
+	const std::string& value() const { return editing_ ? draft_ : value_; }
+	const UiRect& bounds() const { return bounds_; }
+	UiEditableFieldKind kind() const { return kind_; }
+	bool enabled() const { return enabled_; }
+	bool visible() const { return visible_; }
+	bool focused() const { return focused_; }
+	bool editing() const { return editing_; }
+	bool invalid() const { return invalid_; }
+	void setValue(const std::string& value);
+	void setBounds(const UiRect& bounds) { bounds_ = bounds; }
+	void setEnabled(bool value);
+	void setVisible(bool value);
+private:
+	friend class UIRoot;
+	UiEditableField(const std::string& id, const std::string& label, UiEditableFieldKind kind,
+		const std::string& value, double minimum, double maximum, std::size_t maximumLength, const AppAction& action);
+	bool append(const std::string& text);
+	void erase();
+	void cancel();
+	bool valid(const std::string& value) const;
+	bool commit(UiAction& action);
+	std::string id_;
+	std::string label_;
+	std::string value_;
+	std::string draft_;
+	UiRect bounds_;
+	UiEditableFieldKind kind_;
+	double minimum_;
+	double maximum_;
+	std::size_t maximumLength_;
+	bool enabled_;
+	bool visible_;
+	bool focused_;
+	bool editing_;
+	bool invalid_;
+	AppAction action_;
+};
+
 class UIRoot
 {
 public:
@@ -258,8 +367,19 @@ public:
 		const AppAction& action = AppAction());
 	UiWidget& addSlider(const std::string& id, const std::string& label, float minimum, float maximum,
 		float step, float value, const AppAction& action);
+	UiTabStrip& addTabStrip(const std::string& id, const std::vector<std::string>& tabs, int selection = 0,
+		const AppAction& action = AppAction());
+	UiSelectionList& addSelectionList(const std::string& id, const AppAction& action = AppAction());
+	UiEditableField& addEditableField(const std::string& id, const std::string& label, UiEditableFieldKind kind,
+		const std::string& value, double minimum, double maximum, std::size_t maximumLength, const AppAction& action);
 	UiWidget* find(const std::string& id);
 	const UiWidget* find(const std::string& id) const;
+	UiTabStrip* findTabStrip(const std::string& id);
+	const UiTabStrip* findTabStrip(const std::string& id) const;
+	UiSelectionList* findSelectionList(const std::string& id);
+	const UiSelectionList* findSelectionList(const std::string& id) const;
+	UiEditableField* findEditableField(const std::string& id);
+	const UiEditableField* findEditableField(const std::string& id) const;
 	void setWidgetEnabled(const std::string& id, bool enabled);
 	void setWidgetVisible(const std::string& id, bool visible);
 	void setFocusOrder(const std::vector<std::string>& controlIds) { focusOrder_ = controlIds; }
@@ -269,17 +389,23 @@ public:
 	void layoutContainer(const std::string& id, const UiRect& bounds, float gap = 0.0f);
 	UiContainer* findContainer(const std::string& id);
 	const std::vector<std::unique_ptr<UiWidget> >& widgets() const { return widgets_; }
+	const std::vector<std::unique_ptr<UiTabStrip> >& tabStrips() const { return tabStrips_; }
+	const std::vector<std::unique_ptr<UiSelectionList> >& selectionLists() const { return selectionLists_; }
+	const std::vector<std::unique_ptr<UiEditableField> >& editableFields() const { return editableFields_; }
 	bool handleEvent(const UiInputEvent& event, UiAction& action);
 	void closeCombo();
 	void layoutComboPopups(const UiRect& viewport,
 		const std::function<float(const std::string&)>& measureOptionWidth, float padding = 12.0f);
 	bool hasOpenCombo() const { return openCombo_ != nullptr; }
-	void setInputCaptured(bool value) { inputCaptured_ = value; if (!value) hasModalBounds_ = false; }
+	void setInputCaptured(bool value);
 	void setModalBounds(const UiRect& bounds, UiAction::ViewCommand dismissCommand);
 	bool inputCaptured() const { return inputCaptured_; }
 
 private:
 	std::vector<std::unique_ptr<UiWidget> > widgets_;
+	std::vector<std::unique_ptr<UiTabStrip> > tabStrips_;
+	std::vector<std::unique_ptr<UiSelectionList> > selectionLists_;
+	std::vector<std::unique_ptr<UiEditableField> > editableFields_;
 	std::vector<std::string> focusOrder_;
 	UiContainer rootContainer_;
 	std::vector<std::unique_ptr<UiContainer> > containers_;
@@ -287,6 +413,7 @@ private:
 	UiWidget* openCombo_;
 	UiWidget* pressedWidget_;
 	UiWidget* focusedWidget_;
+	std::string focusedCustomId_;
 	bool inputCaptured_;
 	bool hasModalBounds_;
 	UiRect modalBounds_;
@@ -296,9 +423,14 @@ private:
 	bool pointerAlt_;
 
 	UiWidget* hitWidget(float x, float y) const;
+	UiTabStrip* hitTabStrip(float x, float y) const;
+	UiSelectionList* hitSelectionList(float x, float y) const;
+	UiEditableField* hitEditableField(float x, float y) const;
+	bool commitFocusedField(UiAction& action);
 	bool isWidgetVisible(const UiWidget* widget) const;
 	void layoutNode(UiContainer& container, const UiRect& bounds, float gap);
 	void focus(UiWidget* widget);
+	void focusCustom(const std::string& id);
 	void focusNext(bool backwards);
 	bool emit(UiWidget* widget, UiAction& action, bool selection, const UiInputEvent* event = nullptr);
 	bool handleKey(const UiInputEvent& event, UiAction& action);
