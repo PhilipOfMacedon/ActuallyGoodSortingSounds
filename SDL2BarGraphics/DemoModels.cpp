@@ -454,7 +454,7 @@ std::string DemoPresetStore::encode(const std::vector<DemoPreset>& presets)
 				<< static_cast<int>(step.timingMode) << '\t' << std::setprecision(9) << step.fixedDurationSeconds << '\t'
 				<< (step.hasInputOverride ? 1 : 0) << '\t' << overrideRecipe.seed << '\t' << overrideRecipe.itemCount << '\t'
 				<< static_cast<int>(overrideRecipe.domain) << '\t' << static_cast<int>(overrideRecipe.pattern) << '\t'
-				<< escapeField(encodeOptions(step.optionSelections)) << '\n';
+				<< escapeField(encodeOptions(step.optionSelections)) << '\t' << (step.completionScanEnabled ? 1 : 0) << '\n';
 		}
 		++saved;
 	}
@@ -469,19 +469,21 @@ bool DemoPresetStore::decode(const std::string& content, std::vector<DemoPreset>
 	std::istringstream lines(content);
 	std::string line;
 	bool versionSeen = false;
+	int fileVersion = 0;
 	while (std::getline(lines, line))
 	{
 		if (!line.empty() && line[line.size() - 1] == '\r') line.erase(line.size() - 1);
 		if (line.empty()) continue;
 		if (line.compare(0, 8, "version=") == 0)
 		{
-			if (versionSeen || line != "version=1")
+			if (versionSeen || (line != "version=1" && line != "version=2"))
 			{
 				if (error) *error = "The demo preset file version is unsupported or repeated.";
 				presets.clear();
 				return false;
 			}
 			versionSeen = true;
+			fileVersion = line == "version=2" ? 2 : 1;
 			continue;
 		}
 		if (!versionSeen)
@@ -553,9 +555,11 @@ bool DemoPresetStore::decode(const std::string& content, std::vector<DemoPreset>
 					static_cast<sortinglogic::InputDomain>(domain), static_cast<sortinglogic::InputPattern>(pattern));
 				continue;
 			}
-			if (fields[0] == "S" && fields.size() == 14)
+			if (fields[0] == "S" && ((fileVersion == 1 && fields.size() == 14) ||
+				(fileVersion == 2 && fields.size() == 15)))
 			{
 				std::uint64_t index = 0, overrideSeed = 0, overrideCount = 0, overrideFlag = 0;
+				std::uint64_t completionScanFlag = 0;
 				int direction = 0, timing = 0, domain = 0, pattern = 0;
 				float duration = 0.0f;
 				DemoStep step;
@@ -568,7 +572,8 @@ bool DemoPresetStore::decode(const std::string& content, std::vector<DemoPreset>
 						static_cast<int>(sortinglogic::InputDomain::IntegerPermutation), domain) ||
 					!parseIntEnum(fields[12], static_cast<int>(sortinglogic::InputPattern::Random),
 						static_cast<int>(sortinglogic::InputPattern::AndrutReference), pattern) ||
-					!decodeOptions(fields[13], step.optionSelections))
+					!decodeOptions(fields[13], step.optionSelections) ||
+					(fileVersion == 2 && !parseUnsigned(fields[14], 1, completionScanFlag)))
 				{
 					if (recoveredIssues) recoveredIssues->push_back("Skipped an invalid demo step record.");
 					continue;
@@ -577,6 +582,7 @@ bool DemoPresetStore::decode(const std::string& content, std::vector<DemoPreset>
 				step.direction = static_cast<sortinglogic::SortDirection>(direction);
 				step.timingMode = static_cast<SoundEngine::PlaybackTimingMode>(timing);
 				step.fixedDurationSeconds = duration;
+				step.completionScanEnabled = fileVersion == 2 && completionScanFlag != 0;
 				step.hasInputOverride = overrideFlag != 0;
 				step.inputOverride = DemoInputRecipe(static_cast<std::uint32_t>(overrideSeed),
 					static_cast<std::size_t>(overrideCount), static_cast<sortinglogic::InputDomain>(domain),

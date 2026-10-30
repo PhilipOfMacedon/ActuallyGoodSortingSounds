@@ -83,9 +83,12 @@ enum class AppActionKind
 	DemoSetStepAlgorithm,
 	DemoSetStepTiming,
 	DemoSetStepDirection,
+	DemoSetStepCompletionScan,
 	DemoSetStepOption,
 	DemoSetStepOverride,
 	DemoClearStepOverride,
+	DemoSetDraftName,
+	ResolveDemoPresetSwitch,
 	SaveDemoPreset,
 	RenameDemoPreset,
 	DeleteDemoPreset,
@@ -94,6 +97,73 @@ enum class AppActionKind
 	SelectAudioBand,
 	RetryAudioDevice
 };
+
+inline bool isDemoActionKind(AppActionKind kind)
+{
+	switch (kind)
+	{
+	case AppActionKind::OpenDemoEditor:
+	case AppActionKind::CloseDemoEditor:
+	case AppActionKind::SelectDemoPreset:
+	case AppActionKind::SelectDemoStep:
+	case AppActionKind::StartDemo:
+	case AppActionKind::StopDemo:
+	case AppActionKind::ToggleDemoPlayback:
+	case AppActionKind::PreviousDemoStep:
+	case AppActionKind::NextDemoStep:
+	case AppActionKind::DemoSetClassRecipe:
+	case AppActionKind::DemoSetIntermission:
+	case AppActionKind::DemoSetLoop:
+	case AppActionKind::DemoAddStep:
+	case AppActionKind::DemoRemoveStep:
+	case AppActionKind::DemoMoveStepUp:
+	case AppActionKind::DemoMoveStepDown:
+	case AppActionKind::DemoSetStepAlgorithm:
+	case AppActionKind::DemoSetStepTiming:
+	case AppActionKind::DemoSetStepDirection:
+	case AppActionKind::DemoSetStepCompletionScan:
+	case AppActionKind::DemoSetStepOption:
+	case AppActionKind::DemoSetStepOverride:
+	case AppActionKind::DemoClearStepOverride:
+	case AppActionKind::DemoSetDraftName:
+	case AppActionKind::ResolveDemoPresetSwitch:
+	case AppActionKind::SaveDemoPreset:
+	case AppActionKind::RenameDemoPreset:
+	case AppActionKind::DeleteDemoPreset:
+		return true;
+	default:
+		return false;
+	}
+}
+
+inline bool isDemoDraftMutationAction(AppActionKind kind)
+{
+	switch (kind)
+	{
+	case AppActionKind::SelectDemoPreset:
+	case AppActionKind::DemoSetClassRecipe:
+	case AppActionKind::DemoSetIntermission:
+	case AppActionKind::DemoSetLoop:
+	case AppActionKind::DemoAddStep:
+	case AppActionKind::DemoRemoveStep:
+	case AppActionKind::DemoMoveStepUp:
+	case AppActionKind::DemoMoveStepDown:
+	case AppActionKind::DemoSetStepAlgorithm:
+	case AppActionKind::DemoSetStepTiming:
+	case AppActionKind::DemoSetStepDirection:
+	case AppActionKind::DemoSetStepCompletionScan:
+	case AppActionKind::DemoSetStepOption:
+	case AppActionKind::DemoSetStepOverride:
+	case AppActionKind::DemoClearStepOverride:
+	case AppActionKind::DemoSetDraftName:
+	case AppActionKind::SaveDemoPreset:
+	case AppActionKind::RenameDemoPreset:
+	case AppActionKind::DeleteDemoPreset:
+		return true;
+	default:
+		return false;
+	}
+}
 
 // The action kind defines the operation; this payload keeps its editor fields
 // strongly grouped and independent from SDL/UI widget classes.

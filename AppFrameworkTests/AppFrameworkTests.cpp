@@ -342,6 +342,8 @@ namespace
 				prefabs[0].steps[0].familyId == algorithmDescriptor(SortAlgorithm::Insertion)->familyId &&
 				prefabs[1].steps[5].familyId == algorithmDescriptor(SortAlgorithm::Quick)->familyId,
 				"prefab sequences retain their curated algorithm order");
+			check(prefabs[0].steps[0].completionScanEnabled && prefabs[1].steps[0].completionScanEnabled,
+				"new built-in demo steps enable completion scans by default");
 			check(prefabs[0].classInputs.at(DemoComplexityClass::Quadratic).itemCount == 80 &&
 				prefabs[0].classInputs.at(DemoComplexityClass::NLogN).itemCount == 320 &&
 				prefabs[1].classInputs.at(DemoComplexityClass::KeyDependent).itemCount == 512 &&
@@ -356,6 +358,7 @@ namespace
 		DemoStep unknown;
 		unknown.familyId = "removed-family";
 		unknown.variantId = "old-sort";
+		unknown.completionScanEnabled = false;
 		unknown.hasInputOverride = true;
 		unknown.inputOverride = DemoInputRecipe(42u, 64);
 		unknown.optionSelections["old-option"] = "old-value";
@@ -373,8 +376,13 @@ namespace
 		std::vector<std::string> issues;
 		check(DemoPresetStore::decode(encoded, decoded, &issues, &error) && decoded.size() == 1 &&
 			decoded[0].steps.size() == 6 && decoded[0].steps[5].familyId == "removed-family" &&
-			decoded[0].steps[5].optionSelections["old-option"] == "old-value" && issues.empty(),
-			"preset codec round-trips order, options, overrides, and unavailable references");
+			decoded[0].steps[5].optionSelections["old-option"] == "old-value" &&
+			!decoded[0].steps[5].completionScanEnabled && issues.empty(),
+			"v2 preset codec round-trips order, options, scan settings, overrides, and unavailable references");
+		const std::string legacyV1 = "version=1\nP\tlegacy\tLegacy\t1\t0\nS\tlegacy\t0\tinsertion-methods\tinsertion\t0\t1\t10\t0\t0\t80\t0\t0\t\n";
+		check(DemoPresetStore::decode(legacyV1, decoded, &issues, &error) && decoded.size() == 1 &&
+			decoded[0].steps.size() == 1 && !decoded[0].steps[0].completionScanEnabled,
+			"v1 demo presets migrate with completion scans disabled to preserve existing behavior");
 		const std::string recoverable = encoded + "S\tuser.classic-copy\t99\tbad\tstep\t0\t1\t10\t0\t0\t80\t0\t0\t\n";
 		check(DemoPresetStore::decode(recoverable, decoded, &issues, &error) && decoded.size() == 1 &&
 			!issues.empty(), "preset codec recovers valid presets and records malformed child diagnostics");

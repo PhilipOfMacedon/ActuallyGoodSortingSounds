@@ -1724,7 +1724,7 @@ void ControlPanel::exportAppearanceProfile()
 
 void ControlPanel::completeActionResult(const AppAction& action, const sortinglogic::CommandResult& result)
 {
-	if (action.kind >= AppActionKind::OpenDemoEditor && action.kind <= AppActionKind::DeleteDemoPreset)
+	if (isDemoActionKind(action.kind))
 	{
 		demoEditorView_.setFeedback(result.message.empty() ? (result.accepted ? "Done." : "The demo action was rejected.") : result.message);
 		return;

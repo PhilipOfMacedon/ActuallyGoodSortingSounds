@@ -166,9 +166,12 @@ namespace
 		case AppActionKind::DemoSetStepAlgorithm:
 		case AppActionKind::DemoSetStepTiming:
 		case AppActionKind::DemoSetStepDirection:
+		case AppActionKind::DemoSetStepCompletionScan:
 		case AppActionKind::DemoSetStepOption:
 		case AppActionKind::DemoSetStepOverride:
 		case AppActionKind::DemoClearStepOverride:
+		case AppActionKind::DemoSetDraftName:
+		case AppActionKind::ResolveDemoPresetSwitch:
 		case AppActionKind::SaveDemoPreset:
 		case AppActionKind::RenameDemoPreset:
 		case AppActionKind::DeleteDemoPreset:
@@ -403,7 +406,7 @@ void AppController::startPendingPlaybackIfReady()
 
 sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 {
-	if (action.kind >= AppActionKind::OpenDemoEditor && action.kind <= AppActionKind::DeleteDemoPreset)
+	if (isDemoActionKind(action.kind))
 		return dispatchDemoAction(action);
 	if (demoRunner_.active() && (action.kind == AppActionKind::TogglePlayback || action.kind == AppActionKind::GenerateAndPlay))
 		return dispatchDemoAction(AppAction(AppActionKind::ToggleDemoPlayback));
@@ -892,9 +895,12 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::DemoSetStepAlgorithm:
 	case AppActionKind::DemoSetStepTiming:
 	case AppActionKind::DemoSetStepDirection:
+	case AppActionKind::DemoSetStepCompletionScan:
 	case AppActionKind::DemoSetStepOption:
 	case AppActionKind::DemoSetStepOverride:
 	case AppActionKind::DemoClearStepOverride:
+	case AppActionKind::DemoSetDraftName:
+	case AppActionKind::ResolveDemoPresetSwitch:
 	case AppActionKind::SaveDemoPreset:
 	case AppActionKind::RenameDemoPreset:
 	case AppActionKind::DeleteDemoPreset:
@@ -1058,7 +1064,14 @@ void AppController::createDemoSessionForCurrentStep()
 	demoSession_->step = *step;
 	demoSession_->effectiveInput = input;
 	demoSession_->simulation.setDirection(step->direction);
-	sortinglogic::CommandResult configured = demoSession_->simulation.selectAlgorithm(descriptor->id);
+	sortinglogic::CommandResult configured = demoSession_->simulation.setCompletionScanEnabled(step->completionScanEnabled);
+	if (!configured.accepted)
+	{
+		demoRunner_.fail("Could not apply the step completion scan setting: " + configured.message);
+		finishDemoIfNeeded();
+		return;
+	}
+	configured = demoSession_->simulation.selectAlgorithm(descriptor->id);
 	if (!configured.accepted)
 	{
 		demoRunner_.fail("Could not configure " + std::string(descriptor->displayName) + ": " + configured.message);
@@ -1221,7 +1234,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		prepareRequestedDemoStep();
 		return sortinglogic::CommandResult(true, demoRunner_.message());
 	}
-	if (!demoEditorOpen_ && action.kind >= AppActionKind::DemoSetClassRecipe && action.kind <= AppActionKind::DeleteDemoPreset)
+	if (!demoEditorOpen_ && isDemoDraftMutationAction(action.kind))
 		return sortinglogic::CommandResult(false, "Open the demo editor before changing its draft.");
 
 	if (action.kind == AppActionKind::DemoSetClassRecipe)
@@ -1318,7 +1331,8 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 				manualSession_.simulation.domain(), manualSession_.simulation.pattern());
 		return sortinglogic::CommandResult(true, "Demo step algorithm updated.");
 	}
-	if (action.kind == AppActionKind::DemoSetStepTiming || action.kind == AppActionKind::DemoSetStepDirection)
+	if (action.kind == AppActionKind::DemoSetStepTiming || action.kind == AppActionKind::DemoSetStepDirection ||
+		action.kind == AppActionKind::DemoSetStepCompletionScan)
 	{
 		if (payload.stepIndex >= demoEditorDraft_.steps.size()) return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
 		DemoStep& step = demoEditorDraft_.steps[payload.stepIndex];
@@ -1331,11 +1345,12 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			step.timingMode = static_cast<SoundEngine::PlaybackTimingMode>(payload.timingMode);
 			step.fixedDurationSeconds = payload.value;
 		}
-		else
+		else if (action.kind == AppActionKind::DemoSetStepDirection)
 		{
 			if (payload.direction < 0 || payload.direction > 1) return sortinglogic::CommandResult(false, "Step direction is invalid.");
 			step.direction = static_cast<sortinglogic::SortDirection>(payload.direction);
 		}
+		else step.completionScanEnabled = payload.flag;
 		return sortinglogic::CommandResult(true, "Demo step settings updated.");
 	}
 	if (action.kind == AppActionKind::DemoSetStepOption)

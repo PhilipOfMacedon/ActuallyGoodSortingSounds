@@ -30,12 +30,13 @@ struct DemoStep
 	sortinglogic::SortDirection direction;
 	SoundEngine::PlaybackTimingMode timingMode;
 	float fixedDurationSeconds;
+	bool completionScanEnabled;
 	bool hasInputOverride;
 	DemoInputRecipe inputOverride;
 
 	DemoStep() : familyId(), variantId(), optionSelections(), direction(sortinglogic::SortDirection::Ascending),
 		timingMode(SoundEngine::PlaybackTimingMode::FixedDuration), fixedDurationSeconds(10.0f),
-		hasInputOverride(false), inputOverride() {}
+		completionScanEnabled(true), hasInputOverride(false), inputOverride() {}
 };
 
 struct DemoPreset
@@ -77,7 +78,7 @@ std::vector<DemoPresetIssue> validateDemoPreset(const DemoPreset& preset);
 class DemoPresetStore
 {
 public:
-	static const int CurrentVersion = 1;
+	static const int CurrentVersion = 2;
 	static const std::size_t MaximumPresets = 128;
 	static const std::size_t MaximumStepsPerPreset = 256;
 
