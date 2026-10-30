@@ -7,7 +7,7 @@ namespace
 	void submitRectangle(UiPaintContext& context, const UiRect& bounds, const UiColor& color,
 		UiPaintMaterial material, UiPaintLayer layer, const UiRect& clip = UiRect(), bool clipped = false)
 	{
-		context.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, bounds, color, std::string(), std::string(),
+		context.submit(UiPaintCommand(material == UiPaintMaterial::Panel && layer == UiPaintLayer::Panel ? UiPaintPrimitive::Panel : UiPaintPrimitive::Rectangle, bounds, color, std::string(), std::string(),
 			material, layer, clip, clipped, 0.0f));
 	}
 

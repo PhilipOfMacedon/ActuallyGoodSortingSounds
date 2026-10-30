@@ -132,6 +132,8 @@ private:
 	void layoutSettingsControls();
 	void drawSettingsControl(const UiWidget& widget, const ThemePalette& palette);
 	void drawSliderControl(const UiWidget& widget, const ThemePalette& palette, const ClipBounds& clip, RenderLayer layer);
+	void drawSurface(const UiRect& bounds, const UiControlPaintStyle& style, UiPresetId preset, RenderLayer layer,
+		const ClipBounds& clip, bool pressed = false);
 	void drawWidget(const UiWidget& widget, const ThemePalette& palette, RenderLayer layer, bool popup = false);
 	ResolvedTextStyle resolveTextStyle(float targetHeight) const;
 	void drawText(TextLabel& label, const UiRect& bounds, float targetHeight, const glm::vec4& tint, RenderLayer layer,

@@ -440,7 +440,7 @@ void AppearanceEditorView::compose(int screenWidth, int screenHeight, const std:
 
 	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, screen, palette.overlayDim,
 		std::string(), std::string(), UiPaintMaterial::ModalDim, UiPaintLayer::Backdrop, UiRect(), false, 0.0f));
-	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, panel, palette.panel,
+	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Panel, panel, palette.panel,
 		std::string(), std::string(), UiPaintMaterial::Panel, UiPaintLayer::Panel, screen, true, 0.0f));
 	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle,
 		UiRect(panel.x, panel.y, panel.width, 2.0f), palette.accent,

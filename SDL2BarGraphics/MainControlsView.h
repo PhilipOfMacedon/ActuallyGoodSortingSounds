@@ -10,6 +10,7 @@
 struct UserPreferences;
 struct AppAction;
 class InlineEditModel;
+class DemoRunner;
 enum class InlineEditTarget;
 namespace sortinglogic
 {
@@ -44,6 +45,7 @@ public:
 		const std::string& algorithmLabel);
 	void synchronizeText(const UserPreferences& preferences, UiPresetId activePreset,
 		const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel, std::uint32_t nowMs);
+	void synchronizeDemoTransport(const DemoRunner& runner);
 	void compose(MainControlsPaintSection section, const UiRect& screen, UiPaintContext& paintContext) const;
 	const UiWidget* findControl(const std::string& id) const { return controls_.find(id); }
 	std::size_t controlCount() const { return controls_.widgets().size(); }

@@ -405,27 +405,33 @@ void ControlPanel::layoutInteractiveViews()
 		const glm::vec2 measured = TextLabel::measureText(text, popupTextStyle);
 		return measured.y > 0.0f ? measured.x * popupTextStyle.logicalHeight / measured.y : 0.0f;
 	});
+	const auto measure = [popupTextStyle](const std::string& text)
+	{
+		const glm::vec2 size = TextLabel::measureText(text, popupTextStyle);
+		return size.y > 0.0f ? size.x * popupTextStyle.logicalHeight / size.y : 0.0f;
+	};
+	const UiRect popupViewport(8.0f, 8.0f, std::max(0.0f, static_cast<float>(width_) - 16.0f), std::max(0.0f, static_cast<float>(height_) - 16.0f));
+	settingsPanelView_.controls().layoutComboPopups(popupViewport, measure);
+	appearanceEditorView_.controls().layoutComboPopups(popupViewport, measure);
 	layoutAlgorithmMenu();
 }
 
 void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending)
 {
 	screenModel_ = buildUiScreenModel(snapshot, renderPreferences_, playbackPending, displayedSaveStatus_);
+	if (demoRunner_ && demoRunner_->active())
+	{
+		screenModel_.setupEnabled = false;
+		screenModel_.runEnabled = false;
+		screenModel_.countEditable = false;
+		screenModel_.durationEditable = false;
+	}
 	const bool busy = !screenModel_.setupEnabled;
 	mainControlsView_.synchronize(settings_, renderPreferences_.appearance.activePreset, snapshot,
 		screenModel_, algorithmLabel(snapshot.algorithm));
 	settingsPanelView_.synchronizeControls(settings_, renderPreferences_, snapshot, busy);
 	inlineEditView_.synchronizePresentation(mainControlsView_, appearanceEditorView_);
-	if (demoRunner_ && demoRunner_->active())
-	{
-		mainControlsView_.setControlActionAndPresentation("play", AppAction(AppActionKind::ToggleDemoPlayback),
-			demoRunner_->state() == DemoRunnerState::Playing ? "Pause Demo" : "Play Demo", true);
-		mainControlsView_.setControlActionAndPresentation("previous", AppAction(AppActionKind::PreviousDemoStep),
-			"Previous Algorithm", demoRunner_->stepIndex() > 0);
-		mainControlsView_.setControlActionAndPresentation("next", AppAction(AppActionKind::NextDemoStep),
-			"Next Algorithm", demoRunner_->stepIndex() + 1 < demoRunner_->preset().steps.size());
-		mainControlsView_.setControlActionAndPresentation("reset", AppAction(AppActionKind::StopDemo), "Stop Demo", true);
-	}
+	if (demoRunner_) mainControlsView_.synchronizeDemoTransport(*demoRunner_);
 }
 
 void ControlPanel::syncLabels(const sortinglogic::RenderSnapshot& snapshot)
@@ -669,7 +675,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 void ControlPanel::render(const sortinglogic::RenderSnapshot& snapshot, const std::string& audioStatus)
 {
 	if (!isReady()) return;
-	const ThemePalette palette = paletteForAppearance(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_));
+	const ThemePalette palette = uiPaletteForAppearance(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_));
 	fontFallbackActive_ = false;
 	drawMainPanel(snapshot, palette);
 	if (overlayState_.is(UiOverlayId::Settings)) drawSettingsPanel(palette, audioStatus);
@@ -858,11 +864,18 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 		profilePalette.accent = toUiColor(palette.accent);
 		profilePalette.text = toUiColor(palette.text);
 		profilePalette.mutedText = toUiColor(palette.mutedText);
-		const UiRect seed = mainControlsView_.findControl("seed_readout")->bounds();
+		UiRect setupContent(layoutResult_.setupRail.x, layoutResult_.setupRail.y, layoutResult_.setupRail.width, 0.0f);
+		for (std::size_t i = 0; i < mainControlsView_.controlCount(); ++i)
+		{
+			const UiWidget* control = mainControlsView_.controlAt(i);
+			const UiRect& bounds = control->bounds();
+			if (control->visible() && bounds.height > 0.0f && layoutResult_.setupRail.contains(bounds.x, bounds.y))
+				setupContent.height = std::max(setupContent.height, bounds.y + bounds.height - setupContent.y);
+		}
 		auto renderProfileCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
 		DispatchingUiPaintContext<decltype(renderProfileCommand)> paintContext(renderProfileCommand);
 		algorithmProfileView_.compose(screenModel_.algorithm, screenModel_.algorithmCapabilities,
-			true, width_, layoutResult_.setupRail, seed, resolveTextStyle(13.0f), resolveTextStyle(11.0f),
+			true, width_, layoutResult_.setupRail, setupContent, resolveTextStyle(13.0f), resolveTextStyle(11.0f),
 			profilePalette, paintContext);
 	}
 	if (snapshot.hasTrace || snapshot.buildingTrace || classicVga)
@@ -1047,17 +1060,63 @@ void ControlPanel::drawSliderControl(const UiWidget& widget, const ThemePalette&
 	}
 }
 
+void ControlPanel::drawSurface(const UiRect& bounds, const UiControlPaintStyle& style, UiPresetId preset,
+	RenderLayer layer, const ClipBounds& clip, bool pressed)
+{
+	const glm::vec4 fill = toGlmColor(style.fill);
+	if (style.shadowOffset > 0.0f && !pressed)
+		submitBox(UiRect(bounds.x + style.shadowOffset, bounds.y + style.shadowOffset, bounds.width, bounds.height),
+			glm::vec4(0.0f, 0.0f, 0.0f, 0.38f), ButtonMaterial, layer, clip);
+	submitBox(bounds, fill, ButtonMaterial, layer, clip);
+	const float border = std::min(style.borderWidth, std::min(bounds.width, bounds.height) * 0.5f);
+	if (border <= 0.0f) return;
+	glm::vec4 topLeft = toGlmColor(style.border), bottomRight = topLeft;
+	if (preset == UiPresetId::ClassicWindows95)
+	{
+		topLeft = glm::vec4(0.96f, 0.96f, 0.96f, 1.0f);
+		bottomRight = glm::vec4(0.25f, 0.25f, 0.25f, 1.0f);
+	}
+	else if (preset == UiPresetId::FlatVgaDos)
+	{
+		topLeft = glm::vec4(std::min(1.0f, topLeft.r * 1.18f + 0.12f),
+			std::min(1.0f, topLeft.g * 1.18f + 0.12f), std::min(1.0f, topLeft.b * 1.18f + 0.12f), topLeft.a);
+		bottomRight = glm::vec4(fill.r * 0.42f, fill.g * 0.42f, fill.b * 0.42f, 1.0f);
+	}
+	if (pressed) std::swap(topLeft, bottomRight);
+	submitBox(UiRect(bounds.x, bounds.y, bounds.width, border), topLeft, ButtonMaterial, layerOffset(layer, 1), clip);
+	submitBox(UiRect(bounds.x, bounds.y, border, bounds.height), topLeft, ButtonMaterial, layerOffset(layer, 1), clip);
+	submitBox(UiRect(bounds.x, bounds.y + bounds.height - border, bounds.width, border), bottomRight, ButtonMaterial, layerOffset(layer, 1), clip);
+	submitBox(UiRect(bounds.x + bounds.width - border, bounds.y, border, bounds.height), bottomRight, ButtonMaterial, layerOffset(layer, 1), clip);
+}
+
 void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palette, RenderLayer layer, bool popup)
 {
 	const ClipBounds screenClip(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
+	if (!labels_[widget.id()]) labels_[widget.id()].reset(new TextLabel(widget.label(), "Courier New Bold", 16, SDL_Color{255,255,255,255}));
+	labels_[widget.id()]->setContent(widget.label());
 	if (popup)
 	{
+		const UiPresetId preset = renderPreferences_.appearance.activePreset;
+		UiControlPaintStyle popupStyle = resolveUiControlPaintStyle(preset, activeTheme(renderPreferences_), "panel",
+			true, false, false, false, paletteColors(palette));
+		popupStyle.fill = toUiColor(palette.button);
+		UiRect popupBounds = widget.popupBounds();
+		if (popupBounds.height <= 0.0f)
+		{
+			popupBounds = widget.optionBounds(widget.firstVisibleOption());
+			popupBounds.height *= static_cast<float>(widget.visibleOptionCount());
+		}
+		drawSurface(popupBounds, popupStyle, preset, layer, screenClip);
+		const float border = std::max(1.0f, popupStyle.borderWidth);
+		const ClipBounds optionClip(std::max(0.0f, popupBounds.x + border), std::max(0.0f, popupBounds.y + border),
+			std::max(0.0f, std::min(static_cast<float>(width_), popupBounds.x + popupBounds.width) - popupBounds.x - 2.0f * border),
+			std::max(0.0f, std::min(static_cast<float>(height_), popupBounds.y + popupBounds.height) - popupBounds.y - 2.0f * border));
 		for (std::size_t option = 0; option < widget.options().size(); ++option)
 		{
 			const UiRect bounds = widget.optionBounds(option);
 			if (bounds.width <= 0.0f || bounds.height <= 0.0f) continue;
 			const bool selected = static_cast<int>(option) == widget.selectedIndex();
-			submitBox(bounds, !widget.optionEnabled(option) ? palette.disabledButton : selected ? palette.accent : palette.button, PopupMaterial, layer, screenClip);
+			submitBox(bounds, !widget.optionEnabled(option) ? palette.disabledButton : selected ? palette.accent : palette.button, PopupMaterial, layer, optionClip);
 			const std::string labelId = widget.id() + "#option" + std::to_string(option);
 			std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(labelId);
 			if (label == labels_.end())
@@ -1066,8 +1125,9 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 				label = labels_.find(labelId);
 			}
 			label->second->setContent(widget.options()[option]);
-			drawText(*label->second, UiRect(bounds.x + 2.0f, bounds.y, bounds.width - 4.0f, bounds.height), 13.0f,
-				widget.optionEnabled(option) ? palette.text : palette.mutedText, layerOffset(layer, 1), screenClip,
+			drawText(*label->second, UiRect(bounds.x + popupStyle.paddingX, bounds.y, std::max(0.0f, bounds.width - popupStyle.paddingX * 2.0f), bounds.height), 14.0f,
+				toGlmColor(readableUiTextColor(toUiColor(widget.optionEnabled(option) ? palette.text : palette.mutedText),
+					toUiColor(!widget.optionEnabled(option) ? palette.disabledButton : selected ? palette.accent : palette.button))), layerOffset(layer, 2), optionClip,
 				TextOverflowPolicy::Marquee);
 		}
 		return;
@@ -1083,46 +1143,34 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		widget.role() == UiControlRole::Reset ? "reset" : widget.role() == UiControlRole::EditableValue ? "value" :
 		widget.role() == UiControlRole::Choice || widget.role() == UiControlRole::AlgorithmChoice ? "choice" : "button";
 	const UiControlPaintStyle style = resolveUiControlPaintStyle(preset, paintTheme, role,
-		widget.enabled(), widget.hovered(), widget.pressed(), widget.expanded(),
+		widget.enabled(), widget.hovered(), widget.pressed(), widget.expanded() || widget.checked(),
 		paletteColors(drawingAppearanceEditor_ ? paletteForAppearance(UiPresetId::Current, readableEditorTheme) : palette));
-	const glm::vec4 fill(style.fill.r, style.fill.g, style.fill.b, style.fill.a);
 	const bool classicMenu = preset == UiPresetId::ClassicWindows95 &&
 		(widget.id() == "menu_file" || widget.id() == "menu_view" || widget.id() == "menu_tools");
 	if (!classicMenu || widget.hovered() || widget.expanded())
-		submitBox(widget.bounds(), classicMenu ? palette.accent : fill,
-			widget.kind() == UiWidgetKind::ComboBox ? ValueMaterial : ButtonMaterial, layer, screenClip);
-	const float border = std::max(0.0f, style.borderWidth);
-	if (border > 0.0f && !classicMenu)
 	{
-		const glm::vec4 edge(style.border.r, style.border.g, style.border.b, style.border.a);
-		submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, border), edge, ButtonMaterial, layerOffset(layer, 1), screenClip);
-		submitBox(UiRect(widget.bounds().x, widget.bounds().y + widget.bounds().height - border, widget.bounds().width, border), edge, ButtonMaterial, layerOffset(layer, 1), screenClip);
-		submitBox(UiRect(widget.bounds().x, widget.bounds().y, border, widget.bounds().height), edge, ButtonMaterial, layerOffset(layer, 1), screenClip);
-		submitBox(UiRect(widget.bounds().x + widget.bounds().width - border, widget.bounds().y, border, widget.bounds().height), edge, ButtonMaterial, layerOffset(layer, 1), screenClip);
-		if (preset == UiPresetId::FlatVgaDos)
-		{
-			const glm::vec4 highlight(std::min(1.0f, edge.r * 1.18f + 0.12f),
-				std::min(1.0f, edge.g * 1.18f + 0.12f), std::min(1.0f, edge.b * 1.18f + 0.12f), edge.a);
-			const glm::vec4 shadow(fill.r * 0.42f, fill.g * 0.42f, fill.b * 0.42f, 1.0f);
-			submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, border), highlight, ButtonMaterial, layerOffset(layer, 2), screenClip);
-			submitBox(UiRect(widget.bounds().x, widget.bounds().y, border, widget.bounds().height), highlight, ButtonMaterial, layerOffset(layer, 2), screenClip);
-			submitBox(UiRect(widget.bounds().x, widget.bounds().y + widget.bounds().height - border, widget.bounds().width, border), shadow, ButtonMaterial, layerOffset(layer, 2), screenClip);
-			submitBox(UiRect(widget.bounds().x + widget.bounds().width - border, widget.bounds().y, border, widget.bounds().height), shadow, ButtonMaterial, layerOffset(layer, 2), screenClip);
-		}
-		else if (preset == UiPresetId::ClassicWindows95)
-		{
-			const glm::vec4 light(0.96f, 0.96f, 0.96f, 1.0f);
-			const glm::vec4 shadow(0.25f, 0.25f, 0.25f, 1.0f);
-			const glm::vec4 topLeft = widget.pressed() ? shadow : light;
-			const glm::vec4 bottomRight = widget.pressed() ? light : shadow;
-			submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, border), topLeft, ButtonMaterial, layerOffset(layer, 2), screenClip);
-			submitBox(UiRect(widget.bounds().x, widget.bounds().y, border, widget.bounds().height), topLeft, ButtonMaterial, layerOffset(layer, 2), screenClip);
-			submitBox(UiRect(widget.bounds().x, widget.bounds().y + widget.bounds().height - border, widget.bounds().width, border), bottomRight, ButtonMaterial, layerOffset(layer, 2), screenClip);
-			submitBox(UiRect(widget.bounds().x + widget.bounds().width - border, widget.bounds().y, border, widget.bounds().height), bottomRight, ButtonMaterial, layerOffset(layer, 2), screenClip);
-		}
+		UiControlPaintStyle surface = style;
+		if (classicMenu) { surface.fill = toUiColor(palette.accent); surface.borderWidth = 0.0f; surface.shadowOffset = 0.0f; }
+		drawSurface(widget.bounds(), surface, preset, layer, screenClip, widget.pressed());
 	}
+	const float border = std::max(0.0f, style.borderWidth);
 	if (widget.focused())
 		submitBox(UiRect(widget.bounds().x, widget.bounds().y, widget.bounds().width, std::max(1.0f, border)), palette.held, AccentMaterial, layerOffset(layer, 1), screenClip);
+	if (widget.presentation() == UiWidgetPresentation::Toggle)
+	{
+		const float trackWidth = std::min(30.0f, widget.bounds().width * 0.3f);
+		const float trackHeight = std::min(16.0f, std::max(8.0f, widget.bounds().height - style.paddingY * 2.0f));
+		const float x = widget.bounds().x + style.paddingX;
+		const float y = widget.bounds().y + (widget.bounds().height - trackHeight) * 0.5f;
+		submitBox(UiRect(x, y, trackWidth, trackHeight), widget.checked() ? palette.accent : palette.timelineRail, ButtonMaterial, layerOffset(layer, 2), screenClip);
+		const float knob = std::max(4.0f, trackHeight - 4.0f);
+		submitBox(UiRect(x + (widget.checked() ? trackWidth - knob - 2.0f : 2.0f), y + 2.0f, knob, knob),
+			widget.enabled() ? palette.text : palette.mutedText, ButtonMaterial, layerOffset(layer, 3), screenClip);
+		drawText(*labels_[widget.id()], UiRect(x + trackWidth + 6.0f, widget.bounds().y,
+			std::max(0.0f, widget.bounds().width - trackWidth - style.paddingX - 12.0f), widget.bounds().height),
+			13.0f, widget.enabled() ? palette.text : palette.mutedText, layerOffset(layer, 2), screenClip, TextOverflowPolicy::Clamp);
+		return;
+	}
 	if (widget.presentation() == UiWidgetPresentation::RadioGroup)
 	{
 		const std::size_t count = widget.options().size();
@@ -1149,7 +1197,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 			std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id() + "#option" + std::to_string(option));
 			if (label != labels_.end()) drawText(*label->second, UiRect(cell.x + (style.squareIndicator ? 22.0f : 2.0f), cell.y,
 				cell.width - (style.squareIndicator ? 24.0f : 4.0f), cell.height), 13.0f,
-				widget.optionEnabled(option) ? palette.text : palette.mutedText, layerOffset(layer, 2), screenClip,
+				toGlmColor(readableUiTextColor(toUiColor(widget.optionEnabled(option) ? palette.text : palette.mutedText), toUiColor(cellFill))), layerOffset(layer, 2), screenClip,
 				TextOverflowPolicy::Marquee);
 		}
 		return;
@@ -1206,21 +1254,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		submitBox(UiRect(cx + 11, cy + 4, pixel, pixel), color, MaterialId::Gear, layerOffset(layer, 2), screenClip);
 		return;
 	}
-	if (widget.role() == UiControlRole::AlgorithmChoice)
-	{
-		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(
-			static_cast<sortinglogic::SortAlgorithm>(settings_.simulation.algorithm));
-		if (descriptor)
-		{
-			const std::string variantKey("#algorithm_variant_button");
-			if (!labels_[variantKey]) labels_[variantKey].reset(new TextLabel("", "Courier New Bold", 10, SDL_Color{ 238, 246, 249, 255 }));
-			labels_[variantKey]->setContent(descriptor->displayName);
-			drawText(*labels_[variantKey], widget.bounds(), 14.0f, palette.text, layerOffset(layer, 2), screenClip,
-				TextOverflowPolicy::Marquee);
-			return;
-		}
-	}
-	if (style.drawArrow && preset != UiPresetId::Current && widget.kind() == UiWidgetKind::ComboBox && !classicMenu)
+	if (style.drawArrow && widget.kind() == UiWidgetKind::ComboBox && !classicMenu)
 	{
 		const UiTokenValue arrowToken = effectiveUiTokenValue(preset, paintTheme, "control.arrow_size");
 		const float arrow = arrowToken.type == UiTokenType::Number ? static_cast<float>(arrowToken.number) : 6.0f;
@@ -1257,17 +1291,18 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		if (label != labels_.end())
 			drawText(*label->second, UiRect(iconX + columns * pixel + 6.0f, widget.bounds().y,
 				widget.bounds().x + widget.bounds().width - iconX - columns * pixel - 10.0f, widget.bounds().height),
-				13.0f, palette.text, layerOffset(layer, 2), screenClip);
+				13.0f, toGlmColor(style.text), layerOffset(layer, 2), screenClip);
 		return;
 	}
 	std::map<std::string, std::unique_ptr<TextLabel> >::iterator label = labels_.find(widget.id());
 	if (label != labels_.end())
 	{
-		UiRect labelBounds = widget.bounds();
+		UiRect labelBounds(widget.bounds().x + style.paddingX, widget.bounds().y + style.paddingY,
+			std::max(0.0f, widget.bounds().width - style.paddingX * 2.0f), std::max(0.0f, widget.bounds().height - style.paddingY * 2.0f));
 		if (style.drawArrow && widget.kind() == UiWidgetKind::ComboBox)
 			labelBounds.width = std::max(1.0f, labelBounds.width - themeNumber(renderPreferences_, "control.arrow_size", 6.0f) - 12.0f);
 		drawText(*label->second, labelBounds, widget.kind() == UiWidgetKind::ComboBox ? 13.0f : 14.0f,
-			palette.text, layerOffset(layer, 2), screenClip, TextOverflowPolicy::Marquee);
+			toGlmColor(style.text), layerOffset(layer, 2), screenClip, TextOverflowPolicy::Marquee);
 	}
 }
 
@@ -1797,6 +1832,12 @@ void ControlPanel::drawDemoEditor(const ThemePalette& palette)
 	viewPalette.mutedText = toUiColor(palette.mutedText);
 	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
+	const ResolvedTextStyle popupStyle = resolveTextStyle(14.0f);
+	demoEditorView_.layoutComboPopups([popupStyle](const std::string& text)
+	{
+		const glm::vec2 measured = TextLabel::measureText(text, popupStyle);
+		return measured.y > 0.0f ? measured.x * popupStyle.logicalHeight / measured.y : 0.0f;
+	});
 	demoEditorView_.compose(viewPalette, width_, height_, paintContext);
 }
 
@@ -1805,6 +1846,21 @@ void ControlPanel::drawUiPaintCommand(const UiPaintCommand& command)
 	const glm::vec4 color = toGlmColor(command.color);
 	const ClipBounds clip = renderClip(command);
 	const RenderLayer layer = renderLayerForUiPaint(command.layer);
+	const ThemePalette palette = uiPaletteForAppearance(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_));
+	if (command.primitive == UiPaintPrimitive::Control)
+	{
+		const UiWidget* widget = demoEditorView_.control(command.elementId);
+		if (widget) drawWidget(*widget, palette, layer, command.popup);
+		return;
+	}
+	if (command.primitive == UiPaintPrimitive::Panel)
+	{
+		UiControlPaintStyle style = resolveUiControlPaintStyle(renderPreferences_.appearance.activePreset,
+			activeTheme(renderPreferences_), "panel", true, false, false, false, paletteColors(palette));
+		style.fill = command.color;
+		drawSurface(command.bounds, style, renderPreferences_.appearance.activePreset, layer, clip);
+		return;
+	}
 	if (command.primitive == UiPaintPrimitive::Rectangle)
 	{
 		submitBox(command.bounds, color, materialForUiPaint(command.material), layer, clip);

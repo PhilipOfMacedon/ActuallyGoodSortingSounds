@@ -81,7 +81,7 @@ bool UiScrollViewport::itemIntersectsViewport(std::size_t index, float itemExten
 UiWidget::UiWidget(UiWidgetKind kind, const std::string& id, const std::string& label,
 	const AppAction& action, UiAction::ViewCommand viewCommand)
 	: kind_(kind), presentation_(UiWidgetPresentation::Standard), role_(UiControlRole::Standard), id_(id), label_(label), bounds_(), popupBounds_(), enabled_(true), visible_(true),
-		hovered_(false), pressed_(false), focused_(false), expanded_(false), selectedIndex_(0), options_(), optionEnabled_(),
+		hovered_(false), pressed_(false), focused_(false), expanded_(false), checked_(false), selectedIndex_(0), options_(), optionEnabled_(),
 		action_(action), viewCommand_(viewCommand), parent_(nullptr), sliderMinimum_(0.0f), sliderMaximum_(1.0f),
 		sliderStep_(0.01f), sliderValue_(0.0f), popupAbove_(false), scrollbarArrowSize_(14.0f), interactiveSubregions_(),
 		optionViewport_(), optionRowExtent_(1.0f)
@@ -119,8 +119,7 @@ void UiWidget::configureOptionViewport(float requestedOffset)
 	const float fallbackRow = std::max(1.0f, bounds_.height);
 	const float viewportHeight = popupBounds_.height > 0.0f
 		? popupBounds_.height : fallbackRow * static_cast<float>(rows);
-	optionRowExtent_ = rows > 0 && popupBounds_.height > 0.0f
-		? std::max(1.0f, popupBounds_.height / static_cast<float>(rows)) : fallbackRow;
+	optionRowExtent_ = fallbackRow;
 	const UiRect viewport = popupBounds_.width > 0.0f && popupBounds_.height > 0.0f
 		? popupBounds_
 		: UiRect(bounds_.x, popupAbove_ ? bounds_.y - viewportHeight : bounds_.y + bounds_.height,
@@ -162,6 +161,7 @@ UIRoot::UIRoot()
 
 void UiWidget::setOptions(const std::vector<std::string>& values)
 {
+	if (options_ == values) return;
 	options_ = values;
 	optionEnabled_.assign(values.size(), true);
 	configureOptionViewport(0.0f);
@@ -180,6 +180,7 @@ bool UiWidget::optionEnabled(std::size_t index) const
 
 void UiWidget::setSelectedIndex(int value)
 {
+	const int previousIndex = selectedIndex_;
 	if (options_.empty())
 		selectedIndex_ = 0;
 	else
@@ -187,7 +188,8 @@ void UiWidget::setSelectedIndex(int value)
 	if (kind_ == UiWidgetKind::ComboBox && !options_.empty())
 	{
 		label_ = options_[selectedIndex_];
-		optionViewport_.ensureItemVisible(static_cast<std::size_t>(selectedIndex_), optionRowExtent_);
+		if (previousIndex != selectedIndex_)
+			optionViewport_.ensureItemVisible(static_cast<std::size_t>(selectedIndex_), optionRowExtent_);
 	}
 }
 
@@ -220,7 +222,34 @@ std::size_t UiWidget::firstVisibleOption() const
 
 std::size_t UiWidget::visibleOptionCount() const
 {
-	return std::min<std::size_t>(options_.size(), 8);
+	const std::size_t fittingRows = popupBounds_.height > 0.0f
+		? static_cast<std::size_t>(std::ceil(popupBounds_.height / std::max(1.0f, optionRowExtent_))) : 8;
+	return std::min<std::size_t>(options_.size(), std::min<std::size_t>(8, fittingRows));
+}
+
+void UIRoot::layoutComboPopups(const UiRect& viewport,
+	const std::function<float(const std::string&)>& measureOptionWidth, float padding)
+{
+	for (std::size_t i = 0; i < widgets_.size(); ++i)
+	{
+		UiWidget& widget = *widgets_[i];
+		if (widget.kind() != UiWidgetKind::ComboBox || !widget.visible() || widget.options().empty() ||
+			widget.bounds().height <= 0.0f || widget.bounds().width <= 0.0f) continue;
+		float width = widget.bounds().width;
+		for (std::size_t option = 0; option < widget.options().size(); ++option)
+			width = std::max(width, measureOptionWidth(widget.options()[option]) + padding * 2.0f);
+		width = std::min(width, viewport.width);
+		const float height = std::min(widget.bounds().height *
+			static_cast<float>(std::min<std::size_t>(8, widget.options().size())), viewport.height);
+		const float x = std::max(viewport.x, std::min(widget.bounds().x, viewport.x + viewport.width - width));
+		const float below = viewport.y + viewport.height - widget.bounds().y - widget.bounds().height;
+		const float above = widget.bounds().y - viewport.y;
+		const bool useAbove = below < height && above > below;
+		const float fittingHeight = std::min(height, std::max(0.0f, useAbove ? above : below));
+		const float y = useAbove ? widget.bounds().y - fittingHeight : widget.bounds().y + widget.bounds().height;
+		widget.setPopupAbove(useAbove);
+		widget.setPopupBounds(UiRect(x, y, width, fittingHeight));
+	}
 }
 
 UiWidget& UIRoot::addButton(const std::string& id, const std::string& label,
@@ -235,6 +264,7 @@ UiWidget& UIRoot::addComboBox(const std::string& id, const std::vector<std::stri
 {
 	widgets_.push_back(std::unique_ptr<UiWidget>(new UiWidget(UiWidgetKind::ComboBox, id, std::string(), action,
 		UiAction::ViewCommand::None)));
+	widgets_.back()->setRole(UiControlRole::Choice);
 	widgets_.back()->setOptions(options);
 	widgets_.back()->setSelectedIndex(selection);
 	return *widgets_.back();
@@ -446,7 +476,8 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 		{
 			for (std::size_t option = 0; option < openCombo_->options_.size(); ++option)
 			{
-				if (openCombo_->optionEnabled(option) && openCombo_->optionBounds(option).contains(event.x, event.y))
+				if (openCombo_->optionViewport_.viewport().contains(event.x, event.y) &&
+					openCombo_->optionEnabled(option) && openCombo_->optionBounds(option).contains(event.x, event.y))
 				{
 					const bool changed = openCombo_->selectedIndex_ != static_cast<int>(option);
 					openCombo_->setSelectedIndex(static_cast<int>(option));

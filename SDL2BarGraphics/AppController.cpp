@@ -354,7 +354,8 @@ sortinglogic::CommandResult AppController::requestTraceBuild(bool playWhenReady)
 void AppController::setAudioPreparationPending(bool pending)
 {
 	activePlaybackCoordinator().setAudioPreparationPending(pending);
-	startPendingPlaybackIfReady();
+	// Readiness arrives after the bridge published this frame's transport. Start
+	// on the next update so feedback for that paused transport cannot undo Play.
 }
 
 bool AppController::applyAppearance(const UiAppearancePreferences& appearance, std::string* error)
@@ -1085,7 +1086,7 @@ void AppController::createDemoSessionForCurrentStep()
 			return;
 		}
 	}
-	configured = requestTraceBuild(true);
+	configured = requestTraceBuild(!demoRunner_.paused());
 	if (!configured.accepted)
 	{
 		demoRunner_.fail("Could not prepare " + std::string(descriptor->displayName) + ": " + configured.message);
@@ -1197,23 +1198,17 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 	if (action.kind == AppActionKind::ToggleDemoPlayback)
 	{
 		if (!demoRunner_.active()) return startDemo(presetId.empty() ? selectedDemoPresetId_ : presetId);
-		if (activeSimulation().isPlaying())
+		if (!demoRunner_.paused())
 		{
 			activePlaybackCoordinator().cancelQueuedPlayback();
-			const sortinglogic::CommandResult paused = activeSimulation().togglePlayback();
-			if (paused.accepted) demoRunner_.markPaused();
-			return paused;
+			if (activeSimulation().isPlaying()) activeSimulation().stopPlayback();
+			demoRunner_.markPaused();
+			return sortinglogic::CommandResult(true, "Demo paused.");
 		}
-		if (demoRunner_.state() == DemoRunnerState::Preparing && activeSimulation().isBuildingTrace())
-		{
-			activePlaybackCoordinator().cancelQueuedPlayback();
-			return sortinglogic::CommandResult(true, "Demo step is preparing; automatic playback was paused.");
-		}
-		if (activePlaybackCoordinator().audioPreparationBlocksStart())
-			return sortinglogic::CommandResult(false, "Preparing audio timeline. Demo playback will start when it is ready.");
-		const sortinglogic::CommandResult started = activeSimulation().togglePlayback();
-		if (started.accepted) demoRunner_.markPlaying();
-		return started;
+		demoRunner_.resume();
+		if (demoSession_ && demoRunner_.state() != DemoRunnerState::Intermission)
+			activePlaybackCoordinator().queuePlayback();
+		return sortinglogic::CommandResult(true, "Demo resumed; playback continues when preparation finishes.");
 	}
 	if (action.kind == AppActionKind::PreviousDemoStep || action.kind == AppActionKind::NextDemoStep)
 	{

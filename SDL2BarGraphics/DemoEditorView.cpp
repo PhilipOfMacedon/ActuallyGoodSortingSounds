@@ -48,7 +48,7 @@ namespace
 	void submitRect(UiPaintContext& context, const UiRect& bounds, const UiColor& color,
 		UiPaintMaterial material, UiPaintLayer layer)
 	{
-		context.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, bounds, color, std::string(), std::string(),
+		context.submit(UiPaintCommand(material == UiPaintMaterial::Panel && layer == UiPaintLayer::Panel ? UiPaintPrimitive::Panel : UiPaintPrimitive::Rectangle, bounds, color, std::string(), std::string(),
 			material, layer, UiRect(), false, 0.0f));
 	}
 	void submitText(UiPaintContext& context, const std::string& id, const std::string& text,
@@ -339,18 +339,18 @@ void DemoEditorView::synchronize(const DemoPresetStore& presets, const DemoPrese
 void DemoEditorView::layout(int logicalWidth, int logicalHeight)
 {
 	const float width = (std::min)(920.0f, (std::max)(240.0f, static_cast<float>(logicalWidth) - 24.0f));
-	const float height = (std::min)(500.0f, (std::max)(430.0f, static_cast<float>(logicalHeight) - 32.0f));
+	const float height = (std::min)(540.0f, (std::max)(480.0f, static_cast<float>(logicalHeight) - 32.0f));
 	panelBounds_ = UiRect((static_cast<float>(logicalWidth) - width) * 0.5f,
 		(static_cast<float>(logicalHeight) - height) * 0.5f, width, height);
 	controls_.setModalBounds(panelBounds_, UiAction::ViewCommand::CloseDemoEditor);
 	controls_.setInputCaptured(open_);
 	const float rowHeight = 30.0f;
-	placeRow(controls_, panelBounds_, 46, rowHeight, {{"demo_preset", 2.5f}, {"demo_start", 1.0f}, {"demo_stop", 0.8f}, {"demo_previous", 1.0f}, {"demo_next", 0.8f}, {"demo_close", 0.7f}});
-	placeRow(controls_, panelBounds_, 90, rowHeight, {{"demo_step", 2.0f}, {"demo_algorithm", 2.2f}, {"demo_add", 0.8f}, {"demo_replace", 0.8f}, {"demo_remove", 0.75f}, {"demo_up", 0.7f}, {"demo_down", 0.7f}});
-	placeRow(controls_, panelBounds_, 134, rowHeight, {{"demo_option_group", 1.2f}, {"demo_option", 1.6f}, {"demo_direction", 1.0f}, {"demo_timing", 1.3f}, {"demo_duration_down", 0.9f}, {"demo_duration_value", 0.8f}, {"demo_duration_up", 0.9f}});
-	placeRow(controls_, panelBounds_, 178, rowHeight, {{"demo_class", 1.4f}, {"demo_domain", 1.4f}, {"demo_pattern", 1.4f}, {"demo_count_down", 0.9f}, {"demo_count_value", 1.0f}, {"demo_count_up", 0.9f}});
-	placeRow(controls_, panelBounds_, 222, rowHeight, {{"demo_seed_down", 0.8f}, {"demo_seed_value", 2.3f}, {"demo_seed_up", 0.8f}, {"demo_override", 1.5f}, {"demo_intermission_down", 1.0f}, {"demo_intermission_value", 0.8f}, {"demo_intermission_up", 1.0f}});
-	placeRow(controls_, panelBounds_, 266, rowHeight, {{"demo_loop", 1.0f}, {"demo_save", 1.0f}, {"demo_rename", 1.0f}, {"demo_delete", 1.0f}});
+	placeRow(controls_, panelBounds_, 76, rowHeight, {{"demo_preset", 2.5f}, {"demo_start", 1.0f}, {"demo_stop", 0.8f}, {"demo_previous", 1.0f}, {"demo_next", 0.8f}, {"demo_close", 0.7f}});
+	placeRow(controls_, panelBounds_, 120, rowHeight, {{"demo_step", 2.0f}, {"demo_algorithm", 2.2f}, {"demo_add", 0.8f}, {"demo_replace", 0.8f}, {"demo_remove", 0.75f}, {"demo_up", 0.7f}, {"demo_down", 0.7f}});
+	placeRow(controls_, panelBounds_, 164, rowHeight, {{"demo_option_group", 1.2f}, {"demo_option", 1.6f}, {"demo_direction", 1.0f}, {"demo_timing", 1.3f}, {"demo_duration_down", 0.9f}, {"demo_duration_value", 0.8f}, {"demo_duration_up", 0.9f}});
+	placeRow(controls_, panelBounds_, 208, rowHeight, {{"demo_class", 1.4f}, {"demo_domain", 1.4f}, {"demo_pattern", 1.4f}, {"demo_count_down", 0.9f}, {"demo_count_value", 1.0f}, {"demo_count_up", 0.9f}});
+	placeRow(controls_, panelBounds_, 252, rowHeight, {{"demo_seed_down", 0.8f}, {"demo_seed_value", 2.3f}, {"demo_seed_up", 0.8f}, {"demo_override", 1.5f}, {"demo_intermission_down", 1.0f}, {"demo_intermission_value", 0.8f}, {"demo_intermission_up", 1.0f}});
+	placeRow(controls_, panelBounds_, 296, rowHeight, {{"demo_loop", 1.0f}, {"demo_save", 1.0f}, {"demo_rename", 1.0f}, {"demo_delete", 1.0f}});
 	seedEditBounds_ = controls_.find("demo_seed_value")->bounds();
 	countEditBounds_ = controls_.find("demo_count_value")->bounds();
 }
@@ -639,46 +639,46 @@ void DemoEditorView::compose(const DemoEditorPalette& palette, int logicalWidth,
 	submitText(paintContext, "#demo_title", "DEMO SESSION EDITOR", UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 10.0f, panelBounds_.width - 36.0f, 26.0f), 18.0f, palette.text, UiPaintLayer::SettingsText);
 	submitText(paintContext, "#demo_subtitle", demoActive_ ? "Manual controls are paused and preserved until this session ends." :
 		"Presets are recipes; each step rebuilds its own input from the stored seed.",
-		UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 32.0f, panelBounds_.width - 36.0f, 17.0f), 11.0f, palette.mutedText, UiPaintLayer::SettingsText);
+		UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 36.0f, panelBounds_.width - 36.0f, 20.0f), 14.0f, palette.mutedText, UiPaintLayer::SettingsText);
 	const char* captions[] = { "Preset", "Sequence and algorithm", "Step options and timing", "Complexity-class input", "Recipe values", "Session settings and preset actions" };
-	const float captionY[] = { 43, 87, 131, 175, 219, 263 };
+	const float captionY[] = { 76, 120, 164, 208, 252, 296 };
 	for (std::size_t row = 0; row < 6; ++row)
 		submitText(paintContext, "#demo_caption_" + std::to_string(row), captions[row],
-			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + captionY[row] - 13.0f, panelBounds_.width - 36.0f, 12.0f), 9.0f, palette.mutedText, UiPaintLayer::SettingsText);
+			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + captionY[row] - 16.0f, panelBounds_.width - 36.0f, 14.0f), 12.0f, palette.mutedText, UiPaintLayer::SettingsText);
 	if (editingName_)
 		submitText(paintContext, "#demo_name", "Preset name: " + nameDraft_ + "_  (Enter saves name, Escape cancels)",
-			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 337.0f, panelBounds_.width - 36.0f, 20.0f), 12.0f, palette.text, UiPaintLayer::SettingsText);
+			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 367.0f, panelBounds_.width - 36.0f, 20.0f), 12.0f, palette.text, UiPaintLayer::SettingsText);
 	else
 		submitText(paintContext, "#demo_name", "Preset name: " + draft_.name,
-			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 337.0f, panelBounds_.width - 36.0f, 20.0f), 12.0f, palette.text, UiPaintLayer::SettingsText);
+			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 367.0f, panelBounds_.width - 36.0f, 20.0f), 12.0f, palette.text, UiPaintLayer::SettingsText);
 	if (editingNumeric())
 		submitText(paintContext, "#demo_numeric", "Enter number: " + numericDraft_ + "_  (Enter applies, Escape cancels)",
-			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 362.0f, panelBounds_.width - 36.0f, 20.0f), 12.0f, palette.accent, UiPaintLayer::SettingsText);
+			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 392.0f, panelBounds_.width - 36.0f, 20.0f), 12.0f, palette.accent, UiPaintLayer::SettingsText);
 	if (!runnerStatus_.empty())
 		submitText(paintContext, "#demo_runtime", runnerStatus_,
-			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 388.0f, panelBounds_.width - 36.0f, 18.0f), 11.0f, palette.text, UiPaintLayer::SettingsText);
+			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 418.0f, panelBounds_.width - 36.0f, 20.0f), 13.0f, palette.text, UiPaintLayer::SettingsText);
 	if (!feedback_.empty())
 		submitText(paintContext, "#demo_feedback", feedback_,
-			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 408.0f, panelBounds_.width - 36.0f, 18.0f), 10.0f, palette.mutedText, UiPaintLayer::SettingsText);
+			UiRect(panelBounds_.x + 18.0f, panelBounds_.y + 442.0f, panelBounds_.width - 36.0f, 20.0f), 12.0f, palette.mutedText, UiPaintLayer::SettingsText);
+	const UiRect screen(0.0f, 0.0f, static_cast<float>(logicalWidth), static_cast<float>(logicalHeight));
 	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 	{
 		const UiWidget& widget = *controls_.widgets()[i];
 		if (!widget.visible()) continue;
-		const UiColor fill = !widget.enabled() ? palette.disabledButton :
-		(widget.focused() ? palette.accent : widget.pressed() ? palette.accent : widget.hovered() ? palette.valueButton : palette.button);
-		submitRect(paintContext, widget.bounds(), fill,
-			widget.kind() == UiWidgetKind::ComboBox ? UiPaintMaterial::Popup : UiPaintMaterial::Button, UiPaintLayer::SettingsControls);
-		submitText(paintContext, "#demo_widget_" + widget.id(), widget.label(), widget.bounds(), 11.0f,
-			widget.enabled() ? palette.text : palette.mutedText, UiPaintLayer::SettingsText);
-		if (widget.expanded())
-			for (std::size_t option = 0; option < widget.options().size(); ++option)
-			{
-				const UiRect bounds = widget.optionBounds(option);
-				if (bounds.width <= 0 || bounds.height <= 0) continue;
-				submitRect(paintContext, bounds, static_cast<int>(option) == widget.selectedIndex() ? palette.accent : palette.button,
-					UiPaintMaterial::Popup, UiPaintLayer::SettingsControls);
-				submitText(paintContext, "#demo_option_" + widget.id() + "_" + std::to_string(option), widget.options()[option],
-					bounds, 11.0f, palette.text, UiPaintLayer::SettingsText);
-			}
+		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Control, widget.bounds(), UiColor(), std::string(),
+			widget.id(), UiPaintMaterial::Button, UiPaintLayer::SettingsControls, panelBounds_, true, 14.0f));
 	}
+	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+	{
+		const UiWidget& widget = *controls_.widgets()[i];
+		if (widget.visible() && widget.expanded())
+			paintContext.submit(UiPaintCommand(UiPaintPrimitive::Control, widget.popupBounds(), UiColor(), std::string(),
+				widget.id(), UiPaintMaterial::Popup, UiPaintLayer::Content, screen, true, 14.0f, true));
+	}
+}
+
+void DemoEditorView::layoutComboPopups(const std::function<float(const std::string&)>& measureOptionWidth)
+{
+	controls_.layoutComboPopups(UiRect(panelBounds_.x + 12.0f, panelBounds_.y + 12.0f,
+		std::max(0.0f, panelBounds_.width - 24.0f), std::max(0.0f, panelBounds_.height - 24.0f)), measureOptionWidth);
 }

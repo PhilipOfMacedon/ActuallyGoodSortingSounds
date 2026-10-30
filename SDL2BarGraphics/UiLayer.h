@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -46,7 +47,7 @@ enum class UiWidgetKind
 	Slider
 };
 
-enum class UiWidgetPresentation { Standard, RadioGroup, DosScrollbar, EditableLabel };
+enum class UiWidgetPresentation { Standard, RadioGroup, DosScrollbar, EditableLabel, Toggle };
 enum class UiControlRole { Standard, PanelToggle, Settings, AlgorithmChoice, BuildTrace, Playback, Reset, EditableValue, Choice };
 
 enum class UiContainerKind
@@ -148,6 +149,8 @@ public:
 	bool pressed() const { return pressed_; }
 	bool focused() const { return focused_; }
 	bool expanded() const { return expanded_; }
+	bool checked() const { return checked_; }
+	void setChecked(bool value) { checked_ = value; }
 	int selectedIndex() const { return selectedIndex_; }
 	const std::vector<std::string>& options() const { return options_; }
 	const AppAction& action() const { return action_; }
@@ -198,6 +201,7 @@ private:
 	bool pressed_;
 	bool focused_;
 	bool expanded_;
+	bool checked_;
 	int selectedIndex_;
 	std::vector<std::string> options_;
 	std::vector<bool> optionEnabled_;
@@ -267,6 +271,8 @@ public:
 	const std::vector<std::unique_ptr<UiWidget> >& widgets() const { return widgets_; }
 	bool handleEvent(const UiInputEvent& event, UiAction& action);
 	void closeCombo();
+	void layoutComboPopups(const UiRect& viewport,
+		const std::function<float(const std::string&)>& measureOptionWidth, float padding = 12.0f);
 	bool hasOpenCombo() const { return openCombo_ != nullptr; }
 	void setInputCaptured(bool value) { inputCaptured_ = value; if (!value) hasModalBounds_ = false; }
 	void setModalBounds(const UiRect& bounds, UiAction::ViewCommand dismissCommand);

@@ -147,6 +147,9 @@ struct UiControlPaintStyle
 	UiColor border;
 	float borderWidth;
 	float cornerRadius;
+	float paddingX;
+	float paddingY;
+	float shadowOffset;
 	bool drawArrow;
 	bool squareIndicator;
 	UiControlPaintStyle();
@@ -155,8 +158,9 @@ struct UiControlPaintStyle
 UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeCustomization& theme,
 	const std::string& role, bool enabled, bool hovered, bool pressed, bool selected,
 	const std::map<std::string, UiColor>& resolvedPalette);
+UiColor readableUiTextColor(const UiColor& preferred, const UiColor& surface, float minimumContrast = 4.5f);
 
-enum class UiPaintPrimitive { Rectangle, Border, Text, Icon, Control };
+enum class UiPaintPrimitive { Rectangle, Panel, Border, Text, Icon, Control };
 enum class UiPaintMaterial { Solid, Panel, Button, Timeline, TimelineThumb, PixelIcon, Popup, Accent, ModalDim };
 enum class UiPaintLayer { Backdrop, Panel, Accent, Content, SettingsControls, SettingsControlsOverlay, Text, SettingsText,
 	MainControls, MainControlsOverlay, MainControlsTop, MainDropdown, MainText };

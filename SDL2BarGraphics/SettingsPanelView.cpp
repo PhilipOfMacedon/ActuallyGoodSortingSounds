@@ -401,7 +401,7 @@ void SettingsPanelView::compose(int screenWidth, int screenHeight, const std::st
 	const UiRect screen(0.0f, 0.0f, static_cast<float>(screenWidth), static_cast<float>(screenHeight));
 	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, screen, palette.overlayDim, std::string(), std::string(),
 		UiPaintMaterial::ModalDim, UiPaintLayer::Backdrop, UiRect(), false, 0.0f));
-	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, panelBounds_, palette.panel, std::string(), std::string(),
+	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Panel, panelBounds_, palette.panel, std::string(), std::string(),
 		UiPaintMaterial::Panel, UiPaintLayer::Panel, screen, true, 0.0f));
 	paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle,
 		UiRect(panelBounds_.x, panelBounds_.y, panelBounds_.width, 2.0f), palette.accent,

@@ -41,6 +41,7 @@ public:
 	const std::string& nameDraft() const { return nameDraft_; }
 	const UiWidget* control(const std::string& id) const { return controls_.find(id); }
 	const UiRect& panelBounds() const { return panelBounds_; }
+	void layoutComboPopups(const std::function<float(const std::string&)>& measureOptionWidth);
 	void appendNumericText(const std::string& text);
 	void eraseNumericCharacter();
 	void cancelNumericEdit();

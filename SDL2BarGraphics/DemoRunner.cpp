@@ -5,7 +5,7 @@
 
 DemoRunner::DemoRunner()
 	: preset_(), state_(DemoRunnerState::Inactive), stepIndex_(0), effectiveInput_(), adjustments_(),
-	retryCount_(0), intermissionRemaining_(0.0f), preparationPending_(false), hasEffectiveInput_(false), message_()
+	retryCount_(0), intermissionRemaining_(0.0f), preparationPending_(false), hasEffectiveInput_(false), paused_(false), message_()
 {
 }
 
@@ -23,6 +23,7 @@ bool DemoRunner::begin(const DemoPreset& snapshot, std::string* error)
 		return false;
 	}
 	preset_ = snapshot;
+	paused_ = false;
 	state_ = DemoRunnerState::Preparing;
 	stepIndex_ = 0;
 	effectiveInput_ = DemoInputRecipe();
@@ -39,6 +40,7 @@ void DemoRunner::stop()
 {
 	preset_ = DemoPreset();
 	state_ = DemoRunnerState::Inactive;
+	paused_ = false;
 	stepIndex_ = 0;
 	effectiveInput_ = DemoInputRecipe();
 	adjustments_.clear();
@@ -123,15 +125,24 @@ void DemoRunner::markPrepared(const std::string& message)
 void DemoRunner::markPlaying()
 {
 	if (!active()) return;
+	paused_ = false;
 	state_ = DemoRunnerState::Playing;
 	message_ = "Playing step " + std::to_string(stepIndex_ + 1) + " of " + std::to_string(preset_.steps.size()) + ".";
 }
 
 void DemoRunner::markPaused()
 {
-	if (state_ != DemoRunnerState::Playing) return;
-	state_ = DemoRunnerState::Prepared;
+	if (!active()) return;
+	paused_ = true;
+	if (state_ == DemoRunnerState::Playing) state_ = DemoRunnerState::Prepared;
 	message_ = "Step " + std::to_string(stepIndex_ + 1) + " paused.";
+}
+
+void DemoRunner::resume()
+{
+	if (!active()) return;
+	paused_ = false;
+	message_ = "Continuing step " + std::to_string(stepIndex_ + 1) + ".";
 }
 
 void DemoRunner::playbackCompleted()
@@ -149,7 +160,7 @@ void DemoRunner::playbackCompleted()
 
 void DemoRunner::update(float deltaSeconds)
 {
-	if (state_ != DemoRunnerState::Intermission || !std::isfinite(deltaSeconds) || deltaSeconds <= 0.0f) return;
+	if (state_ != DemoRunnerState::Intermission || paused_ || !std::isfinite(deltaSeconds) || deltaSeconds <= 0.0f) return;
 	intermissionRemaining_ = std::max(0.0f, intermissionRemaining_ - deltaSeconds);
 	if (intermissionRemaining_ <= 0.0f) advanceAfterIntermission();
 }

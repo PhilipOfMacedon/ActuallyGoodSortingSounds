@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "AppActions.h"
+#include "DemoRunner.h"
 #include "InlineEditModel.h"
 #include "PlaybackTimebase.h"
 #include "SettingsPanelCatalog.h"
@@ -125,7 +126,7 @@ void MainControlsView::initializeControls(const UserPreferences& preferences, co
 {
 	controls_.addButton("panel_toggle", ">>", AppAction(AppActionKind::TogglePanelExpanded));
 	controls_.addButton("settings", "[=]", AppAction(), UiAction::ViewCommand::OpenSettings);
-	controls_.addButton("demo_editor", "DEMO", AppAction(AppActionKind::OpenDemoEditor));
+	controls_.addButton("demo_editor", "Edit Demo", AppAction(AppActionKind::OpenDemoEditor));
 	controls_.addComboBox("menu_file", std::vector<std::string>{ "File", "Build Trace", "Generate & Play", "Reset" }, 0);
 	controls_.addComboBox("menu_view", std::vector<std::string>{ "View", "Toggle Setup", "Borderless Fullscreen" }, 0);
 	controls_.addComboBox("menu_tools", std::vector<std::string>{ "Tools", "Algorithm Browser...", "Settings...", "Appearance...", "Demo Editor..." }, 0);
@@ -166,6 +167,8 @@ void MainControlsView::initializeControls(const UserPreferences& preferences, co
 	controls_.addButton("seed_next", "Next Seed", AppAction(AppActionKind::NextSeed));
 	controls_.addButton("seed_remove", "Remove", AppAction(AppActionKind::RemoveSeedBookmark, 0.0f, -1));
 	controls_.addButton("start_overlay", "Generate & Play", AppAction(AppActionKind::GenerateAndPlay));
+	UiWidget& demoMode = controls_.addButton("demo_mode", "Demo", AppAction(AppActionKind::StartDemo));
+	demoMode.setPresentation(UiWidgetPresentation::Toggle);
 
 	controls_.find("panel_toggle")->setRole(UiControlRole::PanelToggle);
 	controls_.find("settings")->setRole(UiControlRole::Settings);
@@ -234,7 +237,7 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 		for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 		{
 			const std::string& id = controls_.widgets()[i]->id();
-			const bool headerControl = (preset != UiPresetId::ClassicWindows95 && (id == "panel_toggle" || id == "settings" || id == "demo_editor")) ||
+			const bool headerControl = id == "demo_mode" || (preset != UiPresetId::ClassicWindows95 && (id == "panel_toggle" || id == "settings" || id == "demo_editor" || id == "demo_mode")) ||
 				(preset != UiPresetId::Current && (id == "menu_file" || id == "menu_view" || id == "menu_tools"));
 			controls_.setWidgetVisible(id, headerControl || id == "start_overlay");
 		}
@@ -252,7 +255,7 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 	controls_.setWidgetVisible("run", !hasClassicRail);
 	controls_.setWidgetVisible("panel_toggle", preset != UiPresetId::ClassicWindows95);
 	controls_.setWidgetVisible("settings", preset != UiPresetId::ClassicWindows95);
-	controls_.setWidgetVisible("demo_editor", preset == UiPresetId::Current);
+	controls_.setWidgetVisible("demo_editor", preset == UiPresetId::Current && expanded);
 	const bool wideLayout = logicalWidth >= 900;
 	controls_.setWidgetVisible("domain", hasClassicRail && wideLayout && expanded);
 	controls_.setWidgetVisible("pattern", hasClassicRail && wideLayout && expanded);
@@ -271,38 +274,9 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 void MainControlsView::layoutComboPopups(int logicalWidth, int logicalHeight,
 	const std::function<float(const std::string&)>& measureOptionWidth)
 {
-	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
-	{
-		UiWidget* widget = controls_.widgets()[i].get();
-		widget->setPopupBounds(UiRect());
-		if (widget->kind() != UiWidgetKind::ComboBox || !widget->visible() ||
-			widget->bounds().width <= 0.0f || widget->bounds().height <= 0.0f || widget->options().empty())
-			continue;
-
-		float popupWidth = widget->bounds().width;
-		for (std::size_t option = 0; option < widget->options().size(); ++option)
-			popupWidth = std::max(popupWidth, measureOptionWidth(widget->options()[option]) + 22.0f);
-		popupWidth = std::min(popupWidth, std::max(0.0f, static_cast<float>(logicalWidth) - 16.0f));
-		const std::size_t visibleOptions = widget->visibleOptionCount();
-		const float popupHeight = std::min(widget->bounds().height * static_cast<float>(visibleOptions),
-			std::max(0.0f, static_cast<float>(logicalHeight) - 16.0f));
-		const float popupX = std::max(8.0f, std::min(widget->bounds().x,
-			static_cast<float>(logicalWidth) - popupWidth - 8.0f));
-		float popupY = widget->bounds().y + widget->bounds().height;
-		bool popupAbove = false;
-		if (popupY + popupHeight > static_cast<float>(logicalHeight) - 8.0f)
-		{
-			const float aboveY = widget->bounds().y - popupHeight;
-			if (aboveY >= 8.0f)
-			{
-				popupY = aboveY;
-				popupAbove = true;
-			}
-			else popupY = std::max(8.0f, static_cast<float>(logicalHeight) - popupHeight - 8.0f);
-		}
-		widget->setPopupAbove(popupAbove);
-		widget->setPopupBounds(UiRect(popupX, popupY, popupWidth, popupHeight));
-	}
+	controls_.layoutComboPopups(UiRect(8.0f, 8.0f,
+		std::max(0.0f, static_cast<float>(logicalWidth) - 16.0f),
+		std::max(0.0f, static_cast<float>(logicalHeight) - 16.0f)), measureOptionWidth, 11.0f);
 }
 
 void MainControlsView::synchronizeText(const UserPreferences& preferences, UiPresetId activePreset,
@@ -355,7 +329,8 @@ void MainControlsView::synchronizeText(const UserPreferences& preferences, UiPre
 	{
 		if (!snapshot.runCompatible) statusText << facts.compatibilityMessage << " | ";
 		else statusText << screenModel.algorithm << " | " << screenModel.inputDomain << "/" << screenModel.inputPattern << " | ";
-		if (snapshot.hasTrace)
+		if (snapshot.status.find("DEMO ") == 0) statusText << snapshot.status;
+		else if (snapshot.hasTrace)
 			statusText << "Cmp " << snapshot.metrics.comparisons << " | Swap " << snapshot.metrics.swaps
 				<< " | Main " << snapshot.metrics.primaryWrites << " | Aux " << snapshot.metrics.auxiliaryItemWrites
 				<< "/" << snapshot.metrics.auxiliaryCounterUpdates << " | Peak " << snapshot.metrics.peakAuxiliaryCapacity;
@@ -388,6 +363,15 @@ void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetI
 	const sortinglogic::RenderSnapshot& snapshot, const UiScreenModel& screenModel,
 	const std::string& algorithmLabel)
 {
+	// Every frame starts from the complete manual presentation. Demo overrides
+	// never survive the session that supplied them.
+	setControlActionAndPresentation("play", AppAction(AppActionKind::GenerateAndPlay), screenModel.playCaption, screenModel.playEnabled);
+	setControlActionAndPresentation("previous", AppAction(AppActionKind::PreviousEvent), "< Event", snapshot.hasTrace && snapshot.cursor > 0);
+	setControlActionAndPresentation("next", AppAction(AppActionKind::NextEvent), activePreset == UiPresetId::ClassicWindows95 ? "Step" : "Event >",
+		snapshot.hasTrace && snapshot.cursor < snapshot.eventCount);
+	setControlActionAndPresentation("reset", AppAction(AppActionKind::Reset), "Reset", true);
+	setControlActionAndPresentation("demo_mode", AppAction(AppActionKind::StartDemo), "Demo", !snapshot.buildingTrace);
+	controls_.find("demo_mode")->setChecked(false);
 	const bool busy = !screenModel.setupEnabled;
 	const char* setupIds[] = { "shuffle", "insta_sort", "insta_invert", "algorithm", "direction", "run",
 		"bars_down", "bars_up", "time_down", "time_up", "seed_value", "seed_previous", "seed_next", "seed_bookmarks" };
@@ -445,6 +429,17 @@ void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetI
 	controls_.find("next")->setLabel(activePreset == UiPresetId::ClassicWindows95 ? "Step" : "Event >");
 }
 
+void MainControlsView::synchronizeDemoTransport(const DemoRunner& runner)
+{
+	if (!runner.active()) return;
+	setControlActionAndPresentation("play", AppAction(AppActionKind::ToggleDemoPlayback), runner.paused() ? "Resume" : "Pause", true);
+	setControlActionAndPresentation("previous", AppAction(AppActionKind::PreviousDemoStep), "Previous", runner.stepIndex() > 0);
+	setControlActionAndPresentation("next", AppAction(AppActionKind::NextDemoStep), "Next", runner.stepIndex() + 1 < runner.preset().steps.size());
+	setControlActionAndPresentation("reset", AppAction(AppActionKind::StopDemo), "Stop Demo", true);
+	setControlActionAndPresentation("demo_mode", AppAction(AppActionKind::StopDemo), "Demo", true);
+	controls_.find("demo_mode")->setChecked(true);
+}
+
 void MainControlsView::compose(MainControlsPaintSection section, const UiRect& screen,
 	UiPaintContext& paintContext) const
 {
@@ -456,6 +451,8 @@ void MainControlsView::compose(MainControlsPaintSection section, const UiRect& s
 		for (std::size_t i = 0; i < sizeof(headerButtons) / sizeof(headerButtons[0]); ++i)
 			submitControl(controls_, paintContext, headerButtons[i], UiPaintLayer::MainControls,
 				UiPaintMaterial::Button, screen);
+		if (!controls_.find("shuffle")->visible())
+			submitControl(controls_, paintContext, "demo_mode", UiPaintLayer::MainControls, UiPaintMaterial::Button, screen);
 		return;
 	}
 	if (section == MainControlsPaintSection::Menus)

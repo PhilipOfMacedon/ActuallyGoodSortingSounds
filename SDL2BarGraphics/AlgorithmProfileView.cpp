@@ -64,7 +64,7 @@ void AlgorithmProfileView::compose(const std::string& algorithm, const UiAlgorit
 		scrollViewport_.setOffset(0.0f);
 	}
 
-	const float cardY = (std::max)(seedBounds.y + seedBounds.height + 12.0f, setupRail.y + 258.0f);
+	const float cardY = (std::max)(seedBounds.y + seedBounds.height + 12.0f, setupRail.y + 12.0f);
 	const float cardBottom = setupRail.y + setupRail.height - 10.0f;
 	const float cardHeight = (std::max)(0.0f, cardBottom - cardY);
 	if (cardHeight < 78.0f) return;

@@ -104,7 +104,17 @@ namespace
 		}
 
 		values.push_back(token("control.border_width", UiTokenCategory::Decorations,
-			UiTokenValue::fromNumber(windows95 ? 2 : vga ? 1 : 0), 0, 8, paint, "Control border thickness"));
+			UiTokenValue::fromNumber(windows95 ? 2 : 1), 0, 8, paint, "Control border thickness"));
+		values.push_back(token("control.padding_x", UiTokenCategory::Metrics,
+			UiTokenValue::fromNumber(8), 2, 24, paint, "Horizontal space inside controls"));
+		values.push_back(token("control.padding_y", UiTokenCategory::Metrics,
+			UiTokenValue::fromNumber(4), 1, 12, paint, "Vertical space inside controls"));
+		values.push_back(token("control.shadow_offset", UiTokenCategory::Decorations,
+			UiTokenValue::fromNumber(windows95 ? 0 : 1), 0, 8, paint, "Control shadow offset"));
+		values.push_back(token("panel.border_width", UiTokenCategory::Decorations,
+			UiTokenValue::fromNumber(windows95 ? 2 : 1), 0, 8, paint, "Panel border thickness"));
+		values.push_back(token("panel.shadow_offset", UiTokenCategory::Decorations,
+			UiTokenValue::fromNumber(windows95 ? 6 : 5), 0, 16, paint, "Panel shadow offset"));
 		if (vga)
 		{
 			values.push_back(token("control.arrow_size", UiTokenCategory::Decorations,

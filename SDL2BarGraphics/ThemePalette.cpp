@@ -181,3 +181,15 @@ ThemePalette paletteForAppearance(UiPresetId preset, const UiThemeCustomization&
 	(void)preset;
 	return result;
 }
+
+ThemePalette uiPaletteForAppearance(UiPresetId preset, const UiThemeCustomization& customization)
+{
+	ThemePalette result = paletteForAppearance(preset, customization);
+	if (preset == UiPresetId::ClassicWindows95 && customization.palette == PaletteId::Windows95)
+	{
+		if (customization.overrides.count("color.panel") == 0) result.panel = result.button;
+		result.background = result.panel;
+		if (customization.overrides.count("color.muted_text") == 0) result.mutedText = glm::vec4(0.32f, 0.32f, 0.32f, 1.0f);
+	}
+	return result;
+}

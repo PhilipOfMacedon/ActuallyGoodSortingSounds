@@ -23,6 +23,8 @@ public:
 	bool begin(const DemoPreset& snapshot, std::string* error = nullptr);
 	void stop();
 	bool active() const;
+	bool paused() const { return paused_; }
+	void resume();
 	DemoRunnerState state() const { return state_; }
 	const DemoPreset& preset() const { return preset_; }
 	std::size_t stepIndex() const { return stepIndex_; }
@@ -58,6 +60,7 @@ private:
 	float intermissionRemaining_;
 	bool preparationPending_;
 	bool hasEffectiveInput_;
+	bool paused_;
 	std::string message_;
 
 	void requestCurrentStep();

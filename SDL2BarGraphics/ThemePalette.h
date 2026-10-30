@@ -31,3 +31,4 @@ struct ThemePalette
 
 const ThemePalette& paletteFor(PaletteId id);
 ThemePalette paletteForAppearance(UiPresetId preset, const UiThemeCustomization& customization);
+ThemePalette uiPaletteForAppearance(UiPresetId preset, const UiThemeCustomization& customization);

@@ -1201,11 +1201,11 @@ namespace
 			wide.control("menu_file").x >= wide.control("panel_toggle").x + wide.control("panel_toggle").width,
 			"VGA menus share the top header beside the setup toggle instead of consuming a separate row");
 		const UiLayoutResult wideWindows95 = calculateUiLayout(UiPresetId::ClassicWindows95, wideVga, controlIds);
-		check(wideWindows95.control("play").x < wideWindows95.control("next").x &&
-			wideWindows95.control("next").x < wideWindows95.control("reset").x &&
-			wideWindows95.control("previous").width == 0.0f &&
+		check(wideWindows95.control("previous").x < wideWindows95.control("next").x &&
+			wideWindows95.control("next").x < wideWindows95.control("play").x &&
+			wideWindows95.control("play").x < wideWindows95.control("reset").x &&
 			wideWindows95.timelineLeftArrow.width > 0.0f && wideWindows95.timelineRightArrow.width > 0.0f,
-			"wide Windows 95 transport presents Play, Step, and Reset while seek arrows retain previous/next access");
+			"wide Windows 95 transport preserves both navigation buttons with Play and Reset");
 		UiLayoutInput classicFrame;
 		classicFrame.width = 1000; classicFrame.height = 640; classicFrame.headerHeight = 0; classicFrame.menuHeight = 36;
 		const UiLayoutResult classicFrameLayout = calculateUiLayout(UiPresetId::ClassicWindows95, classicFrame, controlIds);
@@ -3119,7 +3119,7 @@ namespace
 		layout.controlBounds["menu_file"] = UiRect(40.0f, 10.0f, 40.0f, 20.0f);
 		view.applyLayout(UiPresetId::FlatVgaDos, layout, 1280, true);
 		view.layoutComboPopups(300, 100, [](const std::string&) { return 200.0f; });
-		check(popup->popupBounds().y == 12.0f && popup->popupBounds().height == 80.0f,
+		check(popup->popupBounds().y == 30.0f && popup->popupBounds().height == 62.0f,
 			"main controls popup layout clamps when neither full above nor below placement fits");
 	}
 
@@ -4049,6 +4049,161 @@ namespace
 		AppAction busySeed(AppActionKind::SetSeed, 123u);
 		check(!app.dispatch(busySeed).accepted && app.snapshot().inputSeed == retainedSeed,
 			"seed application is rejected during playback without changing the prepared baseline");
+	}
+
+	void testDemoTransportRestoresManualControls()
+	{
+		UserPreferences preferences;
+		MainControlsView controls;
+		controls.initializeControls(preferences, "Insertion Sort");
+		sortinglogic::RenderSnapshot snapshot;
+		UiScreenModel screen = buildUiScreenModel(snapshot, preferences, false);
+		DemoRunner runner;
+		runner.begin(demoPrefabPresets()[0]);
+		controls.synchronize(preferences, UiPresetId::FlatVgaDos, snapshot, screen, "Insertion Sort");
+		controls.synchronizeDemoTransport(runner);
+		check(controls.findControl("demo_mode")->checked() && !controls.findControl("previous")->enabled() &&
+			controls.findControl("next")->enabled() && controls.findControl("next")->label() == "Next" &&
+			controls.findControl("next")->action().kind == AppActionKind::NextDemoStep,
+			"demo mode selects algorithm navigation and disables Previous on the first step");
+		while (runner.nextStep()) {}
+		controls.synchronizeDemoTransport(runner);
+		check(!controls.findControl("next")->enabled() && controls.findControl("previous")->enabled(),
+			"demo mode disables Next on the last step");
+		runner.stop();
+		for (UiPresetId preset : uiPresetCatalog())
+		{
+			controls.synchronize(preferences, preset, snapshot, screen, "Insertion Sort");
+			controls.synchronizeDemoTransport(runner);
+			check(!controls.findControl("demo_mode")->checked() &&
+				controls.findControl("demo_mode")->action().kind == AppActionKind::StartDemo &&
+				controls.findControl("previous")->action().kind == AppActionKind::PreviousEvent &&
+				controls.findControl("next")->action().kind == AppActionKind::NextEvent &&
+				controls.findControl("play")->action().kind == AppActionKind::GenerateAndPlay &&
+				controls.findControl("reset")->action().kind == AppActionKind::Reset &&
+				controls.findControl("reset")->label() == "Reset" && !controls.findControl("next")->enabled(),
+				"all presets restore manual actions, captions, enabled state, and the mode switch after a demo");
+		}
+	}
+
+	void testDemoAutomaticPlaybackFrameOrdering()
+	{
+		MemorySettings preferences;
+		MemorySeedBookmarks seeds;
+		MemoryDemoPresets demos;
+		DemoPreset preset = demoPrefabPresets()[0];
+		preset.id = "user.autoplay-regression";
+		preset.prefab = false;
+		preset.steps.resize(2);
+		preset.intermissionSeconds = 0.0f;
+		preset.classInputs[sortinglogic::DemoComplexityClass::Quadratic] = DemoInputRecipe(5489u, 8);
+		demos.values.push_back(preset);
+		AppController app(preferences, &seeds, &demos);
+		const std::uint64_t manualIdentity = app.activeSessionIdentity();
+		AppAction start(AppActionKind::StartDemo);
+		start.text = preset.id;
+		check(app.dispatch(start).accepted, "autoplay regression starts a two-step demo");
+		for (std::size_t step = 0; step < 2; ++step)
+		{
+			app.setAudioPreparationPending(true);
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+			while (app.demoActive() && !app.snapshot().hasTrace && std::chrono::steady_clock::now() < deadline)
+			{
+				app.update(0.0f, true);
+				std::this_thread::yield();
+			}
+			check(app.demoActive() && app.snapshot().hasTrace && app.playbackPending() && !app.snapshot().playing,
+				"each demo step retains automatic playback intent while audio preparation is pending");
+			app.dispatch(AppAction(AppActionKind::TogglePanelExpanded));
+			check(app.playbackPending(), "collapsing or expanding the setup panel preserves queued demo playback");
+			app.setAudioPreparationPending(false);
+			check(!app.snapshot().playing && app.playbackPending(),
+				"readiness observed after bridge publication defers Play to the next controller update");
+			SoundEngine::AudioPlayheadFeedback feedback;
+			feedback.generation = 21 + step;
+			feedback.transportRevision = 100 + step;
+			feedback.durationFrames = 44100;
+			feedback.playing = false;
+			app.applyAudioPlayhead(feedback, AudioPlaybackRevision(feedback.generation, feedback.transportRevision));
+			app.update(0.0f, true);
+			check(app.snapshot().playing && app.demoRunner().state() == DemoRunnerState::Playing,
+				"paused feedback from the preparation frame cannot consume and stop automatic playback");
+			feedback.timelineFrame = feedback.durationFrames;
+			feedback.sourceCursor = app.snapshot().eventCount;
+			app.applyAudioPlayhead(feedback, AudioPlaybackRevision(feedback.generation, feedback.transportRevision));
+			app.update(0.0f, true);
+		}
+		check(!app.demoActive() && app.activeSessionIdentity() == manualIdentity && !app.snapshot().playing,
+			"natural demo completion restores the paused manual session after automatic step transitions");
+
+		DemoRunner intermission;
+		preset.intermissionSeconds = 1.0f;
+		intermission.begin(preset);
+		intermission.markPlaying();
+		intermission.playbackCompleted();
+		intermission.markPaused();
+		intermission.update(2.0f);
+		check(intermission.state() == DemoRunnerState::Intermission && intermission.stepIndex() == 0,
+			"pausing an intermission preserves the remaining time and current step");
+		intermission.resume();
+		intermission.update(1.0f);
+		check(intermission.stepIndex() == 1 && intermission.preparationPending(),
+			"resuming an intermission automatically prepares its next algorithm");
+	}
+
+	void testSharedComboAndComponentDefaults()
+	{
+		UIRoot root;
+		std::vector<std::string> options;
+		for (int i = 0; i < 30; ++i) options.push_back("A long algorithm label " + std::to_string(i));
+		UiWidget& combo = root.addComboBox("shared_combo", options);
+		combo.setBounds(UiRect(400, 330, 80, 30));
+		root.layoutComboPopups(UiRect(8, 8, 480, 380), [](const std::string& text) { return text.size() * 8.0f; });
+		check(combo.role() == UiControlRole::Choice && combo.popupBounds().width > combo.bounds().width &&
+			combo.popupBounds().x >= 8 && combo.popupBounds().x + combo.popupBounds().width <= 488 &&
+			combo.popupBounds().y + combo.popupBounds().height <= combo.bounds().y,
+			"new combo boxes inherit choice styling, measured width, and bounded upward placement");
+		UiAction action;
+		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 420, 340), action);
+		root.handleEvent(UiInputEvent(UiInputType::PointerUp, 420, 340), action);
+		root.handleEvent(UiInputEvent(UiInputType::Wheel, combo.popupBounds().x + 10, combo.popupBounds().y + 10, -2), action);
+		const std::size_t first = combo.firstVisibleOption();
+		combo.setOptions(options);
+		combo.setSelectedIndex(combo.selectedIndex());
+		check(first > 0 && combo.firstVisibleOption() == first,
+			"unchanged option synchronization preserves the user's popup scroll position");
+		for (UiPresetId preset : uiPresetCatalog())
+		{
+			const UiThemeCustomization theme = defaultUiThemeCustomization(preset, PaletteId::Cyan);
+			const UiControlPaintStyle style = resolveUiControlPaintStyle(preset, theme, "button", true, false, false, false, {});
+			const UiControlPaintStyle panel = resolveUiControlPaintStyle(preset, theme, "panel", true, false, false, false, {});
+			check(style.borderWidth > 0 && style.paddingX > 0 && style.paddingY > 0 && panel.borderWidth > 0 && panel.shadowOffset > 0,
+				"every preset supplies reusable control padding and bordered panel chrome by default");
+			const UiColor readable = readableUiTextColor(UiColor(0.05f, 0.07f, 0.10f, 1.0f), UiColor(0.08f, 0.26f, 0.62f, 1.0f));
+			check(readable.r > 0.9f && readable.g > 0.9f && readable.b > 0.9f,
+				"shared text styling chooses a legible foreground for the Windows 95 selection surface");
+		}
+		DemoEditorView editor;
+		DemoPresetStore store;
+		DemoRunner runner;
+		const DemoPreset draft = demoPrefabPresets()[0];
+		editor.setOpen(true);
+		editor.synchronize(store, draft, draft.id, 0, runner, true, 1000, 640);
+		editor.layoutComboPopups([](const std::string& text) { return text.size() * 8.0f; });
+		AppAction appAction;
+		clickDemoControl(editor, "demo_algorithm", appAction);
+		RecordingUiPaintContext paint;
+		editor.compose(DemoEditorPalette(), 1000, 640, paint);
+		bool sharedControl = false, upperPopup = false;
+		for (const UiPaintCommand& command : paint.commands())
+		{
+			if (command.elementId == "demo_algorithm" && command.primitive == UiPaintPrimitive::Control)
+			{
+				sharedControl = sharedControl || !command.popup;
+				upperPopup = upperPopup || (command.popup && command.layer == UiPaintLayer::Content);
+			}
+		}
+		check(sharedControl && upperPopup, "demo editor uses the standard widget painter and a separate upper popup pass");
 	}
 
 	void testDemoRunSessionIsolationAndCancellation()
@@ -5071,6 +5226,9 @@ int main(int argc, char* argv[])
 	testFractionalDurationStepPersists();
 	testAppControllerDispatchAndPersistence();
 	testAppControllerSeedManagement();
+	testDemoTransportRestoresManualControls();
+	testDemoAutomaticPlaybackFrameOrdering();
+	testSharedComboAndComponentDefaults();
 	testDemoRunSessionIsolationAndCancellation();
 	testPrefabRenamePreservesDraft();
 	testAppearanceApplyIsTransactionalAndTransportNeutral();

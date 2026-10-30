@@ -28,6 +28,9 @@
     <ClCompile Include="..\SDL2BarGraphics\PlaybackTimebase.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AudioSettingsActions.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AppController.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\SeedLibrary.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\DemoModels.cpp" />
+    <ClCompile Include="..\SDL2BarGraphics\DemoRunner.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\UiAppearance.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\AlgorithmAudioPreferences.cpp" />
     <ClCompile Include="..\SDL2BarGraphics\SettingsFileStorage.cpp" />

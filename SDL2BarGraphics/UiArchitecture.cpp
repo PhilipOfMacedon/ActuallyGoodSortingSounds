@@ -199,7 +199,7 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 	}
 	if (preset == UiPresetId::Current && std::find(controlIds.begin(), controlIds.end(), "demo_editor") != controlIds.end())
 	{
-		result.controlBounds["demo_editor"] = UiRect(std::max(0.0f, width - 82.0f), headerButtonY, 34.0f, 28.0f);
+		result.controlBounds["demo_editor"] = UiRect(std::max(0.0f, width - 148.0f), headerButtonY, 100.0f, 28.0f);
 		result.focusOrder.push_back("demo_editor");
 	}
 	if (menuHeight > 0.0f)
@@ -214,6 +214,8 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 		const float menuHeightInHeader = (std::min)(menuHeight, result.menuBar.height);
 		placeRow(result, menus, menuX, menuY, menuWidth, menuHeightInHeader, 2.0f);
 	}
+	if (!expanded && std::find(controlIds.begin(), controlIds.end(), "demo_mode") != controlIds.end())
+		result.controlBounds["demo_mode"] = UiRect(std::max(0.0f, width - 174.0f), headerButtonY, 124.0f, 28.0f);
 	const UiRect collapsedChartStart(std::max(0.0f, (width - std::min(280.0f, width - 24.0f)) * 0.5f),
 		headerBottom + std::max(24.0f, (height - headerBottom - 42.0f) * 0.5f) + 42.0f,
 		std::min(280.0f, std::max(0.0f, width - 24.0f)), 42.0f);
@@ -233,9 +235,9 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 		const bool wide = width >= 900.0f;
 		const float available = std::max(0.0f, width - 2.0f * margin);
 		const float setupTop = std::max(headerBottom + gap, 48.0f);
-		const char* topIds[] = { "shuffle", "insta_sort", "insta_invert", "algorithm", "direction", "run", "play", "reset" };
+		const char* topIds[] = { "shuffle", "insta_sort", "insta_invert", "algorithm", "direction", "run", "play", "reset", "demo_mode" };
 		const char* row0[] = { "shuffle", "insta_sort", "insta_invert", "algorithm" };
-		const char* row1[] = { "direction", "run", "play", "reset" };
+		const char* row1[] = { "direction", "run", "play", "reset", "demo_mode" };
 		const char* row2[] = { "previous", "next", "bars_down", "bars_value", "bars_up" };
 		const char* row3[] = { "time_down", "time_value", "time_up" };
 		if (wide)
@@ -319,7 +321,7 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 		const float transportTop = (std::max)(headerBottom + layoutGap, height - transportHeight - margin);
 		result.transportArea = UiRect(margin, transportTop, bottomWidth,
 			(std::max)(0.0f, height - transportTop - margin));
-		const char* classicTransport[] = { "play", "next", "reset" };
+		const char* classicTransport[] = { "previous", "next", "play", "reset" };
 		const char* vgaTransport[] = { "previous", "next", "play", "reset" };
 		const char* const* transport = windows95 && wide ? classicTransport : vgaTransport;
 		const std::size_t transportCount = windows95 && wide
@@ -342,7 +344,7 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 			const float innerTop = result.setupRail.y + railInset;
 			const float innerHeight = std::max(0.0f, result.setupRail.height - railInset * 2.0f);
 			const float rowGap = std::min(layoutGap, 8.0f);
-			const int rowCount = 8;
+			const int rowCount = 9;
 			const float fittingHeight = std::max(0.0f, (innerHeight - rowGap * (rowCount - 1)) / rowCount);
 			const float rowHeight = std::min(controlHeight, fittingHeight);
 			const char* row0[] = { "shuffle", "insta_sort", "insta_invert" };
@@ -352,9 +354,10 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 			const char* row4[] = { "bars_down", "bars_value", "bars_up" };
 			const char* row5[] = { "time_down", "time_value", "time_up" };
 			const char* row6[] = { "seed_value", "seed_copy", "seed_save" };
-			const char* row7[] = { "seed_bookmarks", "seed_previous", "seed_next", "seed_remove" };
-			const char* const* rowIds[] = { row0, row1, row2, row3, row4, row5, row6, row7 };
-			const std::size_t rowSizes[] = { 3, 1, 2, 1, 3, 3, 3, 4 };
+			const char* row7[] = { "seed_bookmarks", "seed_remove" };
+			const char* row8[] = { "seed_previous", "seed_next" };
+			const char* const* rowIds[] = { row0, row1, row2, row3, row4, row5, row6, row7, row8 };
+			const std::size_t rowSizes[] = { 3, 1, 2, 1, 3, 3, 3, 2, 2 };
 			for (int row = 0; row < rowCount; ++row)
 				addExisting(result, std::vector<std::string>(rowIds[row], rowIds[row] + rowSizes[row]), controlIds,
 					innerX, innerTop + row * (rowHeight + rowGap), innerWidth, rowHeight, rowGap);
@@ -382,7 +385,13 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 			const float buttonY = result.transportArea.y + std::max(0.0f, (result.transportArea.height - buttonHeight) * 0.5f);
 			placeRow(result, transportIds, result.transportArea.x, buttonY, groupWidth, buttonHeight, layoutGap);
 			const float infoX = result.transportArea.x + groupWidth + layoutGap;
-			const float infoWidth = std::max(0.0f, result.transportArea.x + result.transportArea.width - infoX);
+			const bool hasDemoMode = std::find(controlIds.begin(), controlIds.end(), "demo_mode") != controlIds.end();
+			const float modeWidth = hasDemoMode ? 132.0f : 0.0f;
+			if (hasDemoMode)
+				result.controlBounds["demo_mode"] = UiRect(result.transportArea.x + result.transportArea.width - modeWidth,
+					buttonY, modeWidth, buttonHeight);
+			const float infoWidth = std::max(0.0f, result.transportArea.x + result.transportArea.width - infoX -
+				(hasDemoMode ? modeWidth + layoutGap : 0.0f));
 			result.timeline = UiRect(infoX, result.transportArea.y + 8.0f, infoWidth, timelineHeight);
 			layoutTimelineParts(result, std::min(in.timelineArrowSize, timelineHeight), true);
 			const float telemetryY = result.timeline.y + timelineHeight + 4.0f;
@@ -425,7 +434,9 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 			const float buttonHeight = std::min(requestedButtonHeight,
 				std::max(0.0f, result.transportArea.height - minimumButtonTop - 8.0f));
 			const float buttonY = result.transportArea.y + result.transportArea.height - buttonHeight - 8.0f;
-			placeRow(result, transportIds, result.transportArea.x, buttonY, result.transportArea.width, buttonHeight, layoutGap);
+			std::vector<std::string> narrowTransport = transportIds;
+			if (std::find(controlIds.begin(), controlIds.end(), "demo_mode") != controlIds.end()) narrowTransport.push_back("demo_mode");
+			placeRow(result, narrowTransport, result.transportArea.x, buttonY, result.transportArea.width, buttonHeight, layoutGap);
 			result.timeline = UiRect(result.transportArea.x, result.transportArea.y + 7.0f,
 				result.transportArea.width, timelineHeight);
 			layoutTimelineParts(result, 0.0f, false);
@@ -451,8 +462,23 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 }
 
 UiControlPaintStyle::UiControlPaintStyle()
-	: fill(), text(0.93f,0.96f,0.98f,1), border(0.25f,0.38f,0.43f,1), borderWidth(0), cornerRadius(0), drawArrow(false), squareIndicator(false)
+	: fill(), text(0.93f,0.96f,0.98f,1), border(0.25f,0.38f,0.43f,1), borderWidth(0), cornerRadius(0), paddingX(8), paddingY(4), shadowOffset(1), drawArrow(false), squareIndicator(false)
 {
+}
+
+UiColor readableUiTextColor(const UiColor& preferred, const UiColor& surface, float minimumContrast)
+{
+	const auto luminance = [](const UiColor& color)
+	{
+		const auto linear = [](float channel) { return channel <= 0.04045f ? channel / 12.92f : std::pow((channel + 0.055f) / 1.055f, 2.4f); };
+		return 0.2126f * linear(color.r) + 0.7152f * linear(color.g) + 0.0722f * linear(color.b);
+	};
+	const float background = luminance(surface);
+	const float foreground = luminance(preferred);
+	const float contrast = (std::max(background, foreground) + 0.05f) / (std::min(background, foreground) + 0.05f);
+	if (contrast >= minimumContrast) return preferred;
+	return (background + 0.05f) / 0.05f > 1.05f / (background + 0.05f)
+		? UiColor(0, 0, 0, preferred.a) : UiColor(1, 1, 1, preferred.a);
 }
 
 UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeCustomization& theme,
@@ -469,9 +495,14 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 	style.border = color("color.border", style.border);
 	style.borderWidth = numberToken(preset, theme, "control.border_width", 0.0f);
 	style.cornerRadius = 0.0f;
+	style.paddingX = numberToken(preset, theme, "control.padding_x", 8.0f);
+	style.paddingY = numberToken(preset, theme, "control.padding_y", 4.0f);
+	style.shadowOffset = numberToken(preset, theme, role == "panel" ? "panel.shadow_offset" : "control.shadow_offset", role == "panel" ? 5.0f : 1.0f);
+	if (role == "panel") style.borderWidth = numberToken(preset, theme, "panel.border_width", 1.0f);
 	style.drawArrow = role == "choice" || role == "dropdown";
 	style.squareIndicator = preset == UiPresetId::FlatVgaDos || preset == UiPresetId::ClassicWindows95;
 	if (!enabled) style.fill = color("color.disabled_button", UiColor(0.10f,0.16f,0.19f,1));
+	else if (role == "panel") style.fill = color("color.panel", UiColor(0.10f,0.16f,0.20f,1));
 	else if (selected) style.fill = color("color.accent", UiColor(0.29f,0.72f,0.64f,1));
 	else if (role == "run") style.fill = color("color.run", UiColor(0.48f,0.28f,0.12f,1));
 	else if (role == "play-active") style.fill = color("color.play_active", UiColor(0.18f,0.42f,0.34f,1));
@@ -489,5 +520,6 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 		style.fill.g = std::min(1.0f, style.fill.g * 1.12f + 0.025f);
 		style.fill.b = std::min(1.0f, style.fill.b * 1.12f + 0.025f);
 	}
+	style.text = readableUiTextColor(style.text, style.fill, enabled ? 4.5f : 3.0f);
 	return style;
 }
