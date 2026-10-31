@@ -84,6 +84,7 @@ enum class AppActionKind
 	DemoSetStepTiming,
 	DemoSetStepDirection,
 	DemoSetStepCompletionScan,
+	DemoSetStepMergeBufferVisualization,
 	DemoSetStepOption,
 	DemoSetStepOverride,
 	DemoClearStepOverride,
@@ -122,6 +123,7 @@ inline bool isDemoActionKind(AppActionKind kind)
 	case AppActionKind::DemoSetStepTiming:
 	case AppActionKind::DemoSetStepDirection:
 	case AppActionKind::DemoSetStepCompletionScan:
+	case AppActionKind::DemoSetStepMergeBufferVisualization:
 	case AppActionKind::DemoSetStepOption:
 	case AppActionKind::DemoSetStepOverride:
 	case AppActionKind::DemoClearStepOverride:
@@ -152,6 +154,7 @@ inline bool isDemoDraftMutationAction(AppActionKind kind)
 	case AppActionKind::DemoSetStepTiming:
 	case AppActionKind::DemoSetStepDirection:
 	case AppActionKind::DemoSetStepCompletionScan:
+	case AppActionKind::DemoSetStepMergeBufferVisualization:
 	case AppActionKind::DemoSetStepOption:
 	case AppActionKind::DemoSetStepOverride:
 	case AppActionKind::DemoClearStepOverride:

@@ -93,4 +93,5 @@ private:
 	AppearanceEditorLayoutResult layout_;
 	std::string description_;
 	bool searchFocused_;
+	int copySourcePreset_;
 };

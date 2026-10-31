@@ -44,12 +44,10 @@ private:
 	TextBlockLayout complexityLayout_;
 	TextBlockLayout descriptionLayout_;
 	UiScrollViewport scrollViewport_;
+	UiScrollbar scrollbarController_;
 	UiRect scrollTrack_;
 	UiRect scrollThumb_;
 	std::string algorithm_;
 	float lineHeight_;
 	bool visible_;
-	bool dragging_;
-	float dragStartY_;
-	float dragStartOffset_;
 };

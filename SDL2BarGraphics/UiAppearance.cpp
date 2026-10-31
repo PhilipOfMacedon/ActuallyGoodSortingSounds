@@ -8,6 +8,33 @@
 
 namespace
 {
+	const char* const colorTokenIds[] = { "color.background", "color.bar", "color.compared", "color.held",
+		"color.shifted", "color.write_target", "color.gap", "color.panel", "color.button",
+		"color.disabled_button", "color.value_button", "color.accent", "color.run", "color.play_active",
+		"color.timeline_rail", "color.timeline_thumb", "color.reset", "color.text", "color.muted_text",
+		"color.overlay_dim", "color.border" };
+	const UiColor builtInColors[][21] =
+	{
+		{ { .10f,.10f,.10f,1 },{ .22f,.71f,.84f,1 },{ .98f,.62f,.26f,1 },{ 1,.83f,.28f,1 },{ .67f,.46f,.96f,1 },{ .35f,.84f,.58f,1 },{ .96f,.28f,.54f,1 },{ .10f,.16f,.20f,1 },{ .13f,.24f,.31f,1 },{ .10f,.16f,.19f,1 },{ .10f,.16f,.20f,1 },{ .29f,.72f,.64f,1 },{ .48f,.28f,.12f,1 },{ .18f,.42f,.34f,1 },{ .09f,.14f,.17f,1 },{ .91f,.78f,.34f,1 },{ .30f,.21f,.35f,1 },{ .93f,.96f,.98f,1 },{ .68f,.76f,.79f,1 },{ 0,0,0,.58f },{ .25f,.38f,.43f,1 } },
+		{ { .075f,.055f,.035f,1 },{ .90f,.48f,.16f,1 },{ 1,.66f,.23f,1 },{ 1,.86f,.48f,1 },{ .79f,.43f,.73f,1 },{ .41f,.76f,.43f,1 },{ .98f,.31f,.18f,1 },{ .15f,.11f,.07f,1 },{ .27f,.18f,.09f,1 },{ .14f,.11f,.08f,1 },{ .17f,.12f,.07f,1 },{ .86f,.54f,.19f,1 },{ .48f,.23f,.07f,1 },{ .20f,.39f,.24f,1 },{ .13f,.10f,.07f,1 },{ .97f,.74f,.30f,1 },{ .36f,.19f,.08f,1 },{ 1,.89f,.69f,1 },{ .72f,.59f,.39f,1 },{ 0,0,0,.62f },{ .52f,.34f,.16f,1 } },
+		{ { .015f,.015f,.015f,1 },{ .88f,.88f,.88f,1 },{ .60f,.60f,.60f,1 },{ 1,1,1,1 },{ .43f,.43f,.43f,1 },{ .74f,.74f,.74f,1 },{ 1,1,1,1 },{ .07f,.07f,.07f,1 },{ .16f,.16f,.16f,1 },{ .08f,.08f,.08f,1 },{ .11f,.11f,.11f,1 },{ .42f,.42f,.42f,1 },{ .28f,.28f,.28f,1 },{ .22f,.22f,.22f,1 },{ .07f,.07f,.07f,1 },{ .95f,.95f,.95f,1 },{ .25f,.25f,.25f,1 },{ 1,1,1,1 },{ .70f,.70f,.70f,1 },{ 0,0,0,.68f },{ .63f,.63f,.63f,1 } },
+		{ { .91f,.93f,.94f,1 },{ .08f,.47f,.63f,1 },{ .86f,.37f,.09f,1 },{ .82f,.61f,.06f,1 },{ .48f,.31f,.75f,1 },{ .12f,.55f,.32f,1 },{ .80f,.12f,.26f,1 },{ .82f,.85f,.86f,1 },{ .72f,.79f,.81f,1 },{ .79f,.82f,.83f,1 },{ .85f,.87f,.88f,1 },{ .09f,.43f,.51f,1 },{ .78f,.35f,.08f,1 },{ .15f,.48f,.33f,1 },{ .78f,.82f,.83f,1 },{ .76f,.55f,.04f,1 },{ .43f,.27f,.51f,1 },{ .07f,.10f,.12f,1 },{ .31f,.37f,.39f,1 },{ .12f,.16f,.18f,.50f },{ .35f,.43f,.45f,1 } },
+		{ { .035f,.040f,.052f,1 },{ 0,.79f,.86f,1 },{ 1,.55f,.05f,1 },{ .12f,.92f,.22f,1 },{ .72f,.30f,.88f,1 },{ .98f,.62f,.05f,1 },{ .10f,.13f,.18f,1 },{ .08f,.14f,.25f,1 },{ .13f,.20f,.32f,1 },{ .07f,.11f,.18f,1 },{ .08f,.14f,.23f,1 },{ .05f,.66f,.77f,1 },{ .13f,.20f,.32f,1 },{ .06f,.55f,.18f,1 },{ .25f,.32f,.43f,1 },{ .84f,.89f,.95f,1 },{ .14f,.20f,.33f,1 },{ .90f,.94f,.99f,1 },{ .64f,.73f,.84f,1 },{ 0,0,0,.68f },{ .60f,.68f,.79f,1 } },
+		{ { .025f,.035f,.055f,1 },{ 0,.88f,.90f,1 },{ 1,.58f,.04f,1 },{ .15f,.92f,.24f,1 },{ .75f,.35f,.85f,1 },{ .98f,.62f,.02f,1 },{ .77f,.77f,.77f,1 },{ .06f,.13f,.25f,1 },{ .75f,.75f,.75f,1 },{ .38f,.38f,.38f,1 },{ .75f,.75f,.75f,1 },{ .08f,.26f,.62f,1 },{ .55f,.55f,.55f,1 },{ .12f,.47f,.18f,1 },{ .30f,.30f,.30f,1 },{ .86f,.86f,.86f,1 },{ .32f,.32f,.32f,1 },{ .05f,.07f,.10f,1 },{ .73f,.73f,.73f,1 },{ 0,0,0,.55f },{ .28f,.28f,.28f,1 } }
+	};
+	std::string paletteStableId(PaletteId id)
+	{
+		switch (id) { case PaletteId::Amber:return "amber"; case PaletteId::Monochrome:return "monochrome";
+		case PaletteId::Light:return "light"; case PaletteId::VgaClassic:return "vga-classic";
+		case PaletteId::Windows95:return "windows-95"; case PaletteId::Customized:return "customized"; default:return "cyan"; }
+	}
+	bool parsePaletteStableId(const std::string& id, PaletteId& result)
+	{
+		if (id == "cyan") result=PaletteId::Cyan; else if(id=="amber") result=PaletteId::Amber;
+		else if(id=="monochrome") result=PaletteId::Monochrome; else if(id=="light") result=PaletteId::Light;
+		else if(id=="vga-classic") result=PaletteId::VgaClassic; else if(id=="windows-95") result=PaletteId::Windows95;
+		else if(id=="customized") result=PaletteId::Customized; else return false; return true;
+	}
 	UiTokenDescriptor token(const char* id, UiTokenCategory category, const UiTokenValue& value,
 		double minimum, double maximum, UiInvalidation invalidation, const char* description,
 		const std::vector<std::string>& choices = std::vector<std::string>())
@@ -268,6 +295,7 @@ const char* paletteDisplayName(PaletteId id)
 	case PaletteId::Light: return "Paper Light";
 	case PaletteId::VgaClassic: return "VGA 95";
 	case PaletteId::Windows95: return "Windows 95 Classic";
+	case PaletteId::Customized: return "Customized";
 	}
 	return "Current Cyan";
 }
@@ -281,7 +309,8 @@ const std::vector<PaletteId>& paletteCatalog()
 		PaletteId::Monochrome,
 		PaletteId::Light,
 		PaletteId::VgaClassic,
-		PaletteId::Windows95
+		PaletteId::Windows95,
+		PaletteId::Customized
 	};
 	return catalog;
 }
@@ -355,17 +384,93 @@ UiThemeCustomization defaultUiThemeCustomization(UiPresetId, PaletteId palette)
 {
 	UiThemeCustomization value;
 	value.palette = palette;
+	value.customPaletteBase = PaletteId::Cyan;
 	return value;
+}
+
+UiColor uiPaletteColor(PaletteId palette, const std::string& tokenId)
+{
+	std::size_t paletteIndex = static_cast<std::size_t>(palette);
+	if (paletteIndex >= sizeof(builtInColors) / sizeof(builtInColors[0])) paletteIndex = 0;
+	for (std::size_t i = 0; i < sizeof(colorTokenIds) / sizeof(colorTokenIds[0]); ++i)
+		if (tokenId == colorTokenIds[i]) return builtInColors[paletteIndex][i];
+	return UiColor();
+}
+
+UiColor uiPresetPaletteColor(UiPresetId preset, PaletteId palette, const std::string& tokenId)
+{
+	UiColor color = uiPaletteColor(palette == PaletteId::Customized ? PaletteId::Cyan : palette, tokenId);
+	if (preset == UiPresetId::ClassicWindows95 && palette == PaletteId::Windows95)
+	{
+		if (tokenId == "color.panel") color = uiPaletteColor(palette, "color.button");
+		else if (tokenId == "color.background") color = uiPaletteColor(palette, "color.button");
+		else if (tokenId == "color.muted_text") color = UiColor(.32f,.32f,.32f,1.0f);
+	}
+	return color;
+}
+
+std::map<std::string, UiColor> effectiveUiPalette(UiPresetId preset, const UiThemeCustomization& value)
+{
+	std::map<std::string, UiColor> colors;
+	for (std::size_t i = 0; i < sizeof(colorTokenIds) / sizeof(colorTokenIds[0]); ++i)
+	{
+		const std::string id(colorTokenIds[i]);
+		UiColor color = uiPresetPaletteColor(preset, value.palette == PaletteId::Customized ? value.customPaletteBase : value.palette, id);
+		if (value.palette == PaletteId::Customized)
+		{
+			std::map<std::string, UiColor>::const_iterator custom = value.customColors.find(id);
+			if (custom != value.customColors.end()) color = custom->second;
+		}
+		std::map<std::string, UiTokenValue>::const_iterator legacy = value.overrides.find(id);
+		if (legacy != value.overrides.end() && legacy->second.type == UiTokenType::Color) color = legacy->second.color;
+		colors[id] = color;
+	}
+	if (preset == UiPresetId::ClassicWindows95 && value.palette == PaletteId::Windows95)
+	{
+		if (value.overrides.count("color.panel") == 0) colors["color.panel"] = colors["color.button"];
+		if (value.overrides.count("color.background") == 0) colors["color.background"] = colors["color.panel"];
+		if (value.overrides.count("color.muted_text") == 0) colors["color.muted_text"] = UiColor(.32f,.32f,.32f,1.0f);
+	}
+	return colors;
+}
+
+bool copyEffectiveUiPalette(UiPresetId sourcePreset, const UiThemeCustomization& source,
+	UiPresetId destinationPreset, UiThemeCustomization& destination)
+{
+	const std::map<std::string, UiColor> colors = effectiveUiPalette(sourcePreset, source);
+	for (std::size_t i = 0; i < sizeof(colorTokenIds) / sizeof(colorTokenIds[0]); ++i)
+	{
+		const std::string id(colorTokenIds[i]);
+		if (!findUiToken(uiPresetDefinition(destinationPreset), id)) return false;
+	}
+	destination.customColors = colors;
+	destination.customPaletteBase = source.palette == PaletteId::Customized ? source.customPaletteBase : source.palette;
+	destination.palette = PaletteId::Customized;
+	for (std::map<std::string, UiTokenValue>::iterator i = destination.overrides.begin(); i != destination.overrides.end(); )
+		if (i->second.type == UiTokenType::Color) destination.overrides.erase(i++); else ++i;
+	return true;
 }
 
 bool validateUiThemeCustomization(UiPresetId preset, const UiThemeCustomization& value, std::string* error)
 {
-	if (static_cast<int>(value.palette) < static_cast<int>(PaletteId::Cyan) || static_cast<int>(value.palette) > static_cast<int>(PaletteId::Windows95))
+	if (static_cast<int>(value.palette) < static_cast<int>(PaletteId::Cyan) || static_cast<int>(value.palette) > static_cast<int>(PaletteId::Customized) ||
+		static_cast<int>(value.customPaletteBase) < static_cast<int>(PaletteId::Cyan) || static_cast<int>(value.customPaletteBase) > static_cast<int>(PaletteId::Windows95))
 	{
 		if (error) *error = "The selected palette is not registered.";
 		return false;
 	}
 	const UiPresetDefinition& definition = uiPresetDefinition(preset);
+	for (std::map<std::string, UiColor>::const_iterator item = value.customColors.begin(); item != value.customColors.end(); ++item)
+		if (!findUiToken(definition, item->first) || item->first.compare(0, 6, "color.") != 0 || !validColor(item->second))
+		{
+			if (error) *error = "Custom palette contains an invalid color token: " + item->first;
+			return false;
+		}
+	if (value.palette == PaletteId::Customized && value.customColors.size() != sizeof(colorTokenIds) / sizeof(colorTokenIds[0]))
+	{
+		if (error) *error = "Customized palette must contain every registered color token.";
+		return false;
+	}
 	for (std::map<std::string, UiTokenValue>::const_iterator item = value.overrides.begin(); item != value.overrides.end(); ++item)
 	{
 		const UiTokenDescriptor* descriptor = findUiToken(definition, item->first);
@@ -408,7 +513,25 @@ bool setUiTokenValue(UiPresetId preset, UiThemeCustomization& value, const std::
 		return false;
 	}
 	UiThemeCustomization candidate = value;
-	candidate.overrides[tokenId] = tokenValue;
+	if (descriptor->category == UiTokenCategory::Colors && tokenValue.type == UiTokenType::Color)
+	{
+		if (candidate.palette != PaletteId::Customized)
+		{
+			candidate.customPaletteBase = candidate.palette;
+			candidate.customColors = effectiveUiPalette(preset, candidate);
+			candidate.palette = PaletteId::Customized;
+		}
+		else if (candidate.customColors.size() < sizeof(colorTokenIds) / sizeof(colorTokenIds[0]))
+		{
+			const std::map<std::string, UiColor> base = effectiveUiPalette(preset,
+				defaultUiThemeCustomization(preset, candidate.customPaletteBase));
+			for (std::map<std::string, UiColor>::const_iterator color = base.begin(); color != base.end(); ++color)
+				if (candidate.customColors.find(color->first) == candidate.customColors.end()) candidate.customColors[color->first] = color->second;
+		}
+		candidate.customColors[tokenId] = tokenValue.color;
+		candidate.overrides.erase(tokenId);
+	}
+	else candidate.overrides[tokenId] = tokenValue;
 	if (!validateUiThemeCustomization(preset, candidate, error)) return false;
 	value = candidate;
 	return true;
@@ -422,11 +545,27 @@ void selectUiPalette(UiThemeCustomization& value, PaletteId palette)
 		else ++item;
 }
 
+void selectUiPalette(UiPresetId preset, UiThemeCustomization& value, PaletteId palette)
+{
+	if (palette == PaletteId::Customized && value.customColors.empty())
+	{
+		value.customPaletteBase = value.palette;
+		value.customColors = effectiveUiPalette(preset, value);
+	}
+	selectUiPalette(value, palette);
+}
+
 UiTokenValue effectiveUiTokenValue(UiPresetId preset, const UiThemeCustomization& value, const std::string& tokenId)
 {
 	const std::map<std::string, UiTokenValue>::const_iterator overrideValue = value.overrides.find(tokenId);
 	if (overrideValue != value.overrides.end()) return overrideValue->second;
 	const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), tokenId);
+	if (descriptor && descriptor->type == UiTokenType::Color)
+	{
+		const std::map<std::string, UiColor> colors = effectiveUiPalette(preset, value);
+		const std::map<std::string, UiColor>::const_iterator found = colors.find(tokenId);
+		if (found != colors.end()) return UiTokenValue::fromColor(found->second);
+	}
 	return descriptor ? descriptor->defaultValue : UiTokenValue();
 }
 
@@ -437,7 +576,13 @@ bool sameUiAppearancePreferences(const UiAppearancePreferences& left, const UiAp
 	std::map<UiPresetId, UiThemeCustomization>::const_iterator b = right.themes.begin();
 	for (; a != left.themes.end(); ++a, ++b)
 	{
-		if (a->first != b->first || a->second.palette != b->second.palette || a->second.overrides.size() != b->second.overrides.size()) return false;
+		if (a->first != b->first || a->second.palette != b->second.palette || a->second.customPaletteBase != b->second.customPaletteBase ||
+			a->second.customColors.size() != b->second.customColors.size() || a->second.overrides.size() != b->second.overrides.size()) return false;
+		std::map<std::string, UiColor>::const_iterator ca = a->second.customColors.begin();
+		std::map<std::string, UiColor>::const_iterator cb = b->second.customColors.begin();
+		for (; ca != a->second.customColors.end(); ++ca, ++cb)
+			if (ca->first != cb->first || ca->second.r != cb->second.r || ca->second.g != cb->second.g ||
+				ca->second.b != cb->second.b || ca->second.a != cb->second.a) return false;
 		std::map<std::string, UiTokenValue>::const_iterator x = a->second.overrides.begin();
 		std::map<std::string, UiTokenValue>::const_iterator y = b->second.overrides.begin();
 		for (; x != a->second.overrides.end(); ++x, ++y)
@@ -462,17 +607,11 @@ bool decodeUiTokenValue(const std::string& encoded, UiTokenType type, UiTokenVal
 std::string serializeUiAppearanceProfile(UiPresetId preset, const UiThemeCustomization& theme)
 {
 	std::ostringstream out;
-	out << "format=agss-ui\nversion=1\npreset=" << uiPresetStableId(preset) << "\npalette=";
-	switch (theme.palette)
-	{
-	case PaletteId::Amber: out << "amber"; break;
-	case PaletteId::Monochrome: out << "monochrome"; break;
-	case PaletteId::Light: out << "light"; break;
-	case PaletteId::VgaClassic: out << "vga-classic"; break;
-	case PaletteId::Windows95: out << "windows-95"; break;
-	default: out << "cyan"; break;
-	}
-	out << '\n';
+	out << "format=agss-ui\nversion=2\npreset=" << uiPresetStableId(preset) << "\npalette=" << paletteStableId(theme.palette) << '\n';
+	if (theme.palette == PaletteId::Customized)
+		out << "custom_base=" << paletteStableId(theme.customPaletteBase) << '\n';
+	for (std::map<std::string, UiColor>::const_iterator item = theme.customColors.begin(); item != theme.customColors.end(); ++item)
+		out << "custom." << item->first << "=color:" << std::setprecision(9) << item->second.r << ',' << item->second.g << ',' << item->second.b << ',' << item->second.a << '\n';
 	for (std::map<std::string, UiTokenValue>::const_iterator item = theme.overrides.begin(); item != theme.overrides.end(); ++item)
 		out << "override." << item->first << '=' << encodeValue(item->second) << '\n';
 	return out.str();
@@ -496,7 +635,9 @@ bool parseUiAppearanceProfile(const std::string& contents, UiAppearanceProfile& 
 		if (error) *error = "This file is not an AGSS appearance profile.";
 		return false;
 	}
-	if (entries["version"] != "1")
+	const bool version1 = entries["version"] == "1";
+	const bool version2 = entries["version"] == "2";
+	if (!version1 && !version2)
 	{
 		if (error) *error = "The appearance profile version is not supported.";
 		return false;
@@ -507,20 +648,36 @@ bool parseUiAppearanceProfile(const std::string& contents, UiAppearanceProfile& 
 		if (error) *error = "The profile refers to an unavailable base preset.";
 		return false;
 	}
-	const std::string& palette = entries["palette"];
-	if (palette == "cyan") candidate.theme.palette = PaletteId::Cyan;
-	else if (palette == "amber") candidate.theme.palette = PaletteId::Amber;
-	else if (palette == "monochrome") candidate.theme.palette = PaletteId::Monochrome;
-	else if (palette == "light") candidate.theme.palette = PaletteId::Light;
-	else if (palette == "vga-classic") candidate.theme.palette = PaletteId::VgaClassic;
-	else if (palette == "windows-95") candidate.theme.palette = PaletteId::Windows95;
-	else
+	if (!parsePaletteStableId(entries["palette"], candidate.theme.palette))
 	{
 		if (error) *error = "The profile contains an unavailable palette.";
 		return false;
 	}
+	if (candidate.theme.palette == PaletteId::Customized)
+	{
+		if (!version2 || !parsePaletteStableId(entries["custom_base"], candidate.theme.customPaletteBase) ||
+			candidate.theme.customPaletteBase == PaletteId::Customized)
+		{
+			if (error) *error = "The profile contains an invalid customized palette base.";
+			return false;
+		}
+	}
 	for (std::map<std::string, std::string>::const_iterator item = entries.begin(); item != entries.end(); ++item)
 	{
+		if (item->first.compare(0, 7, "custom.") == 0)
+		{
+			const std::string id = item->first.substr(7);
+			const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(candidate.preset), id);
+			UiTokenValue parsed;
+			if (!descriptor) { candidate.ignoredTokens.push_back(id); continue; }
+			if (descriptor->type != UiTokenType::Color || !decodeValue(item->second, UiTokenType::Color, parsed) || !validColor(parsed.color))
+			{
+				if (error) *error = "The profile contains an invalid custom color for " + id + ".";
+				return false;
+			}
+			candidate.theme.customColors[id] = parsed.color;
+			continue;
+		}
 		if (item->first.compare(0, 9, "override.") != 0) continue;
 		const std::string id = item->first.substr(9);
 		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(candidate.preset), id);

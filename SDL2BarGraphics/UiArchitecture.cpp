@@ -208,9 +208,10 @@ UiLayoutResult calculateUiLayout(UiPresetId preset, const UiLayoutInput& in, con
 	{
 		const char* menuIds[] = { "menu_file", "menu_view", "menu_tools" };
 		std::vector<std::string> menus = selectIds(controlIds, menuIds, sizeof(menuIds) / sizeof(menuIds[0]));
-		const bool titleStripExists = headerHeight > 0.0f;
-		const float menuX = titleStripExists ? 50.0f : 10.0f;
-		const float rightReserve = titleStripExists ? 52.0f : 10.0f;
+		// Keep the hamburger on the left and Settings on the right for every
+		// classic preset, including Windows 95 where the menu row is the header.
+		const float menuX = 50.0f;
+		const float rightReserve = 52.0f;
 		const float menuWidth = (std::max)(0.0f, (std::min)(228.0f, width - menuX - rightReserve));
 		const float menuY = result.menuBar.y;
 		const float menuHeightInHeader = (std::min)(menuHeight, result.menuBar.height);

@@ -52,6 +52,12 @@ void MainControlsView::resetMenuSelection(const std::string& id)
 	if (menu) menu->setSelectedIndex(0);
 }
 
+void MainControlsView::setControlLabel(const std::string& id, const std::string& label)
+{
+	UiWidget* widget = controls_.find(id);
+	if (widget) widget->setLabel(label);
+}
+
 bool MainControlsView::beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds, std::uint32_t seed,
 	std::string& initialText) const
 {
@@ -237,7 +243,8 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 		for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 		{
 			const std::string& id = controls_.widgets()[i]->id();
-			const bool headerControl = id == "demo_mode" || (preset != UiPresetId::ClassicWindows95 && (id == "panel_toggle" || id == "settings" || id == "demo_editor" || id == "demo_mode")) ||
+			const bool headerControl = id == "panel_toggle" || id == "settings" || id == "demo_mode" ||
+				(preset != UiPresetId::ClassicWindows95 && id == "demo_editor") ||
 				(preset != UiPresetId::Current && (id == "menu_file" || id == "menu_view" || id == "menu_tools"));
 			controls_.setWidgetVisible(id, headerControl || id == "start_overlay");
 		}
@@ -253,8 +260,8 @@ void MainControlsView::applyLayout(UiPresetId preset, const UiLayoutResult& layo
 	controls_.setWidgetVisible("menu_view", hasClassicRail);
 	controls_.setWidgetVisible("menu_tools", hasClassicRail);
 	controls_.setWidgetVisible("run", !hasClassicRail);
-	controls_.setWidgetVisible("panel_toggle", preset != UiPresetId::ClassicWindows95);
-	controls_.setWidgetVisible("settings", preset != UiPresetId::ClassicWindows95);
+	controls_.setWidgetVisible("panel_toggle", true);
+	controls_.setWidgetVisible("settings", true);
 	controls_.setWidgetVisible("demo_editor", preset == UiPresetId::Current && expanded);
 	const bool wideLayout = logicalWidth >= 900;
 	controls_.setWidgetVisible("domain", hasClassicRail && wideLayout && expanded);

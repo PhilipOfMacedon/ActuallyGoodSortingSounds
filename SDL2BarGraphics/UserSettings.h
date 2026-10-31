@@ -10,7 +10,7 @@
 #include "UiAppearance.h"
 #include "VisualSettingsTypes.h"
 
-static const int UserSettingsCurrentVersion = 8;
+static const int UserSettingsCurrentVersion = 9;
 
 struct VisualPreferences
 {

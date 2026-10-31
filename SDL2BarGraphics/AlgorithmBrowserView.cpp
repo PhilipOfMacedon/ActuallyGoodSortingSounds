@@ -62,6 +62,13 @@ void AlgorithmBrowserView::compose(const AlgorithmBrowserModel& browser, const A
 			UiRect(rowBounds.x + 6.0f, rowBounds.y, rowBounds.width - 18.0f, rowBounds.height),
 			12.0f, palette.text, familyClip);
 	}
+	if (browser.familyScrollbar.visible())
+	{
+		submitRectangle(paintContext, browser.familyScrollbar.bounds(), palette.background,
+			UiPaintMaterial::Panel, UiPaintLayer::Content, familyClip, true);
+		submitRectangle(paintContext, browser.familyScrollbar.thumbBounds(), palette.accent,
+			UiPaintMaterial::Accent, UiPaintLayer::SettingsControlsOverlay, familyClip, true);
+	}
 	if (families.empty())
 		submitText(paintContext, "#algorithm_no_family", "No matching families", browser.familyBounds,
 			13.0f, palette.mutedText, familyClip);
@@ -84,6 +91,13 @@ void AlgorithmBrowserView::compose(const AlgorithmBrowserModel& browser, const A
 			submitText(paintContext, "#menu_variant_" + selectedFamily->id + "_" + variant->variantId,
 				variant->displayName, UiRect(rowBounds.x + 8.0f, rowBounds.y, rowBounds.width - 16.0f, rowBounds.height),
 				12.0f, setupEnabled ? palette.text : palette.mutedText, variantClip);
+		}
+		if (browser.variantScrollbar.visible())
+		{
+			submitRectangle(paintContext, browser.variantScrollbar.bounds(), palette.background,
+				UiPaintMaterial::Panel, UiPaintLayer::Content, variantClip, true);
+			submitRectangle(paintContext, browser.variantScrollbar.thumbBounds(), palette.accent,
+				UiPaintMaterial::Accent, UiPaintLayer::SettingsControlsOverlay, variantClip, true);
 		}
 		if (variants.empty())
 			submitText(paintContext, "#algorithm_no_variant", "No matching variants", browser.variantBounds,

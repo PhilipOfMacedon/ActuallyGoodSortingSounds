@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,9 @@ private:
 	std::vector<std::string> optionGroupLabels_;
 	std::vector<std::string> optionIds_;
 	std::vector<std::string> optionLabels_;
+	std::vector<std::vector<std::string> > optionIdsByGroup_;
+	std::vector<std::string> optionSlotWidgetIds_;
+	std::map<std::string, UiRect> labelBounds_;
 	UiRect panelBounds_;
 	UiRect headerBounds_;
 	UiRect bodyBounds_;
@@ -87,6 +91,13 @@ private:
 	UiRect transportBounds_;
 	UiRect listClip_;
 	UiScrollViewport bodyViewport_;
+	UiScrollbar queueScrollbar_;
+	UiRect optionPaneBounds_;
+	UiScrollViewport optionViewport_;
+	UiScrollbar optionScrollbar_;
+	UiRect classInputViewportBounds_;
+	UiScrollViewport classInputViewport_;
+	UiScrollbar classInputScrollbar_;
 	int logicalWidth_;
 	int logicalHeight_;
 	int laidOutWidth_;
@@ -94,6 +105,8 @@ private:
 	float dpiScale_;
 	float laidOutDpiScale_;
 	float laidOutScroll_;
+	float laidOutOptionScroll_;
+	float laidOutClassScroll_;
 	std::size_t laidOutStepCount_;
 	DemoEditorTab laidOutTab_;
 	UiPresetId laidOutPreset_;
@@ -113,6 +126,8 @@ private:
 	AppAction mapUiAction(const UiAction& action);
 	void composeWidgetControls(const DemoEditorPalette& palette, UiPaintContext& paintContext) const;
 	void composeSelectionList(const DemoEditorPalette& palette, UiPaintContext& paintContext) const;
+	void composeOptionScrollbar(const DemoEditorPalette& palette, UiPaintContext& paintContext) const;
+	void composeClassInputScrollbar(const DemoEditorPalette& palette, UiPaintContext& paintContext) const;
 	void composeTabs(const DemoEditorPalette& palette, UiPaintContext& paintContext) const;
 	void composeFields(const DemoEditorPalette& palette, UiPaintContext& paintContext) const;
 	void composeText(const DemoEditorPalette& palette, UiPaintContext& paintContext) const;

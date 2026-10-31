@@ -54,6 +54,7 @@ public:
 	void begin(const UiAppearancePreferences& current);
 	void restore();
 	void accept(const UiAppearancePreferences& committed);
+	bool dirty() const { return !sameUiAppearancePreferences(original_, draft_); }
 
 	AppearanceEditorModel& model() { return model_; }
 	const AppearanceEditorModel& model() const { return model_; }

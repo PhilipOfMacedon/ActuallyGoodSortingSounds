@@ -373,6 +373,11 @@ namespace sortinglogic
 	const char* inputDomainName(InputDomain domain);
 	const char* inputPatternName(InputPattern pattern);
 	bool inputPatternCompatible(InputDomain domain, InputPattern pattern);
+	// Returns the fixed logical size for patterns that represent a canonical
+	// reference arrangement; zero means the user-selected size is honored.
+	std::size_t inputPatternFixedItemCount(InputPattern pattern);
+	// Whether generating this pattern consumes the seed as a recipe input.
+	bool inputPatternUsesSeed(InputPattern pattern);
 	InputProfile inputProfileForDomain(InputDomain domain);
 	const char* shellGapSequenceName(ShellGapSequence sequence);
 

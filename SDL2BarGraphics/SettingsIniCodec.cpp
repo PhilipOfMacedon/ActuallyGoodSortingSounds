@@ -22,6 +22,7 @@ namespace
 		case PaletteId::Light: return "light";
 		case PaletteId::VgaClassic: return "vga-classic";
 		case PaletteId::Windows95: return "windows-95";
+		case PaletteId::Customized: return "customized";
 		}
 		return "cyan";
 	}
@@ -34,6 +35,7 @@ namespace
 		else if (value == "light") result = PaletteId::Light;
 		else if (value == "vga-classic") result = PaletteId::VgaClassic;
 		else if (value == "windows-95") result = PaletteId::Windows95;
+		else if (value == "customized") result = PaletteId::Customized;
 		else return false;
 		return true;
 	}
@@ -61,8 +63,23 @@ namespace
 			found = values.find(base + ".palette");
 			if (found != values.end() && !parsePalette(found->second, candidate.palette)) valid = false;
 			const std::string overridePrefix = base + ".override.";
+			found = values.find(base + ".custom_base");
+			if (found != values.end())
+			{
+				if (!parsePalette(found->second, candidate.customPaletteBase) || candidate.customPaletteBase == PaletteId::Customized) valid = false;
+			}
+			const std::string customPrefix = base + ".custom.";
 			for (std::map<std::string, std::string>::const_iterator item = values.begin(); item != values.end(); ++item)
 			{
+				if (item->first.compare(0, customPrefix.size(), customPrefix) == 0)
+				{
+					const std::string tokenId = item->first.substr(customPrefix.size());
+					UiTokenValue parsed;
+					if (!decodeUiTokenValue(item->second, UiTokenType::Color, parsed) || parsed.type != UiTokenType::Color)
+						valid = false;
+					else candidate.customColors[tokenId] = parsed.color;
+					continue;
+				}
 				if (item->first.compare(0, overridePrefix.size(), overridePrefix) != 0) continue;
 				const std::string tokenId = item->first.substr(overridePrefix.size());
 				const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), tokenId);
@@ -749,7 +766,12 @@ std::string settingsini::encode(const UserPreferences& settings)
 		theme != settings.appearance.themes.end(); ++theme)
 	{
 		const std::string prefix = "ui." + uiPresetStableId(theme->first);
-		contents << prefix << ".palette=" << paletteName(theme->second.palette) << "\n";
+		contents << prefix << ".palette=" << paletteName(theme->second.palette) << "\n"
+			<< prefix << ".custom_base=" << paletteName(theme->second.customPaletteBase) << "\n";
+		for (std::map<std::string, UiColor>::const_iterator color = theme->second.customColors.begin();
+			color != theme->second.customColors.end(); ++color)
+			contents << prefix << ".custom." << color->first << "=color:" << std::setprecision(9)
+				<< color->second.r << ',' << color->second.g << ',' << color->second.b << ',' << color->second.a << "\n";
 		for (std::map<std::string, UiTokenValue>::const_iterator token = theme->second.overrides.begin();
 			token != theme->second.overrides.end(); ++token)
 			contents << prefix << ".override." << token->first << "=" << encodeUiTokenValue(token->second) << "\n";

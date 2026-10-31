@@ -60,6 +60,8 @@ public:
 	void setInputCaptured(bool captured) { controls_.setInputCaptured(captured); }
 	void resetMenuSelection(const std::string& id);
 	void setControlVisible(const std::string& id, bool visible) { controls_.setWidgetVisible(id, visible); }
+	void setControlEnabled(const std::string& id, bool enabled) { controls_.setWidgetEnabled(id, enabled); }
+	void setControlLabel(const std::string& id, const std::string& label);
 	void setControlActionAndPresentation(const std::string& id, const AppAction& action,
 		const std::string& label, bool enabled);
 	bool beginInlineValueEdit(InlineEditTarget target, int itemCount, float durationSeconds, std::uint32_t seed,

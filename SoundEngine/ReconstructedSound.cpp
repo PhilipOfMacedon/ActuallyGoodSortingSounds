@@ -79,7 +79,7 @@ namespace SoundEngine
 		  excitationClockHz(300.0), carrierCycles(9.302650315454065), tukeyFraction(0.025666772580559438),
 		  secondOperandDelayMicroseconds(225.66891905936825), masterLevel(1.0), specialReleaseMilliseconds(250.0),
 		  lowPassCutoffHz(20000.0), audioEnabled(true), lowPassEnabled(false), mapping(ReconstructedMapping::LinearHz),
-		  idlePolicy(ReconstructedIdlePolicy::HoldSelection)
+		  idlePolicy(ReconstructedIdlePolicy::ReleaseSelection)
 	{
 	}
 

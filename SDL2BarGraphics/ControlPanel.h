@@ -128,6 +128,8 @@ private:
 	UiRect headerBounds_;
 	UiRect gearBounds_;
 	bool drawingAppearanceEditor_;
+	bool appearanceClosePrompt_;
+	bool closeAfterAppearanceApply_;
 	UiRect chartViewport_;
 	int width_;
 	int height_;
@@ -181,6 +183,8 @@ private:
 	void cancelInlineEdit();
 	void openAppearanceEditor();
 	void closeAppearanceEditor(bool restore);
+	void requestCloseAppearanceEditor();
+	void resolveAppearanceClose(int choice, AppAction& output);
 	void synchronizeAppearanceEditorControls();
 	void layoutAppearanceEditor();
 	bool handleAppearanceEditorEvent(const SDL_Event& event, AppAction& action);

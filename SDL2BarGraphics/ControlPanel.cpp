@@ -36,6 +36,31 @@ namespace
 	const RenderLayer SettingsLayer = RenderLayer::SettingsPanel;
 	const RenderLayer SettingsTextLayer = RenderLayer::SettingsText;
 
+	struct AppearanceCloseDialogLayout
+	{
+		UiRect panel;
+		UiRect yes;
+		UiRect no;
+		UiRect cancel;
+	};
+
+	AppearanceCloseDialogLayout appearanceCloseDialogLayout(float width, float height)
+	{
+		AppearanceCloseDialogLayout result;
+		const float panelWidth = std::min(520.0f, std::max(220.0f, width - 24.0f));
+		const float panelHeight = std::min(176.0f, std::max(120.0f, height - 24.0f));
+		result.panel = UiRect((width - panelWidth) * 0.5f, (height - panelHeight) * 0.5f, panelWidth, panelHeight);
+		const float gap = 8.0f;
+		const float buttonWidth = std::min(112.0f, (panelWidth - 48.0f - 2.0f * gap) / 3.0f);
+		const float buttonsWidth = 3.0f * buttonWidth + 2.0f * gap;
+		const float left = result.panel.x + result.panel.width - 16.0f - buttonsWidth;
+		const float top = result.panel.y + result.panel.height - 42.0f;
+		result.yes = UiRect(left, top, buttonWidth, 28.0f);
+		result.no = UiRect(left + buttonWidth + gap, top, buttonWidth, 28.0f);
+		result.cancel = UiRect(left + 2.0f * (buttonWidth + gap), top, buttonWidth, 28.0f);
+		return result;
+	}
+
 	template <typename Consumer>
 	class DispatchingUiPaintContext : public UiPaintContext
 	{
@@ -276,7 +301,7 @@ ControlPanel::ControlPanel(Window& window, Renderer2D& renderer, const UserPrefe
 	demoDraftDirty_(false), pendingDemoPresetSwitchId_(),
 	algorithmPickerRequest_(), pendingPickerAction_(), pickerSelectionPending_(false),
 	headerBounds_(), gearBounds_(),
-	drawingAppearanceEditor_(false),
+	drawingAppearanceEditor_(false), appearanceClosePrompt_(false), closeAfterAppearanceApply_(false),
 	chartViewport_(), width_(0), height_(0), layoutKey_(), layoutCacheValid_(false), laidOutPreset_(settings.appearance.activePreset), fontFallbackActive_(false)
 {
 	createWidgets();
@@ -432,6 +457,15 @@ void ControlPanel::updateWidgetStates(const sortinglogic::RenderSnapshot& snapsh
 	const bool busy = !screenModel_.setupEnabled;
 	mainControlsView_.synchronize(settings_, renderPreferences_.appearance.activePreset, snapshot,
 		screenModel_, algorithmLabel(snapshot.algorithm));
+	const std::size_t fixedPatternCount = sortinglogic::inputPatternFixedItemCount(snapshot.pattern);
+	if (fixedPatternCount != 0)
+	{
+		const char* disabledIds[] = { "shuffle", "bars_down", "bars_up", "bars_value", "seed_value", "seed_previous", "seed_next", "seed_bookmarks" };
+		for (std::size_t i = 0; i < sizeof(disabledIds) / sizeof(disabledIds[0]); ++i)
+			mainControlsView_.setControlEnabled(disabledIds[i], false);
+		mainControlsView_.setControlLabel("bars_value", std::to_string(fixedPatternCount) + " bars (fixed)");
+		mainControlsView_.setControlLabel("seed_value", std::to_string(snapshot.inputSeed) + " (unused)");
+	}
 	settingsPanelView_.synchronizeControls(settings_, renderPreferences_, snapshot, busy);
 	inlineEditView_.synchronizePresentation(mainControlsView_, appearanceEditorView_);
 	if (demoRunner_) mainControlsView_.synchronizeDemoTransport(*demoRunner_);
@@ -545,13 +579,33 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 			return true;
 		}
 	}
+	if (overlayState_.is(UiOverlayId::Settings) && settingsPanelView_.scrollbarCaptured())
+	{
+		if (event.type == SDL_MOUSEMOTION && settingsPanelView_.handleScrollbarPointerMove(
+			static_cast<float>(event.motion.x), static_cast<float>(event.motion.y)))
+		{
+			layoutSettingsControls();
+			return true;
+		}
+		if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
+			settingsPanelView_.handleScrollbarPointerUp(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+		{
+			layoutSettingsControls();
+			return true;
+		}
+	}
+	if (overlayState_.is(UiOverlayId::Settings) && !settingsPanelView_.controls().hasOpenCombo() &&
+		event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+		settingsPanelView_.handleScrollbarPointerDown(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+		return true;
 	if (overlayState_.is(UiOverlayId::Settings) && event.type == SDL_MOUSEWHEEL)
 	{
 		int mouseX = 0, mouseY = 0;
 		SDL_GetMouseState(&mouseX, &mouseY);
-		if (settingsPanelView_.handleScrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
+		if (!settingsPanelView_.controls().hasOpenCombo() &&
+			settingsPanelView_.handleScrollWheel(static_cast<float>(mouseX), static_cast<float>(mouseY), event.wheel.y))
 			layoutSettingsControls();
-		return true;
+		else if (!settingsPanelView_.controls().hasOpenCombo()) return true;
 	}
 	if (!settingsOpen() && event.type == SDL_MOUSEWHEEL)
 	{
@@ -575,7 +629,10 @@ bool ControlPanel::handleEvent(const SDL_Event& event, AppAction& action)
 		return true;
 	}
 	if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+	{
 		algorithmProfileView_.pointerUp();
+		settingsPanelView_.cancelScrollbarPointer();
+	}
 	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
 		timelineView_.pointerDown(static_cast<float>(event.button.x), static_cast<float>(event.button.y),
 			settings_.visual.panelExpanded && !settingsOpen(), action)) return true;
@@ -619,7 +676,7 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	}
 	if (action.viewCommand == UiAction::ViewCommand::CloseAppearanceEditor)
 	{
-		closeAppearanceEditor(true);
+		requestCloseAppearanceEditor();
 		return;
 	}
 	if (action.viewCommand == UiAction::ViewCommand::OpenAlgorithmMenu)
@@ -1100,12 +1157,14 @@ void ControlPanel::drawSurface(const UiRect& bounds, const UiControlPaintStyle& 
 void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palette, RenderLayer layer, bool popup)
 {
 	const ClipBounds screenClip(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
+	const UiPresetId preset = drawingAppearanceEditor_ ? appearanceEditorView_.session().model().preset() : renderPreferences_.appearance.activePreset;
+	const UiThemeCustomization& paintTheme = drawingAppearanceEditor_
+		? appearanceEditorView_.session().draft().themes.find(preset)->second : activeTheme(renderPreferences_);
 	if (!labels_[widget.id()]) labels_[widget.id()].reset(new TextLabel(widget.label(), "Courier New Bold", 16, SDL_Color{255,255,255,255}));
 	labels_[widget.id()]->setContent(widget.label());
 	if (popup)
 	{
-		const UiPresetId preset = renderPreferences_.appearance.activePreset;
-		UiControlPaintStyle popupStyle = resolveUiControlPaintStyle(preset, activeTheme(renderPreferences_), "panel",
+		UiControlPaintStyle popupStyle = resolveUiControlPaintStyle(preset, paintTheme, "panel",
 			true, false, false, false, paletteColors(palette));
 		popupStyle.fill = toUiColor(palette.button);
 		UiRect popupBounds = widget.popupBounds();
@@ -1138,12 +1197,16 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 					toUiColor(!widget.optionEnabled(option) ? palette.disabledButton : selected ? palette.accent : palette.button))), layerOffset(layer, 2), optionClip,
 				TextOverflowPolicy::Marquee);
 		}
+		if (widget.optionScrollbar().visible())
+		{
+			const UiRect track = widget.optionScrollbar().bounds();
+			const UiRect thumb = widget.optionScrollbar().thumbBounds();
+			submitBox(track, palette.timelineRail, PopupMaterial, layerOffset(layer, 1), optionClip);
+			submitBox(thumb, palette.accent, ValueMaterial, layerOffset(layer, 2), optionClip);
+		}
 		return;
 	}
 	if (!widget.visible()) return;
-	const UiPresetId preset = drawingAppearanceEditor_ ? appearanceEditorView_.session().model().preset() : renderPreferences_.appearance.activePreset;
-	const UiThemeCustomization readableEditorTheme = defaultUiThemeCustomization(preset, PaletteId::Monochrome);
-	const UiThemeCustomization& paintTheme = drawingAppearanceEditor_ ? readableEditorTheme : activeTheme(renderPreferences_);
 	const bool playbackActive = widget.role() == UiControlRole::Playback && screenModel_.transport == UiTransportState::Playing;
 	const std::string role = widget.role() == UiControlRole::BuildTrace
 		? (preset == UiPresetId::FlatVgaDos ? "button" : "run") :
@@ -1152,7 +1215,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		widget.role() == UiControlRole::Choice || widget.role() == UiControlRole::AlgorithmChoice ? "choice" : "button";
 	const UiControlPaintStyle style = resolveUiControlPaintStyle(preset, paintTheme, role,
 		widget.enabled(), widget.hovered(), widget.pressed(), widget.expanded() || widget.checked(),
-		paletteColors(drawingAppearanceEditor_ ? paletteForAppearance(UiPresetId::Current, readableEditorTheme) : palette));
+		paletteColors(palette));
 	const bool classicMenu = preset == UiPresetId::ClassicWindows95 &&
 		(widget.id() == "menu_file" || widget.id() == "menu_view" || widget.id() == "menu_tools");
 	if (!classicMenu || widget.hovered() || widget.expanded())
@@ -1316,7 +1379,11 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 
 ResolvedTextStyle ControlPanel::resolveTextStyle(float targetHeight) const
 {
-	const UiTokenValue fontValue = effectiveUiTokenValue(renderPreferences_.appearance.activePreset, activeTheme(renderPreferences_), "typeface.primary");
+	const UiPresetId preset = drawingAppearanceEditor_
+		? appearanceEditorView_.session().model().preset() : renderPreferences_.appearance.activePreset;
+	const UiThemeCustomization& paintTheme = drawingAppearanceEditor_
+		? appearanceEditorView_.session().draft().themes.find(preset)->second : activeTheme(renderPreferences_);
+	const UiTokenValue fontValue = effectiveUiTokenValue(preset, paintTheme, "typeface.primary");
 	const UiFontReference font = drawingAppearanceEditor_ ? UiFontReference() :
 		fontValue.type == UiTokenType::Font ? fontValue.font : UiFontReference();
 	if (!drawingAppearanceEditor_)
@@ -1456,6 +1523,8 @@ void ControlPanel::openAppearanceEditor()
 	if (appearanceEditorOpen()) return;
 	if (algorithmBrowserOpen()) closeAlgorithmMenu();
 	if (!overlayState_.openAppearanceEditor()) return;
+	appearanceClosePrompt_ = false;
+	closeAfterAppearanceApply_ = false;
 	appearanceEditorView_.begin(settings_.appearance);
 	settingsPanelView_.handleNavigation(UiAction::ViewCommand::ShowAppearanceSettings);
 	mainControlsView_.closeCombo();
@@ -1477,9 +1546,52 @@ void ControlPanel::closeAppearanceEditor(bool restore)
 	if (restore)
 		appearanceEditorView_.restore();
 	if (!overlayState_.closeAppearanceEditor()) return;
+	appearanceClosePrompt_ = false;
+	closeAfterAppearanceApply_ = false;
 	appearanceEditorView_.controls().closeCombo();
 	updateOverlayInputCapture();
 	layoutCacheValid_ = false;
+}
+
+void ControlPanel::requestCloseAppearanceEditor()
+{
+	if (!appearanceEditorOpen()) return;
+	if (appearanceEditorView_.controls().hasOpenCombo())
+	{
+		appearanceEditorView_.controls().closeCombo();
+		return;
+	}
+	if (appearanceEditorView_.session().dirty())
+	{
+		if (inlineEditView_.active() && inlineEditView_.isAppearanceEdit()) cancelInlineEdit();
+		appearanceEditorView_.blurSearch();
+		SDL_StopTextInput();
+		appearanceClosePrompt_ = true;
+		closeAfterAppearanceApply_ = false;
+		return;
+	}
+	closeAppearanceEditor(true);
+}
+
+void ControlPanel::resolveAppearanceClose(int choice, AppAction& output)
+{
+	if (!appearanceClosePrompt_) return;
+	if (choice == 2)
+	{
+		appearanceClosePrompt_ = false;
+		closeAfterAppearanceApply_ = false;
+		return;
+	}
+	if (choice == 1)
+	{
+		appearanceClosePrompt_ = false;
+		closeAppearanceEditor(true);
+		return;
+	}
+	if (choice != 0) return;
+	closeAfterAppearanceApply_ = true;
+	output = AppAction(AppActionKind::ApplyAppearance);
+	output.appearance.reset(new UiAppearancePreferences(appearanceEditorView_.session().draft()));
 }
 
 void ControlPanel::synchronizeAppearanceEditorControls()
@@ -1515,8 +1627,8 @@ void ControlPanel::drawAppearanceEditor()
 {
 	if (!appearanceEditorOpen()) return;
 	const UiPresetId preset = appearanceEditorView_.session().model().preset();
-	const ThemePalette readable = paletteForAppearance(preset,
-		defaultUiThemeCustomization(preset, PaletteId::Monochrome));
+	const UiThemeCustomization& draftTheme = appearanceEditorView_.session().draft().themes.find(preset)->second;
+	const ThemePalette readable = paletteForAppearance(preset, draftTheme);
 	drawingAppearanceEditor_ = true;
 	const UiRect& controlClip = appearanceEditorView_.layoutResult().contentClip;
 	const ClipBounds clip(controlClip.x, controlClip.y, controlClip.width, controlClip.height);
@@ -1529,13 +1641,14 @@ void ControlPanel::drawAppearanceEditor()
 	viewPalette.mutedText = toUiColor(readable.mutedText);
 	viewPalette.overlayDim = toUiColor(readable.overlayDim);
 	const std::string status = appearanceEditorView_.session().error().empty()
-		? "Changes preview behind this editor. Apply saves; Cancel discards."
+		? "Changes preview behind this editor. Apply saves; Close offers apply or discard."
 		: appearanceEditorView_.session().error();
 	auto renderCommand = [this](const UiPaintCommand& command) { drawUiPaintCommand(command); };
 	DispatchingUiPaintContext<decltype(renderCommand)> paintContext(renderCommand);
 	appearanceEditorView_.compose(width_, height_, status, !appearanceEditorView_.session().error().empty(),
 		selectedValue, viewPalette, paintContext);
 	const char* rowIds[] = { "appearance_preset", "appearance_palette", "appearance_category", "appearance_search", "appearance_token",
+		"appearance_copy_source",
 		"appearance_value_down", "appearance_value", "appearance_value_up", "appearance_value_slider",
 		"appearance_color", "appearance_color_alpha", "appearance_color_r", "appearance_color_g", "appearance_color_b", "appearance_color_a", "appearance_boolean",
 		"appearance_choice", "appearance_font_family", "appearance_font_style" };
@@ -1552,7 +1665,7 @@ void ControlPanel::drawAppearanceEditor()
 			widget->kind() == UiWidgetKind::ComboBox ? ValueMaterial : ButtonMaterial, RenderLayer::SettingsControls, clip);
 		drawWidget(*widget, readable, RenderLayer::SettingsControls);
 	}
-	const char* actionIds[] = { "appearance_reset_token", "appearance_reset_theme", "appearance_import",
+	const char* actionIds[] = { "appearance_copy_colors", "appearance_reset_token", "appearance_reset_theme", "appearance_import",
 		"appearance_export", "appearance_apply", "appearance_cancel" };
 	for (std::size_t i = 0; i < sizeof(actionIds) / sizeof(actionIds[0]); ++i)
 	{
@@ -1566,6 +1679,36 @@ void ControlPanel::drawAppearanceEditor()
 		for (std::size_t i = 0; i < appearanceEditorView_.controls().widgets().size(); ++i)
 			if (appearanceEditorView_.controls().widgets()[i]->visible() && appearanceEditorView_.controls().widgets()[i]->expanded())
 				drawWidget(*appearanceEditorView_.controls().widgets()[i], readable, RenderLayer::SettingsDropdown, true);
+	if (appearanceClosePrompt_)
+	{
+		const AppearanceCloseDialogLayout dialog = appearanceCloseDialogLayout(static_cast<float>(width_), static_cast<float>(height_));
+		submitBox(dialog.panel, readable.panel, PanelMaterial, RenderLayer::SettingsDropdown);
+		const float edge = std::max(1.0f, resolveUiControlPaintStyle(preset, draftTheme, "panel", true, false, false, false,
+			paletteColors(readable)).borderWidth);
+		submitBox(UiRect(dialog.panel.x, dialog.panel.y, dialog.panel.width, edge), readable.accent, AccentMaterial, RenderLayer::SettingsDropdown);
+		submitBox(UiRect(dialog.panel.x, dialog.panel.y + dialog.panel.height - edge, dialog.panel.width, edge), readable.border, PanelMaterial, RenderLayer::SettingsDropdown);
+		submitBox(UiRect(dialog.panel.x, dialog.panel.y, edge, dialog.panel.height), readable.border, PanelMaterial, RenderLayer::SettingsDropdown);
+		submitBox(UiRect(dialog.panel.x + dialog.panel.width - edge, dialog.panel.y, edge, dialog.panel.height), readable.border, PanelMaterial, RenderLayer::SettingsDropdown);
+		const auto drawPromptLabel = [this, &readable](const std::string& id, const std::string& text, const UiRect& bounds,
+			float size, const glm::vec4& color)
+		{
+			if (!labels_[id]) labels_[id].reset(new TextLabel(text, "Courier New Bold", static_cast<int>(size), SDL_Color{255,255,255,255}));
+			labels_[id]->setContent(text);
+			drawText(*labels_[id], bounds, size, color, RenderLayer::SettingsDropdown);
+		};
+		drawPromptLabel("appearance_close_prompt_title", "Apply appearance changes before closing?",
+			UiRect(dialog.panel.x + 16.0f, dialog.panel.y + 22.0f, dialog.panel.width - 32.0f, 30.0f), 16.0f, readable.text);
+		drawPromptLabel("appearance_close_prompt_detail", "Yes saves and closes. No discards. Cancel returns to the editor.",
+			UiRect(dialog.panel.x + 16.0f, dialog.panel.y + 61.0f, dialog.panel.width - 32.0f, 28.0f), 12.0f, readable.mutedText);
+		const UiRect buttonBounds[] = { dialog.yes, dialog.no, dialog.cancel };
+		const char* buttonIds[] = { "appearance_close_prompt_yes", "appearance_close_prompt_no", "appearance_close_prompt_cancel" };
+		const char* buttonTexts[] = { "Yes", "No", "Cancel" };
+		for (std::size_t i = 0; i < 3; ++i)
+		{
+			submitBox(buttonBounds[i], i == 0 ? readable.accent : readable.button, ButtonMaterial, RenderLayer::SettingsDropdown);
+			drawPromptLabel(buttonIds[i], buttonTexts[i], buttonBounds[i], 13.0f, readable.text);
+		}
+	}
 	drawingAppearanceEditor_ = false;
 }
 
@@ -1578,6 +1721,26 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 		SDL_StopTextInput();
 		UiAction lost;
 		appearanceEditorView_.controls().handleEvent(UiInputEvent(UiInputType::FocusLost), lost);
+		return true;
+	}
+	if (appearanceClosePrompt_)
+	{
+		if (event.type == SDL_KEYDOWN)
+		{
+			const SDL_Keycode key = event.key.keysym.sym;
+			if (key == SDLK_ESCAPE) { resolveAppearanceClose(2, action); return true; }
+			if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_y) { resolveAppearanceClose(0, action); return true; }
+			if (key == SDLK_n) { resolveAppearanceClose(1, action); return true; }
+		}
+		if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+		{
+			const AppearanceCloseDialogLayout dialog = appearanceCloseDialogLayout(static_cast<float>(width_), static_cast<float>(height_));
+			const float x = static_cast<float>(event.button.x), y = static_cast<float>(event.button.y);
+			if (dialog.yes.contains(x, y)) resolveAppearanceClose(0, action);
+			else if (dialog.no.contains(x, y)) resolveAppearanceClose(1, action);
+			else if (dialog.cancel.contains(x, y)) resolveAppearanceClose(2, action);
+			return true;
+		}
 		return true;
 	}
 	if (inlineEditView_.active() && inlineEditView_.isAppearanceEdit())
@@ -1626,7 +1789,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 					UiAction closed; appearanceEditorView_.controls().handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Escape), closed);
 					return true;
 				}
-				closeAppearanceEditor(true); return true;
+				requestCloseAppearanceEditor(); return true;
 			}
 			if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)
 			{ appearanceEditorView_.blurSearch(); SDL_StopTextInput(); return true; }
@@ -1658,7 +1821,7 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 		!commitInlineEdit(action)) return true;
 	if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE && !appearanceEditorView_.controls().hasOpenCombo())
 	{
-		closeAppearanceEditor(true);
+		requestCloseAppearanceEditor();
 		return true;
 	}
 	UiInputEvent input(UiInputType::FocusLost);
@@ -1667,7 +1830,8 @@ bool ControlPanel::handleAppearanceEditorEvent(const SDL_Event& event, AppAction
 	const bool consumed = appearanceEditorView_.controls().handleEvent(input, uiAction);
 	if (uiAction.viewCommand == UiAction::ViewCommand::CloseAppearanceEditor)
 	{
-		closeAppearanceEditor(true);
+		if (appearanceEditorView_.controls().hasOpenCombo()) appearanceEditorView_.controls().closeCombo();
+		else requestCloseAppearanceEditor();
 		return true;
 	}
 	if (consumed)
@@ -1695,7 +1859,7 @@ void ControlPanel::processAppearanceEditorAction(const UiAction& action, AppActi
 	case AppearanceEditorEffect::ChooseColor: chooseAppearanceColor(); break;
 	case AppearanceEditorEffect::ImportProfile: importAppearanceProfile(); break;
 	case AppearanceEditorEffect::ExportProfile: exportAppearanceProfile(); break;
-	case AppearanceEditorEffect::Cancel: closeAppearanceEditor(true); break;
+	case AppearanceEditorEffect::Cancel: requestCloseAppearanceEditor(); break;
 	case AppearanceEditorEffect::Apply:
 		output = AppAction(AppActionKind::ApplyAppearance);
 		output.appearance.reset(new UiAppearancePreferences(appearanceEditorView_.session().draft()));
@@ -1784,7 +1948,11 @@ void ControlPanel::completeActionResult(const AppAction& action, const sortinglo
 		return;
 	}
 	appearanceEditorView_.accept(settings_.appearance);
-	closeAppearanceEditor(false);
+	if (closeAfterAppearanceApply_)
+	{
+		appearanceClosePrompt_ = false;
+		closeAppearanceEditor(false);
+	}
 }
 
 void ControlPanel::layoutAlgorithmMenu()

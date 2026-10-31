@@ -51,6 +51,12 @@ public:
 	bool handleNavigation(UiAction::ViewCommand command);
 	bool isScrollablePage() const;
 	bool handleScrollWheel(float x, float y, int wheelDelta);
+	bool handleScrollbarPointerDown(float x, float y);
+	bool handleScrollbarPointerMove(float x, float y);
+	bool handleScrollbarPointerUp(float x, float y);
+	bool scrollbarCaptured() const { return scrollbarController_.captured(); }
+	const UiScrollbar& scrollbar() const { return scrollbarController_; }
+	void cancelScrollbarPointer() { scrollbarController_.cancelCapture(); }
 	void setPanelBounds(const UiRect& panelBounds, bool modalOpen);
 	void setModalActive(bool active);
 	const UiRect& panelBounds() const { return panelBounds_; }
@@ -78,4 +84,6 @@ private:
 	int activeAlgorithmOptionId_;
 	UiRect panelBounds_;
 	UiRect contentBounds_;
+	UiRect scrollTrackBounds_;
+	UiScrollbar scrollbarController_;
 };

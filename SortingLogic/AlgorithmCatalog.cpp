@@ -1360,6 +1360,16 @@ namespace sortinglogic
 			static_cast<int>(pattern) <= static_cast<int>(InputPattern::AndrutReference);
 	}
 
+	std::size_t inputPatternFixedItemCount(InputPattern pattern)
+	{
+		return pattern == InputPattern::AndrutReference ? 100u : 0u;
+	}
+
+	bool inputPatternUsesSeed(InputPattern pattern)
+	{
+		return pattern != InputPattern::AndrutReference;
+	}
+
 	InputProfile inputProfileForDomain(InputDomain domain)
 	{
 		return domain == InputDomain::NormalizedFloats ? InputProfile::NormalizedFloat : InputProfile::IntegerKeys;

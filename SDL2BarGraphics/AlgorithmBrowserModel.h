@@ -47,8 +47,12 @@ struct AlgorithmBrowserModel
 	UiRect searchBounds;
 	UiRect familyBounds;
 	UiRect variantBounds;
+	UiRect familyScrollContentBounds;
+	UiRect variantScrollContentBounds;
 	UiScrollViewport familyViewport;
 	UiScrollViewport variantViewport;
+	UiScrollbar familyScrollbar;
+	UiScrollbar variantScrollbar;
 	std::vector<AlgorithmFamilyEntry> catalog;
 
 	explicit AlgorithmBrowserModel(const std::vector<AlgorithmFamilyEntry>& algorithmCatalog);

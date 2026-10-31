@@ -1,6 +1,7 @@
 #include "DemoEditorView.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
@@ -155,10 +156,12 @@ DemoEditorView::DemoEditorView()
 	synchronizedStepIndex_(static_cast<std::size_t>(-1)), synchronizedStepComplexity_(-1), selectedPresetId_(),
 	pendingPresetSwitchId_(), draft_(), runnerState_(DemoRunnerState::Inactive), runnerStepIndex_(0), runnerStepCount_(0),
 	runnerStatus_(), feedback_(), presetIds_(), complexityClasses_(demoComplexityClassOrder()), complexityLabels_(),
-	optionGroupIds_(), optionGroupLabels_(), optionIds_(), optionLabels_(), panelBounds_(), headerBounds_(), bodyBounds_(),
-	queueBounds_(), inspectorBounds_(), footerBounds_(), transportBounds_(), listClip_(), bodyViewport_(), logicalWidth_(0),
+	optionGroupIds_(), optionGroupLabels_(), optionIds_(), optionLabels_(), optionIdsByGroup_(), optionSlotWidgetIds_(), labelBounds_(),
+	panelBounds_(), headerBounds_(), bodyBounds_(), queueBounds_(), inspectorBounds_(), footerBounds_(), transportBounds_(), listClip_(),
+	bodyViewport_(), queueScrollbar_(), optionPaneBounds_(), optionViewport_(), optionScrollbar_(), classInputViewportBounds_(),
+	classInputViewport_(), classInputScrollbar_(), logicalWidth_(0),
 	logicalHeight_(0), laidOutWidth_(-1), laidOutHeight_(-1), laidOutStepCount_(static_cast<std::size_t>(-1)),
-	dpiScale_(1.0f), laidOutDpiScale_(0.0f), laidOutScroll_(-1.0f),
+	dpiScale_(1.0f), laidOutDpiScale_(0.0f), laidOutScroll_(-1.0f), laidOutOptionScroll_(-1.0f), laidOutClassScroll_(-1.0f),
 	laidOutTab_(DemoEditorTab::Session), laidOutPreset_(UiPresetId::ClassicWindows95), confirmPresetSwitch_(false)
 {
 	createControls();
@@ -190,6 +193,22 @@ void DemoEditorView::createControls()
 	controls_.addButton("demo_completion_scan", "Completion scan: on");
 	controls_.addComboBox("demo_option_group", std::vector<std::string>(1, "No options"), 0);
 	controls_.addComboBox("demo_option", std::vector<std::string>(1, "No options"), 0);
+	std::size_t maximumOptionGroups = 0;
+	const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
+	for (std::size_t i = 0; i < catalog.size(); ++i)
+	{
+		std::set<std::string> groups;
+		for (std::size_t option = 0; option < catalog[i].supportedOptions.size(); ++option)
+			groups.insert(catalog[i].supportedOptions[option].groupId);
+		const std::size_t presentationOptions = catalog[i].id == sortinglogic::SortAlgorithm::Merge ? 1u : 0u;
+		maximumOptionGroups = std::max(maximumOptionGroups, groups.size() + presentationOptions);
+	}
+	for (std::size_t i = 0; i < maximumOptionGroups; ++i)
+	{
+		const std::string id = "demo_option_slot_" + std::to_string(i);
+		optionSlotWidgetIds_.push_back(id);
+		controls_.addComboBox(id, std::vector<std::string>(1, "No options"), 0);
+	}
 	controls_.addButton("demo_override", "Use step override");
 	controls_.addComboBox("demo_class", std::vector<std::string>(1, "Quadratic"), 0);
 	controls_.addComboBox("demo_domain", std::vector<std::string>{ "Normalized floats", "Nonnegative integers", "Signed integers", "Integer permutation" }, 0);
@@ -206,11 +225,13 @@ void DemoEditorView::createControls()
 	controls_.addButton("demo_switch_save", "Save");
 	controls_.addButton("demo_switch_discard", "Discard");
 	controls_.addButton("demo_switch_cancel", "Cancel");
-	controls_.setFocusOrder({ "demo_preset", "demo_queue", "demo_up", "demo_down", "demo_remove", "demo_add", "demo_tabs",
+	std::vector<std::string> focusOrder{ "demo_preset", "demo_queue", "demo_up", "demo_down", "demo_remove", "demo_add", "demo_tabs",
 		"demo_replace", "demo_direction", "demo_timing", "demo_duration_value", "demo_completion_scan", "demo_option_group",
 		"demo_option", "demo_override", "demo_class", "demo_domain", "demo_pattern", "demo_count_value", "demo_seed_value",
 		"demo_preset_name", "demo_intermission_value", "demo_loop", "demo_save", "demo_delete", "demo_start", "demo_mode",
-		"demo_previous", "demo_next", "demo_stop", "demo_close" });
+		"demo_previous", "demo_next", "demo_stop", "demo_close" };
+	focusOrder.insert(focusOrder.end(), optionSlotWidgetIds_.begin(), optionSlotWidgetIds_.end());
+	controls_.setFocusOrder(focusOrder);
 }
 
 void DemoEditorView::synchronizeCatalogs(const DemoPresetStore& presets)
@@ -302,7 +323,8 @@ DemoActionPayload DemoEditorView::payloadForRecipe(const DemoInputRecipe& recipe
 
 void DemoEditorView::synchronizeOptions()
 {
-	optionGroupIds_.clear(); optionGroupLabels_.clear(); optionIds_.clear(); optionLabels_.clear();
+	const std::vector<std::string> previousGroupIds = optionGroupIds_;
+	optionGroupIds_.clear(); optionGroupLabels_.clear(); optionIds_.clear(); optionLabels_.clear(); optionIdsByGroup_.clear();
 	const DemoStep* step = currentStep();
 	const sortinglogic::AlgorithmDescriptor* descriptor = step
 		? sortinglogic::algorithmDescriptorById(step->familyId, step->variantId) : nullptr;
@@ -311,41 +333,63 @@ void DemoEditorView::synchronizeOptions()
 		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
 			if (seen.insert(descriptor->supportedOptions[i].groupId).second)
 			{
-				optionGroupIds_.push_back(descriptor->supportedOptions[i].groupId);
-				optionGroupLabels_.push_back(descriptor->supportedOptions[i].groupId);
+				const std::string groupId = descriptor->supportedOptions[i].groupId;
+				optionGroupIds_.push_back(groupId);
+				std::string caption = groupId;
+				for (std::size_t c = 0; c < caption.size(); ++c)
+				{
+					if (caption[c] == '_' || caption[c] == '-') caption[c] = ' ';
+					else if (c == 0 || caption[c - 1] == ' ') caption[c] = static_cast<char>(std::toupper(static_cast<unsigned char>(caption[c])));
+				}
+				optionGroupLabels_.push_back(caption);
 			}
-	UiWidget* group = controls_.find("demo_option_group");
-	UiWidget* option = controls_.find("demo_option");
-	if (!group || !option) return;
-	int groupIndex = group->selectedIndex();
-	group->setOptions(optionGroupLabels_.empty() ? std::vector<std::string>(1, "No algorithm options") : optionGroupLabels_);
-	if (groupIndex >= static_cast<int>(optionGroupIds_.size())) groupIndex = 0;
-	group->setSelectedIndex(groupIndex);
-	if (descriptor && groupIndex >= 0 && static_cast<std::size_t>(groupIndex) < optionGroupIds_.size())
+	if (descriptor && descriptor->id == sortinglogic::SortAlgorithm::Merge)
 	{
-		const std::string& groupId = optionGroupIds_[static_cast<std::size_t>(groupIndex)];
+		optionGroupIds_.push_back("merge_buffer_visualization");
+		optionGroupLabels_.push_back("Merge buffer visualization");
+	}
+	optionIdsByGroup_.resize(optionGroupIds_.size());
+	for (std::size_t groupIndex = 0; groupIndex < optionSlotWidgetIds_.size(); ++groupIndex)
+	{
+		UiWidget* option = controls_.find(optionSlotWidgetIds_[groupIndex]);
+		if (!option) continue;
+		if (!descriptor || groupIndex >= optionGroupIds_.size())
+		{
+			option->setOptions(std::vector<std::string>(1, "No algorithm options"));
+			option->setSelectedIndex(0);
+			continue;
+		}
+		const std::string& groupId = optionGroupIds_[groupIndex];
+		if (groupId == "merge_buffer_visualization")
+		{
+			optionIdsByGroup_[groupIndex].push_back("off");
+			optionIdsByGroup_[groupIndex].push_back("on");
+			option->setOptions(std::vector<std::string>{ "Hidden", "Visible" });
+			option->setSelectedIndex(step->mergeBufferVisualizationEnabled ? 1 : 0);
+			continue;
+		}
 		std::string selectedStableId;
-		std::vector<std::string> optionIds, optionNames;
+		std::string declaredDefault;
+		std::vector<std::string> optionNames;
 		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
 			if (groupId == descriptor->supportedOptions[i].groupId)
 			{
-				optionIds.push_back(descriptor->supportedOptions[i].stableId);
+				optionIdsByGroup_[groupIndex].push_back(descriptor->supportedOptions[i].stableId);
 				optionNames.push_back(descriptor->supportedOptions[i].displayName);
+				if (descriptor->supportedOptions[i].isDefault) declaredDefault = descriptor->supportedOptions[i].stableId;
 			}
 		const std::map<std::string, std::string>::const_iterator current = step->optionSelections.find(groupId);
 		if (current != step->optionSelections.end()) selectedStableId = current->second;
-		optionIds_ = optionIds; optionLabels_ = optionNames;
+		if (std::find(optionIdsByGroup_[groupIndex].begin(), optionIdsByGroup_[groupIndex].end(), selectedStableId) ==
+			optionIdsByGroup_[groupIndex].end()) selectedStableId = declaredDefault;
+		optionIds_ = optionIdsByGroup_[groupIndex]; optionLabels_ = optionNames;
 		option->setOptions(optionNames.empty() ? std::vector<std::string>(1, "No options") : optionNames);
 		int selected = 0;
-		for (std::size_t i = 0; i < optionIds.size(); ++i) if (optionIds[i] == selectedStableId) selected = static_cast<int>(i);
+		for (std::size_t i = 0; i < optionIdsByGroup_[groupIndex].size(); ++i)
+			if (optionIdsByGroup_[groupIndex][i] == selectedStableId) selected = static_cast<int>(i);
 		option->setSelectedIndex(selected);
 	}
-	else
-	{
-		optionIds_.clear(); optionLabels_.clear();
-		option->setOptions(std::vector<std::string>(1, "No options"));
-		option->setSelectedIndex(0);
-	}
+	if (previousGroupIds != optionGroupIds_) laidOutWidth_ = -1;
 }
 
 void DemoEditorView::synchronizeQueue()
@@ -363,7 +407,9 @@ void DemoEditorView::synchronizeQueue()
 		labels.push_back(label);
 	}
 	list->setItems(labels);
-	list->setSelectedIndex(draft_.steps.empty() ? -1 : static_cast<int>(selectedStep_));
+	// Synchronization runs every frame. Revealing here makes ordinary wheel
+	// scrolling snap back to the selected step before the next frame can paint.
+	list->setSelectedIndex(draft_.steps.empty() ? -1 : static_cast<int>(selectedStep_), false);
 }
 
 void DemoEditorView::applyPageVisibility()
@@ -371,17 +417,46 @@ void DemoEditorView::applyPageVisibility()
 	const bool stepPage = activeTab_ == DemoEditorTab::Step;
 	const bool classPage = activeTab_ == DemoEditorTab::ClassInputs;
 	const bool sessionPage = activeTab_ == DemoEditorTab::Session;
-	const char* stepWidgets[] = { "demo_replace", "demo_direction", "demo_timing", "demo_completion_scan", "demo_option_group", "demo_option", "demo_override" };
+	const char* stepWidgets[] = { "demo_replace", "demo_direction", "demo_timing", "demo_completion_scan", "demo_override" };
 	for (std::size_t i = 0; i < sizeof(stepWidgets) / sizeof(stepWidgets[0]); ++i) controls_.setWidgetVisible(stepWidgets[i], stepPage);
+	controls_.setWidgetVisible("demo_option_group", false);
+	controls_.setWidgetVisible("demo_option", false);
+	for (std::size_t i = 0; i < optionSlotWidgetIds_.size(); ++i)
+	{
+		const UiWidget* option = controls_.find(optionSlotWidgetIds_[i]);
+		const UiRect bounds = option ? option->bounds() : UiRect();
+		const bool inside = optionPaneBounds_.contains(bounds.x, bounds.y) &&
+			bounds.y + bounds.height <= optionPaneBounds_.y + optionPaneBounds_.height;
+		controls_.setWidgetVisible(optionSlotWidgetIds_[i], stepPage && i < optionGroupIds_.size() && inside);
+	}
 	const char* classWidgets[] = { "demo_class", "demo_domain", "demo_pattern" };
-	for (std::size_t i = 0; i < sizeof(classWidgets) / sizeof(classWidgets[0]); ++i) controls_.setWidgetVisible(classWidgets[i], classPage);
+	for (std::size_t i = 0; i < sizeof(classWidgets) / sizeof(classWidgets[0]); ++i)
+	{
+		const UiWidget* widget = controls_.find(classWidgets[i]);
+		if (!widget) continue;
+		const UiRect& bounds = widget->bounds();
+		const bool inside = classPage && classInputViewportBounds_.contains(bounds.x, bounds.y) &&
+			bounds.y + bounds.height <= classInputViewportBounds_.y + classInputViewportBounds_.height;
+		controls_.setWidgetVisible(classWidgets[i], inside);
+	}
 	const char* fields[] = { "demo_duration_value", "demo_count_value", "demo_seed_value", "demo_preset_name", "demo_intermission_value" };
 	for (std::size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i)
 	{
-		const bool visible = (fields[i] == std::string("demo_duration_value") && stepPage) ||
+		bool visible = (fields[i] == std::string("demo_duration_value") && stepPage) ||
 			((fields[i] == std::string("demo_count_value") || fields[i] == std::string("demo_seed_value")) && classPage) ||
 			((fields[i] == std::string("demo_preset_name") || fields[i] == std::string("demo_intermission_value")) && sessionPage);
 		setFieldActive(controls_, fields[i], visible);
+		if (fields[i] == std::string("demo_count_value") || fields[i] == std::string("demo_seed_value"))
+		{
+			const UiEditableField* field = controls_.findEditableField(fields[i]);
+			if (field)
+			{
+				const UiRect& bounds = field->bounds();
+				visible = visible && classInputViewportBounds_.contains(bounds.x, bounds.y) &&
+					bounds.y + bounds.height <= classInputViewportBounds_.y + classInputViewportBounds_.height;
+				controls_.setWidgetVisible(fields[i], visible);
+			}
+		}
 	}
 	controls_.setWidgetVisible("demo_loop", sessionPage);
 	controls_.setWidgetVisible("demo_up", true);
@@ -445,7 +520,8 @@ void DemoEditorView::synchronize(const DemoPresetStore& presets, const DemoPrese
 	const DemoInputRecipe shared = currentSharedRecipe();
 	const DemoInputRecipe effective = currentEffectiveRecipe();
 	if (UiWidget* classes = controls_.find("demo_class")) classes->setSelectedIndex(static_cast<int>(selectedComplexityIndex_));
-	if (UiWidget* domain = controls_.find("demo_domain")) domain->setSelectedIndex(domainSelection(shared.domain));
+	if (UiWidget* domain = controls_.find("demo_domain")) domain->setSelectedIndex(shared.pattern == sortinglogic::InputPattern::AndrutReference
+		? 0 : domainSelection(shared.domain));
 	if (UiWidget* pattern = controls_.find("demo_pattern")) pattern->setSelectedIndex(shared.pattern == sortinglogic::InputPattern::AndrutReference ? 6 : static_cast<int>(shared.pattern));
 	if (UiWidget* direction = controls_.find("demo_direction")) direction->setSelectedIndex(step && step->direction == sortinglogic::SortDirection::Descending ? 1 : 0);
 	if (UiWidget* timing = controls_.find("demo_timing")) timing->setSelectedIndex(step && step->timingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence ? 1 : 0);
@@ -457,8 +533,17 @@ void DemoEditorView::synchronize(const DemoPresetStore& presets, const DemoPrese
 	if (UiWidget* overrideButton = controls_.find("demo_override"))
 		overrideButton->setLabel(step && step->hasInputOverride ? "Clear step override" : "Use step override");
 	if (UiEditableField* field = controls_.findEditableField("demo_duration_value")) field->setValue(step ? shortDuration(step->fixedDurationSeconds) : "10");
-	if (UiEditableField* field = controls_.findEditableField("demo_count_value")) field->setValue(std::to_string(shared.itemCount));
-	if (UiEditableField* field = controls_.findEditableField("demo_seed_value")) field->setValue(std::to_string(shared.seed));
+	const bool sharedAndrut = shared.pattern == sortinglogic::InputPattern::AndrutReference;
+	if (UiEditableField* field = controls_.findEditableField("demo_count_value"))
+	{
+		field->setLabel(sharedAndrut ? "Item count (fixed by Andrut reference)" : "Item count");
+		field->setValue(std::to_string(sharedAndrut ? 100 : shared.itemCount));
+	}
+	if (UiEditableField* field = controls_.findEditableField("demo_seed_value"))
+	{
+		field->setLabel(sharedAndrut ? "Seed (unused by Andrut reference)" : "Seed");
+		field->setValue(std::to_string(shared.seed));
+	}
 	if (UiEditableField* field = controls_.findEditableField("demo_preset_name")) field->setValue(draft_.name);
 	if (UiEditableField* field = controls_.findEditableField("demo_intermission_value")) field->setValue(shortDuration(draft_.intermissionSeconds));
 	if (UiWidget* loop = controls_.find("demo_loop")) loop->setLabel(std::string("Loop: ") + (draft_.loop ? "on" : "off"));
@@ -475,11 +560,13 @@ void DemoEditorView::synchronize(const DemoPresetStore& presets, const DemoPrese
 	controls_.setWidgetEnabled("demo_direction", editable && step);
 	controls_.setWidgetEnabled("demo_timing", editable && step);
 	controls_.setWidgetEnabled("demo_completion_scan", editable && step);
-	controls_.setWidgetEnabled("demo_option_group", editable && step && !optionGroupIds_.empty());
-	controls_.setWidgetEnabled("demo_option", editable && step && !optionIds_.empty());
+	controls_.setWidgetEnabled("demo_option_group", false);
+	controls_.setWidgetEnabled("demo_option", false);
+	for (std::size_t i = 0; i < optionSlotWidgetIds_.size(); ++i)
+		controls_.setWidgetEnabled(optionSlotWidgetIds_[i], editable && step && i < optionGroupIds_.size());
 	controls_.setWidgetEnabled("demo_override", editable && step);
 	controls_.setWidgetEnabled("demo_class", editable);
-	controls_.setWidgetEnabled("demo_domain", editable);
+	controls_.setWidgetEnabled("demo_domain", editable && !sharedAndrut);
 	controls_.setWidgetEnabled("demo_pattern", editable);
 	controls_.setWidgetEnabled("demo_loop", editable);
 	controls_.setWidgetEnabled("demo_save", editable && !draft_.steps.empty() && !draft_.name.empty());
@@ -496,8 +583,8 @@ void DemoEditorView::synchronize(const DemoPresetStore& presets, const DemoPrese
 	if (step && step->timingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence)
 		controls_.setWidgetEnabled("demo_duration_value", false);
 	else controls_.setWidgetEnabled("demo_duration_value", editable && step);
-	controls_.setWidgetEnabled("demo_count_value", editable);
-	controls_.setWidgetEnabled("demo_seed_value", editable);
+	controls_.setWidgetEnabled("demo_count_value", editable && !sharedAndrut);
+	controls_.setWidgetEnabled("demo_seed_value", editable && !sharedAndrut);
 	controls_.setWidgetEnabled("demo_preset_name", editable);
 	controls_.setWidgetEnabled("demo_intermission_value", editable);
 	applyPageVisibility();
@@ -509,11 +596,14 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 	logicalWidth_ = logicalWidth; logicalHeight_ = logicalHeight;
 	const bool invalidate = logicalWidth != laidOutWidth_ || logicalHeight != laidOutHeight_ ||
 		activeTab_ != laidOutTab_ || draft_.steps.size() != laidOutStepCount_ || appearancePreset != laidOutPreset_ ||
-		dpiScale_ != laidOutDpiScale_ || bodyViewport_.offset() != laidOutScroll_;
+		dpiScale_ != laidOutDpiScale_ || bodyViewport_.offset() != laidOutScroll_ ||
+		optionViewport_.offset() != laidOutOptionScroll_ || classInputViewport_.offset() != laidOutClassScroll_;
 	if (!invalidate) return;
 	laidOutWidth_ = logicalWidth; laidOutHeight_ = logicalHeight; laidOutTab_ = activeTab_;
 	laidOutStepCount_ = draft_.steps.size(); laidOutPreset_ = appearancePreset;
 	laidOutDpiScale_ = dpiScale_; laidOutScroll_ = bodyViewport_.offset();
+	laidOutOptionScroll_ = optionViewport_.offset();
+	laidOutClassScroll_ = classInputViewport_.offset();
 	const float screenW = static_cast<float>(std::max(1, logicalWidth));
 	const float screenH = static_cast<float>(std::max(1, logicalHeight));
 	const float panelW = std::max(0.0f, std::min(1080.0f, screenW - 16.0f));
@@ -555,9 +645,15 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 	queueBounds_ = UiRect(queueBounds_.x, queueBounds_.y, queueBounds_.width, queueBounds_.height);
 	const float listTop = queueBounds_.y + 34.0f;
 	const float toolbarY = queueBounds_.y + queueBounds_.height - 72.0f;
-	listClip_ = UiRect(queueBounds_.x + 2.0f, listTop, queueBounds_.width - 4.0f,
+	listClip_ = UiRect(queueBounds_.x + 2.0f, listTop, std::max(0.0f, queueBounds_.width - 22.0f),
 		std::max(42.0f, toolbarY - listTop - 8.0f));
-	if (queue) { queue->setBounds(listClip_); queue->setRowHeight(54.0f); }
+	if (queue)
+	{
+		queue->setBounds(listClip_);
+		queue->setRowHeight(54.0f);
+		queueScrollbar_.bind(&queue->viewport());
+		queueScrollbar_.setBounds(UiRect(listClip_.x + listClip_.width + 4.0f, listClip_.y, 14.0f, listClip_.height));
+	}
 	const float queueGap = 8.0f;
 	place(controls_, "demo_up", queueBounds_.x, toolbarY, (queueBounds_.width - queueGap * 2.0f) / 3.0f, 32.0f);
 	place(controls_, "demo_down", queueBounds_.x + (queueBounds_.width - queueGap * 2.0f) / 3.0f + queueGap,
@@ -568,34 +664,123 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 	const float ix = inspectorBounds_.x;
 	const float iy = inspectorBounds_.y;
 	const float iw = inspectorBounds_.width;
+	labelBounds_.clear();
+	optionPaneBounds_ = UiRect();
+	classInputViewportBounds_ = UiRect();
+	optionScrollbar_.bind(&optionViewport_);
+	classInputScrollbar_.bind(&classInputViewport_);
+	if (activeTab_ != DemoEditorTab::Step)
+	{
+		optionViewport_.configure(UiRect(), 0.0f, 42.0f, optionViewport_.offset());
+		optionScrollbar_.setBounds(UiRect());
+	}
+	if (activeTab_ != DemoEditorTab::ClassInputs)
+	{
+		classInputViewport_.configure(UiRect(), 0.0f, 56.0f, classInputViewport_.offset());
+		classInputScrollbar_.setBounds(UiRect());
+	}
 	if (UiTabStrip* tabs = controls_.findTabStrip("demo_tabs")) tabs->setBounds(UiRect(ix, iy, iw, 38.0f));
 	const float rowH = 34.0f;
 	if (activeTab_ == DemoEditorTab::Step)
 	{
 		place(controls_, "demo_replace", ix + iw * 0.60f, iy + 48.0f, iw * 0.40f, rowH);
-		const float halfGap = 10.0f;
-		place(controls_, "demo_direction", ix, iy + 100.0f, (iw - halfGap) * 0.5f, rowH);
-		place(controls_, "demo_timing", ix + (iw + halfGap) * 0.5f, iy + 100.0f, (iw - halfGap) * 0.5f, rowH);
-		placeField(controls_, "demo_duration_value", ix, iy + 172.0f, (iw - halfGap) * 0.48f, rowH);
-		place(controls_, "demo_completion_scan", ix + iw * 0.52f, iy + 172.0f, iw * 0.48f, rowH);
-		place(controls_, "demo_option_group", ix, iy + 246.0f, (iw - halfGap) * 0.42f, rowH);
-		place(controls_, "demo_option", ix + (iw + halfGap) * 0.42f, iy + 246.0f, (iw - halfGap) * 0.58f, rowH);
-		place(controls_, "demo_override", ix, iy + 370.0f, std::min(iw, 250.0f), rowH);
+		const float halfGap = 12.0f;
+		const float halfWidth = std::max(0.0f, (iw - halfGap) * 0.5f);
+		const float compactRowHeight = 30.0f;
+		UiFormLayout leftForm(UiRect(ix, iy + 74.0f, halfWidth, std::max(0.0f, inspectorBounds_.height - 74.0f)), 0.0f, 4.0f);
+		UiFormLayout rightForm(UiRect(ix + halfWidth + halfGap, iy + 74.0f, halfWidth,
+			std::max(0.0f, inspectorBounds_.height - 74.0f)), 0.0f, 4.0f);
+		UiLabeledControlBounds field = leftForm.addLabeledControl("Direction", compactRowHeight, 12.0f, 2.0f);
+		labelBounds_["demo_direction"] = field.label; controls_.find("demo_direction")->setBounds(field.control);
+		field = rightForm.addLabeledControl("Sound timing", compactRowHeight, 12.0f, 2.0f);
+		labelBounds_["demo_timing"] = field.label; controls_.find("demo_timing")->setBounds(field.control);
+		field = leftForm.addLabeledControl("Duration, seconds", compactRowHeight, 12.0f, 2.0f);
+		labelBounds_["demo_duration_value"] = field.label; controls_.findEditableField("demo_duration_value")->setBounds(field.control);
+		field = rightForm.addLabeledControl("Completion scan", compactRowHeight, 12.0f, 2.0f);
+		labelBounds_["demo_completion_scan"] = field.label; controls_.find("demo_completion_scan")->setBounds(field.control);
+		const float optionsHeadingY = std::max(leftForm.cursorY(), rightForm.cursorY()) + 1.0f;
+		if (!optionGroupIds_.empty())
+			labelBounds_["demo_options_heading"] = UiRect(ix, optionsHeadingY, std::max(0.0f, iw - 18.0f), 16.0f);
+		const float optionsTop = optionsHeadingY + (optionGroupIds_.empty() ? 0.0f : 19.0f);
+		const float optionsBottom = inspectorBounds_.y + inspectorBounds_.height - 104.0f;
+		optionPaneBounds_ = UiRect(ix, optionsTop, std::max(0.0f, iw - 18.0f),
+			optionGroupIds_.empty() ? 0.0f : std::max(0.0f, optionsBottom - optionsTop));
+		const float optionRowHeight = 42.0f;
+		optionViewport_.configure(optionPaneBounds_, optionRowHeight * static_cast<float>(optionGroupIds_.size()), optionRowHeight, optionViewport_.offset());
+		optionScrollbar_.bind(&optionViewport_);
+		optionScrollbar_.setBounds(UiRect(ix + iw - 14.0f, optionPaneBounds_.y, 14.0f, optionPaneBounds_.height));
+		for (std::size_t i = 0; i < optionSlotWidgetIds_.size(); ++i)
+		{
+			UiWidget* option = controls_.find(optionSlotWidgetIds_[i]);
+			if (!option) continue;
+			const bool active = i < optionGroupIds_.size();
+			UiRect row = active ? optionViewport_.itemBounds(i, optionRowHeight) : UiRect();
+			const bool fullyVisible = active && row.y >= optionPaneBounds_.y && row.y + row.height <= optionPaneBounds_.y + optionPaneBounds_.height;
+			controls_.setWidgetVisible(optionSlotWidgetIds_[i], active && fullyVisible);
+			if (active)
+			{
+				labelBounds_[optionSlotWidgetIds_[i]] = UiRect(row.x, row.y, row.width, 14.0f);
+				option->setBounds(UiRect(row.x, row.y + 16.0f, row.width, 26.0f));
+			}
+		}
+		// The option viewport is measured after common controls and ends before
+		// the fixed recipe summary; additional groups scroll inside this band.
+		place(controls_, "demo_override", ix, iy + inspectorBounds_.height - 46.0f, std::min(iw, 250.0f), rowH);
 	}
 	else if (activeTab_ == DemoEditorTab::ClassInputs)
 	{
-		place(controls_, "demo_class", ix, iy + 58.0f, iw, rowH);
-		const float halfGap = 10.0f;
-		place(controls_, "demo_domain", ix, iy + 126.0f, (iw - halfGap) * 0.5f, rowH);
-		place(controls_, "demo_pattern", ix + (iw + halfGap) * 0.5f, iy + 126.0f, (iw - halfGap) * 0.5f, rowH);
-		placeField(controls_, "demo_count_value", ix, iy + 202.0f, (iw - halfGap) * 0.5f, rowH);
-		placeField(controls_, "demo_seed_value", ix + (iw + halfGap) * 0.5f, iy + 202.0f, (iw - halfGap) * 0.5f, rowH);
+		const float inputTop = iy + 118.0f;
+		const float inputBottom = iy + inspectorBounds_.height - 10.0f;
+		classInputViewportBounds_ = UiRect(ix, inputTop, std::max(0.0f, iw - 18.0f), std::max(0.0f, inputBottom - inputTop));
+		UiFormLayout form(UiRect(ix, inputTop - classInputViewport_.offset(), std::max(0.0f, iw - 18.0f),
+			std::max(0.0f, inspectorBounds_.height - 128.0f)), 0.0f, 4.0f);
+		UiLabeledControlBounds field = form.addLabeledControl("Complexity class", rowH);
+		labelBounds_["demo_class"] = field.label; controls_.find("demo_class")->setBounds(field.control);
+		field = form.addLabeledControl("Input domain", rowH, 12.0f, 2.0f);
+		labelBounds_["demo_domain"] = field.label; controls_.find("demo_domain")->setBounds(field.control);
+		field = form.addLabeledControl("Input pattern", rowH, 12.0f, 2.0f);
+		labelBounds_["demo_pattern"] = field.label; controls_.find("demo_pattern")->setBounds(field.control);
+		field = form.addLabeledControl("Item count", rowH, 12.0f, 2.0f);
+		labelBounds_["demo_count_value"] = field.label; controls_.findEditableField("demo_count_value")->setBounds(field.control);
+		field = form.addLabeledControl("Seed", rowH, 12.0f, 2.0f);
+		labelBounds_["demo_seed_value"] = field.label; controls_.findEditableField("demo_seed_value")->setBounds(field.control);
+		const float contentExtent = std::max(0.0f, form.cursorY() - (inputTop - classInputViewport_.offset()) - 4.0f);
+		classInputViewport_.configure(classInputViewportBounds_, contentExtent, 56.0f, classInputViewport_.offset());
+		classInputScrollbar_.bind(&classInputViewport_);
+		classInputScrollbar_.setBounds(UiRect(ix + iw - 14.0f, inputTop, 14.0f, classInputViewportBounds_.height));
+		for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
+		{
+			UiWidget* widget = controls_.widgets()[i].get();
+			const std::string& id = widget->id();
+			if (id != "demo_class" && id != "demo_domain" && id != "demo_pattern") continue;
+			const UiRect& bounds = widget->bounds();
+			const bool inside = classInputViewportBounds_.contains(bounds.x, bounds.y) &&
+				bounds.y + bounds.height <= classInputViewportBounds_.y + classInputViewportBounds_.height;
+			controls_.setWidgetVisible(id, activeTab_ == DemoEditorTab::ClassInputs && inside);
+		}
+		const char* fieldIds[] = { "demo_count_value", "demo_seed_value" };
+		for (std::size_t i = 0; i < sizeof(fieldIds) / sizeof(fieldIds[0]); ++i)
+		{
+			UiEditableField* editableField = controls_.findEditableField(fieldIds[i]);
+			if (!editableField) continue;
+			const UiRect& bounds = editableField->bounds();
+			const bool inside = classInputViewportBounds_.contains(bounds.x, bounds.y) &&
+				bounds.y + bounds.height <= classInputViewportBounds_.y + classInputViewportBounds_.height;
+			controls_.setWidgetVisible(fieldIds[i], activeTab_ == DemoEditorTab::ClassInputs && inside);
+		}
 	}
 	else
 	{
-		placeField(controls_, "demo_preset_name", ix, iy + 58.0f, iw, rowH);
-		placeField(controls_, "demo_intermission_value", ix, iy + 132.0f, std::min(iw * 0.5f, 250.0f), rowH);
-		place(controls_, "demo_loop", ix, iy + 202.0f, std::min(iw * 0.5f, 250.0f), rowH);
+		UiFormLayout form(UiRect(ix, iy + 72.0f, iw, inspectorBounds_.height - 72.0f), 0.0f, 12.0f);
+		UiLabeledControlBounds field = form.addLabeledControl("Preset name", rowH);
+		labelBounds_["demo_preset_name"] = field.label; controls_.findEditableField("demo_preset_name")->setBounds(field.control);
+		field = form.addLabeledControl("Intermission, seconds", rowH);
+		labelBounds_["demo_intermission_value"] = field.label; controls_.findEditableField("demo_intermission_value")->setBounds(field.control);
+		field = form.addLabeledControl("Looping", rowH);
+		labelBounds_["demo_loop"] = field.label; controls_.find("demo_loop")->setBounds(field.control);
+		labelBounds_["demo_session_summary"] = form.addTextBlock("Session summary", 13.0f, 20.0f);
+		labelBounds_["demo_session_restore"] = form.addTextBlock(
+			"Starting or stopping a demo restores the manual session paused at its saved cursor.", 12.0f, 34.0f);
 	}
 	const float footerY = footerBounds_.y;
 	place(controls_, "demo_start", panelBounds_.x + panelW - 194.0f, footerY + 22.0f, 168.0f, 38.0f);
@@ -674,12 +859,92 @@ DemoAlgorithmPickerIntent DemoEditorView::takeAlgorithmPickerIntent()
 bool DemoEditorView::handleInput(const UiInputEvent& input, AppAction& action)
 {
 	if (!open_) return false;
+	// Scrollbar capture has priority over widgets. This lets a drag continue
+	// outside the queue without accidentally activating a row beneath it.
+	if (queueScrollbar_.captured())
+	{
+		if (input.type == UiInputType::PointerMove) return queueScrollbar_.pointerMove(input.x, input.y);
+		if (input.type == UiInputType::PointerUp) return queueScrollbar_.pointerUp(input.x, input.y);
+	}
+	if (optionScrollbar_.captured())
+	{
+		if (input.type == UiInputType::PointerMove)
+		{
+			const bool moved = optionScrollbar_.pointerMove(input.x, input.y);
+			if (moved) { laidOutWidth_ = -1; layout(logicalWidth_, logicalHeight_, laidOutPreset_); }
+			return moved;
+		}
+		if (input.type == UiInputType::PointerUp) return optionScrollbar_.pointerUp(input.x, input.y);
+	}
+	if (classInputScrollbar_.captured())
+	{
+		if (input.type == UiInputType::PointerMove)
+		{
+			const bool moved = classInputScrollbar_.pointerMove(input.x, input.y);
+			if (moved) { applyPageVisibility(); laidOutWidth_ = -1; layout(logicalWidth_, logicalHeight_, laidOutPreset_); }
+			return moved;
+		}
+		if (input.type == UiInputType::PointerUp) return classInputScrollbar_.pointerUp(input.x, input.y);
+	}
+	// An open combo owns wheel and pointer input before scroll panes; otherwise
+	// scrolling a popup could accidentally move the inspector behind it.
+	if (controls_.hasOpenCombo())
+	{
+		UiAction popupAction;
+		const bool consumed = controls_.handleEvent(input, popupAction);
+		if (consumed)
+		{
+			action = mapUiAction(popupAction);
+			return true;
+		}
+	}
+	if (input.type == UiInputType::PointerDown && queueScrollbar_.pointerDown(input.x, input.y)) return true;
+	if (input.type == UiInputType::PointerDown && optionScrollbar_.pointerDown(input.x, input.y))
+	{
+		if (!optionScrollbar_.captured()) { laidOutWidth_ = -1; layout(logicalWidth_, logicalHeight_, laidOutPreset_); }
+		return true;
+	}
+	if (input.type == UiInputType::PointerDown && classInputScrollbar_.pointerDown(input.x, input.y))
+	{
+		if (!classInputScrollbar_.captured()) { applyPageVisibility(); laidOutWidth_ = -1; layout(logicalWidth_, logicalHeight_, laidOutPreset_); }
+		return true;
+	}
+	if (input.type == UiInputType::Wheel && queueScrollbar_.bounds().contains(input.x, input.y))
+	{
+		if (UiSelectionList* queue = controls_.findSelectionList("demo_queue"))
+		{
+			queue->viewport().setOffset(queue->viewport().offset() -
+				static_cast<float>(input.wheelDelta) * queue->viewport().rowExtent() * 3.0f);
+			return true;
+		}
+		return true;
+	}
+	if (input.type == UiInputType::Wheel && optionPaneBounds_.contains(input.x, input.y))
+	{
+		if (optionViewport_.scrollWheel(input.x, input.y, input.wheelDelta, 3.0f))
+		{
+			laidOutWidth_ = -1;
+			layout(logicalWidth_, logicalHeight_, laidOutPreset_);
+			return true;
+		}
+	}
+	if (input.type == UiInputType::Wheel && classInputViewportBounds_.contains(input.x, input.y))
+	{
+		if (classInputViewport_.scrollWheel(input.x, input.y, input.wheelDelta, 3.0f))
+		{
+			applyPageVisibility();
+			laidOutWidth_ = -1;
+			layout(logicalWidth_, logicalHeight_, laidOutPreset_);
+			return true;
+		}
+	}
 	if (input.type == UiInputType::Wheel && bodyBounds_.contains(input.x, input.y) &&
 		!listClip_.contains(input.x, input.y))
 	{
 		if (bodyViewport_.scrollWheel(input.x, input.y, input.wheelDelta, 1.0f))
 		{
 			laidOutScroll_ = -1.0f;
+			applyPageVisibility();
 			layout(logicalWidth_, logicalHeight_, laidOutPreset_);
 			return true;
 		}
@@ -766,13 +1031,19 @@ AppAction DemoEditorView::mapUiAction(const UiAction& emitted)
 		DemoActionPayload payload; payload.stepIndex = selectedStep_; payload.flag = !(currentStep() && currentStep()->completionScanEnabled);
 		return demoAction(AppActionKind::DemoSetStepCompletionScan, payload);
 	}
-	if (id == "demo_option_group") { synchronizeOptions(); return AppAction(); }
-	if (id == "demo_option" && selection >= 0 && static_cast<std::size_t>(selection) < optionIds_.size() && currentStep())
+	const std::string optionPrefix = "demo_option_slot_";
+	if (id.compare(0, optionPrefix.size(), optionPrefix) == 0 && selection >= 0 && currentStep())
 	{
-		const int groupIndex = controls_.find("demo_option_group")->selectedIndex();
-		if (groupIndex < 0 || static_cast<std::size_t>(groupIndex) >= optionGroupIds_.size()) return AppAction();
+		const std::size_t groupIndex = static_cast<std::size_t>(std::strtoul(id.c_str() + optionPrefix.size(), nullptr, 10));
+		if (groupIndex >= optionGroupIds_.size() || groupIndex >= optionIdsByGroup_.size() ||
+			static_cast<std::size_t>(selection) >= optionIdsByGroup_[groupIndex].size()) return AppAction();
 		DemoActionPayload payload; payload.stepIndex = selectedStep_; payload.optionGroupId = optionGroupIds_[static_cast<std::size_t>(groupIndex)];
-		payload.optionStableId = optionIds_[static_cast<std::size_t>(selection)];
+		if (payload.optionGroupId == "merge_buffer_visualization")
+		{
+			payload.flag = selection == 1;
+			return demoAction(AppActionKind::DemoSetStepMergeBufferVisualization, payload);
+		}
+		payload.optionStableId = optionIdsByGroup_[groupIndex][static_cast<std::size_t>(selection)];
 		return demoAction(AppActionKind::DemoSetStepOption, payload);
 	}
 	if (id == "demo_override" && currentStep())
@@ -793,15 +1064,27 @@ AppAction DemoEditorView::mapUiAction(const UiAction& emitted)
 	{
 		DemoInputRecipe recipe = currentSharedRecipe();
 		if (id == "demo_domain")
+		{
+			if (recipe.pattern == sortinglogic::InputPattern::AndrutReference) return AppAction();
 			recipe.domain = selection == 1 ? sortinglogic::InputDomain::NonnegativeIntegerKeys : selection == 2
 				? sortinglogic::InputDomain::SignedIntegerKeys : selection == 3 ? sortinglogic::InputDomain::IntegerPermutation
 				: sortinglogic::InputDomain::NormalizedFloats;
-		else recipe.pattern = selection == 6 ? sortinglogic::InputPattern::AndrutReference : static_cast<sortinglogic::InputPattern>(selection);
+		}
+		else
+		{
+			recipe.pattern = selection == 6 ? sortinglogic::InputPattern::AndrutReference : static_cast<sortinglogic::InputPattern>(selection);
+			if (recipe.pattern == sortinglogic::InputPattern::AndrutReference)
+			{
+				recipe.domain = sortinglogic::InputDomain::NormalizedFloats;
+				recipe.itemCount = 100;
+			}
+		}
 		return demoAction(AppActionKind::DemoSetClassRecipe, payloadForRecipe(recipe));
 	}
 	if (id == "demo_count_value" || id == "demo_seed_value")
 	{
 		DemoInputRecipe recipe = currentSharedRecipe();
+		if (recipe.pattern == sortinglogic::InputPattern::AndrutReference) return AppAction();
 		if (id == "demo_seed_value") recipe.seed = static_cast<std::uint32_t>(std::strtoul(emitted.event.text.c_str(), nullptr, 10));
 		else recipe.itemCount = static_cast<std::size_t>(std::strtoul(emitted.event.text.c_str(), nullptr, 10));
 		return demoAction(AppActionKind::DemoSetClassRecipe, payloadForRecipe(recipe));
@@ -851,12 +1134,38 @@ void DemoEditorView::compose(const DemoEditorPalette& palette, int logicalWidth,
 		mix(palette.mutedText, palette.panel, 0.32f), UiPaintMaterial::Solid, UiPaintLayer::Accent);
 	submitRectangle(paintContext, UiRect(panelBounds_.x + panelBounds_.width - border, panelBounds_.y, border, panelBounds_.height),
 		mix(palette.mutedText, palette.panel, 0.32f), UiPaintMaterial::Solid, UiPaintLayer::Accent);
+	if (optionPaneBounds_.height > 0.0f)
+		submitRectangle(paintContext, optionPaneBounds_, palette.background, UiPaintMaterial::Panel,
+			UiPaintLayer::Panel, inspectorBounds_, true);
+	if (classInputViewportBounds_.height > 0.0f)
+		submitRectangle(paintContext, classInputViewportBounds_, palette.background, UiPaintMaterial::Panel,
+			UiPaintLayer::Panel, inspectorBounds_, true);
 	composeText(palette, paintContext);
 	composeSelectionList(palette, paintContext);
 	composeTabs(palette, paintContext);
 	composeFields(palette, paintContext);
 	composeWidgetControls(palette, paintContext);
+	composeOptionScrollbar(palette, paintContext);
+	composeClassInputScrollbar(palette, paintContext);
 	composePresetSwitchConfirmation(palette, paintContext);
+}
+
+void DemoEditorView::composeClassInputScrollbar(const DemoEditorPalette& palette, UiPaintContext& context) const
+{
+	if (activeTab_ != DemoEditorTab::ClassInputs || !classInputScrollbar_.visible()) return;
+	submitRectangle(context, classInputScrollbar_.bounds(), mix(palette.background, palette.panel, 0.72f),
+		UiPaintMaterial::Panel, UiPaintLayer::SettingsControls, inspectorBounds_, true);
+	submitRectangle(context, classInputScrollbar_.thumbBounds(), palette.accent, UiPaintMaterial::Accent,
+		UiPaintLayer::SettingsControls, inspectorBounds_, true);
+}
+
+void DemoEditorView::composeOptionScrollbar(const DemoEditorPalette& palette, UiPaintContext& context) const
+{
+	if (activeTab_ != DemoEditorTab::Step || !optionScrollbar_.visible()) return;
+	submitRectangle(context, optionScrollbar_.bounds(), mix(palette.background, palette.panel, 0.72f),
+		UiPaintMaterial::Panel, UiPaintLayer::SettingsControls, inspectorBounds_, true);
+	submitRectangle(context, optionScrollbar_.thumbBounds(), palette.accent, UiPaintMaterial::Accent,
+		UiPaintLayer::SettingsControls, inspectorBounds_, true);
 }
 
 void DemoEditorView::composeText(const DemoEditorPalette& palette, UiPaintContext& context) const
@@ -881,17 +1190,44 @@ void DemoEditorView::composeText(const DemoEditorPalette& palette, UiPaintContex
 			? "STEP " + std::to_string(selectedStep_ + 1) + " · " + descriptor->displayName
 			: "STEP · select an algorithm from the queue",
 			UiRect(inspectorBounds_.x, inspectorBounds_.y + 46.0f, inspectorBounds_.width * 0.58f, 25.0f), 14.0f, palette.text, UiPaintLayer::SettingsText);
-		submitText(context, "#demo_step_direction_label", "Direction", UiRect(inspectorBounds_.x, inspectorBounds_.y + 80.0f,
-			inspectorBounds_.width * 0.48f, 16.0f), 12.0f, palette.mutedText, UiPaintLayer::SettingsText);
-		submitText(context, "#demo_step_timing_label", "Sound timing", UiRect(inspectorBounds_.x + inspectorBounds_.width * 0.52f,
-			inspectorBounds_.y + 80.0f, inspectorBounds_.width * 0.48f, 16.0f), 12.0f, palette.mutedText, UiPaintLayer::SettingsText);
+		const std::map<std::string, std::string> captions = {
+			{ "demo_direction", "Direction" }, { "demo_timing", "Sound timing" },
+			{ "demo_duration_value", "Duration, seconds" }, { "demo_completion_scan", "Completion scan" }
+		};
+		for (std::map<std::string, std::string>::const_iterator it = captions.begin(); it != captions.end(); ++it)
+		{
+			const UiWidget* widget = controls_.find(it->first);
+			const UiEditableField* field = controls_.findEditableField(it->first);
+			if ((widget && widget->visible()) || (field && field->visible()))
+			{
+				const std::map<std::string, UiRect>::const_iterator bounds = labelBounds_.find(it->first);
+				if (bounds != labelBounds_.end()) submitText(context, "#" + it->first + "_caption", it->second,
+					bounds->second, 12.0f, palette.mutedText, UiPaintLayer::SettingsText, inspectorBounds_, true);
+			}
+		}
+		for (std::size_t i = 0; i < optionGroupLabels_.size(); ++i)
+		{
+			if (i >= optionSlotWidgetIds_.size()) break;
+			const UiWidget* option = controls_.find(optionSlotWidgetIds_[i]);
+			const std::map<std::string, UiRect>::const_iterator bounds = labelBounds_.find(optionSlotWidgetIds_[i]);
+			if (option && option->visible() && bounds != labelBounds_.end())
+				submitText(context, "#" + optionSlotWidgetIds_[i] + "_caption", optionGroupLabels_[i],
+					bounds->second, 12.0f, palette.mutedText, UiPaintLayer::SettingsText, optionPaneBounds_, true);
+		}
+		const std::map<std::string, UiRect>::const_iterator optionsHeading = labelBounds_.find("demo_options_heading");
+		if (optionsHeading != labelBounds_.end())
+			submitText(context, "#demo_options_heading", "ALGORITHM OPTIONS", optionsHeading->second,
+				12.0f, palette.mutedText, UiPaintLayer::SettingsText, inspectorBounds_, true);
 		submitText(context, "#demo_step_recipe", "INPUT RECIPE / " + (descriptor ? className(descriptor->demoComplexity) : "unavailable"),
-			UiRect(inspectorBounds_.x, inspectorBounds_.y + 306.0f, inspectorBounds_.width, 20.0f), 13.0f, palette.text, UiPaintLayer::SettingsText);
+			UiRect(inspectorBounds_.x, inspectorBounds_.y + inspectorBounds_.height - 104.0f, inspectorBounds_.width, 20.0f), 13.0f, palette.text, UiPaintLayer::SettingsText);
 		const DemoInputRecipe recipe = currentEffectiveRecipe();
-		const std::string recipeLine = std::to_string(recipe.itemCount) + " items · seed " + std::to_string(recipe.seed) + " · " +
-			domainName(recipe.domain) + " · " + patternName(recipe.pattern) + (step && step->hasInputOverride ? " · step override" : " · shared class recipe");
+		const bool effectiveAndrut = recipe.pattern == sortinglogic::InputPattern::AndrutReference;
+		const std::string recipeLine = std::to_string(effectiveAndrut ? 100 : recipe.itemCount) + " items · seed " +
+			std::to_string(recipe.seed) + (effectiveAndrut ? " (unused)" : "") + " · " +
+		domainName(effectiveAndrut ? sortinglogic::InputDomain::NormalizedFloats : recipe.domain) + " · " +
+		patternName(recipe.pattern) + (step && step->hasInputOverride ? " · step override" : " · shared class recipe");
 		submitText(context, "#demo_step_recipe_detail", recipeLine,
-			UiRect(inspectorBounds_.x, inspectorBounds_.y + 330.0f, inspectorBounds_.width, 32.0f), 12.0f, palette.mutedText,
+			UiRect(inspectorBounds_.x, inspectorBounds_.y + inspectorBounds_.height - 82.0f, inspectorBounds_.width, 32.0f), 12.0f, palette.mutedText,
 			UiPaintLayer::SettingsText);
 	}
 	else if (activeTab_ == DemoEditorTab::ClassInputs)
@@ -900,7 +1236,7 @@ void DemoEditorView::composeText(const DemoEditorPalette& palette, UiPaintContex
 			? className(complexityClasses_[selectedComplexityIndex_]) : std::string("Unknown")),
 			UiRect(inspectorBounds_.x, inspectorBounds_.y + 42.0f, inspectorBounds_.width, 22.0f), 14.0f, palette.text, UiPaintLayer::SettingsText);
 		submitText(context, "#demo_class_hint", "Edits here apply to this complexity class, even when the inspected step has an override.",
-			UiRect(inspectorBounds_.x, inspectorBounds_.y + 94.0f, inspectorBounds_.width, 28.0f), 12.0f, palette.mutedText, UiPaintLayer::SettingsText);
+			UiRect(inspectorBounds_.x, inspectorBounds_.y + 102.0f, inspectorBounds_.width, 16.0f), 12.0f, palette.mutedText, UiPaintLayer::SettingsText);
 		std::string usedBy = "Used by: ";
 		bool any = false;
 		for (std::size_t i = 0; i < draft_.steps.size(); ++i)
@@ -915,19 +1251,37 @@ void DemoEditorView::composeText(const DemoEditorPalette& palette, UiPaintContex
 		}
 		if (!any) usedBy += "no non-overridden steps";
 		submitText(context, "#demo_class_used_by", usedBy,
-			UiRect(inspectorBounds_.x, inspectorBounds_.y + 272.0f, inspectorBounds_.width, 48.0f), 12.0f, palette.mutedText,
+			UiRect(inspectorBounds_.x, inspectorBounds_.y + 68.0f, inspectorBounds_.width, 32.0f), 12.0f, palette.mutedText,
 			UiPaintLayer::SettingsText);
 	}
 	else
 	{
 		submitText(context, "#demo_session_heading", "SESSION SETTINGS",
 			UiRect(inspectorBounds_.x, inspectorBounds_.y + 42.0f, inspectorBounds_.width, 22.0f), 14.0f, palette.text, UiPaintLayer::SettingsText);
-		submitText(context, "#demo_session_restore", "Starting or stopping a demo restores the manual session paused at its saved cursor.",
-			UiRect(inspectorBounds_.x, inspectorBounds_.y + 254.0f, inspectorBounds_.width, 42.0f), 12.0f, palette.mutedText,
-			UiPaintLayer::SettingsText);
-		submitText(context, "#demo_session_summary", std::to_string(draft_.steps.size()) + " steps · " +
-			shortDuration(draft_.intermissionSeconds) + " sec intermission · loop " + (draft_.loop ? "on" : "off"),
-			UiRect(inspectorBounds_.x, inspectorBounds_.y + 218.0f, inspectorBounds_.width, 24.0f), 13.0f, palette.text, UiPaintLayer::SettingsText);
+		const std::map<std::string, UiRect>::const_iterator summaryBounds = labelBounds_.find("demo_session_summary");
+		if (summaryBounds != labelBounds_.end())
+			submitText(context, "#demo_session_summary", std::to_string(draft_.steps.size()) + " steps · " +
+				shortDuration(draft_.intermissionSeconds) + " sec intermission · loop " + (draft_.loop ? "on" : "off"),
+				summaryBounds->second, 13.0f, palette.text, UiPaintLayer::SettingsText, inspectorBounds_, true);
+		const std::map<std::string, UiRect>::const_iterator restoreBounds = labelBounds_.find("demo_session_restore");
+		if (restoreBounds != labelBounds_.end())
+			submitText(context, "#demo_session_restore", "Starting or stopping a demo restores the manual session paused at its saved cursor.",
+				restoreBounds->second, 12.0f, palette.mutedText, UiPaintLayer::SettingsText, inspectorBounds_, true);
+	}
+	if (activeTab_ != DemoEditorTab::Step)
+	{
+		const std::map<std::string, std::string> captions = {
+			{ "demo_class", "Complexity class" }, { "demo_domain", "Input domain" },
+			{ "demo_pattern", "Input pattern" }, { "demo_loop", "Looping" }
+		};
+		for (std::map<std::string, std::string>::const_iterator it = captions.begin(); it != captions.end(); ++it)
+		{
+			const UiWidget* widget = controls_.find(it->first);
+			const std::map<std::string, UiRect>::const_iterator bounds = labelBounds_.find(it->first);
+			if (widget && widget->visible() && bounds != labelBounds_.end())
+				submitText(context, "#" + it->first + "_caption", it->second, bounds->second, 12.0f,
+					palette.mutedText, UiPaintLayer::SettingsText, inspectorBounds_, true);
+		}
 	}
 	if (!runnerStatus_.empty())
 		submitText(context, "#demo_runtime", runnerStatus_,
@@ -985,6 +1339,15 @@ void DemoEditorView::composeSelectionList(const DemoEditorPalette& palette, UiPa
 				UiRect(bounds.x + 38.0f, bounds.y + 27.0f, bounds.width - 52.0f, 18.0f), 12.0f,
 				palette.mutedText, UiPaintLayer::Text, clip, true);
 	}
+	if (queueScrollbar_.visible())
+	{
+		const UiRect track = queueScrollbar_.bounds();
+		submitRectangle(context, track, mix(palette.background, palette.panel, 0.72f),
+			UiPaintMaterial::Panel, UiPaintLayer::Content, queueBounds_, true);
+		const UiRect thumb = queueScrollbar_.thumbBounds();
+		submitRectangle(context, thumb, palette.accent, UiPaintMaterial::Accent,
+			UiPaintLayer::Content, queueBounds_, true);
+	}
 }
 
 void DemoEditorView::composeTabs(const DemoEditorPalette& palette, UiPaintContext& context) const
@@ -1014,20 +1377,26 @@ void DemoEditorView::composeFields(const DemoEditorPalette& palette, UiPaintCont
 		const UiEditableField& field = *controls_.editableFields()[i];
 		if (!field.visible()) continue;
 		const UiRect bounds = field.bounds();
+		const bool classRecipeField = activeTab_ == DemoEditorTab::ClassInputs &&
+			(field.id() == "demo_count_value" || field.id() == "demo_seed_value");
+		const UiRect fieldClip = classRecipeField ? classInputViewportBounds_ : inspectorBounds_;
 		const UiControlPaintStyle style = resolveUiControlPaintStyle(palette.preset, palette.theme, "value", field.enabled(),
 			false, field.focused(), field.focused(), paletteMap(palette));
-		submitText(context, "#" + field.id() + "_caption", field.label(),
-			UiRect(bounds.x, bounds.y - 18.0f, bounds.width, 16.0f), 12.0f, palette.mutedText, UiPaintLayer::SettingsText);
+		const std::map<std::string, UiRect>::const_iterator measuredLabel = labelBounds_.find(field.id());
+		const UiRect captionBounds = measuredLabel == labelBounds_.end()
+			? UiRect(bounds.x, bounds.y - 18.0f, bounds.width, 16.0f) : measuredLabel->second;
+		submitText(context, "#" + field.id() + "_caption", field.label(), captionBounds, 12.0f,
+			palette.mutedText, UiPaintLayer::SettingsText, fieldClip, true);
 		UiControlPaintStyle fieldStyle = style;
 		if (field.invalid()) fieldStyle.border = palette.accent;
-		submitStyledBox(context, bounds, fieldStyle, UiPaintLayer::SettingsControls, bodyBounds_);
+		submitStyledBox(context, bounds, fieldStyle, UiPaintLayer::SettingsControls, fieldClip);
 		submitText(context, "#" + field.id() + "_value", field.value() + (field.editing() ? "_" : ""),
 			UiRect(bounds.x + 10.0f, bounds.y, bounds.width - 20.0f, bounds.height), 14.0f,
-			field.enabled() ? palette.text : palette.mutedText, UiPaintLayer::SettingsText, bodyBounds_, true);
+			field.enabled() ? palette.text : palette.mutedText, UiPaintLayer::SettingsText, fieldClip, true);
 		if (field.invalid())
 			submitText(context, "#" + field.id() + "_error", "Enter a valid value in range.",
 				UiRect(bounds.x, bounds.y + bounds.height + 1.0f, bounds.width, 16.0f), 11.0f, palette.accent,
-				UiPaintLayer::SettingsText, bodyBounds_, true);
+				UiPaintLayer::SettingsText, fieldClip, true);
 	}
 }
 
@@ -1039,9 +1408,14 @@ void DemoEditorView::composeWidgetControls(const DemoEditorPalette&, UiPaintCont
 		if (!widget.visible() || widget.bounds().width <= 0.0f || widget.bounds().height <= 0.0f) continue;
 		const bool dialog = widget.id().find("demo_switch_") == 0;
 		const UiPaintLayer layer = dialog ? UiPaintLayer::SettingsControlsOverlay : UiPaintLayer::SettingsControls;
+		const bool optionWidget = widget.id().find("demo_option_slot_") == 0;
+		const bool classInputWidget = activeTab_ == DemoEditorTab::ClassInputs &&
+			(widget.id() == "demo_class" || widget.id() == "demo_domain" || widget.id() == "demo_pattern");
+		const UiRect clip = dialog ? panelBounds_ : optionWidget ? optionPaneBounds_ : classInputWidget ? classInputViewportBounds_ :
+			(widget.id() == "demo_preset" || widget.id() == "demo_save" || widget.id() == "demo_delete" || widget.id() == "demo_close" ? panelBounds_ : bodyBounds_);
 		context.submit(UiPaintCommand(UiPaintPrimitive::Control, widget.bounds(), UiColor(), std::string(), widget.id(),
 			widget.kind() == UiWidgetKind::ComboBox ? UiPaintMaterial::Popup : UiPaintMaterial::Button,
-			layer, dialog ? panelBounds_ : (widget.id() == "demo_preset" || widget.id() == "demo_save" || widget.id() == "demo_delete" || widget.id() == "demo_close" ? panelBounds_ : bodyBounds_),
+			layer, clip,
 			true, 14.0f));
 		if (widget.expanded())
 			context.submit(UiPaintCommand(UiPaintPrimitive::Control, widget.popupBounds(), UiColor(), std::string(), widget.id(),

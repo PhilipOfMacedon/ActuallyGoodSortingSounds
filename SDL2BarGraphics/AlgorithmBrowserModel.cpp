@@ -7,12 +7,15 @@
 AlgorithmBrowserModel::AlgorithmBrowserModel(const std::vector<AlgorithmFamilyEntry>& algorithmCatalog)
 	: variantPane(false), searchFocused(false), pendingSelection(false), status(), search(), selectedFamily(),
 	familySelection(0), variantSelection(0), familyScroll(0), variantScroll(0), bounds(), searchBounds(), familyBounds(),
-	variantBounds(), familyViewport(), variantViewport(), catalog(algorithmCatalog)
+	variantBounds(), familyScrollContentBounds(), variantScrollContentBounds(), familyViewport(), variantViewport(),
+	familyScrollbar(), variantScrollbar(), catalog(algorithmCatalog)
 {
 }
 
 void AlgorithmBrowserModel::begin(const std::string& initialFamily)
 {
+	familyScrollbar.cancelCapture();
+	variantScrollbar.cancelCapture();
 	variantPane = false;
 	searchFocused = true;
 	pendingSelection = false;
@@ -27,6 +30,8 @@ void AlgorithmBrowserModel::begin(const std::string& initialFamily)
 
 void AlgorithmBrowserModel::reset()
 {
+	familyScrollbar.cancelCapture();
+	variantScrollbar.cancelCapture();
 	pendingSelection = false;
 	status.clear();
 	variantPane = false;
@@ -83,10 +88,22 @@ void AlgorithmBrowserModel::configureViewports()
 	for (std::size_t i = 0; i < matches.size(); ++i)
 		if (matches[i]->id == selectedFamily) { selected = matches[i]; break; }
 	const std::vector<const AlgorithmBrowserVariant*> variants = visibleVariants(selected);
-	familyViewport.configure(familyBounds, static_cast<float>(matches.size()) * 30.0f, 30.0f,
+	const bool familyOverflow = static_cast<float>(matches.size()) * 30.0f > familyBounds.height + 0.5f;
+	const bool variantOverflow = static_cast<float>(variants.size()) * 30.0f > variantBounds.height + 0.5f;
+	familyScrollContentBounds = UiRect(familyBounds.x, familyBounds.y,
+		std::max(1.0f, familyBounds.width - (familyOverflow ? 14.0f : 0.0f)), familyBounds.height);
+	variantScrollContentBounds = UiRect(variantBounds.x, variantBounds.y,
+		std::max(1.0f, variantBounds.width - (variantOverflow ? 14.0f : 0.0f)), variantBounds.height);
+	familyViewport.configure(familyScrollContentBounds, static_cast<float>(matches.size()) * 30.0f, 30.0f,
 		static_cast<float>(familyScroll) * 30.0f);
-	variantViewport.configure(variantBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f,
+	variantViewport.configure(variantScrollContentBounds, static_cast<float>(variants.size()) * 30.0f, 30.0f,
 		static_cast<float>(variantScroll) * 30.0f);
+	familyScrollbar.bind(&familyViewport);
+	variantScrollbar.bind(&variantViewport);
+	familyScrollbar.setBounds(familyOverflow
+		? UiRect(familyBounds.x + familyBounds.width - 10.0f, familyBounds.y, 10.0f, familyBounds.height) : UiRect());
+	variantScrollbar.setBounds(variantOverflow
+		? UiRect(variantBounds.x + variantBounds.width - 10.0f, variantBounds.y, 10.0f, variantBounds.height) : UiRect());
 	familyScroll = static_cast<int>(familyViewport.offset() / 30.0f + 0.5f);
 	variantScroll = static_cast<int>(variantViewport.offset() / 30.0f + 0.5f);
 }
@@ -167,10 +184,35 @@ AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEven
 	}
 	if (event.type == UiInputType::Wheel)
 	{
-		if (familyViewport.scrollWheel(event.x, event.y, event.wheelDelta))
-			familyScroll = static_cast<int>(familyViewport.offset() / 30.0f + 0.5f);
-		else if (variantViewport.scrollWheel(event.x, event.y, event.wheelDelta))
-			variantScroll = static_cast<int>(variantViewport.offset() / 30.0f + 0.5f);
+		if (familyScrollbar.bounds().contains(event.x, event.y))
+			familyViewport.scrollWheel(familyScrollContentBounds.x, event.y, event.wheelDelta);
+		else if (variantScrollbar.bounds().contains(event.x, event.y))
+			variantViewport.scrollWheel(variantScrollContentBounds.x, event.y, event.wheelDelta);
+		else if (familyBounds.contains(event.x, event.y))
+			familyViewport.scrollWheel(event.x, event.y, event.wheelDelta);
+		else if (variantBounds.contains(event.x, event.y))
+			variantViewport.scrollWheel(event.x, event.y, event.wheelDelta);
+		else return result;
+		familyScroll = static_cast<int>(familyViewport.offset() / 30.0f + 0.5f);
+		variantScroll = static_cast<int>(variantViewport.offset() / 30.0f + 0.5f);
+		return result;
+	}
+	if (event.type == UiInputType::PointerMove)
+	{
+		if (familyScrollbar.captured()) familyScrollbar.pointerMove(event.x, event.y);
+		else if (variantScrollbar.captured()) variantScrollbar.pointerMove(event.x, event.y);
+		else return result;
+		familyScroll = static_cast<int>(familyViewport.offset() / 30.0f + 0.5f);
+		variantScroll = static_cast<int>(variantViewport.offset() / 30.0f + 0.5f);
+		return result;
+	}
+	if (event.type == UiInputType::PointerUp)
+	{
+		if (familyScrollbar.captured()) familyScrollbar.pointerUp(event.x, event.y);
+		else if (variantScrollbar.captured()) variantScrollbar.pointerUp(event.x, event.y);
+		else return result;
+		familyScroll = static_cast<int>(familyViewport.offset() / 30.0f + 0.5f);
+		variantScroll = static_cast<int>(variantViewport.offset() / 30.0f + 0.5f);
 		return result;
 	}
 	if (event.type == UiInputType::KeyDown)
@@ -259,6 +301,12 @@ AlgorithmBrowserInputResult AlgorithmBrowserModel::handleInput(const UiInputEven
 	if (event.type == UiInputType::PointerDown)
 	{
 		if (pendingSelection) return result;
+		if (familyScrollbar.pointerDown(event.x, event.y) || variantScrollbar.pointerDown(event.x, event.y))
+		{
+			familyScroll = static_cast<int>(familyViewport.offset() / 30.0f + 0.5f);
+			variantScroll = static_cast<int>(variantViewport.offset() / 30.0f + 0.5f);
+			return result;
+		}
 		if (!bounds.contains(event.x, event.y))
 		{
 			result.closeRequested = true;

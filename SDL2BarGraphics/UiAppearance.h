@@ -7,7 +7,9 @@
 // This header contains only value types. It is deliberately independent of
 // SDL, OpenGL, and GLM so settings migration and appearance validation stay
 // testable without a graphics context.
-enum class PaletteId { Cyan, Amber, Monochrome, Light, VgaClassic, Windows95 };
+// Keep the original palette IDs stable: Customized is appended for persisted
+// values and does not participate in the built-in palette table.
+enum class PaletteId { Cyan, Amber, Monochrome, Light, VgaClassic, Windows95, Customized };
 enum class UiPresetId { Current, FlatVgaDos, ClassicWindows95 };
 enum class UiTokenType { Color, Number, Boolean, Choice, Font };
 enum class UiTokenCategory { Colors, Typography, Metrics, Decorations };
@@ -83,8 +85,10 @@ struct UiTokenDescriptor
 struct UiThemeCustomization
 {
 	PaletteId palette;
+	PaletteId customPaletteBase;
+	std::map<std::string, UiColor> customColors;
 	std::map<std::string, UiTokenValue> overrides;
-	UiThemeCustomization() : palette(PaletteId::Cyan), overrides() {}
+	UiThemeCustomization() : palette(PaletteId::Cyan), customPaletteBase(PaletteId::Cyan), customColors(), overrides() {}
 };
 
 struct UiAppearancePreferences
@@ -117,6 +121,14 @@ bool validateUiThemeCustomization(UiPresetId preset, const UiThemeCustomization&
 bool setUiTokenValue(UiPresetId preset, UiThemeCustomization& value, const std::string& tokenId,
 	const UiTokenValue& tokenValue, std::string* error = nullptr);
 void selectUiPalette(UiThemeCustomization& value, PaletteId palette);
+void selectUiPalette(UiPresetId preset, UiThemeCustomization& value, PaletteId palette);
+// Resolves the same built-in RGBA table used by ThemePalette. The preset-aware
+// form includes the Windows 95 derived panel/background/muted-text rules.
+UiColor uiPaletteColor(PaletteId palette, const std::string& tokenId);
+UiColor uiPresetPaletteColor(UiPresetId preset, PaletteId palette, const std::string& tokenId);
+std::map<std::string, UiColor> effectiveUiPalette(UiPresetId preset, const UiThemeCustomization& value);
+bool copyEffectiveUiPalette(UiPresetId sourcePreset, const UiThemeCustomization& source,
+	UiPresetId destinationPreset, UiThemeCustomization& destination);
 UiTokenValue effectiveUiTokenValue(UiPresetId preset, const UiThemeCustomization& value, const std::string& tokenId);
 bool sameUiAppearancePreferences(const UiAppearancePreferences& left, const UiAppearancePreferences& right);
 std::string encodeUiTokenValue(const UiTokenValue& value);

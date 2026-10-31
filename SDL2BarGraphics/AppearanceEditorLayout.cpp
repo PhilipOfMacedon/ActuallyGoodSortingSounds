@@ -33,7 +33,8 @@ AppearanceEditorLayoutResult calculateAppearanceEditorLayout(float logicalWidth,
 	const float top = result.panelBounds.y + 58.0f * result.scale;
 	const float half = std::max(1.0f, (contentWidth - gap) * 0.5f);
 	const float filterY = top + row + 8.0f * result.scale;
-	const float propertyY = result.panelBounds.y + 210.0f * result.scale;
+	const float copyRowY = filterY + 2.0f * row + 16.0f * result.scale;
+	const float propertyY = result.panelBounds.y + 250.0f * result.scale;
 	const float propertyButton = std::min(54.0f, half);
 	const float colorActionsY = propertyY + 50.0f * result.scale;
 	const float colorSliderY = colorActionsY + row + 8.0f * result.scale;
@@ -42,7 +43,7 @@ AppearanceEditorLayoutResult calculateAppearanceEditorLayout(float logicalWidth,
 
 	result.titleBounds = UiRect(result.panelBounds.x + 18.0f, result.panelBounds.y + 14.0f,
 		result.panelBounds.width - 36.0f, 26.0f);
-	result.descriptionBounds = UiRect(left, result.panelBounds.y + 170.0f * result.scale,
+	result.descriptionBounds = UiRect(left, result.panelBounds.y + 210.0f * result.scale,
 		contentWidth, 32.0f * result.scale);
 	result.statusBounds = UiRect(left, actionsY - 26.0f * result.scale,
 		contentWidth, 18.0f * result.scale);
@@ -55,6 +56,8 @@ AppearanceEditorLayoutResult calculateAppearanceEditorLayout(float logicalWidth,
 	result.controls["appearance_category"] = UiRect(left, filterY, half, row);
 	result.controls["appearance_search"] = UiRect(left + half + gap, filterY, half, row);
 	result.controls["appearance_token"] = UiRect(left, filterY + row + 8.0f * result.scale, contentWidth, row);
+	result.controls["appearance_copy_source"] = UiRect(left, copyRowY, half, row);
+	result.controls["appearance_copy_colors"] = UiRect(left + half + gap, copyRowY, half, row);
 	result.controls["appearance_value_down"] = UiRect(left, propertyY, propertyButton, row);
 	result.controls["appearance_value"] = UiRect(left + propertyButton + gap, propertyY,
 		std::max(1.0f, contentWidth - 2.0f * (propertyButton + gap)), row);

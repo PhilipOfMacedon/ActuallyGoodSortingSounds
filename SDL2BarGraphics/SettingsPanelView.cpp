@@ -31,7 +31,8 @@ namespace
 
 SettingsPanelView::SettingsPanelView()
 	: controls_(), model_(), captions_(), algorithmDescriptorsById_(), algorithmOptionsById_(),
-	  activeAlgorithmOptionControlIds_(), activeAlgorithmOptionId_(-1), panelBounds_(), contentBounds_()
+	  activeAlgorithmOptionControlIds_(), activeAlgorithmOptionId_(-1), panelBounds_(), contentBounds_(),
+	  scrollTrackBounds_(), scrollbarController_()
 {
 }
 
@@ -313,7 +314,30 @@ bool SettingsPanelView::isScrollablePage() const
 
 bool SettingsPanelView::handleScrollWheel(float x, float y, int wheelDelta)
 {
-	return isScrollablePage() && model_.scrollViewport().scrollWheel(x, y, wheelDelta);
+	if (!isScrollablePage()) return false;
+	if (model_.scrollViewport().scrollWheel(x, y, wheelDelta)) return true;
+	if (scrollTrackBounds_.contains(x, y))
+	{
+		model_.scrollViewport().setOffset(model_.scrollOffset() - static_cast<float>(wheelDelta) *
+			model_.scrollViewport().rowExtent() * 3.0f);
+		return true;
+	}
+	return contentBounds_.contains(x, y);
+}
+
+bool SettingsPanelView::handleScrollbarPointerDown(float x, float y)
+{
+	return isScrollablePage() && scrollbarController_.pointerDown(x, y);
+}
+
+bool SettingsPanelView::handleScrollbarPointerMove(float x, float y)
+{
+	return scrollbarController_.pointerMove(x, y);
+}
+
+bool SettingsPanelView::handleScrollbarPointerUp(float x, float y)
+{
+	return scrollbarController_.pointerUp(x, y);
 }
 
 void SettingsPanelView::setPanelBounds(const UiRect& panelBounds, bool modalOpen)
@@ -328,6 +352,7 @@ void SettingsPanelView::setPanelBounds(const UiRect& panelBounds, bool modalOpen
 void SettingsPanelView::setModalActive(bool active)
 {
 	controls_.setInputCaptured(active);
+	if (!active) scrollbarController_.cancelCapture();
 	if (active && panelBounds_.width > 0.0f)
 		controls_.setModalBounds(panelBounds_, UiAction::ViewCommand::CloseSettings);
 }
@@ -347,7 +372,7 @@ void SettingsPanelView::layoutControls(const std::vector<std::string>& activeCon
 {
 	if (panelBounds_.width <= 0.0f) return;
 	const float x = panelBounds_.x + 16.0f;
-	const float width = std::max(1.0f, panelBounds_.width - 32.0f);
+	float width = std::max(1.0f, panelBounds_.width - 32.0f);
 	const SettingsPanelGeometry panelGeometry = calculateSettingsPanelGeometry(panelBounds_, model_.page());
 	controls_.find("appearance_tab")->setBounds(panelGeometry.tabs[0]);
 	controls_.find("algorithm_tab")->setBounds(panelGeometry.tabs[1]);
@@ -370,15 +395,24 @@ void SettingsPanelView::layoutControls(const std::vector<std::string>& activeCon
 		visibleWidgetIds.insert("audio_advanced_tab");
 	}
 	const float rowHeight = 48.0f;
-	const float contentBottom = contentBounds_.y + contentBounds_.height;
 	const float totalHeight = static_cast<float>(activeControlIds.size()) * rowHeight;
-	model_.scrollViewport().configure(contentBounds_, totalHeight, rowHeight, model_.scrollOffset());
+	const bool overflowing = isScrollablePage() && totalHeight > contentBounds_.height + 0.5f;
+	const float scrollWidth = overflowing ? std::max(8.0f, scrollbarThickness) : 0.0f;
+	const UiRect contentViewport(contentBounds_.x, contentBounds_.y,
+		std::max(1.0f, contentBounds_.width - (overflowing ? scrollWidth + 6.0f : 0.0f)), contentBounds_.height);
+	width = std::max(1.0f, width - (overflowing ? scrollWidth + 6.0f : 0.0f));
+	model_.scrollViewport().configure(contentViewport, totalHeight, rowHeight, model_.scrollOffset());
+	scrollTrackBounds_ = overflowing
+		? UiRect(contentBounds_.x + contentBounds_.width - scrollWidth, contentBounds_.y, scrollWidth, contentBounds_.height)
+		: UiRect();
+	scrollbarController_.bind(&model_.scrollViewport());
+	scrollbarController_.setBounds(scrollTrackBounds_);
+	const float contentBottom = contentViewport.y + contentViewport.height;
 	for (std::size_t i = 0; i < activeControlIds.size(); ++i)
 	{
 		const UiRect rowBounds = model_.scrollViewport().itemBounds(i, rowHeight);
 		const float rowY = rowBounds.y;
-		const bool visible = model_.scrollViewport().itemIntersectsViewport(i, rowHeight) &&
-			rowY + rowHeight <= contentBottom + 0.5f;
+		const bool visible = rowY >= contentViewport.y - 0.5f && rowY + rowHeight <= contentBottom + 0.5f;
 		if (visible) visibleWidgetIds.insert(activeControlIds[i]);
 		UiWidget* widget = controls_.find(activeControlIds[i]);
 		if (!widget) continue;
@@ -472,6 +506,15 @@ void SettingsPanelView::compose(int screenWidth, int screenHeight, const std::st
 		submitControl(controls_.find("audio_retry"), palette.button, UiPaintMaterial::Solid,
 			UiPaintLayer::SettingsControls, screen, true, false);
 
+	if (scrollbarController_.visible())
+	{
+		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, scrollbarController_.bounds(), palette.panel,
+			std::string(), std::string(), UiPaintMaterial::Panel, UiPaintLayer::SettingsControls,
+			contentBounds_, true, 0.0f));
+		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Rectangle, scrollbarController_.thumbBounds(), palette.accent,
+			std::string(), std::string(), UiPaintMaterial::Accent, UiPaintLayer::SettingsControlsOverlay,
+			contentBounds_, true, 0.0f));
+	}
 	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 	{
 		const UiWidget* widget = controls_.widgets()[i].get();

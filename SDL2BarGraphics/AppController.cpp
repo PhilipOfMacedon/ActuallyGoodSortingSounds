@@ -167,6 +167,7 @@ namespace
 		case AppActionKind::DemoSetStepTiming:
 		case AppActionKind::DemoSetStepDirection:
 		case AppActionKind::DemoSetStepCompletionScan:
+		case AppActionKind::DemoSetStepMergeBufferVisualization:
 		case AppActionKind::DemoSetStepOption:
 		case AppActionKind::DemoSetStepOverride:
 		case AppActionKind::DemoClearStepOverride:
@@ -238,7 +239,9 @@ namespace
 			const DemoStep& y = b.steps[i];
 			if (x.familyId != y.familyId || x.variantId != y.variantId || x.optionSelections != y.optionSelections ||
 				x.direction != y.direction || x.timingMode != y.timingMode || x.fixedDurationSeconds != y.fixedDurationSeconds ||
-				x.completionScanEnabled != y.completionScanEnabled || x.hasInputOverride != y.hasInputOverride ||
+				x.completionScanEnabled != y.completionScanEnabled ||
+				x.mergeBufferVisualizationEnabled != y.mergeBufferVisualizationEnabled ||
+				x.hasInputOverride != y.hasInputOverride ||
 				(x.hasInputOverride && !sameDemoRecipe(x.inputOverride, y.inputOverride))) return false;
 		}
 		return true;
@@ -416,6 +419,11 @@ bool AppController::applyAppearance(const UiAppearancePreferences& appearance, s
 		if (error && error->empty()) *error = "The appearance settings are invalid.";
 		return false;
 	}
+	if (sameUiAppearancePreferences(preferences_.appearance, candidate.appearance))
+	{
+		if (error) error->clear();
+		return true;
+	}
 	if (!settingsPersistence_.save(candidate, error))
 	{
 		persistenceStatus_ = "Could not save appearance" + (error && !error->empty() ? ": " + *error : ".");
@@ -476,6 +484,35 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		}
 		if (!permitted)
 			return sortinglogic::CommandResult(false, "Manual setup is locked during a demo. Stop the demo to change its inputs or run configuration.");
+	}
+	if (!sortinglogic::inputPatternUsesSeed(manualSession_.simulation.pattern()))
+	{
+		switch (action.kind)
+		{
+		case AppActionKind::Shuffle:
+		case AppActionKind::SetSeed:
+		case AppActionKind::SelectSeedBookmark:
+		case AppActionKind::PreviousSeed:
+		case AppActionKind::NextSeed:
+			return sortinglogic::CommandResult(false, "The selected input pattern does not use a seed. Change the pattern before applying or navigating seeds.");
+		default:
+			break;
+		}
+	}
+	if (sortinglogic::inputPatternFixedItemCount(manualSession_.simulation.pattern()) != 0)
+	{
+		switch (action.kind)
+		{
+		case AppActionKind::DecreaseCountFine:
+		case AppActionKind::DecreaseCountCoarse:
+		case AppActionKind::IncreaseCountFine:
+		case AppActionKind::IncreaseCountCoarse:
+		case AppActionKind::AdjustItemCount:
+		case AppActionKind::SetItemCount:
+			return sortinglogic::CommandResult(false, "The selected input pattern requires exactly 100 items. Change the pattern before editing the item count.");
+		default:
+			break;
+		}
 	}
 	sortinglogic::CommandResult result(true, "");
 	const PreferenceChangeSnapshot previous(preferences_, needsFullPreferenceSnapshot(action.kind));
@@ -743,13 +780,13 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 		return sortinglogic::CommandResult(true, "Appearance saved.");
 	}
 	case AppActionKind::SetPalette:
-		if (action.selection < static_cast<int>(PaletteId::Cyan) || action.selection > static_cast<int>(PaletteId::Windows95))
+		if (action.selection < static_cast<int>(PaletteId::Cyan) || action.selection > static_cast<int>(PaletteId::Customized))
 			result = sortinglogic::CommandResult(false, "The selected color palette is invalid.");
 		else
 		{
 			const UiPresetId preset = preferences_.appearance.activePreset;
 			UiThemeCustomization& theme = preferences_.appearance.themes[preset];
-			selectUiPalette(theme, static_cast<PaletteId>(action.selection));
+			selectUiPalette(preset, theme, static_cast<PaletteId>(action.selection));
 			if (preset == UiPresetId::Current) preferences_.visual.palette = theme.palette;
 		}
 		break;
@@ -929,6 +966,7 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::DemoSetStepTiming:
 	case AppActionKind::DemoSetStepDirection:
 	case AppActionKind::DemoSetStepCompletionScan:
+	case AppActionKind::DemoSetStepMergeBufferVisualization:
 	case AppActionKind::DemoSetStepOption:
 	case AppActionKind::DemoSetStepOverride:
 	case AppActionKind::DemoClearStepOverride:
@@ -1121,6 +1159,13 @@ void AppController::createDemoSessionForCurrentStep()
 	if (!configured.accepted)
 	{
 		demoRunner_.fail("Could not apply the step completion scan setting: " + configured.message);
+		finishDemoIfNeeded();
+		return;
+	}
+	configured = demoSession_->simulation.setMergeBufferVisualizationEnabled(step->mergeBufferVisualizationEnabled);
+	if (!configured.accepted)
+	{
+		demoRunner_.fail("Could not apply the Merge buffer visualization setting: " + configured.message);
 		finishDemoIfNeeded();
 		return;
 	}
@@ -1333,7 +1378,6 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 	{
 		if (payload.complexityClass < static_cast<int>(sortinglogic::DemoComplexityClass::Linear) ||
 			payload.complexityClass > static_cast<int>(sortinglogic::DemoComplexityClass::DemonstrationUnknown) ||
-			payload.itemCount < sortinglogic::MinItemCount || payload.itemCount > sortinglogic::MaxItemCount ||
 			payload.seed > (std::numeric_limits<std::uint32_t>::max)())
 			return sortinglogic::CommandResult(false, "The input recipe is outside its supported range.");
 		DemoInputRecipe recipe(payload.seed, payload.itemCount, static_cast<sortinglogic::InputDomain>(payload.inputDomain),
@@ -1343,7 +1387,22 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			static_cast<int>(recipe.pattern) < static_cast<int>(sortinglogic::InputPattern::Random) ||
 			static_cast<int>(recipe.pattern) > static_cast<int>(sortinglogic::InputPattern::AndrutReference))
 			return sortinglogic::CommandResult(false, "The input recipe domain or pattern is invalid.");
-		demoEditorDraft_.classInputs[static_cast<sortinglogic::DemoComplexityClass>(payload.complexityClass)] = recipe;
+		const sortinglogic::DemoComplexityClass complexity = static_cast<sortinglogic::DemoComplexityClass>(payload.complexityClass);
+		const std::size_t fixedCount = sortinglogic::inputPatternFixedItemCount(recipe.pattern);
+		if (fixedCount != 0)
+		{
+			recipe.itemCount = fixedCount;
+			if (recipe.pattern == sortinglogic::InputPattern::AndrutReference)
+				recipe.domain = sortinglogic::InputDomain::NormalizedFloats;
+		}
+		if (!sortinglogic::inputPatternUsesSeed(recipe.pattern))
+		{
+			const std::map<sortinglogic::DemoComplexityClass, DemoInputRecipe>::const_iterator existing = demoEditorDraft_.classInputs.find(complexity);
+			if (existing != demoEditorDraft_.classInputs.end()) recipe.seed = existing->second.seed;
+		}
+		if (recipe.itemCount < sortinglogic::MinItemCount || recipe.itemCount > sortinglogic::MaxItemCount)
+			return sortinglogic::CommandResult(false, "The input recipe item count is outside its supported range.");
+		demoEditorDraft_.classInputs[complexity] = recipe;
 		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Complexity-class input updated in the draft.");
 	}
@@ -1430,7 +1489,8 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		return sortinglogic::CommandResult(true, "Demo step algorithm updated.");
 	}
 	if (action.kind == AppActionKind::DemoSetStepTiming || action.kind == AppActionKind::DemoSetStepDirection ||
-		action.kind == AppActionKind::DemoSetStepCompletionScan)
+		action.kind == AppActionKind::DemoSetStepCompletionScan ||
+		action.kind == AppActionKind::DemoSetStepMergeBufferVisualization)
 	{
 		if (payload.stepIndex >= demoEditorDraft_.steps.size()) return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
 		DemoStep& step = demoEditorDraft_.steps[payload.stepIndex];
@@ -1448,7 +1508,8 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			if (payload.direction < 0 || payload.direction > 1) return sortinglogic::CommandResult(false, "Step direction is invalid.");
 			step.direction = static_cast<sortinglogic::SortDirection>(payload.direction);
 		}
-		else step.completionScanEnabled = payload.flag;
+		else if (action.kind == AppActionKind::DemoSetStepCompletionScan) step.completionScanEnabled = payload.flag;
+		else step.mergeBufferVisualizationEnabled = payload.flag;
 		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Demo step settings updated.");
 	}
@@ -1477,12 +1538,33 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		{
 			DemoInputRecipe recipe(payload.seed, payload.itemCount, static_cast<sortinglogic::InputDomain>(payload.inputDomain),
 				static_cast<sortinglogic::InputPattern>(payload.inputPattern));
-			if (recipe.itemCount < sortinglogic::MinItemCount || recipe.itemCount > sortinglogic::MaxItemCount ||
-				static_cast<int>(recipe.domain) < static_cast<int>(sortinglogic::InputDomain::NormalizedFloats) ||
+			if (static_cast<int>(recipe.domain) < static_cast<int>(sortinglogic::InputDomain::NormalizedFloats) ||
 				static_cast<int>(recipe.domain) > static_cast<int>(sortinglogic::InputDomain::IntegerPermutation) ||
 				static_cast<int>(recipe.pattern) < static_cast<int>(sortinglogic::InputPattern::Random) ||
 				static_cast<int>(recipe.pattern) > static_cast<int>(sortinglogic::InputPattern::AndrutReference))
 				return sortinglogic::CommandResult(false, "Step input override is invalid.");
+			const std::size_t fixedCount = sortinglogic::inputPatternFixedItemCount(recipe.pattern);
+			if (fixedCount != 0)
+			{
+				recipe.itemCount = fixedCount;
+				if (recipe.pattern == sortinglogic::InputPattern::AndrutReference)
+					recipe.domain = sortinglogic::InputDomain::NormalizedFloats;
+			}
+			if (!sortinglogic::inputPatternUsesSeed(recipe.pattern))
+			{
+				if (step.hasInputOverride) recipe.seed = step.inputOverride.seed;
+				else
+				{
+					const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(step.familyId, step.variantId);
+					if (descriptor)
+					{
+						const std::map<sortinglogic::DemoComplexityClass, DemoInputRecipe>::const_iterator shared = demoEditorDraft_.classInputs.find(descriptor->demoComplexity);
+						if (shared != demoEditorDraft_.classInputs.end()) recipe.seed = shared->second.seed;
+					}
+				}
+			}
+			if (recipe.itemCount < sortinglogic::MinItemCount || recipe.itemCount > sortinglogic::MaxItemCount)
+				return sortinglogic::CommandResult(false, "Step input override item count is outside its supported range.");
 			step.inputOverride = recipe;
 			step.hasInputOverride = true;
 		}

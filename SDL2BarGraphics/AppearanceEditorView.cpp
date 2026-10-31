@@ -27,10 +27,12 @@ namespace
 AppearanceEditorView::AppearanceEditorView(const std::vector<std::string>& presetNames,
 	const std::vector<std::string>& paletteNames, const UiAppearancePreferences& initial,
 	int initialPaletteIndex)
-	: controls_(), session_(), layout_(), description_(), searchFocused_(false)
+	: controls_(), session_(), layout_(), description_(), searchFocused_(false), copySourcePreset_(static_cast<int>(initial.activePreset))
 {
 	controls_.addComboBox("appearance_preset", presetNames, static_cast<int>(initial.activePreset));
 	controls_.addComboBox("appearance_palette", paletteNames, initialPaletteIndex);
+	controls_.addComboBox("appearance_copy_source", presetNames, static_cast<int>(initial.activePreset));
+	controls_.addButton("appearance_copy_colors", "Copy colors from selected preset");
 	controls_.addComboBox("appearance_category", std::vector<std::string>{
 		"All categories", "Colors", "Typography", "Spacing / layout", "Decorations" }, 0);
 	controls_.addButton("appearance_search", "Search appearance tokens");
@@ -54,7 +56,7 @@ AppearanceEditorView::AppearanceEditorView(const std::vector<std::string>& prese
 	controls_.addButton("appearance_import", "Import profile...");
 	controls_.addButton("appearance_export", "Export profile...");
 	controls_.addButton("appearance_apply", "Apply");
-	controls_.addButton("appearance_cancel", "Cancel");
+	controls_.addButton("appearance_cancel", "Close");
 	session_.begin(initial);
 }
 
@@ -62,6 +64,7 @@ void AppearanceEditorView::begin(const UiAppearancePreferences& current)
 {
 	session_.begin(current);
 	searchFocused_ = false;
+	copySourcePreset_ = static_cast<int>(current.activePreset);
 	controls_.find("appearance_preset")->setSelectedIndex(static_cast<int>(current.activePreset));
 	description_.clear();
 }
@@ -150,10 +153,12 @@ void AppearanceEditorView::synchronizeControls(const AppearanceFontFamilyProvide
 	UiWidget* presetControl = controls_.find("appearance_preset");
 	UiWidget* paletteControl = controls_.find("appearance_palette");
 	UiWidget* categoryControl = controls_.find("appearance_category");
+	UiWidget* copySourceControl = controls_.find("appearance_copy_source");
 	UiWidget* searchControl = controls_.find("appearance_search");
 	UiWidget* tokenControl = controls_.find("appearance_token");
 	if (presetControl) presetControl->setSelectedIndex(static_cast<int>(preset));
 	if (paletteControl) paletteControl->setSelectedIndex(static_cast<int>(session_.draft().themes[preset].palette));
+	if (copySourceControl) copySourceControl->setSelectedIndex(copySourcePreset_);
 	if (categoryControl) categoryControl->setSelectedIndex(session_.model().categoryFilter());
 	if (searchControl) searchControl->setLabel(session_.model().search().empty()
 		? "Search tokens" : "Search: " + session_.model().search());
@@ -299,7 +304,7 @@ AppearanceEditorActionResult AppearanceEditorView::handleAction(const UiAction& 
 		const UiWidget* palette = controls_.find(id);
 		if (!palette || palette->options().empty()) return handled;
 		const int lastPalette = static_cast<int>(palette->options().size()) - 1;
-		selectUiPalette(session_.draft().themes[preset],
+		selectUiPalette(preset, session_.draft().themes[preset],
 			static_cast<PaletteId>((std::max)(0, (std::min)(action.event.selection, lastPalette))));
 		session_.error().clear();
 		return changed;
@@ -308,6 +313,25 @@ AppearanceEditorActionResult AppearanceEditorView::handleAction(const UiAction& 
 	{
 		session_.model().setCategoryFilter(action.event.selection);
 		controls_.closeCombo();
+		session_.error().clear();
+		return changed;
+	}
+	if (id == "appearance_copy_source")
+	{
+		if (action.event.selection >= 0 && static_cast<std::size_t>(action.event.selection) < uiPresetCatalog().size())
+			copySourcePreset_ = action.event.selection;
+		return handled;
+	}
+	if (id == "appearance_copy_colors")
+	{
+		if (copySourcePreset_ < 0 || static_cast<std::size_t>(copySourcePreset_) >= uiPresetCatalog().size()) return handled;
+		const UiPresetId sourcePreset = uiPresetCatalog()[static_cast<std::size_t>(copySourcePreset_)];
+		if (!copyEffectiveUiPalette(sourcePreset, session_.draft().themes[sourcePreset],
+			preset, session_.draft().themes[preset]))
+		{
+			session_.error() = "Could not copy colors from that interface preset.";
+			return handled;
+		}
 		session_.error().clear();
 		return changed;
 	}
@@ -383,7 +407,12 @@ AppearanceEditorActionResult AppearanceEditorView::handleAction(const UiAction& 
 	if (id == "appearance_reset_token")
 	{
 		if (selectedToken.empty()) return handled;
-		session_.draft().themes[preset].overrides.erase(selectedToken);
+		UiThemeCustomization& theme = session_.draft().themes[preset];
+		const UiTokenDescriptor* descriptor = findUiToken(uiPresetDefinition(preset), selectedToken);
+		if (descriptor && descriptor->category == UiTokenCategory::Colors && theme.palette == PaletteId::Customized)
+			theme.customColors[selectedToken] = uiPresetPaletteColor(preset, theme.customPaletteBase, selectedToken);
+		else
+			theme.overrides.erase(selectedToken);
 		session_.error().clear();
 		return changed;
 	}
@@ -416,7 +445,7 @@ void AppearanceEditorView::updateLayout(int logicalWidth, int logicalHeight)
 		if (widget) widget->setBounds(control->second);
 	}
 	const char* popupIds[] = { "appearance_category", "appearance_token", "appearance_choice",
-		"appearance_font_family", "appearance_font_style" };
+		"appearance_font_family", "appearance_font_style", "appearance_copy_source" };
 	for (std::size_t i = 0; i < sizeof(popupIds) / sizeof(popupIds[0]); ++i)
 	{
 		UiWidget* widget = controls_.find(popupIds[i]);

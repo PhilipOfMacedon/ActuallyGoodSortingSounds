@@ -173,6 +173,17 @@ namespace
 			static_cast<int>(recipe.pattern) <= static_cast<int>(sortinglogic::InputPattern::AndrutReference);
 	}
 
+	void normalizeFixedPatternRecipe(DemoInputRecipe& recipe)
+	{
+		const std::size_t fixedCount = sortinglogic::inputPatternFixedItemCount(recipe.pattern);
+		if (fixedCount != 0)
+		{
+			recipe.itemCount = fixedCount;
+			if (recipe.pattern == sortinglogic::InputPattern::AndrutReference)
+				recipe.domain = sortinglogic::InputDomain::NormalizedFloats;
+		}
+	}
+
 	void issue(std::vector<DemoPresetIssue>& issues, std::size_t step, const std::string& message)
 	{
 		issues.push_back(DemoPresetIssue(step, message));
@@ -292,10 +303,12 @@ DemoInputAdjustment adaptDemoInput(const DemoPreset& preset, const DemoStep& ste
 		result.recipe.pattern = sortinglogic::InputPattern::Random;
 		result.messages.push_back("Input pattern changed to Random because it is incompatible with the selected domain.");
 	}
-	if (result.recipe.pattern == sortinglogic::InputPattern::AndrutReference && result.recipe.itemCount != 100)
+	const std::size_t fixedPatternCount = sortinglogic::inputPatternFixedItemCount(result.recipe.pattern);
+	if (fixedPatternCount != 0 && result.recipe.itemCount != fixedPatternCount)
 	{
-		result.recipe.pattern = sortinglogic::InputPattern::Random;
-		result.messages.push_back("Input pattern changed to Random because the Andrut reference contains exactly 100 items.");
+		result.recipe.itemCount = fixedPatternCount;
+		result.messages.push_back("Item count adjusted to " + std::to_string(fixedPatternCount) +
+			" because this reference pattern has a fixed size.");
 	}
 	if (!validRecipe(result.recipe)) result.error = "The effective input recipe is invalid.";
 	(void)preset;
@@ -454,7 +467,8 @@ std::string DemoPresetStore::encode(const std::vector<DemoPreset>& presets)
 				<< static_cast<int>(step.timingMode) << '\t' << std::setprecision(9) << step.fixedDurationSeconds << '\t'
 				<< (step.hasInputOverride ? 1 : 0) << '\t' << overrideRecipe.seed << '\t' << overrideRecipe.itemCount << '\t'
 				<< static_cast<int>(overrideRecipe.domain) << '\t' << static_cast<int>(overrideRecipe.pattern) << '\t'
-				<< escapeField(encodeOptions(step.optionSelections)) << '\t' << (step.completionScanEnabled ? 1 : 0) << '\n';
+				<< escapeField(encodeOptions(step.optionSelections)) << '\t' << (step.completionScanEnabled ? 1 : 0)
+				<< '\t' << (step.mergeBufferVisualizationEnabled ? 1 : 0) << '\n';
 		}
 		++saved;
 	}
@@ -476,14 +490,14 @@ bool DemoPresetStore::decode(const std::string& content, std::vector<DemoPreset>
 		if (line.empty()) continue;
 		if (line.compare(0, 8, "version=") == 0)
 		{
-			if (versionSeen || (line != "version=1" && line != "version=2"))
+			if (versionSeen || (line != "version=1" && line != "version=2" && line != "version=3"))
 			{
 				if (error) *error = "The demo preset file version is unsupported or repeated.";
 				presets.clear();
 				return false;
 			}
 			versionSeen = true;
-			fileVersion = line == "version=2" ? 2 : 1;
+			fileVersion = line == "version=3" ? 3 : (line == "version=2" ? 2 : 1);
 			continue;
 		}
 		if (!versionSeen)
@@ -550,16 +564,18 @@ bool DemoPresetStore::decode(const std::string& content, std::vector<DemoPreset>
 					if (recoveredIssues) recoveredIssues->push_back("Skipped an invalid demo input-recipe record.");
 					continue;
 				}
-				preset->classInputs[static_cast<sortinglogic::DemoComplexityClass>(complexity)] = DemoInputRecipe(
+				DemoInputRecipe recipe(
 					static_cast<std::uint32_t>(seed), static_cast<std::size_t>(count),
 					static_cast<sortinglogic::InputDomain>(domain), static_cast<sortinglogic::InputPattern>(pattern));
+				normalizeFixedPatternRecipe(recipe);
+				preset->classInputs[static_cast<sortinglogic::DemoComplexityClass>(complexity)] = recipe;
 				continue;
 			}
 			if (fields[0] == "S" && ((fileVersion == 1 && fields.size() == 14) ||
-				(fileVersion == 2 && fields.size() == 15)))
+				(fileVersion == 2 && fields.size() == 15) || (fileVersion == 3 && fields.size() == 16)))
 			{
 				std::uint64_t index = 0, overrideSeed = 0, overrideCount = 0, overrideFlag = 0;
-				std::uint64_t completionScanFlag = 0;
+				std::uint64_t completionScanFlag = 0, mergeVisualizationFlag = 1;
 				int direction = 0, timing = 0, domain = 0, pattern = 0;
 				float duration = 0.0f;
 				DemoStep step;
@@ -573,7 +589,8 @@ bool DemoPresetStore::decode(const std::string& content, std::vector<DemoPreset>
 					!parseIntEnum(fields[12], static_cast<int>(sortinglogic::InputPattern::Random),
 						static_cast<int>(sortinglogic::InputPattern::AndrutReference), pattern) ||
 					!decodeOptions(fields[13], step.optionSelections) ||
-					(fileVersion == 2 && !parseUnsigned(fields[14], 1, completionScanFlag)))
+					(fileVersion >= 2 && !parseUnsigned(fields[14], 1, completionScanFlag)) ||
+					(fileVersion >= 3 && !parseUnsigned(fields[15], 1, mergeVisualizationFlag)))
 				{
 					if (recoveredIssues) recoveredIssues->push_back("Skipped an invalid demo step record.");
 					continue;
@@ -582,11 +599,13 @@ bool DemoPresetStore::decode(const std::string& content, std::vector<DemoPreset>
 				step.direction = static_cast<sortinglogic::SortDirection>(direction);
 				step.timingMode = static_cast<SoundEngine::PlaybackTimingMode>(timing);
 				step.fixedDurationSeconds = duration;
-				step.completionScanEnabled = fileVersion == 2 && completionScanFlag != 0;
+				step.completionScanEnabled = fileVersion >= 2 && completionScanFlag != 0;
+				step.mergeBufferVisualizationEnabled = fileVersion < 3 || mergeVisualizationFlag != 0;
 				step.hasInputOverride = overrideFlag != 0;
 				step.inputOverride = DemoInputRecipe(static_cast<std::uint32_t>(overrideSeed),
 					static_cast<std::size_t>(overrideCount), static_cast<sortinglogic::InputDomain>(domain),
 					static_cast<sortinglogic::InputPattern>(pattern));
+				normalizeFixedPatternRecipe(step.inputOverride);
 				if (index > preset->steps.size())
 				{
 					if (recoveredIssues) recoveredIssues->push_back("Skipped a non-contiguous demo step index.");

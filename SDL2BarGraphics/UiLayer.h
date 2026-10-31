@@ -41,6 +41,63 @@ private:
 	float offset_;
 };
 
+// A reusable scrollbar controller for a UiScrollViewport. The view supplies
+// track bounds and paints track/thumb using its active appearance preset.
+class UiScrollbar
+{
+public:
+	UiScrollbar();
+	void bind(UiScrollViewport* viewport);
+	void setBounds(const UiRect& bounds);
+	const UiRect& bounds() const { return bounds_; }
+	UiRect thumbBounds() const;
+	bool visible() const;
+	bool pointerDown(float x, float y);
+	bool pointerMove(float x, float y);
+	bool pointerUp(float x, float y);
+	bool captured() const { return dragging_; }
+	void cancelCapture() { dragging_ = false; }
+	bool page(float x, float y);
+	bool step(int direction);
+private:
+	UiScrollViewport* viewport_;
+	UiRect bounds_;
+	bool dragging_;
+	float dragOffset_;
+	float thumbLength() const;
+	float travel() const;
+};
+
+struct UiLabeledControlBounds
+{
+	UiRect label;
+	UiRect control;
+	UiLabeledControlBounds() : label(), control() {}
+};
+
+// Small measured form composer shared by retained views. Text blocks are
+// estimated in logical pixels so labels, captions, and controls advance one
+// common cursor instead of relying on unrelated y offsets.
+class UiFormLayout
+{
+public:
+	UiFormLayout(const UiRect& bounds, float padding = 0.0f, float rowGap = 8.0f,
+		float labelFontSize = 12.0f, float lineHeight = 1.35f);
+	float measureTextHeight(const std::string& text, float fontSize = 12.0f) const;
+	UiRect addTextBlock(const std::string& text, float fontSize = 12.0f, float minimumHeight = 0.0f);
+	UiLabeledControlBounds addLabeledControl(const std::string& text, float controlHeight,
+		float fontSize = 12.0f, float labelGap = 3.0f);
+	UiRect remainingBounds() const;
+	float cursorY() const { return cursorY_; }
+private:
+	UiRect bounds_;
+	float padding_;
+	float rowGap_;
+	float labelFontSize_;
+	float lineHeight_;
+	float cursorY_;
+};
+
 enum class UiWidgetKind
 {
 	Button,
@@ -166,6 +223,8 @@ public:
 	float step() const { return sliderStep_; }
 	float scrollbarArrowSize() const { return scrollbarArrowSize_; }
 	const std::vector<UiRect>& interactiveSubregions() const { return interactiveSubregions_; }
+	UiScrollbar& optionScrollbar() { return optionScrollbar_; }
+	const UiScrollbar& optionScrollbar() const { return optionScrollbar_; }
 
 	void setBounds(const UiRect& value);
 	void setPopupBounds(const UiRect& value);
@@ -219,6 +278,7 @@ private:
 	float scrollbarArrowSize_;
 	std::vector<UiRect> interactiveSubregions_;
 	UiScrollViewport optionViewport_;
+	UiScrollbar optionScrollbar_;
 	float optionRowExtent_;
 	void configureOptionViewport(float requestedOffset = -1.0f);
 };
@@ -288,6 +348,7 @@ public:
 	int selectedIndex() const { return selectedIndex_; }
 	const UiRect& bounds() const { return bounds_; }
 	const UiScrollViewport& viewport() const { return viewport_; }
+	UiScrollViewport& viewport() { return viewport_; }
 	bool enabled() const { return enabled_; }
 	bool visible() const { return visible_; }
 	bool focused() const { return focused_; }
@@ -328,6 +389,7 @@ public:
 	bool editing() const { return editing_; }
 	bool invalid() const { return invalid_; }
 	void setValue(const std::string& value);
+	void setLabel(const std::string& value) { label_ = value; }
 	void setBounds(const UiRect& bounds) { bounds_ = bounds; }
 	void setEnabled(bool value);
 	void setVisible(bool value);

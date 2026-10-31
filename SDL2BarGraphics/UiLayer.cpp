@@ -80,13 +80,161 @@ bool UiScrollViewport::itemIntersectsViewport(std::size_t index, float itemExten
 	return bounds.y < viewport_.y + viewport_.height && bounds.y + bounds.height > viewport_.y;
 }
 
+UiScrollbar::UiScrollbar() : viewport_(nullptr), bounds_(), dragging_(false), dragOffset_(0.0f) {}
+
+void UiScrollbar::bind(UiScrollViewport* viewport)
+{
+	if (viewport_ == viewport) return;
+	viewport_ = viewport;
+	dragging_ = false;
+}
+
+void UiScrollbar::setBounds(const UiRect& bounds)
+{
+	bounds_ = bounds;
+	if (bounds_.height <= 0.0f) dragging_ = false;
+}
+
+bool UiScrollbar::visible() const
+{
+	return viewport_ && viewport_->maximumOffset() > 0.0f && bounds_.width > 0.0f && bounds_.height > 0.0f;
+}
+
+float UiScrollbar::thumbLength() const
+{
+	if (!visible()) return 0.0f;
+	const float extent = viewport_->contentExtent();
+	const float viewportHeight = viewport_->viewport().height;
+	if (extent <= 0.0f) return bounds_.height;
+	const float proportional = bounds_.height * viewportHeight / extent;
+	return std::min(bounds_.height, std::max(18.0f, proportional));
+}
+
+float UiScrollbar::travel() const { return std::max(0.0f, bounds_.height - thumbLength()); }
+
+UiRect UiScrollbar::thumbBounds() const
+{
+	if (!visible()) return UiRect();
+	const float trackTravel = travel();
+	const float ratio = viewport_->maximumOffset() > 0.0f ? viewport_->offset() / viewport_->maximumOffset() : 0.0f;
+	return UiRect(bounds_.x, bounds_.y + trackTravel * ratio, bounds_.width, thumbLength());
+}
+
+bool UiScrollbar::pointerDown(float x, float y)
+{
+	if (!visible() || !bounds_.contains(x, y)) return false;
+	const UiRect thumb = thumbBounds();
+	if (thumb.contains(x, y))
+	{
+		dragging_ = true;
+		dragOffset_ = y - thumb.y;
+	}
+	else
+	{
+		page(x, y);
+		// Track clicks page toward the pointer and keep the pointer captured so
+		// scrollbar users can continue directly into a drag without a second
+	// click. Centering the thumb under the pointer avoids a jump on movement.
+		dragging_ = true;
+		dragOffset_ = thumbLength() * 0.5f;
+	}
+	return true;
+}
+
+bool UiScrollbar::pointerMove(float, float y)
+{
+	if (!dragging_ || !viewport_) return false;
+	const float trackTravel = travel();
+	if (trackTravel <= 0.0f) { viewport_->setOffset(0.0f); return true; }
+	const float top = std::max(bounds_.y, std::min(bounds_.y + trackTravel, y - dragOffset_));
+	viewport_->setOffset((top - bounds_.y) / trackTravel * viewport_->maximumOffset());
+	return true;
+}
+
+bool UiScrollbar::pointerUp(float x, float y)
+{
+	if (!dragging_) return false;
+	pointerMove(x, y);
+	dragging_ = false;
+	return true;
+}
+
+bool UiScrollbar::page(float, float y)
+{
+	if (!visible() || !bounds_.contains(bounds_.x, y)) return false;
+	const float amount = std::max(viewport_->viewport().height * 0.85f, viewport_->rowExtent());
+	viewport_->setOffset(viewport_->offset() + (y < thumbBounds().y ? -amount : amount));
+	return true;
+}
+
+bool UiScrollbar::step(int direction)
+{
+	if (!visible() || direction == 0) return false;
+	const float amount = std::max(1.0f, viewport_->rowExtent());
+	viewport_->setOffset(viewport_->offset() + (direction < 0 ? -amount : amount));
+	return true;
+}
+
+UiFormLayout::UiFormLayout(const UiRect& bounds, float padding, float rowGap, float labelFontSize, float lineHeight)
+	: bounds_(bounds), padding_(std::max(0.0f, padding)), rowGap_(std::max(0.0f, rowGap)),
+	labelFontSize_(std::max(1.0f, labelFontSize)), lineHeight_(std::max(1.0f, lineHeight)),
+	cursorY_(bounds.y + std::max(0.0f, padding))
+{
+}
+
+float UiFormLayout::measureTextHeight(const std::string& text, float fontSize) const
+{
+	const float size = std::max(1.0f, fontSize);
+	const float usableWidth = std::max(1.0f, bounds_.width - 2.0f * padding_);
+	const float glyphWidth = size * 0.62f;
+	const std::size_t charsPerLine = std::max<std::size_t>(1,
+		static_cast<std::size_t>(std::floor(usableWidth / glyphWidth)));
+	std::size_t lines = 0;
+	std::size_t currentLine = 0;
+	for (std::size_t i = 0; i < text.size(); ++i)
+	{
+		if (text[i] == '\n') { ++lines; currentLine = 0; continue; }
+		if (currentLine >= charsPerLine) { ++lines; currentLine = 0; }
+		++currentLine;
+	}
+	if (currentLine > 0 || text.empty()) ++lines;
+	return static_cast<float>(lines) * size * lineHeight_;
+}
+
+UiRect UiFormLayout::addTextBlock(const std::string& text, float fontSize, float minimumHeight)
+{
+	const float height = std::max(std::max(0.0f, minimumHeight), measureTextHeight(text, fontSize));
+	UiRect result(bounds_.x + padding_, cursorY_, std::max(0.0f, bounds_.width - padding_ * 2.0f), height);
+	cursorY_ += height + rowGap_;
+	return result;
+}
+
+UiLabeledControlBounds UiFormLayout::addLabeledControl(const std::string& text, float controlHeight,
+	float fontSize, float labelGap)
+{
+	UiLabeledControlBounds result;
+	const float labelHeight = std::max(labelFontSize_ * lineHeight_, measureTextHeight(text, fontSize));
+	const float x = bounds_.x + padding_;
+	const float width = std::max(0.0f, bounds_.width - padding_ * 2.0f);
+	result.label = UiRect(x, cursorY_, width, labelHeight);
+	result.control = UiRect(x, cursorY_ + labelHeight + std::max(0.0f, labelGap), width, std::max(0.0f, controlHeight));
+	cursorY_ = result.control.y + result.control.height + rowGap_;
+	return result;
+}
+
+UiRect UiFormLayout::remainingBounds() const
+{
+	return UiRect(bounds_.x + padding_, cursorY_, std::max(0.0f, bounds_.width - padding_ * 2.0f),
+		std::max(0.0f, bounds_.y + bounds_.height - padding_ - cursorY_));
+}
+
 UiWidget::UiWidget(UiWidgetKind kind, const std::string& id, const std::string& label,
 	const AppAction& action, UiAction::ViewCommand viewCommand)
 	: kind_(kind), presentation_(UiWidgetPresentation::Standard), role_(UiControlRole::Standard), id_(id), label_(label), bounds_(), popupBounds_(), enabled_(true), visible_(true),
 		hovered_(false), pressed_(false), focused_(false), expanded_(false), checked_(false), selectedIndex_(0), options_(), optionEnabled_(),
 		action_(action), viewCommand_(viewCommand), parent_(nullptr), sliderMinimum_(0.0f), sliderMaximum_(1.0f),
 		sliderStep_(0.01f), sliderValue_(0.0f), popupAbove_(false), scrollbarArrowSize_(14.0f), interactiveSubregions_(),
-		optionViewport_(), optionRowExtent_(1.0f)
+		optionViewport_(), optionScrollbar_(), optionRowExtent_(1.0f)
 {
 }
 
@@ -122,12 +270,17 @@ void UiWidget::configureOptionViewport(float requestedOffset)
 	const float viewportHeight = popupBounds_.height > 0.0f
 		? popupBounds_.height : fallbackRow * static_cast<float>(rows);
 	optionRowExtent_ = fallbackRow;
-	const UiRect viewport = popupBounds_.width > 0.0f && popupBounds_.height > 0.0f
+	const UiRect popup = popupBounds_.width > 0.0f && popupBounds_.height > 0.0f
 		? popupBounds_
 		: UiRect(bounds_.x, popupAbove_ ? bounds_.y - viewportHeight : bounds_.y + bounds_.height,
 			bounds_.width, viewportHeight);
+	const bool overflow = optionRowExtent_ * static_cast<float>(options_.size()) > popup.height + 0.5f;
+	const float scrollWidth = overflow ? std::min(12.0f, popup.width * 0.18f) : 0.0f;
+	const UiRect viewport(popup.x, popup.y, std::max(0.0f, popup.width - scrollWidth), popup.height);
 	const float offset = requestedOffset >= 0.0f ? requestedOffset : optionViewport_.offset();
 	optionViewport_.configure(viewport, optionRowExtent_ * static_cast<float>(options_.size()), optionRowExtent_, offset);
+	optionScrollbar_.bind(&optionViewport_);
+	optionScrollbar_.setBounds(overflow ? UiRect(popup.x + popup.width - scrollWidth, popup.y, scrollWidth, popup.height) : UiRect());
 }
 
 void UiWidget::setEnabled(bool value)
@@ -690,17 +843,19 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 	}
 	if (event.type == UiInputType::Wheel)
 	{
+		if (openCombo_)
+		{
+			if (openCombo_->optionViewport_.viewport().contains(event.x, event.y) ||
+				openCombo_->optionScrollbar_.bounds().contains(event.x, event.y))
+			{
+				openCombo_->optionViewport_.scrollWheel(event.x, event.y, event.wheelDelta);
+				return true;
+			}
+		}
 		UiSelectionList* list = hitSelectionList(event.x, event.y);
 		if (list && list->enabled())
 		{
 			list->viewport_.scrollWheel(event.x, event.y, event.wheelDelta);
-			return true;
-		}
-		if (openCombo_ && openCombo_->optionViewport_.scrollWheel(event.x, event.y, event.wheelDelta))
-		{
-			action.event.controlId = openCombo_->id_;
-			action.event.kind = UiEventKind::Wheel;
-			action.event.value = static_cast<float>(event.wheelDelta);
 			return true;
 		}
 		UiWidget* target = hitWidget(event.x, event.y);
@@ -716,6 +871,11 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 	{
 		for (std::size_t i = 0; i < widgets_.size(); ++i)
 			widgets_[i]->hovered_ = isWidgetVisible(widgets_[i].get()) && widgets_[i]->bounds_.contains(event.x, event.y);
+		if (openCombo_ && openCombo_->optionScrollbar_.captured())
+		{
+			openCombo_->optionScrollbar_.pointerMove(event.x, event.y);
+			return true;
+		}
 		if (pressedWidget_ && pressedWidget_->kind_ == UiWidgetKind::Slider && pressedWidget_->enabled_)
 		{
 			setSliderFromPointer(pressedWidget_, event.x, action);
@@ -790,6 +950,7 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 		if (action.event.kind != UiEventKind::None) return true;
 		if (openCombo_)
 		{
+			if (openCombo_->optionScrollbar_.pointerDown(event.x, event.y)) return true;
 			for (std::size_t option = 0; option < openCombo_->options_.size(); ++option)
 			{
 				if (openCombo_->optionViewport_.viewport().contains(event.x, event.y) &&
@@ -869,6 +1030,11 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 	}
 	if (event.type == UiInputType::PointerUp)
 	{
+		if (openCombo_ && openCombo_->optionScrollbar_.captured())
+		{
+			openCombo_->optionScrollbar_.pointerUp(event.x, event.y);
+			return true;
+		}
 		if (!pressedWidget_)
 			return inputCaptured_;
 		UiWidget* pressed = pressedWidget_;
@@ -889,7 +1055,10 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 void UIRoot::closeCombo()
 {
 	if (openCombo_)
+	{
+		openCombo_->optionScrollbar_.cancelCapture();
 		openCombo_->expanded_ = false;
+	}
 	openCombo_ = nullptr;
 }
 

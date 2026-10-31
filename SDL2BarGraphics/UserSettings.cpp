@@ -94,7 +94,7 @@ bool UserPreferences::isValid() const
 		sortinglogic::inputPatternCompatible(simulation.domain, simulation.pattern) &&
 		(static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::FixedDuration) ||
 		 static_cast<int>(simulation.playbackTimingMode) == static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence)) &&
-		static_cast<int>(visual.palette) >= 0 && static_cast<int>(visual.palette) <= static_cast<int>(PaletteId::Windows95) &&
+		static_cast<int>(visual.palette) >= 0 && static_cast<int>(visual.palette) <= static_cast<int>(PaletteId::Customized) &&
 		static_cast<int>(visual.spacing) >= 0 && static_cast<int>(visual.spacing) <= static_cast<int>(BarSpacingMode::Comfortable) &&
 		static_cast<int>(appearance.activePreset) >= static_cast<int>(UiPresetId::Current) &&
 		static_cast<int>(appearance.activePreset) <= static_cast<int>(UiPresetId::ClassicWindows95) &&

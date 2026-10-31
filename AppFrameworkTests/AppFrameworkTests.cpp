@@ -322,6 +322,14 @@ namespace
 		const std::vector<DemoPreset>& prefabs = demoPrefabPresets();
 		check(prefabs.size() == 2 && prefabs[0].name == "Classic Five" && prefabs[1].name == "Ten-sort Tour",
 			"demo catalog provides the two immutable requested presets");
+		DemoStep newStep;
+		check(newStep.timingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence &&
+			newStep.mergeBufferVisualizationEnabled,
+			"new demo steps default to reference cadence and visible Merge buffers");
+		check(inputPatternFixedItemCount(InputPattern::AndrutReference) == 100 &&
+			inputPatternFixedItemCount(InputPattern::Random) == 0 &&
+			!inputPatternUsesSeed(InputPattern::AndrutReference) && inputPatternUsesSeed(InputPattern::Random),
+			"input pattern metadata identifies fixed-size and seed-independent references");
 		for (std::size_t i = 0; i < algorithmCatalog().size(); ++i)
 		{
 			const int category = static_cast<int>(algorithmCatalog()[i].demoComplexity);
@@ -359,6 +367,7 @@ namespace
 		unknown.familyId = "removed-family";
 		unknown.variantId = "old-sort";
 		unknown.completionScanEnabled = false;
+		unknown.mergeBufferVisualizationEnabled = false;
 		unknown.hasInputOverride = true;
 		unknown.inputOverride = DemoInputRecipe(42u, 64);
 		unknown.optionSelections["old-option"] = "old-value";
@@ -377,12 +386,29 @@ namespace
 		check(DemoPresetStore::decode(encoded, decoded, &issues, &error) && decoded.size() == 1 &&
 			decoded[0].steps.size() == 6 && decoded[0].steps[5].familyId == "removed-family" &&
 			decoded[0].steps[5].optionSelections["old-option"] == "old-value" &&
-			!decoded[0].steps[5].completionScanEnabled && issues.empty(),
-			"v2 preset codec round-trips order, options, scan settings, overrides, and unavailable references");
+			!decoded[0].steps[5].completionScanEnabled && !decoded[0].steps[5].mergeBufferVisualizationEnabled && issues.empty(),
+			"v3 preset codec round-trips order, options, scan and visualization settings, overrides, and unavailable references");
+		check(encoded.find("version=3\n") == 0 && decoded[0].steps[0].mergeBufferVisualizationEnabled,
+			"v3 preset output persists Merge buffer visualization enabled by default");
 		const std::string legacyV1 = "version=1\nP\tlegacy\tLegacy\t1\t0\nS\tlegacy\t0\tinsertion-methods\tinsertion\t0\t1\t10\t0\t0\t80\t0\t0\t\n";
 		check(DemoPresetStore::decode(legacyV1, decoded, &issues, &error) && decoded.size() == 1 &&
-			decoded[0].steps.size() == 1 && !decoded[0].steps[0].completionScanEnabled,
-			"v1 demo presets migrate with completion scans disabled to preserve existing behavior");
+			decoded[0].steps.size() == 1 && !decoded[0].steps[0].completionScanEnabled &&
+			decoded[0].steps[0].mergeBufferVisualizationEnabled &&
+			decoded[0].steps[0].timingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence,
+			"v1 demo presets preserve timing, disable completion scans, and enable prior Merge visualization behavior");
+		const std::string legacyV2 = "version=2\nP\tlegacy2\tLegacy\t1\t0\nS\tlegacy2\t0\tmerge-methods\tmerge\t0\t0\t10\t1\t77\t400\t0\t6\t\t1\n";
+		check(DemoPresetStore::decode(legacyV2, decoded, &issues, &error) && decoded.size() == 1 &&
+			decoded[0].steps.size() == 1 && decoded[0].steps[0].completionScanEnabled &&
+			decoded[0].steps[0].mergeBufferVisualizationEnabled &&
+			decoded[0].steps[0].inputOverride.itemCount == 100 &&
+			decoded[0].steps[0].inputOverride.seed == 77u &&
+			decoded[0].steps[0].timingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
+			"v2 migration preserves scan, timing, and seed while normalizing Andrut overrides to 100 items");
+		const std::string legacyAndrutClass = "version=2\nP\tlegacy3\tLegacy\t1\t0\nR\tlegacy3\t4\t99\t320\t0\t6\n";
+		check(DemoPresetStore::decode(legacyAndrutClass, decoded, &issues, &error) && decoded.size() == 1 &&
+			decoded[0].classInputs.at(DemoComplexityClass::Quadratic).itemCount == 100 &&
+			decoded[0].classInputs.at(DemoComplexityClass::Quadratic).seed == 99u,
+			"legacy Andrut class recipes normalize in memory without changing their seed");
 		const std::string recoverable = encoded + "S\tuser.classic-copy\t99\tbad\tstep\t0\t1\t10\t0\t0\t80\t0\t0\t\n";
 		check(DemoPresetStore::decode(recoverable, decoded, &issues, &error) && decoded.size() == 1 &&
 			!issues.empty(), "preset codec recovers valid presets and records malformed child diagnostics");
@@ -399,7 +425,7 @@ namespace
 		check(adjustment.recipe.domain == InputDomain::IntegerPermutation,
 			"demo input adaptation selects the algorithm's preferred compatible domain");
 		check(adjustment.recipe.pattern == InputPattern::Random,
-			"demo input adaptation replaces an incompatible pattern");
+			"demo input adaptation replaces an incompatible domain-specific pattern");
 		check(adjustment.messages.size() >= 2 && adjustment.error.empty(),
 			"demo input adaptation reports adjustments without treating them as errors");
 
@@ -470,6 +496,78 @@ namespace
 		palette.mutedText = palette.text;
 		view.compose(palette, 1000, 640, paint);
 		check(!paint.commands().empty(), "demo editor submits panel, control, and text paint commands through the shared UI contract");
+		bool hasEmptyOptionsHeading = false;
+		UiRect recipeHeadingBounds;
+		for (const UiPaintCommand& command : paint.commands())
+		{
+			if (command.elementId == "#demo_options_heading") hasEmptyOptionsHeading = true;
+			if (command.elementId == "#demo_step_recipe") recipeHeadingBounds = command.bounds;
+		}
+		check(!hasEmptyOptionsHeading && recipeHeadingBounds.height > 0.0f,
+			"steps without algorithm options omit the empty heading and retain a separate recipe summary");
+
+		DemoPreset mergeDraft = draft;
+		DemoEditorView mergeEditor;
+		mergeEditor.setOpen(true);
+		mergeEditor.synchronize(store, mergeDraft, mergeDraft.id, 3, runner, true, 1000, 640);
+		RecordingUiPaintContext mergePaint;
+		mergeEditor.compose(palette, 1000, 640, mergePaint);
+		std::size_t visualizationSlot = static_cast<std::size_t>(-1);
+		bool initialOptionVisible = false;
+		bool optionBackdropUsesPanelLayer = false;
+		bool optionControlUsesControlsLayer = false;
+		UiRect optionsHeadingBounds;
+		UiRect mergeRecipeHeadingBounds;
+		for (const UiPaintCommand& command : mergePaint.commands())
+		{
+			if (command.elementId == "#demo_options_heading") optionsHeadingBounds = command.bounds;
+			if (command.elementId == "#demo_step_recipe") mergeRecipeHeadingBounds = command.bounds;
+			if (command.primitive == UiPaintPrimitive::Rectangle && command.layer == UiPaintLayer::Panel &&
+				std::fabs(command.color.r - palette.background.r) < 0.0001f &&
+				std::fabs(command.color.g - palette.background.g) < 0.0001f &&
+				std::fabs(command.color.b - palette.background.b) < 0.0001f) optionBackdropUsesPanelLayer = true;
+		}
+		for (std::size_t slot = 0; slot < 12; ++slot)
+		{
+			const UiWidget* option = mergeEditor.control("demo_option_slot_" + std::to_string(slot));
+			initialOptionVisible = initialOptionVisible || (option && option->visible());
+			for (const UiPaintCommand& command : mergePaint.commands())
+				if (option && command.elementId == option->id() && command.primitive == UiPaintPrimitive::Control &&
+					command.layer == UiPaintLayer::SettingsControls) optionControlUsesControlsLayer = true;
+			if (option && option->options().size() == 2 && option->options()[0] == "Hidden" && option->options()[1] == "Visible")
+				visualizationSlot = slot;
+		}
+		check(initialOptionVisible && optionBackdropUsesPanelLayer && optionControlUsesControlsLayer &&
+			optionsHeadingBounds.height > 0.0f && mergeRecipeHeadingBounds.height > 0.0f &&
+			optionsHeadingBounds.y + optionsHeadingBounds.height <= mergeRecipeHeadingBounds.y,
+			"Merge options render above their pane backdrop and do not collide with the persistent input recipe summary");
+		check(visualizationSlot != static_cast<std::size_t>(-1),
+			"canonical Merge buffer visibility is presented as a scrollable algorithm setting alongside its catalog options");
+		if (visualizationSlot != static_cast<std::size_t>(-1))
+		{
+			const UiWidget* visualization = mergeEditor.control("demo_option_slot_" + std::to_string(visualizationSlot));
+			const UiRect firstOptionBounds = mergeEditor.control("demo_option_slot_0")->bounds();
+			AppAction ignored;
+			mergeEditor.handleInput(UiInputEvent(UiInputType::Wheel, firstOptionBounds.x + 2.0f,
+				firstOptionBounds.y + 2.0f, -4), ignored);
+			visualization = mergeEditor.control("demo_option_slot_" + std::to_string(visualizationSlot));
+			check(visualization && visualization->visible(),
+				"the final Merge presentation option becomes reachable through the Step options viewport");
+			if (visualization && visualization->visible())
+			{
+				const UiRect control = visualization->bounds();
+				mergeEditor.layoutComboPopups([](const std::string& text) { return static_cast<float>(text.size() * 8); });
+				mergeEditor.handleInput(UiInputEvent(UiInputType::PointerDown, control.x + control.width * 0.5f,
+					control.y + control.height * 0.5f), ignored);
+				const UiRect hidden = visualization->optionBounds(0);
+				AppAction toggleVisualization;
+				mergeEditor.handleInput(UiInputEvent(UiInputType::PointerDown, hidden.x + hidden.width * 0.5f,
+					hidden.y + hidden.height * 0.5f), toggleVisualization);
+				check(toggleVisualization.kind == AppActionKind::DemoSetStepMergeBufferVisualization &&
+					toggleVisualization.demo && !toggleVisualization.demo->flag,
+					"the Merge buffer presentation selector emits a typed per-step visibility action");
+			}
+		}
 
 		AppAction editRecipe;
 		const UiTabStrip* tabs = view.tabStrip("demo_tabs");
@@ -477,6 +575,17 @@ namespace
 		view.handleInput(UiInputEvent(UiInputType::PointerDown, classTab.x + classTab.width * 0.5f,
 			classTab.y + classTab.height * 0.5f), editRecipe);
 		check(view.activeTab() == DemoEditorTab::ClassInputs, "class-input tab owns pointer selection and updates the active page");
+		const UiRect visibleRecipeControl = view.control("demo_class")->bounds();
+		view.handleInput(UiInputEvent(UiInputType::Wheel, visibleRecipeControl.x + 4.0f,
+			visibleRecipeControl.y + 4.0f, -1), editRecipe);
+		check(!view.control("demo_class")->visible(),
+			"a class selector scrolled outside the recipe viewport is removed from both paint and hit testing");
+		const UiRect clippedClassBounds = view.control("demo_class")->bounds();
+		AppAction clippedClassClick;
+		view.handleInput(UiInputEvent(UiInputType::PointerDown, clippedClassBounds.x + 4.0f,
+			clippedClassBounds.y + 4.0f), clippedClassClick);
+		check(clippedClassClick.kind == AppActionKind::None,
+			"a clipped class selector cannot emit an action through the static recipe heading");
 		clickDemoControl(view, "demo_seed_value", editRecipe);
 		check(view.editingNumeric(), "shared seed recipe field enters retained numeric editing");
 		view.handleInput(UiInputEvent(UiInputType::TextInput, "0"), editRecipe);
@@ -486,6 +595,10 @@ namespace
 		const UiWidget* classSelector = view.control("demo_class");
 		if (classSelector && classSelector->options().size() > 1)
 		{
+			const UiEditableField* seedField = view.editableField("demo_seed_value");
+			if (seedField && !classSelector->visible())
+				view.handleInput(UiInputEvent(UiInputType::Wheel, seedField->bounds().x + 2.0f,
+					seedField->bounds().y + 2.0f, 1), editRecipe);
 			const int otherClass = classSelector->selectedIndex() == 0 ? 1 : 0;
 			const UiRect bounds = classSelector->bounds();
 			AppAction chooseClass;
@@ -558,6 +671,7 @@ namespace
 		for (std::size_t i = 0; i < tokens.size(); ++i)
 			if (tokens[i].type == UiTokenType::Color) { colorToken = &tokens[i]; break; }
 		check(colorToken != nullptr, "inline edit view fixture resolves a color token");
+		check(!appearanceEditor.session().dirty(), "appearance editor starts with a clean applied baseline");
 		if (colorToken)
 		{
 			appearanceEditor.session().model().setSearch(colorToken->stableId);
@@ -572,6 +686,9 @@ namespace
 				std::fabs(effectiveUiTokenValue(UiPresetId::Current,
 					appearanceEditor.session().draft().themes[UiPresetId::Current], colorToken->stableId).color.a - 0.5f) < 0.001f,
 				"inline edit view commits alpha into the appearance draft and requests view synchronization");
+			check(appearanceEditor.session().dirty(), "an unapplied appearance edit marks the close transaction dirty");
+			appearanceEditor.accept(preferences.appearance);
+			check(!appearanceEditor.session().dirty(), "successful apply adopts the new clean appearance baseline");
 		}
 		check(!view.beginForControl("unknown_control", 80, 10.0f, mainControls, appearanceEditor),
 			"inline edit view rejects controls outside its declared target set");
@@ -1129,17 +1246,22 @@ namespace
 
 		UiThemeCustomization current = defaultUiThemeCustomization(UiPresetId::Current, PaletteId::Amber);
 		std::string error;
-		check(setUiTokenValue(UiPresetId::Current, current, "color.bar", UiTokenValue::fromColor(UiColor(0.1f, 0.2f, 0.3f, 0.4f)), &error),
-			"color token accepts a typed override");
+		check(setUiTokenValue(UiPresetId::Current, current, "color.bar", UiTokenValue::fromColor(UiColor(0.1f, 0.2f, 0.3f, 0.4f)), &error) &&
+			current.palette == PaletteId::Customized && current.customColors.size() == 21 &&
+			std::fabs(effectiveUiTokenValue(UiPresetId::Current, current, "color.bar").color.r - 0.1f) < 0.0001f,
+			"editing a color materializes the full palette and resolves the edited RGBA token");
 		check(setUiTokenValue(UiPresetId::Current, current, "typography.body_size", UiTokenValue::fromNumber(19.0), &error),
 			"typography token accepts a bounded numeric override");
 		check(setUiTokenValue(UiPresetId::Current, current, "typeface.primary",
 			UiTokenValue::fromFont(UiFontReference("Noto Sans 日本語", "Regular")), &error),
 			"font token retains a Unicode family and face identity");
 		selectUiPalette(current, PaletteId::Monochrome);
-		check(current.palette == PaletteId::Monochrome && current.overrides.find("color.bar") == current.overrides.end() &&
+		check(current.palette == PaletteId::Monochrome && current.customColors.size() == 21 &&
 			current.overrides.find("typography.body_size") != current.overrides.end() && current.overrides.find("typeface.primary") != current.overrides.end(),
-			"palette selection clears color overrides while retaining type and metric overrides");
+			"switching built-in palettes retains the remembered customized colors and non-color overrides");
+		selectUiPalette(UiPresetId::Current, current, PaletteId::Customized);
+		check(std::fabs(effectiveUiTokenValue(UiPresetId::Current, current, "color.bar").color.r - 0.1f) < 0.0001f,
+			"reselecting Customized restores the exact remembered color set");
 		std::map<std::string, UiColor> amberColors;
 		amberColors["color.button"] = UiColor(0.27f, 0.18f, 0.09f, 1.0f);
 		const UiControlPaintStyle amberButton = resolveUiControlPaintStyle(UiPresetId::Current,
@@ -1166,9 +1288,23 @@ namespace
 		check(parseUiAppearanceProfile(encoded + "override.future.token=number:4\n", profile, &error) &&
 			profile.ignoredTokens.size() == 1 && profile.ignoredTokens[0] == "future.token",
 			"profile import reports unknown appearance tokens while preserving known values");
+		UiThemeCustomization custom = defaultUiThemeCustomization(UiPresetId::Current, PaletteId::Amber);
+		check(setUiTokenValue(UiPresetId::Current, custom, "color.button", UiTokenValue::fromColor(UiColor(.12f,.34f,.56f,.78f)), &error),
+			"a color edit creates an independently persisted customized palette");
+		const std::string customProfile = serializeUiAppearanceProfile(UiPresetId::Current, custom);
+		check(customProfile.find("version=2") != std::string::npos &&
+			parseUiAppearanceProfile(customProfile, profile, &error) && profile.theme.palette == PaletteId::Customized &&
+			profile.theme.customPaletteBase == PaletteId::Amber && profile.theme.customColors.size() == 21 &&
+			std::fabs(effectiveUiTokenValue(UiPresetId::Current, profile.theme, "color.button").color.g - .34f) < .0001f,
+			"appearance profile v2 round-trips the customized RGBA palette and its origin");
+		UiThemeCustomization copied = defaultUiThemeCustomization(UiPresetId::FlatVgaDos, PaletteId::VgaClassic);
+		check(copyEffectiveUiPalette(UiPresetId::Current, custom, UiPresetId::FlatVgaDos, copied) &&
+			copied.palette == PaletteId::Customized && copied.customPaletteBase == PaletteId::Amber &&
+			std::fabs(effectiveUiTokenValue(UiPresetId::FlatVgaDos, copied, "color.button").color.b - .56f) < .0001f,
+			"copying colors transfers effective values while preserving destination non-color theme settings");
 		UiAppearanceProfile unchangedProfile;
 		unchangedProfile.preset = UiPresetId::Current;
-		check(!parseUiAppearanceProfile("format=agss-ui\nversion=2\npreset=current\npalette=cyan\n", unchangedProfile, &error) &&
+		check(!parseUiAppearanceProfile("format=agss-ui\nversion=3\npreset=current\npalette=cyan\n", unchangedProfile, &error) &&
 			unchangedProfile.preset == UiPresetId::Current,
 			"unsupported profile versions fail without partially changing the output profile");
 		check(!parseUiAppearanceProfile("format=agss-ui\nversion=1\npreset=unavailable\npalette=cyan\n", unchangedProfile, &error),
@@ -1241,8 +1377,12 @@ namespace
 		UiLayoutInput classicFrame;
 		classicFrame.width = 1000; classicFrame.height = 640; classicFrame.headerHeight = 0; classicFrame.menuHeight = 36;
 		const UiLayoutResult classicFrameLayout = calculateUiLayout(UiPresetId::ClassicWindows95, classicFrame, controlIds);
-		check(classicFrameLayout.menuBar.height == 36.0f && classicFrameLayout.control("shuffle").y >= 42.0f,
-			"Windows 95 composition starts at the native caption and places the menu before setup controls");
+		check(classicFrameLayout.menuBar.height == 36.0f && classicFrameLayout.control("shuffle").y >= 42.0f &&
+			classicFrameLayout.control("menu_file").x >= classicFrameLayout.control("panel_toggle").x +
+			classicFrameLayout.control("panel_toggle").width &&
+			classicFrameLayout.control("menu_tools").x + classicFrameLayout.control("menu_tools").width <=
+			classicFrameLayout.control("settings").x,
+			"Windows 95 menu keeps the collapse and Settings buttons accessible without overlap");
 		UiLayoutInput hdVgaInput;
 		hdVgaInput.width = 1920; hdVgaInput.height = 1080; hdVgaInput.menuHeight = 26;
 		const UiLayoutResult hdVga = calculateUiLayout(UiPresetId::FlatVgaDos, hdVgaInput, controlIds);
@@ -1442,6 +1582,19 @@ namespace
 		scroll.configure(UiRect(100.0f, 200.0f, 80.0f, 50.0f), 60.0f, 24.0f, 900.0f);
 		check(scroll.offset() == 10.0f && scroll.visibleItemCount(3, 24.0f) == 3,
 			"layout updates clamp stale offsets when content shrinks or the viewport changes");
+		UiScrollbar scrollbar;
+		scroll.configure(UiRect(100.0f, 200.0f, 80.0f, 50.0f), 240.0f, 24.0f, 0.0f);
+		scrollbar.bind(&scroll);
+		scrollbar.setBounds(UiRect(184.0f, 200.0f, 12.0f, 50.0f));
+		check(scrollbar.visible() && scrollbar.thumbBounds().height >= 18.0f &&
+			scrollbar.pointerDown(190.0f, 245.0f) && scroll.offset() > 0.0f,
+			"shared scrollbar pages the viewport when its track is clicked");
+		const float pageOffset = scroll.offset();
+		const UiRect thumb = scrollbar.thumbBounds();
+		check(scrollbar.pointerDown(190.0f, thumb.y + 2.0f) && scrollbar.captured() &&
+			scrollbar.pointerMove(190.0f, 203.0f) && scroll.offset() < pageOffset &&
+			scrollbar.pointerUp(190.0f, 203.0f) && !scrollbar.captured(),
+			"shared scrollbar captures, drags, and releases the viewport thumb");
 
 		UIRoot orderedRoot;
 		orderedRoot.addButton("first", "First");
@@ -1610,16 +1763,36 @@ namespace
 		check(popupScrollRoot.handleEvent(UiInputEvent(UiInputType::Wheel, 40.0f, 50.0f, -1), action) &&
 			popupScrollRoot.find("long_popup")->firstVisibleOption() == 3,
 			"open long combo popups scroll with the shared viewport even when the pointer is outside the widget bounds");
-		const UiRect scrolledOption = popupScrollRoot.find("long_popup")->optionBounds(3);
+		UiWidget* longPopup = popupScrollRoot.find("long_popup");
+		check(longPopup->optionScrollbar().visible() && longPopup->optionScrollbar().bounds().x > longPopup->optionBounds(3).x,
+			"long combo popups reserve a visible shared scrollbar beside their clipped option rows");
+		const UiRect popupThumbBefore = longPopup->optionScrollbar().thumbBounds();
+		check(popupScrollRoot.handleEvent(UiInputEvent(UiInputType::PointerDown,
+			popupThumbBefore.x + popupThumbBefore.width * 0.5f, popupThumbBefore.y + 2.0f), action) &&
+			longPopup->optionScrollbar().captured(), "combo popup scrollbar captures thumb dragging ahead of option selection");
+		popupScrollRoot.handleEvent(UiInputEvent(UiInputType::PointerMove,
+			popupThumbBefore.x + 3.0f, longPopup->optionScrollbar().bounds().y + longPopup->optionScrollbar().bounds().height - 2.0f), action);
+		popupScrollRoot.handleEvent(UiInputEvent(UiInputType::PointerUp,
+			popupThumbBefore.x + 3.0f, longPopup->optionScrollbar().bounds().y + longPopup->optionScrollbar().bounds().height - 2.0f), action);
+		check(!longPopup->optionScrollbar().captured() && longPopup->firstVisibleOption() > 3,
+			"combo popup thumb dragging scrolls to later options and releases pointer capture");
+		const std::size_t visibleOptionIndex = popupScrollRoot.find("long_popup")->firstVisibleOption();
+		const UiRect scrolledOption = popupScrollRoot.find("long_popup")->optionBounds(visibleOptionIndex);
 		popupScrollRoot.handleEvent(UiInputEvent(UiInputType::PointerDown,
 			scrolledOption.x + 4.0f, scrolledOption.y + 4.0f), action);
-		check(popupScrollRoot.find("long_popup")->selectedIndex() == 3,
-			"scrolled popup rows remain clipped and hit-test to their corresponding option");
-		popupScrollRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Enter), action);
-		for (int i = 0; i < 12; ++i) popupScrollRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), action);
-		check(popupScrollRoot.find("long_popup")->selectedIndex() == 15 &&
-			popupScrollRoot.find("long_popup")->firstVisibleOption() <= 15 &&
-			popupScrollRoot.find("long_popup")->firstVisibleOption() + popupScrollRoot.find("long_popup")->visibleOptionCount() > 15,
+		check(popupScrollRoot.find("long_popup")->selectedIndex() == static_cast<int>(visibleOptionIndex),
+			"scrolled popup rows remain clipped and hit-test to the visible option");
+
+		UIRoot keyboardPopupRoot;
+		keyboardPopupRoot.addComboBox("keyboard_popup", popupOptions, 3, AppAction(AppActionKind::SelectAudioBand));
+		keyboardPopupRoot.find("keyboard_popup")->setBounds(UiRect(20.0f, 20.0f, 180.0f, 20.0f));
+		keyboardPopupRoot.find("keyboard_popup")->setPopupBounds(UiRect(20.0f, 40.0f, 180.0f, 160.0f));
+		keyboardPopupRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 25.0f, 25.0f), action);
+		keyboardPopupRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), action);
+		for (int i = 0; i < 11; ++i) keyboardPopupRoot.handleEvent(UiInputEvent(UiInputType::KeyDown, 0.0f, 0.0f, UiKey::Down), action);
+		check(keyboardPopupRoot.find("keyboard_popup")->selectedIndex() == 15 &&
+			keyboardPopupRoot.find("keyboard_popup")->firstVisibleOption() <= 15 &&
+			keyboardPopupRoot.find("keyboard_popup")->firstVisibleOption() + keyboardPopupRoot.find("keyboard_popup")->visibleOptionCount() > 15,
 			"keyboard navigation keeps the focused combo selection visible after scrolling");
 
 		UIRoot radioRoot;
@@ -1765,6 +1938,30 @@ namespace
 		browser.begin(insertion->familyId);
 		check(browser.search.empty() && browser.familyScroll == 0 && browser.variantScroll == 0 && !browser.variantPane,
 			"reopening the browser starts a clean selection session");
+		AlgorithmBrowserModel scrollBrowser(algorithmBrowserCatalog());
+		scrollBrowser.begin(insertion->familyId);
+		scrollBrowser.layout(UiRect(20.0f, 20.0f, 80.0f, 24.0f), 640, 480);
+		scrollBrowser.prepare();
+		check(scrollBrowser.familyScrollbar.visible(),
+			"algorithm browser family pane exposes a shared scrollbar when the catalog overflows");
+		const UiRect familyTrack = scrollBrowser.familyScrollbar.bounds();
+		const AlgorithmBrowserInputResult pageResult = scrollBrowser.handleInput(
+			UiInputEvent(UiInputType::PointerDown, familyTrack.x + 2.0f, familyTrack.y + familyTrack.height - 2.0f),
+			true, insertion->familyId, insertion->variantId);
+		check(!pageResult.closeRequested && scrollBrowser.familyScroll > 0,
+			"algorithm browser scrollbar track pages the family viewport without dismissing its overlay");
+		const UiRect familyThumb = scrollBrowser.familyScrollbar.thumbBounds();
+		const int familyScrollBeforeDrag = scrollBrowser.familyScroll;
+		scrollBrowser.handleInput(UiInputEvent(UiInputType::PointerDown,
+			familyThumb.x + 2.0f, familyThumb.y + 2.0f), true, insertion->familyId, insertion->variantId);
+		const bool capturedBrowserScrollbar = scrollBrowser.familyScrollbar.captured();
+		scrollBrowser.handleInput(UiInputEvent(UiInputType::PointerMove, familyThumb.x + 2.0f,
+			familyTrack.y + familyTrack.height - 1.0f), true, insertion->familyId, insertion->variantId);
+		scrollBrowser.handleInput(UiInputEvent(UiInputType::PointerUp, familyThumb.x + 2.0f,
+			familyTrack.y + familyTrack.height - 1.0f), true, insertion->familyId, insertion->variantId);
+		check(capturedBrowserScrollbar && !scrollBrowser.familyScrollbar.captured() &&
+			scrollBrowser.familyScroll >= familyScrollBeforeDrag,
+			"algorithm browser thumb drag captures and releases pointer input while scrolling its pane");
 		browser.reset();
 		check(!browser.searchFocused && !browser.pendingSelection && !browser.variantPane,
 			"resetting browser interaction clears modal search and pending-selection state");
@@ -2033,8 +2230,8 @@ namespace
 			palette.x > preset.x + preset.width && apply.y + apply.height <= wide.panelBounds.y + wide.panelBounds.height,
 			"appearance controls retain their two-column positions and bottom actions stay inside the panel");
 		check(wide.contentClip.x == wide.panelBounds.x + 1.0f && wide.contentClip.y == wide.panelBounds.y + 40.0f &&
-			wide.colorSwatchBounds.y == 420.0f && wide.titleBounds.y == 224.0f &&
-			wide.descriptionBounds.y == 380.0f && wide.statusBounds.height == 18.0f && wide.controls.size() == 25,
+			wide.colorSwatchBounds.y == 460.0f && wide.titleBounds.y == 224.0f &&
+			wide.descriptionBounds.y == 420.0f && wide.statusBounds.height == 18.0f && wide.controls.size() == 27,
 			"appearance title, description, content clip, status, and color preview share one resolved layout");
 
 		const AppearanceEditorLayoutResult compact = calculateAppearanceEditorLayout(320.0f, 240.0f);
@@ -2059,7 +2256,7 @@ namespace
 		view.setDescription("Color | Interface and chart color token.");
 		const UiRect expectedPreset = view.layoutResult().control("appearance_preset");
 		const UiWidget* presetWidget = view.controls().find("appearance_preset");
-		check(view.layoutResult().valid && view.controls().widgets().size() == 25 && presetWidget &&
+		check(view.layoutResult().valid && view.controls().widgets().size() == 27 && presetWidget &&
 			presetWidget->bounds().x == expectedPreset.x && presetWidget->bounds().y == expectedPreset.y,
 			"appearance view owns its retained controls and applies one responsive layout to them");
 
@@ -2434,6 +2631,37 @@ namespace
 					command.textOverflow == UiTextOverflow::Clamp);
 		}
 		check(hasTitle && hasLeftClippedText, "algorithm profile paint commands retain title layering and left-clipped paragraph text");
+
+		paint.clear();
+		const UiRect compactRail(0.0f, 30.0f, 360.0f, 440.0f);
+		const UiRect compactSeed(0.0f, 270.0f, 360.0f, 30.0f);
+		view.compose("merge", capabilities, true, 1920, compactRail, compactSeed,
+			profileStyle, complexityStyle, palette, paint);
+		bool hasProperties = false;
+		bool hasInput = false;
+		bool hasLimit = false;
+		bool hasCompactShortcuts = false;
+		std::vector<UiRect> compactTextBounds;
+		for (std::size_t i = 0; i < paint.commands().size(); ++i)
+		{
+			const UiPaintCommand& command = paint.commands()[i];
+			if (command.elementId == "#rail_profile_properties") hasProperties = true;
+			if (command.elementId == "#rail_profile_input") hasInput = true;
+			if (command.elementId == "#rail_profile_limit") hasLimit = true;
+			if (command.elementId == "#rail_shortcuts_title") hasCompactShortcuts = true;
+			if (command.primitive == UiPaintPrimitive::Text && command.bounds.height > 0.0f)
+				compactTextBounds.push_back(command.bounds);
+		}
+		bool compactTextOverlaps = false;
+		for (std::size_t a = 0; a < compactTextBounds.size(); ++a)
+			for (std::size_t b = a + 1; b < compactTextBounds.size(); ++b)
+				if (compactTextBounds[a].x < compactTextBounds[b].x + compactTextBounds[b].width &&
+					compactTextBounds[b].x < compactTextBounds[a].x + compactTextBounds[a].width &&
+					compactTextBounds[a].y < compactTextBounds[b].y + compactTextBounds[b].height &&
+					compactTextBounds[b].y < compactTextBounds[a].y + compactTextBounds[a].height)
+					compactTextOverlaps = true;
+		check(hasProperties && hasInput && hasLimit && !hasCompactShortcuts && !compactTextOverlaps,
+			"compact algorithm profile cards keep facts readable without overlapping shortcut text");
 
 		const UiRect viewport = view.scrollViewportBounds();
 		const UiRect track = view.scrollTrackBounds();
@@ -2912,6 +3140,22 @@ namespace
 			"settings view owns tab geometry, page visibility, and active-row placement");
 		check(view.isScrollablePage() && view.handleScrollWheel(520.0f, 125.0f, -1) && view.scrollOffset() > 0.0f,
 			"settings view owns wheel scrolling for long algorithm settings");
+		check(!view.scrollbarCaptured() && view.scrollbar().visible(),
+			"settings view reveals a shared scrollbar for overflowing rows and starts uncaptured");
+		const UiRect settingsTrack = view.scrollbar().bounds();
+		const float beforeTrackPage = view.scrollOffset();
+		check(view.handleScrollbarPointerDown(settingsTrack.x + settingsTrack.width * 0.5f,
+			settingsTrack.y + settingsTrack.height - 2.0f) && view.scrollOffset() > beforeTrackPage,
+			"settings scrollbar track pages through the active settings rows");
+		const float afterTrackPage = view.scrollOffset();
+		const UiRect settingsThumb = view.scrollbar().thumbBounds();
+		check(view.handleScrollbarPointerDown(settingsThumb.x + settingsThumb.width * 0.5f, settingsThumb.y + 2.0f) &&
+			view.scrollbarCaptured(), "settings scrollbar captures an explicit thumb drag");
+		view.handleScrollbarPointerMove(settingsThumb.x + settingsThumb.width * 0.5f, settingsTrack.y + 1.0f);
+		view.handleScrollbarPointerUp(settingsThumb.x + settingsThumb.width * 0.5f, settingsTrack.y + 1.0f);
+		view.layoutControls(longControlList, 8.0f);
+		check(!view.scrollbarCaptured() && view.scrollOffset() < afterTrackPage,
+			"settings scrollbar drag updates the shared viewport and releases capture");
 		const float offsetAfterScroll = view.scrollOffset();
 		check(!view.handleScrollWheel(400.0f, 125.0f, -1) && view.scrollOffset() == offsetAfterScroll,
 			"settings view does not scroll when the pointer is outside its viewport");
@@ -3150,9 +3394,9 @@ namespace
 			"collapsed legacy layout retains its header/menu and start action while hiding setup controls");
 
 		view.applyLayout(UiPresetId::ClassicWindows95, layout, 1280, false);
-		check(!view.findControl("panel_toggle")->visible() && !view.findControl("settings")->visible() &&
+		check(view.findControl("panel_toggle")->visible() && view.findControl("settings")->visible() &&
 			view.findControl("menu_file")->visible(),
-			"Classic Windows 95 layout hides modern header buttons while preserving its menu bar");
+			"Classic Windows 95 menu strip keeps collapse and Settings access, including while collapsed");
 	}
 
 	void testMainControlsViewOwnsComboPopupLayout()
@@ -3592,7 +3836,7 @@ namespace
 			"missing settings use ascending Insertion Sort");
 		check(defaults.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
 			"fixed-duration playback remains the default timing mode");
-		check(defaults.version == 8 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
+		check(defaults.version == 9 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			defaults.simulation.familyId == "insertion-methods" && defaults.simulation.variantId == "insertion" &&
 			defaults.simulation.domain == sortinglogic::InputDomain::NormalizedFloats,
 			"new settings use stable algorithm IDs and showcase defaults");
@@ -3615,7 +3859,7 @@ namespace
 			check(defaults.audio.bandTrimDb[i] == 0.0f, "every per-band trim defaults to zero");
 
 		UserSettings saved;
-		saved.visual.palette = PaletteId::Light;
+		saved.visual.palette = PaletteId::Customized;
 		saved.visual.spacing = BarSpacingMode::Comfortable;
 		saved.appearance.activePreset = UiPresetId::FlatVgaDos;
 		saved.appearance.themes[UiPresetId::Current].palette = PaletteId::Light;
@@ -3700,11 +3944,13 @@ namespace
 		const UserSettings loaded = restartedStore.load();
 		check(loaded.visual.palette == saved.visual.palette && loaded.visual.spacing == saved.visual.spacing, "settings round-trip palette and spacing");
 		check(loaded.appearance.activePreset == saved.appearance.activePreset &&
-			loaded.appearance.themes.at(UiPresetId::Current).palette == PaletteId::Light &&
+			loaded.appearance.themes.at(UiPresetId::Current).palette == PaletteId::Customized &&
+			loaded.appearance.themes.at(UiPresetId::Current).customPaletteBase == PaletteId::Light &&
+			loaded.appearance.themes.at(UiPresetId::Current).customColors.size() == 21 &&
 			loaded.appearance.themes.at(UiPresetId::FlatVgaDos).palette == PaletteId::Amber &&
-			loaded.appearance.themes.at(UiPresetId::Current).overrides.find("color.bar") != loaded.appearance.themes.at(UiPresetId::Current).overrides.end() &&
+			std::fabs(effectiveUiTokenValue(UiPresetId::Current, loaded.appearance.themes.at(UiPresetId::Current), "color.bar").color.r - 0.2f) < 0.0001f &&
 			loaded.appearance.themes.at(UiPresetId::FlatVgaDos).overrides.find("scrollbar.show_arrows") != loaded.appearance.themes.at(UiPresetId::FlatVgaDos).overrides.end(),
-			"settings round-trip independent preset palettes, active base, and appearance overrides");
+			"settings round-trip independent presets, full customized RGBA data, and non-color overrides");
 		check(loaded.visual.panelExpanded == saved.visual.panelExpanded && loaded.simulation.itemCount == saved.simulation.itemCount, "settings round-trip panel state and item count");
 		check(loaded.simulation.durationSeconds == saved.simulation.durationSeconds && loaded.simulation.descending == saved.simulation.descending, "settings round-trip duration and direction");
 		check(loaded.simulation.playbackTimingMode == saved.simulation.playbackTimingMode,
@@ -3785,7 +4031,7 @@ namespace
 
 		writeFile(path, "version=1\npalette=light\nspacing=none\npanel_expanded=0\nitem_count=123\nduration_seconds=42\ndescending=1\nalgorithm=0\n");
 		const UserPreferences migrated = store.load();
-		check(migrated.version == 8 && migrated.visual.palette == PaletteId::Light && migrated.visual.spacing == BarSpacingMode::None &&
+		check(migrated.version == 9 && migrated.visual.palette == PaletteId::Light && migrated.visual.spacing == BarSpacingMode::None &&
 			migrated.simulation.itemCount == 123 && migrated.simulation.durationSeconds == 42 && migrated.simulation.descending,
 			"version-1 settings migrate without losing appearance or simulation values");
 		check(migrated.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
@@ -3798,7 +4044,7 @@ namespace
 			"version-1 settings receive the selected profile audio defaults");
 		writeFile(path, "version=2\npalette=amber\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nalgorithm=0\naudio_master=0.61\n");
 		const UserPreferences migratedV2 = store.load();
-		check(migratedV2.version == 8 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
+		check(migratedV2.version == 9 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
 			migratedV2.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			migratedV2.simulation.domain == sortinglogic::InputDomain::NormalizedFloats,
 			"version-2 settings retain existing values and migrate new fields");
@@ -3854,7 +4100,7 @@ namespace
 			"unknown v5 option IDs safely fall back to the catalog and typed default");
 		writeFile(path, "version=6\npalette=light\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\nfamily_audio.insertion-methods.comparison=8.5\nvariant_audio.insertion-methods.insertion.comparison=-6.5\n");
 		const UserPreferences migratedV6 = store.load();
-		check(migratedV6.version == 8 &&
+		check(migratedV6.version == 9 &&
 			familyAudioLevels(migratedV6, "insertion-methods").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 8.5f &&
 			variantAudioLevels(migratedV6, "insertion-methods", "insertion").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == -6.5f,
 			"version-6 migration to version-8 preserves family and variant algorithm audio gains");
@@ -3871,7 +4117,7 @@ namespace
 			"malformed version-7 compatibility palette falls back without discarding valid simulation settings");
 		writeFile(path, "version=7\npalette=amber\nspacing=comfortable\npanel_expanded=0\nitem_count=96\nduration_seconds=12\ndescending=1\nfamily_id=merge-sort\nvariant_id=merge\nprofile=normalized_float\nmerge_execution_mode=bottom_up\nmerge_writeback_mode=animated_writes\noption.merge-sort.merge.execution_mode=top_down\noption.merge-sort.merge.writeback_mode=animated_writes\nfamily_audio.merge-sort.comparison=5.5\nvariant_audio.merge-sort.merge.comparison=-2.5\n");
 		const UserPreferences migratedV7 = store.load();
-		check(migratedV7.version == 8 && migratedV7.simulation.familyId == "merge-sort" &&
+		check(migratedV7.version == 9 && migratedV7.simulation.familyId == "merge-sort" &&
 			migratedV7.simulation.variantId == "merge" &&
 			algorithmOptionValue(migratedV7, *savedMerge, "execution_mode") == static_cast<int>(sortinglogic::MergeExecutionMode::TopDown) &&
 			algorithmOptionValue(migratedV7, *savedMerge, "writeback_mode") == static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites),
@@ -3879,6 +4125,21 @@ namespace
 		check(familyAudioLevels(migratedV7, "merge-sort").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 5.5f &&
 			variantAudioLevels(migratedV7, "merge-sort", "merge").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == -2.5f,
 			"version-7 to version-8 migration preserves family and variant audio gain overrides");
+		const UserPreferences migratedV8Appearance = settingsini::decode(
+			"version=8\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\n"
+			"ui_active_preset=current\nui.current.palette=amber\n"
+			"ui.current.override.color.bar=color:0.1,0.2,0.3,0.4\n"
+			"ui.current.override.typography.body_size=number:19\n");
+		check(migratedV8Appearance.version == 9 &&
+			migratedV8Appearance.appearance.themes.at(UiPresetId::Current).palette == PaletteId::Customized &&
+			migratedV8Appearance.appearance.themes.at(UiPresetId::Current).customPaletteBase == PaletteId::Amber &&
+			migratedV8Appearance.appearance.themes.size() == 3 &&
+			migratedV8Appearance.appearance.themes.at(UiPresetId::Current).customColors.size() == 21 &&
+			std::fabs(effectiveUiTokenValue(UiPresetId::Current,
+				migratedV8Appearance.appearance.themes.at(UiPresetId::Current), "color.bar").color.b - 0.3f) < 0.0001f &&
+			migratedV8Appearance.appearance.themes.at(UiPresetId::Current).overrides.find("typography.body_size") !=
+				migratedV8Appearance.appearance.themes.at(UiPresetId::Current).overrides.end(),
+			"version-8 color overrides migrate into complete Customized data while non-color overrides survive");
 
 		writeFile(path, "version=garbage\npalette=banana\n");
 		const UserSettings malformed = store.load();
@@ -3926,6 +4187,18 @@ namespace
 			reusableSnapshot.state.slots.size() == initialSnapshot.state.slots.size(),
 			"AppController fills a reusable render snapshot with the same initial presentation state");
 		check(persistence.writes == 0, "loading preferences does not write them back at startup");
+		check(app.preferences().reconstructedAudio.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection &&
+			std::fabs(app.preferences().reconstructedAudio.specialReleaseMilliseconds - 250.0) < 1e-9,
+			"new application settings default to Special release with the established 250 ms value");
+		MemorySettings explicitHoldPersistence;
+		explicitHoldPersistence.value.reconstructedAudio.idlePolicy = SoundEngine::ReconstructedIdlePolicy::HoldSelection;
+		AppController explicitHoldApp(explicitHoldPersistence);
+		check(explicitHoldApp.preferences().reconstructedAudio.idlePolicy == SoundEngine::ReconstructedIdlePolicy::HoldSelection,
+			"an explicitly saved Hold selection remains selected after loading settings");
+		explicitHoldApp.dispatch(AppAction(AppActionKind::RestoreReconstructedDefaults));
+		check(explicitHoldApp.preferences().reconstructedAudio.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection &&
+			std::fabs(explicitHoldApp.preferences().reconstructedAudio.specialReleaseMilliseconds - 250.0) < 1e-9,
+			"restoring reconstructed defaults selects Special release at 250 ms");
 
 		app.dispatch(AppAction(AppActionKind::TogglePlayback));
 		app.dispatch(AppAction(AppActionKind::PreviousEvent));
@@ -3950,7 +4223,19 @@ namespace
 			app.preferences().simulation.pattern == sortinglogic::InputPattern::AndrutReference,
 			"selecting the Andrut arrangement immediately selects its 100-bar normalized input");
 		check(persistence.writes == 4, "Andrut arrangement persists its item count and input profile as one preference change");
+		const std::uint32_t retainedAndrutSeed = app.snapshot().inputSeed;
+		const std::size_t historySizeAtAndrut = app.seedHistory().entries().size();
+		const int writesAtAndrut = persistence.writes;
+		const sortinglogic::CommandResult lockedCount = app.dispatch(AppAction(AppActionKind::SetItemCount, 0.0f, 140));
+		const sortinglogic::CommandResult lockedShuffle = app.dispatch(AppAction(AppActionKind::Shuffle));
+		const sortinglogic::CommandResult lockedSeed = app.dispatch(AppAction(AppActionKind::SetSeed, retainedAndrutSeed + 1u));
+		check(!lockedCount.accepted && !lockedShuffle.accepted && !lockedSeed.accepted &&
+			app.snapshot().itemCount == 100 && app.snapshot().inputSeed == retainedAndrutSeed &&
+			app.seedHistory().entries().size() == historySizeAtAndrut && persistence.writes == writesAtAndrut,
+			"Andrut fixed inputs reject count edits and seed changes without adding history or settings writes");
 		app.dispatch(AppAction(AppActionKind::SetInputPattern, 0.0f, static_cast<int>(sortinglogic::InputPattern::Random)));
+		check(app.snapshot().inputSeed == retainedAndrutSeed,
+			"leaving Andrut retains the stored seed for the next seed-based pattern");
 
 		app.dispatch(AppAction(AppActionKind::SetDirection, 0.0f, 1));
 		app.dispatch(AppAction(AppActionKind::IncreaseCountFine));
@@ -4257,6 +4542,27 @@ namespace
 			}
 		}
 		check(sharedControl && upperPopup, "demo editor uses the standard widget painter and a separate upper popup pass");
+
+		DemoPreset longDraft = draft;
+		while (longDraft.steps.size() < 48) longDraft.steps.push_back(longDraft.steps.front());
+		DemoEditorView scrollingEditor;
+		scrollingEditor.setOpen(true);
+		scrollingEditor.synchronize(store, longDraft, longDraft.id, 0, runner, true, 1280, 800);
+		const UiSelectionList* queue = scrollingEditor.selectionList("demo_queue");
+		check(queue && queue->viewport().maximumOffset() > 0.0f,
+			"long demo queue exposes an overflowing virtualized viewport");
+		if (queue)
+		{
+			const UiRect queueBounds = queue->bounds();
+			AppAction ignored;
+			scrollingEditor.handleInput(UiInputEvent(UiInputType::Wheel,
+				queueBounds.x + 4.0f, queueBounds.y + 8.0f, -2), ignored);
+			const float preservedOffset = scrollingEditor.selectionList("demo_queue")->viewport().offset();
+			scrollingEditor.synchronize(store, longDraft, longDraft.id, 0, runner, true, 1280, 800);
+			check(preservedOffset > 0.0f &&
+				scrollingEditor.selectionList("demo_queue")->viewport().offset() == preservedOffset,
+				"repeated demo synchronization does not snap queue scrolling back to the selected row");
+		}
 	}
 
 	void testRetainedEditorComponents()
@@ -4718,7 +5024,7 @@ namespace
 			"paused cursor selection publishes a generation-tagged prepared seek snapshot for callback installation");
 		SoundEngine::AudioTimelineEvent timelineComparison;
 		check(latest.timeline->comparisonAtCursor(firstCompareCursor, timelineComparison) &&
-			timelineComparison.sourceCursor == firstCompareCursor && latest.transport.holdSelection &&
+			timelineComparison.sourceCursor == firstCompareCursor && latest.releaseSelection &&
 			latest.transport.sourceCursor == firstCompareCursor,
 			"paused event stepping keeps an exact cursor-selected comparison in the prepared audio timeline");
 		check(latest.burstComparison.firstPosition == latest.comparison.firstPosition &&
@@ -4772,11 +5078,17 @@ namespace
 				std::fabs(timelineComparison.secondPosition - gnomeState.burstComparison.secondPosition) < 1.0e-6,
 				"Gnome timeline operands use the catalog's audio order");
 		}
+		SoundEngine::ReconstructedParameters holdPreferences;
+		holdPreferences.idlePolicy = SoundEngine::ReconstructedIdlePolicy::HoldSelection;
+		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox, holdPreferences);
+		check(traceMailbox.consumeLatest(latest) && latest.hasComparison && !latest.releaseSelection &&
+			latest.transport.holdSelection && !latest.transportPlaying,
+			"an explicit Hold selection preference keeps the paused comparison active");
 		SoundEngine::ReconstructedParameters releasePreferences;
 		releasePreferences.idlePolicy = SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
 		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox, releasePreferences);
 		check(traceMailbox.consumeLatest(latest) && latest.hasComparison && latest.releaseSelection && !latest.transportPlaying,
-			"paused inspection publishes the configured special-release policy to the audio callback");
+			"switching back to the default special-release policy publishes the paused selection fade");
 		const SoundEngine::PreparedAudioTimeline* stableTimeline = latest.timeline;
 		parameters.heldKeyBoostDb = 0.0f;
 		bridge.update(simulation, simulation.playbackState(), parameters, traceMailbox);

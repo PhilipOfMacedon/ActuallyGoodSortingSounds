@@ -11,6 +11,7 @@ This directory keeps project-local working context that should survive across im
 - [GUI scrolling](gui-scroll-refactor.md): shared viewport geometry, current adoption, and live-verification notes.
 - [Interface ideas](interface-ideas.md): user-approved visual directions that remain proposals until implementation is requested.
 - [Demo UI repairs](demo-ui-repairs.md): transport handoff, shared component/preset repairs, approved three-tab editor, completion-scan migration, and SDL input diagnosis.
+- [UI release polish](ui-release-polish.md): measured demo options/recipe layout, viewport hit-testing, appearance palette persistence, audio defaults, and verification results.
 
 ## Local owner guidance
 

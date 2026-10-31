@@ -39,8 +39,8 @@ namespace
 }
 
 AlgorithmProfileView::AlgorithmProfileView(const TextBlockLayout::MeasureTextWidth& measureTextWidth)
-	: complexityLayout_(measureTextWidth), descriptionLayout_(measureTextWidth), scrollViewport_(), scrollTrack_(), scrollThumb_(),
-	algorithm_(), lineHeight_(18.0f), visible_(false), dragging_(false), dragStartY_(0.0f), dragStartOffset_(0.0f)
+	: complexityLayout_(measureTextWidth), descriptionLayout_(measureTextWidth), scrollViewport_(), scrollbarController_(), scrollTrack_(), scrollThumb_(),
+	algorithm_(), lineHeight_(18.0f), visible_(false)
 {
 }
 
@@ -84,10 +84,11 @@ void AlgorithmProfileView::compose(const std::string& algorithm, const UiAlgorit
 	std::ostringstream safeLimit;
 	safeLimit << "Safe setup limit: " << capabilities.safeMaximumItemCount << " bars";
 
-	const bool showShortcuts = cardHeight >= 112.0f;
-	float shortcutY = card.y + 70.0f;
-	if (showShortcuts && cardHeight >= 150.0f) shortcutY = card.y + card.height - 58.0f;
-	const float profileBottom = showShortcuts ? shortcutY - 10.0f : card.y + card.height - 8.0f;
+	// The shortcuts consume three fixed text rows. Keep them out of compact cards;
+	// squeezing them in beside the profile facts made the lower rows overlap.
+	const bool showShortcuts = cardHeight >= 190.0f;
+	const float shortcutY = card.y + card.height - 58.0f;
+	const float contentBottom = showShortcuts ? shortcutY - 10.0f : card.y + card.height - 8.0f;
 	const std::string complexity = (capabilities.available ? capabilities.timeComplexity : "Unknown") +
 		std::string(" time  |  ") + (capabilities.available ? capabilities.spaceComplexity : "Unknown") + " space";
 	complexityLayout_.update(complexity, profileWidth, complexityTextStyle);
@@ -112,17 +113,20 @@ void AlgorithmProfileView::compose(const std::string& algorithm, const UiAlgorit
 	const std::string factTexts[] = { properties, inputTypes.str(), safeLimit.str() };
 	const char* factIds[] = { "#rail_profile_properties", "#rail_profile_input", "#rail_profile_limit" };
 	const float factLineHeight = 18.0f;
+	std::size_t factsDrawn = 0;
 	for (std::size_t factIndex = 0; factIndex < 3; ++factIndex)
 	{
-		if (cardHeight < factsY - card.y + (factIndex + 1) * factLineHeight + 8.0f) break;
+		const float factY = factsY + static_cast<float>(factIndex) * factLineHeight;
+		if (factY + factLineHeight > contentBottom - 3.0f) break;
 		submitText(paintContext, UiRect(card.x + 8.0f, factsY + factIndex * factLineHeight,
 			profileWidth, factLineHeight), factTexts[factIndex], factIds[factIndex], 13.0f,
 			palette.text, UiTextAlignment::Center, UiTextOverflow::Clamp, cardClip);
+		++factsDrawn;
 	}
 
-	const float descriptionTop = factsY + 3.0f * factLineHeight + 3.0f;
+	const float descriptionTop = factsY + static_cast<float>(factsDrawn) * factLineHeight + 3.0f;
 	const UiRect profileFrame(card.x + 6.0f, descriptionTop, (std::max)(0.0f, card.width - 12.0f),
-		(std::max)(0.0f, profileBottom - descriptionTop));
+		(std::max)(0.0f, contentBottom - descriptionTop));
 	const UiRect profileTextViewport(profileFrame.x + 7.0f, profileFrame.y + 6.0f,
 		(std::max)(0.0f, profileFrame.width - 24.0f), (std::max)(0.0f, profileFrame.height - 12.0f));
 	if (!capabilities.behavior.empty() && profileTextViewport.height > 0.0f)
@@ -153,16 +157,11 @@ void AlgorithmProfileView::compose(const std::string& algorithm, const UiAlgorit
 	{
 		scrollTrack_ = UiRect(profileFrame.x + profileFrame.width - 11.0f,
 			profileTextViewport.y, 5.0f, profileTextViewport.height);
+		scrollbarController_.bind(&scrollViewport_);
+		scrollbarController_.setBounds(scrollTrack_);
 		submitRectangle(paintContext, scrollTrack_, palette.timelineRail,
 			UiPaintMaterial::Timeline, UiPaintLayer::MainControls);
-		const float thumbHeight = (std::min)(scrollTrack_.height,
-			(std::max)(18.0f, scrollTrack_.height * profileTextViewport.height /
-				(std::max)(1.0f, scrollViewport_.contentExtent())));
-		const float thumbTravel = (std::max)(0.0f, scrollTrack_.height - thumbHeight);
-		const float scrollFraction = scrollViewport_.maximumOffset() > 0.0f
-			? scrollViewport_.offset() / scrollViewport_.maximumOffset() : 0.0f;
-		scrollThumb_ = UiRect(scrollTrack_.x, scrollTrack_.y + thumbTravel * scrollFraction,
-			scrollTrack_.width, thumbHeight);
+		scrollThumb_ = scrollbarController_.thumbBounds();
 		submitRectangle(paintContext, scrollThumb_, palette.accent,
 			UiPaintMaterial::TimelineThumb, UiPaintLayer::MainControlsOverlay);
 	}
@@ -192,35 +191,15 @@ bool AlgorithmProfileView::handleWheel(float x, float y, int wheelDelta)
 
 bool AlgorithmProfileView::pointerDown(float x, float y)
 {
-	if (!visible_ || scrollViewport_.maximumOffset() <= 0.0f || !scrollTrack_.contains(x, y)) return false;
-	const float trackTravel = scrollTrack_.height - scrollThumb_.height;
-	if (trackTravel > 0.0f && !scrollThumb_.contains(x, y))
-	{
-		const float fraction = (std::max)(0.0f, (std::min)(1.0f,
-			(y - scrollTrack_.y - scrollThumb_.height * 0.5f) / trackTravel));
-		scrollViewport_.setOffset(fraction * scrollViewport_.maximumOffset());
-	}
-	dragging_ = true;
-	dragStartY_ = y;
-	dragStartOffset_ = scrollViewport_.offset();
-	return true;
+	return visible_ && scrollbarController_.pointerDown(x, y);
 }
 
 bool AlgorithmProfileView::pointerMove(float y)
 {
-	if (!dragging_) return false;
-	const float trackTravel = scrollTrack_.height - scrollThumb_.height;
-	if (trackTravel > 0.0f)
-	{
-		const float ratio = scrollViewport_.maximumOffset() / trackTravel;
-		scrollViewport_.setOffset(dragStartOffset_ + (y - dragStartY_) * ratio);
-	}
-	return true;
+	return scrollbarController_.pointerMove(scrollTrack_.x, y);
 }
 
 bool AlgorithmProfileView::pointerUp()
 {
-	if (!dragging_) return false;
-	dragging_ = false;
-	return true;
+	return scrollbarController_.pointerUp(scrollTrack_.x, scrollTrack_.y);
 }
