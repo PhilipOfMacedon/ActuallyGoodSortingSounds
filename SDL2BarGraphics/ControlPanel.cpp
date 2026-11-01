@@ -98,6 +98,7 @@ namespace
 		case UiPaintLayer::MainControlsTop: return layerOffset(RenderLayer::MainControls, 2);
 		case UiPaintLayer::MainDropdown: return RenderLayer::Dropdown;
 		case UiPaintLayer::MainText: return RenderLayer::MainText;
+		case UiPaintLayer::ForegroundPopup: return layerOffset(RenderLayer::SettingsDropdown, 8);
 		}
 		return RenderLayer::SettingsDropdown;
 	}

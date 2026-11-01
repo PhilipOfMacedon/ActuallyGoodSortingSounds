@@ -178,7 +178,7 @@ DemoEditorView::DemoEditorView()
 	pendingPresetSwitchId_(), draft_(), runnerState_(DemoRunnerState::Inactive), runnerStepIndex_(0), runnerStepCount_(0),
 	runnerStatus_(), feedback_(), presetIds_(), complexityClasses_(demoComplexityClassOrder()), complexityLabels_(),
 	optionGroupIds_(), optionGroupLabels_(), optionGroupIsNumeric_(), optionIds_(), optionLabels_(), optionIdsByGroup_(), optionSlotWidgetIds_(), optionSlotFieldIds_(), labelBounds_(),
-	panelBounds_(), headerBounds_(), bodyBounds_(), queueBounds_(), inspectorBounds_(), footerBounds_(), transportBounds_(), listClip_(),
+	panelBounds_(), headerBounds_(), bodyBounds_(), queueBounds_(), inspectorBounds_(), stepHeadingTextBounds_(), footerBounds_(), transportBounds_(), listClip_(),
 	bodyViewport_(), queueScrollbar_(), optionPaneBounds_(), optionViewport_(), optionScrollbar_(), classInputViewportBounds_(),
 	classInputViewport_(), classInputScrollbar_(), logicalWidth_(0),
 	logicalHeight_(0), laidOutWidth_(-1), laidOutHeight_(-1), laidOutStepCount_(static_cast<std::size_t>(-1)),
@@ -732,6 +732,7 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 	const float iy = inspectorBounds_.y;
 	const float iw = inspectorBounds_.width;
 	labelBounds_.clear();
+	stepHeadingTextBounds_ = UiRect();
 	optionPaneBounds_ = UiRect();
 	classInputViewportBounds_ = UiRect();
 	optionScrollbar_.bind(&optionViewport_);
@@ -750,32 +751,50 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 	const float rowH = 34.0f;
 	if (activeTab_ == DemoEditorTab::Step)
 	{
-		place(controls_, "demo_replace", ix + iw * 0.60f, iy + 48.0f, iw * 0.40f, rowH);
-		const float halfGap = 12.0f;
-		const float halfWidth = std::max(0.0f, (iw - halfGap) * 0.5f);
-		const float compactRowHeight = 26.0f;
-		UiFormLayout leftForm(UiRect(ix, iy + 74.0f, halfWidth, std::max(0.0f, inspectorBounds_.height - 74.0f)), 0.0f, 2.0f);
-		UiFormLayout rightForm(UiRect(ix + halfWidth + halfGap, iy + 74.0f, halfWidth,
-			std::max(0.0f, inspectorBounds_.height - 74.0f)), 0.0f, 2.0f);
-		UiLabeledControlBounds field = leftForm.addLabeledControl("Direction", compactRowHeight, 12.0f, 2.0f);
+		const bool compactStep = inspectorBounds_.height < 500.0f;
+		const float sectionGap = compactStep ? 4.0f : 12.0f;
+		const float headingY = iy + (compactStep ? 42.0f : 46.0f);
+		const float headingHeight = compactStep ? 28.0f : rowH;
+		const float replaceWidth = std::min(compactStep ? 220.0f : 260.0f, iw * 0.38f);
+		const float replaceX = ix + iw - replaceWidth;
+		const UiRect stepHeadingBounds(ix, headingY, iw, headingHeight);
+		stepHeadingTextBounds_ = UiRect(ix + 8.0f, headingY + 4.0f,
+			std::max(0.0f, replaceX - ix - 16.0f), headingHeight - 8.0f);
+		place(controls_, "demo_replace", replaceX, stepHeadingBounds.y, replaceWidth, stepHeadingBounds.height);
+		const UiRect commonControlsBounds(ix, stepHeadingBounds.y + stepHeadingBounds.height + sectionGap,
+			iw, std::max(0.0f, inspectorBounds_.y + inspectorBounds_.height - 104.0f -
+				(stepHeadingBounds.y + stepHeadingBounds.height + sectionGap)));
+		const float panelPadding = compactStep ? 4.0f : 10.0f;
+		const float columnGap = compactStep ? 10.0f : 12.0f;
+		const float columnWidth = std::max(0.0f, (commonControlsBounds.width - columnGap) * 0.5f);
+		const float compactRowHeight = compactStep ? 22.0f : 30.0f;
+		const float commonRowGap = compactStep ? 3.0f : 8.0f;
+		const float labelGap = compactStep ? 3.0f : 4.0f;
+		UiFormLayout leftForm(UiRect(commonControlsBounds.x, commonControlsBounds.y, columnWidth,
+			commonControlsBounds.height), panelPadding, commonRowGap);
+		UiFormLayout rightForm(UiRect(commonControlsBounds.x + columnWidth + columnGap, commonControlsBounds.y, columnWidth,
+			commonControlsBounds.height), panelPadding, commonRowGap);
+		UiLabeledControlBounds field = leftForm.addLabeledControl("Direction", compactRowHeight, 12.0f, labelGap);
 		labelBounds_["demo_direction"] = field.label; controls_.find("demo_direction")->setBounds(field.control);
-		field = rightForm.addLabeledControl("Sound timing", compactRowHeight, 12.0f, 2.0f);
+		field = rightForm.addLabeledControl("Sound timing", compactRowHeight, 12.0f, labelGap);
 		labelBounds_["demo_timing"] = field.label; controls_.find("demo_timing")->setBounds(field.control);
-		field = leftForm.addLabeledControl("Duration, seconds", compactRowHeight, 12.0f, 2.0f);
+		field = leftForm.addLabeledControl("Duration, seconds", compactRowHeight, 12.0f, labelGap);
 		labelBounds_["demo_duration_value"] = field.label; controls_.findEditableField("demo_duration_value")->setBounds(field.control);
-		field = rightForm.addLabeledControl("Completion scan", compactRowHeight, 12.0f, 2.0f);
+		field = rightForm.addLabeledControl("Completion scan", compactRowHeight, 12.0f, labelGap);
 		labelBounds_["demo_completion_scan"] = field.label; controls_.find("demo_completion_scan")->setBounds(field.control);
-		const float optionsHeadingY = std::max(leftForm.cursorY(), rightForm.cursorY()) + 1.0f;
+		const float optionsHeadingY = std::max(leftForm.cursorY(), rightForm.cursorY()) + (compactStep ? 1.0f : 2.0f);
 		if (!optionGroupIds_.empty())
-			labelBounds_["demo_options_heading"] = UiRect(ix, optionsHeadingY, std::max(0.0f, iw - 18.0f), 16.0f);
-		const float optionsTop = optionsHeadingY + (optionGroupIds_.empty() ? 0.0f : 19.0f);
+			labelBounds_["demo_options_heading"] = UiRect(ix + panelPadding, optionsHeadingY,
+				std::max(0.0f, iw - panelPadding * 2.0f - 18.0f), 16.0f);
+		const float optionsTop = optionsHeadingY + (optionGroupIds_.empty() ? 0.0f : compactStep ? 19.0f : 24.0f);
 		const float optionsBottom = inspectorBounds_.y + inspectorBounds_.height - 104.0f;
-		optionPaneBounds_ = UiRect(ix, optionsTop, std::max(0.0f, iw - 18.0f),
+		optionPaneBounds_ = UiRect(ix + panelPadding, optionsTop, std::max(0.0f, iw - panelPadding * 2.0f - 18.0f),
 			optionGroupIds_.empty() ? 0.0f : std::max(0.0f, optionsBottom - optionsTop));
 		const float optionRowHeight = 50.0f;
 		optionViewport_.configure(optionPaneBounds_, optionRowHeight * static_cast<float>(optionGroupIds_.size()), optionRowHeight, optionViewport_.offset());
 		optionScrollbar_.bind(&optionViewport_);
-		optionScrollbar_.setBounds(UiRect(ix + iw - 14.0f, optionPaneBounds_.y, 14.0f, optionPaneBounds_.height));
+		optionScrollbar_.setBounds(UiRect(optionPaneBounds_.x + optionPaneBounds_.width + 4.0f,
+			optionPaneBounds_.y, 14.0f, optionPaneBounds_.height));
 		for (std::size_t i = 0; i < optionSlotWidgetIds_.size(); ++i)
 		{
 			UiWidget* option = controls_.find(optionSlotWidgetIds_[i]);
@@ -808,7 +827,8 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 		}
 		// The option viewport is measured after common controls and ends before
 		// the fixed recipe summary; additional groups scroll inside this band.
-		place(controls_, "demo_override", ix, iy + inspectorBounds_.height - 46.0f, std::min(iw, 250.0f), rowH);
+		place(controls_, "demo_override", ix + panelPadding, iy + inspectorBounds_.height - 46.0f,
+			std::min(iw - panelPadding * 2.0f, 250.0f), rowH);
 	}
 	else if (activeTab_ == DemoEditorTab::ClassInputs)
 	{
@@ -1299,7 +1319,7 @@ void DemoEditorView::composeText(const DemoEditorPalette& palette, UiPaintContex
 		submitText(context, "#demo_step_heading", step && descriptor
 			? "STEP " + std::to_string(selectedStep_ + 1) + " · " + descriptor->displayName
 			: "STEP · select an algorithm from the queue",
-			UiRect(inspectorBounds_.x, inspectorBounds_.y + 46.0f, inspectorBounds_.width * 0.58f, 25.0f), 14.0f, palette.text, UiPaintLayer::SettingsText);
+			stepHeadingTextBounds_, 14.0f, palette.text, UiPaintLayer::SettingsText);
 		const std::map<std::string, std::string> captions = {
 			{ "demo_direction", "Direction" }, { "demo_timing", "Sound timing" },
 			{ "demo_duration_value", "Duration, seconds" }, { "demo_completion_scan", "Completion scan" }
@@ -1534,7 +1554,7 @@ void DemoEditorView::composeWidgetControls(const DemoEditorPalette&, UiPaintCont
 			true, 14.0f));
 		if (widget.expanded())
 			context.submit(UiPaintCommand(UiPaintPrimitive::Control, widget.popupBounds(), UiColor(), std::string(), widget.id(),
-				UiPaintMaterial::Popup, UiPaintLayer::Content, panelBounds_, true, 14.0f, true));
+				UiPaintMaterial::Popup, UiPaintLayer::ForegroundPopup, panelBounds_, true, 14.0f, true));
 	}
 }
 

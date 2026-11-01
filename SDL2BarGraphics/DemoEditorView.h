@@ -89,6 +89,7 @@ private:
 	UiRect bodyBounds_;
 	UiRect queueBounds_;
 	UiRect inspectorBounds_;
+	UiRect stepHeadingTextBounds_;
 	UiRect footerBounds_;
 	UiRect transportBounds_;
 	UiRect listClip_;

@@ -165,7 +165,7 @@ UiColor readableUiTextColor(const UiColor& preferred, const UiColor& surface, fl
 enum class UiPaintPrimitive { Rectangle, Panel, Border, Text, Icon, Control };
 enum class UiPaintMaterial { Solid, Panel, Button, Timeline, TimelineThumb, PixelIcon, Popup, Accent, ModalDim };
 enum class UiPaintLayer { Backdrop, Panel, Accent, Content, SettingsControls, SettingsControlsOverlay, Text, SettingsText,
-	MainControls, MainControlsOverlay, MainControlsTop, MainDropdown, MainText };
+	MainControls, MainControlsOverlay, MainControlsTop, MainDropdown, MainText, ForegroundPopup };
 enum class UiTextAlignment { Center, Left, Right };
 enum class UiTextOverflow { Fit, Clamp, Marquee };
 struct UiPaintCommand

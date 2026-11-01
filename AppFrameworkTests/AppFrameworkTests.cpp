@@ -512,6 +512,33 @@ namespace
 		}
 		check(!hasEmptyOptionsHeading && recipeHeadingBounds.height > 0.0f,
 			"steps without algorithm options omit the empty heading and retain a separate recipe summary");
+		UiRect stepHeadingBounds, directionCaption, timingCaption, durationCaption, completionCaption;
+		for (const UiPaintCommand& command : paint.commands())
+		{
+			if (command.elementId == "#demo_step_heading") stepHeadingBounds = command.bounds;
+			else if (command.elementId == "#demo_direction_caption") directionCaption = command.bounds;
+			else if (command.elementId == "#demo_timing_caption") timingCaption = command.bounds;
+			else if (command.elementId == "#demo_duration_value_caption") durationCaption = command.bounds;
+			else if (command.elementId == "#demo_completion_scan_caption") completionCaption = command.bounds;
+		}
+		const UiWidget* replaceAlgorithm = view.control("demo_replace");
+		const UiWidget* direction = view.control("demo_direction");
+		const UiWidget* timing = view.control("demo_timing");
+		const UiEditableField* duration = view.editableField("demo_duration_value");
+		const UiWidget* completion = view.control("demo_completion_scan");
+		const UiTabStrip* demoTabs = view.tabStrip("demo_tabs");
+		const bool headingSeparated = replaceAlgorithm && stepHeadingBounds.width > 0.0f &&
+			stepHeadingBounds.x + stepHeadingBounds.width + 8.0f <= replaceAlgorithm->bounds().x;
+		const bool labeledRowsPadded = direction && timing && duration && completion &&
+			directionCaption.height > 0.0f && timingCaption.height > 0.0f && durationCaption.height > 0.0f && completionCaption.height > 0.0f &&
+			directionCaption.y + directionCaption.height + 3.0f <= direction->bounds().y &&
+			timingCaption.y + timingCaption.height + 3.0f <= timing->bounds().y &&
+			durationCaption.y + durationCaption.height + 3.0f <= duration->bounds().y &&
+			completionCaption.y + completionCaption.height + 3.0f <= completion->bounds().y &&
+			directionCaption.x == direction->bounds().x && timingCaption.x == timing->bounds().x && demoTabs &&
+			directionCaption.x >= demoTabs->bounds().x + 4.0f && timingCaption.x >= demoTabs->bounds().x + 4.0f;
+		check(headingSeparated && labeledRowsPadded && directionCaption.y >= stepHeadingBounds.y + stepHeadingBounds.height + 12.0f,
+			"Step heading and Change algorithm share a header row above padded caption-and-control groups");
 
 		DemoPreset mergeDraft = draft;
 		DemoEditorView mergeEditor;
@@ -4604,10 +4631,10 @@ namespace
 			if (command.elementId == "demo_preset" && command.primitive == UiPaintPrimitive::Control)
 			{
 				sharedControl = sharedControl || !command.popup;
-				upperPopup = upperPopup || (command.popup && command.layer == UiPaintLayer::Content);
+				upperPopup = upperPopup || (command.popup && command.layer == UiPaintLayer::ForegroundPopup);
 			}
 		}
-		check(sharedControl && upperPopup, "demo editor uses the standard widget painter and a separate upper popup pass");
+		check(sharedControl && upperPopup, "demo editor uses the standard widget painter and a dedicated foreground popup pass");
 
 		DemoEditorView actionMenuEditor;
 		actionMenuEditor.setOpen(true);

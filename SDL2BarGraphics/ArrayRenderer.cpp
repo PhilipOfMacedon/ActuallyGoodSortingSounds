@@ -195,9 +195,8 @@ void ArrayRenderer::render(
 			snapshot.state.auxiliaryItems.find(previewLane);
 		const std::map<std::string, std::vector<int> >::const_iterator integerLane =
 			snapshot.state.integerWorkspaces.find(previewLane);
-		const float captionWidth = std::min(420.0f, right - left - 16.0f);
 		submitLaneLabel("__preview", "Expanded workspace: " + workspaceCaption(snapshot, previewLane),
-			left + 8.0f, top + 11.0f, palette.text, captionWidth);
+			left + 8.0f, top + 11.0f, palette.text, std::max(0.0f, right - left - 16.0f));
 		if (itemLane != snapshot.state.auxiliaryItems.end())
 		{
 			const float cellWidth = itemLane->second.empty() ? 0.0f : (right - left) / static_cast<float>(itemLane->second.size());
