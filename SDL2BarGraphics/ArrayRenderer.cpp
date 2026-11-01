@@ -260,12 +260,14 @@ void ArrayRenderer::render(
 	{
 		if (!label->second || !label->second->getTextureId() || label->second->getTextureDimensions().y <= 0.0f) continue;
 		const float labelHeight = 13.0f;
+		const float labelRightInset = 8.0f;
 		const std::map<std::string, float>::const_iterator requestedWidth = laneLabelWidths_.find(label->first);
 		const float maximumWidth = requestedWidth == laneLabelWidths_.end() ? 112.0f : requestedWidth->second;
-		const float labelWidth = std::min(maximumWidth, labelHeight * label->second->getTextureDimensions().x / label->second->getTextureDimensions().y);
+		const float availableWidth = std::max(0.0f, maximumWidth - labelRightInset);
+		const float labelWidth = std::min(availableWidth, labelHeight * label->second->getTextureDimensions().x / label->second->getTextureDimensions().y);
 		const std::map<std::string, glm::vec2>::const_iterator position = laneLabelPositions_.find(label->first);
 		if (position == laneLabelPositions_.end()) continue;
-		renderer_.submit(QuadInstance(glm::vec2(position->second.x + maximumWidth - labelWidth, position->second.y), glm::vec2(labelWidth, labelHeight),
+		renderer_.submit(QuadInstance(glm::vec2(position->second.x + availableWidth - labelWidth, position->second.y), glm::vec2(labelWidth, labelHeight),
 			RenderDescriptor(palette.text, label->second->getTextureId(), MaterialId::Text), RenderLayer::ChartLabels, chartClip));
 	}
 
