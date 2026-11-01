@@ -704,7 +704,11 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 	if (action.appAction.kind == AppActionKind::SelectAlgorithm ||
 		action.appAction.kind == AppActionKind::SetAlgorithmOption)
 	{
-		output = ui::normalizeCatalogAction(action.appAction);
+		AppAction catalogAction = action.appAction;
+		if (catalogAction.kind == AppActionKind::SetAlgorithmOption &&
+			action.event.kind == UiEventKind::TextEntered)
+			catalogAction.optionStableId = action.event.text;
+		output = ui::normalizeCatalogAction(catalogAction);
 		return;
 	}
 	if (action.appAction.kind == AppActionKind::SelectAudioBand)
@@ -1034,9 +1038,36 @@ void ControlPanel::drawSettingsPanel(const ThemePalette& palette, const std::str
 void ControlPanel::drawSettingsPaintCommand(const UiPaintCommand& command, const ThemePalette& palette)
 {
 	const UiWidget* widget = settingsPanelView_.controls().find(command.elementId);
-	if (!widget || !widget->visible()) return;
 	const RenderLayer layer = renderLayerForUiPaint(command.layer);
 	const ClipBounds clip = renderClip(command);
+	if (!widget)
+	{
+		const UiEditableField* field = settingsPanelView_.controls().findEditableField(command.elementId);
+		if (!field || !field->visible()) return;
+		const glm::vec4 fill = field->enabled() ? palette.valueButton : palette.disabledButton;
+		submitBox(field->bounds(), fill, ValueMaterial, layer, clip);
+		const glm::vec4 border = field->focused() || field->invalid() ? palette.accent : palette.border;
+		const float borderSize = std::max(1.0f, themeNumber(renderPreferences_, "control.border_width", 1.0f));
+		submitBox(UiRect(field->bounds().x, field->bounds().y, field->bounds().width, borderSize), border, PanelMaterial, layer, clip);
+		const std::string captionId = field->id() + "#caption";
+		std::map<std::string, std::unique_ptr<TextLabel> >::iterator caption = labels_.find(captionId);
+		if (caption != labels_.end())
+			drawText(*caption->second, UiRect(field->bounds().x, field->bounds().y - 16.0f,
+				field->bounds().width, 15.0f), 11.0f, palette.mutedText, SettingsTextLayer, clip);
+		const std::string valueId = field->id() + "#value";
+		std::map<std::string, std::unique_ptr<TextLabel> >::iterator value = labels_.find(valueId);
+		if (value == labels_.end())
+		{
+			labels_[valueId].reset(new TextLabel(field->value(), "Courier New Bold", 12, { 255, 255, 255, 255 }));
+			value = labels_.find(valueId);
+		}
+		value->second->setContent(field->value() + (field->focused() ? "_" : ""));
+		drawText(*value->second, UiRect(field->bounds().x + 9.0f, field->bounds().y,
+			field->bounds().width - 18.0f, field->bounds().height), 13.0f,
+			field->enabled() ? palette.text : palette.mutedText, SettingsTextLayer, clip);
+		return;
+	}
+	if (!widget->visible()) return;
 	if (command.popup)
 	{
 		drawWidget(*widget, palette, layer, true);

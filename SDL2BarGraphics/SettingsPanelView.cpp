@@ -85,25 +85,41 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 			const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[optionIndex];
 			const std::string groupId(option.groupId);
 			if (!groups.insert(groupId).second) continue;
-			std::vector<std::string> optionNames;
-			int selectedIndex = 0;
-			const std::string selectedId = algorithmOptionStableId(preferences, algorithm, groupId);
-			for (std::size_t candidateIndex = 0; candidateIndex < algorithm.supportedOptions.size(); ++candidateIndex)
-			{
-				const sortinglogic::AlgorithmOptionDescriptor& candidate = algorithm.supportedOptions[candidateIndex];
-				if (groupId != candidate.groupId) continue;
-				if (candidate.stableId == selectedId) selectedIndex = static_cast<int>(optionNames.size());
-				optionNames.push_back(candidate.displayName);
-			}
 			const std::string id = settingsAlgorithmOptionControlId(algorithm.familyId, algorithm.variantId, groupId);
-			controls_.addComboBox(id, optionNames, selectedIndex,
-				AppAction(AppActionKind::SetAlgorithmOption, algorithm.familyId, algorithm.variantId, groupId));
+			const std::string caption = option.caption ? option.caption : groupId;
+			const std::string selectedId = algorithmOptionStableId(preferences, algorithm, groupId);
+			const bool numeric = option.valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger ||
+				option.valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal;
+			if (numeric)
+			{
+				const UiEditableFieldKind kind = option.valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal
+					? UiEditableFieldKind::FiniteDecimal
+					: option.minimumNumericValue < 0.0 ? UiEditableFieldKind::SignedInteger : UiEditableFieldKind::UnsignedInteger;
+				controls_.addEditableField(id, caption, kind, selectedId, option.minimumNumericValue,
+					option.maximumNumericValue, 24, AppAction(AppActionKind::SetAlgorithmOption,
+						algorithm.familyId, algorithm.variantId, groupId));
+			}
+			else
+			{
+				std::vector<std::string> optionNames;
+				int selectedIndex = 0;
+				for (std::size_t candidateIndex = 0; candidateIndex < algorithm.supportedOptions.size(); ++candidateIndex)
+				{
+					const sortinglogic::AlgorithmOptionDescriptor& candidate = algorithm.supportedOptions[candidateIndex];
+					if (groupId != candidate.groupId) continue;
+					if (candidate.stableId == selectedId) selectedIndex = static_cast<int>(optionNames.size());
+					optionNames.push_back(candidate.displayName);
+				}
+				controls_.addComboBox(id, optionNames, selectedIndex,
+					AppAction(AppActionKind::SetAlgorithmOption, algorithm.familyId, algorithm.variantId, groupId));
+			}
 			controls_.setWidgetEnabled(id, false);
 			AlgorithmOptionBinding binding;
 			binding.controlId = id;
 			binding.groupId = groupId;
+			binding.numeric = numeric;
 			algorithmOptionsById_[algorithmKey].push_back(binding);
-			captions_[id] = option.caption ? option.caption : groupId;
+			captions_[id] = caption;
 		}
 	}
 
@@ -210,9 +226,16 @@ void SettingsPanelView::synchronizeControls(const UserPreferences& preferences,
 			{
 				const AlgorithmOptionBinding& binding = groups->second[i];
 				UiWidget* widget = controls_.find(binding.controlId);
-				if (!widget) continue;
-
 				const std::string selectedId = algorithmOptionStableId(preferences, *selectedDescriptor, binding.groupId);
+				if (binding.numeric)
+				{
+					UiEditableField* field = controls_.findEditableField(binding.controlId);
+					if (!field) continue;
+					field->setValue(selectedId);
+					controls_.setWidgetEnabled(binding.controlId, !setupBusy);
+					continue;
+				}
+				if (!widget) continue;
 				int selectedIndex = 0;
 				for (std::size_t candidateIndex = 0, visibleIndex = 0;
 					candidateIndex < selectedDescriptor->supportedOptions.size(); ++candidateIndex)
@@ -408,16 +431,27 @@ void SettingsPanelView::layoutControls(const std::vector<std::string>& activeCon
 		const bool visible = rowY >= contentViewport.y - 0.5f && rowY + rowHeight <= contentBottom + 0.5f;
 		if (visible) visibleWidgetIds.insert(activeControlIds[i]);
 		UiWidget* widget = controls_.find(activeControlIds[i]);
-		if (!widget) continue;
-		const SettingsWidgetGeometry geometry = calculateSettingsWidgetGeometry(*widget, rowBounds,
-			x, width, panelBounds_, scrollbarThickness);
-		widget->setBounds(geometry.bounds);
-		widget->setInteractiveSubregions(geometry.interactiveSubregions);
-		if (geometry.setPopupAbove) widget->setPopupAbove(geometry.popupAbove);
+		if (widget)
+		{
+			const SettingsWidgetGeometry geometry = calculateSettingsWidgetGeometry(*widget, rowBounds,
+				x, width, panelBounds_, scrollbarThickness);
+			widget->setBounds(geometry.bounds);
+			widget->setInteractiveSubregions(geometry.interactiveSubregions);
+			if (geometry.setPopupAbove) widget->setPopupAbove(geometry.popupAbove);
+			continue;
+		}
+		UiEditableField* field = controls_.findEditableField(activeControlIds[i]);
+		if (field)
+			field->setBounds(UiRect(x, rowBounds.y + 17.0f, width, 27.0f));
 	}
 	for (std::size_t i = 0; i < controls_.widgets().size(); ++i)
 	{
 		const std::string& id = controls_.widgets()[i]->id();
+		controls_.setWidgetVisible(id, visibleWidgetIds.find(id) != visibleWidgetIds.end());
+	}
+	for (std::size_t i = 0; i < controls_.editableFields().size(); ++i)
+	{
+		const std::string& id = controls_.editableFields()[i]->id();
 		controls_.setWidgetVisible(id, visibleWidgetIds.find(id) != visibleWidgetIds.end());
 	}
 }
@@ -514,5 +548,12 @@ void SettingsPanelView::compose(int screenWidth, int screenHeight, const std::st
 		if (widget->visible() && widget->expanded())
 			submitControl(widget, palette.text, UiPaintMaterial::Popup,
 				UiPaintLayer::Content, screen, true, true);
+	}
+	for (std::size_t i = 0; i < controls_.editableFields().size(); ++i)
+	{
+		const UiEditableField* field = controls_.editableFields()[i].get();
+		if (!field || !field->visible()) continue;
+		paintContext.submit(UiPaintCommand(UiPaintPrimitive::Control, field->bounds(), palette.text, std::string(),
+			field->id(), UiPaintMaterial::Button, UiPaintLayer::SettingsControls, contentBounds_, true, 0.0f));
 	}
 }

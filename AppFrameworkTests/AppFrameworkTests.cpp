@@ -4614,6 +4614,25 @@ namespace
 		check(field.invalid() && field.editing(), "invalid numeric input remains visible and blocks commitment");
 		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Escape), emitted);
 		check(!field.editing() && !field.invalid() && field.value() == "42", "Escape cancels a field draft and restores its authoritative value");
+		UiEditableField& signedField = root.addEditableField("offset", "Signed offset", UiEditableFieldKind::SignedInteger,
+			"-2", -12.0, 12.0, 8, AppAction(AppActionKind::SetAlgorithmOption, "test.family", "test.variant", "offset"));
+		signedField.setBounds(UiRect(220, 110, 90, 32));
+		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 240, 120), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Backspace), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Backspace), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::TextInput, "-8"), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Enter), emitted);
+		check(signedField.value() == "-8" && emitted.appAction.kind == AppActionKind::SetAlgorithmOption &&
+			emitted.event.text == "-8", "signed bounded properties commit through the shared typed action path");
+		UiEditableField& decimalField = root.addEditableField("scatter", "Scatter", UiEditableFieldKind::FiniteDecimal,
+			"0.5", 0.0, 1.0, 16, AppAction(AppActionKind::SetAlgorithmOption, "test.family", "test.variant", "scatter"));
+		decimalField.setBounds(UiRect(220, 150, 90, 32));
+		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 240, 160), emitted);
+		for (int i = 0; i < 3; ++i) root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Backspace), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::TextInput, "0.625"), emitted);
+		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Enter), emitted);
+		check(decimalField.value() == "0.625" && emitted.event.text == "0.625",
+			"finite decimal properties preserve precise values through the shared editor");
 		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 30, 72), emitted);
 		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Down), emitted);
 		check(list.selectedIndex() == 1 && emitted.event.controlId == "queue",
@@ -4629,6 +4648,20 @@ namespace
 		root.handleEvent(UiInputEvent(UiInputType::PointerDown, 240, 70), emitted);
 		root.handleEvent(UiInputEvent(UiInputType::KeyDown, 0, 0, UiKey::Enter), emitted);
 		check(!field.editing(), "disabled fields cannot be activated by pointer or keyboard");
+
+		std::vector<sortinglogic::AlgorithmPropertyDescriptor> numericSchema;
+		numericSchema.push_back(sortinglogic::AlgorithmPropertyDescriptor::finiteDecimal("scatter", "Scatter",
+			0.375, 0.0, 1.0, "Scatter amount", "Synthetic finite-decimal setting."));
+		const sortinglogic::AlgorithmDescriptor synthetic(sortinglogic::SortAlgorithm::Insertion, "test.forms",
+			"Numeric property form", "O(n)", "O(1)", true, true, true, true, nullptr, numericSchema);
+		UserPreferences propertyPreferences;
+		const std::string settingKey = algorithmOptionSettingsKey(synthetic.familyId, synthetic.variantId, "scatter");
+		propertyPreferences.algorithmOptions[settingKey] = "0.625";
+		check(algorithmOptionStableId(propertyPreferences, synthetic, "scatter") == "0.625",
+			"shared settings form resolves persisted finite-decimal properties");
+		propertyPreferences.algorithmOptions[settingKey] = "nan";
+		check(algorithmOptionStableId(propertyPreferences, synthetic, "scatter") == "0.375",
+			"shared settings form falls back to the declared default for malformed numeric properties");
 	}
 
 	void testDemoRunSessionIsolationAndCancellation()

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <map>
 #include <set>
@@ -1347,6 +1348,7 @@ namespace sortinglogic
 				issues.push_back(label + ": primary-write reconstruction has no registered presentation strategy");
 
 			std::map<std::string, int> defaultsByGroup;
+			std::map<std::string, int> propertiesByGroup;
 			std::map<std::string, std::set<std::string> > stableChoicesByGroup;
 			std::map<std::string, std::set<int> > valuesByGroup;
 			std::map<std::string, AlgorithmPropertyValueType> typesByGroup;
@@ -1360,6 +1362,7 @@ namespace sortinglogic
 					continue;
 				}
 				const std::string group(property.groupId);
+				++propertiesByGroup[group];
 				if (!stableChoicesByGroup[group].insert(property.stableId).second)
 					issues.push_back(label + ": duplicate property choice ID in " + group);
 				if (!valuesByGroup[group].insert(property.value).second)
@@ -1368,10 +1371,18 @@ namespace sortinglogic
 				if (typesByGroup.find(group) == typesByGroup.end()) typesByGroup[group] = property.valueType;
 				else if (typesByGroup[group] != property.valueType)
 					issues.push_back(label + ": property group mixes value types in " + group);
-				if ((property.valueType == AlgorithmPropertyValueType::BoundedInteger ||
-					property.valueType == AlgorithmPropertyValueType::FiniteDecimal) &&
-					property.minimumValue > property.maximumValue)
-					issues.push_back(label + ": property has invalid numeric bounds in " + group);
+				if (property.valueType == AlgorithmPropertyValueType::BoundedInteger ||
+					property.valueType == AlgorithmPropertyValueType::FiniteDecimal)
+				{
+					if (!std::isfinite(property.minimumNumericValue) || !std::isfinite(property.maximumNumericValue) ||
+						property.minimumNumericValue > property.maximumNumericValue ||
+						!std::isfinite(property.numericDefaultValue) || property.numericDefaultValue < property.minimumNumericValue ||
+						property.numericDefaultValue > property.maximumNumericValue)
+						issues.push_back(label + ": numeric property has an invalid default or bounds in " + group);
+					if (property.valueType == AlgorithmPropertyValueType::BoundedInteger &&
+						std::floor(property.numericDefaultValue) != property.numericDefaultValue)
+						issues.push_back(label + ": bounded-integer property default is not integral in " + group);
+				}
 				if (property.effect != AlgorithmPropertyEffect::RebuildTrace &&
 					property.effect != AlgorithmPropertyEffect::RebuildTimeline &&
 					property.effect != AlgorithmPropertyEffect::UpdateVisuals)
@@ -1392,12 +1403,15 @@ namespace sortinglogic
 				if (group->second == AlgorithmPropertyValueType::BoundedInteger ||
 					group->second == AlgorithmPropertyValueType::FiniteDecimal)
 				{
+					if (propertiesByGroup[group->first] != 1)
+						issues.push_back(label + ": numeric property must have exactly one descriptor in " + group->first);
 					for (std::size_t propertyIndex = 0; propertyIndex < algorithm.supportedOptions.size(); ++propertyIndex)
 					{
 						const AlgorithmPropertyDescriptor& property = algorithm.supportedOptions[propertyIndex];
 						if (group->first == property.groupId &&
-							(property.value < property.minimumValue || property.value > property.maximumValue))
-							issues.push_back(label + ": numeric property default/choice lies outside its declared bounds in " + group->first);
+							(!std::isfinite(property.numericDefaultValue) || property.numericDefaultValue < property.minimumNumericValue ||
+								property.numericDefaultValue > property.maximumNumericValue))
+							issues.push_back(label + ": numeric property default lies outside its declared bounds in " + group->first);
 					}
 				}
 			}

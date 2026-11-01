@@ -1,9 +1,11 @@
 #include "DemoModels.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
+#include <locale>
 #include <limits>
 #include <locale>
 #include <set>
@@ -95,6 +97,36 @@ namespace
 		return true;
 	}
 
+	bool validPropertySelection(const sortinglogic::AlgorithmDescriptor& algorithm,
+		const std::string& propertyId, const std::string& value)
+	{
+		const sortinglogic::AlgorithmPropertyDescriptor* schema = nullptr;
+		for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
+			if (propertyId == algorithm.supportedOptions[i].groupId) { schema = &algorithm.supportedOptions[i]; break; }
+		if (!schema) return false;
+		if (schema->valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger)
+		{
+			char* end = nullptr;
+			errno = 0;
+			const long parsed = std::strtol(value.c_str(), &end, 10);
+			return !value.empty() && errno != ERANGE && end == value.c_str() + value.size() &&
+				static_cast<double>(parsed) >= schema->minimumNumericValue &&
+				static_cast<double>(parsed) <= schema->maximumNumericValue;
+		}
+		if (schema->valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal)
+		{
+			char* end = nullptr;
+			errno = 0;
+			const double parsed = std::strtod(value.c_str(), &end);
+			return !value.empty() && errno != ERANGE && end == value.c_str() + value.size() && std::isfinite(parsed) &&
+				parsed >= schema->minimumNumericValue && parsed <= schema->maximumNumericValue;
+		}
+		for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
+			if (propertyId == algorithm.supportedOptions[i].groupId && value == algorithm.supportedOptions[i].stableId)
+				return true;
+		return false;
+	}
+
 	bool parseIntEnum(const std::string& text, int minimum, int maximum, int& value)
 	{
 		std::uint64_t parsed = 0;
@@ -147,7 +179,18 @@ namespace
 			{
 				const sortinglogic::AlgorithmOptionDescriptor& option = descriptor->supportedOptions[i];
 				if (option.isDefault && groups.insert(option.groupId).second)
-					step.optionSelections[option.groupId] = option.stableId;
+				{
+					if (option.valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger)
+						step.optionSelections[option.groupId] = std::to_string(option.value);
+					else if (option.valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal)
+					{
+						std::ostringstream value;
+						value.imbue(std::locale::classic());
+						value << std::setprecision(17) << option.numericDefaultValue;
+						step.optionSelections[option.groupId] = value.str();
+					}
+					else step.optionSelections[option.groupId] = option.stableId;
+				}
 			}
 		}
 		step.timingMode = timing;
@@ -344,11 +387,8 @@ std::vector<DemoPresetIssue> validateDemoPreset(const DemoPreset& preset)
 		for (std::map<std::string, std::string>::const_iterator option = step.optionSelections.begin();
 			option != step.optionSelections.end(); ++option)
 		{
-			bool found = false;
-			for (std::size_t k = 0; k < algorithm->supportedOptions.size(); ++k)
-				if (algorithm->supportedOptions[k].groupId == option->first &&
-					algorithm->supportedOptions[k].stableId == option->second) found = true;
-			if (!found) issue(issues, i, "Unavailable option " + option->first + "/" + option->second + ".");
+			if (!validPropertySelection(*algorithm, option->first, option->second))
+				issue(issues, i, "Unavailable option " + option->first + "/" + option->second + ".");
 		}
 	}
 	return issues;

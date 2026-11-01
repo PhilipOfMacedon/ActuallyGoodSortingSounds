@@ -681,11 +681,18 @@ UserPreferences settingsini::decode(const std::string& content)
 		for (std::size_t optionIndex = 0; optionIndex < algorithm.supportedOptions.size(); ++optionIndex)
 		{
 			const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[optionIndex];
+			bool groupAlreadyRead = false;
+			for (std::size_t previous = 0; previous < optionIndex; ++previous)
+				if (std::string(algorithm.supportedOptions[previous].groupId) == option.groupId) groupAlreadyRead = true;
+			if (groupAlreadyRead) continue;
 			const std::string iniKey = "option." + algorithm.familyId + "." + algorithm.variantId + "." + option.groupId;
 			found = values.find(iniKey);
-			if (found == values.end() || found->second != option.stableId) continue;
+			if (found == values.end()) continue;
 			const std::string preferenceKey = algorithmOptionSettingsKey(algorithm.familyId, algorithm.variantId, option.groupId);
-			defaults.algorithmOptions[preferenceKey] = option.stableId;
+			UserPreferences candidate = defaults;
+			candidate.algorithmOptions[preferenceKey] = found->second;
+			if (algorithmOptionStableId(candidate, algorithm, option.groupId) == found->second)
+				defaults.algorithmOptions[preferenceKey] = found->second;
 		}
 	}
 	if (version < 10)

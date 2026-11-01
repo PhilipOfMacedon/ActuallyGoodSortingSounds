@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <limits>
+#include <locale>
 #include <set>
 #include <sstream>
 
@@ -148,6 +149,26 @@ namespace
 		default: return 0;
 		}
 	}
+
+	std::string defaultPropertyValue(const sortinglogic::AlgorithmPropertyDescriptor& property)
+	{
+		if (property.valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger)
+			return std::to_string(property.value);
+		if (property.valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal)
+		{
+			std::ostringstream text;
+			text.imbue(std::locale::classic());
+			text << std::setprecision(17) << property.numericDefaultValue;
+			return text.str();
+		}
+		return property.stableId;
+	}
+
+	bool isNumericProperty(const sortinglogic::AlgorithmPropertyDescriptor& property)
+	{
+		return property.valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger ||
+			property.valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal;
+	}
 }
 
 DemoEditorView::DemoEditorView()
@@ -156,7 +177,7 @@ DemoEditorView::DemoEditorView()
 	synchronizedStepIndex_(static_cast<std::size_t>(-1)), synchronizedStepComplexity_(-1), selectedPresetId_(),
 	pendingPresetSwitchId_(), draft_(), runnerState_(DemoRunnerState::Inactive), runnerStepIndex_(0), runnerStepCount_(0),
 	runnerStatus_(), feedback_(), presetIds_(), complexityClasses_(demoComplexityClassOrder()), complexityLabels_(),
-	optionGroupIds_(), optionGroupLabels_(), optionIds_(), optionLabels_(), optionIdsByGroup_(), optionSlotWidgetIds_(), labelBounds_(),
+	optionGroupIds_(), optionGroupLabels_(), optionGroupIsNumeric_(), optionIds_(), optionLabels_(), optionIdsByGroup_(), optionSlotWidgetIds_(), optionSlotFieldIds_(), labelBounds_(),
 	panelBounds_(), headerBounds_(), bodyBounds_(), queueBounds_(), inspectorBounds_(), footerBounds_(), transportBounds_(), listClip_(),
 	bodyViewport_(), queueScrollbar_(), optionPaneBounds_(), optionViewport_(), optionScrollbar_(), classInputViewportBounds_(),
 	classInputViewport_(), classInputScrollbar_(), logicalWidth_(0),
@@ -207,6 +228,11 @@ void DemoEditorView::createControls()
 		const std::string id = "demo_option_slot_" + std::to_string(i);
 		optionSlotWidgetIds_.push_back(id);
 		controls_.addComboBox(id, std::vector<std::string>(1, "No options"), 0);
+		const std::string fieldId = "demo_option_value_" + std::to_string(i);
+		optionSlotFieldIds_.push_back(fieldId);
+		controls_.addEditableField(fieldId, "", UiEditableFieldKind::SignedInteger, "0",
+			(static_cast<double>((std::numeric_limits<int>::min)())),
+			(static_cast<double>((std::numeric_limits<int>::max)())), 24, AppAction());
 	}
 	controls_.addButton("demo_override", "Use step override");
 	controls_.addComboBox("demo_class", std::vector<std::string>(1, "Quadratic"), 0);
@@ -230,6 +256,7 @@ void DemoEditorView::createControls()
 		"demo_preset_name", "demo_intermission_value", "demo_loop", "demo_save", "demo_delete", "demo_start", "demo_mode",
 		"demo_previous", "demo_next", "demo_stop", "demo_close" };
 	focusOrder.insert(focusOrder.end(), optionSlotWidgetIds_.begin(), optionSlotWidgetIds_.end());
+	focusOrder.insert(focusOrder.end(), optionSlotFieldIds_.begin(), optionSlotFieldIds_.end());
 	controls_.setFocusOrder(focusOrder);
 }
 
@@ -323,7 +350,9 @@ DemoActionPayload DemoEditorView::payloadForRecipe(const DemoInputRecipe& recipe
 void DemoEditorView::synchronizeOptions()
 {
 	const std::vector<std::string> previousGroupIds = optionGroupIds_;
-	optionGroupIds_.clear(); optionGroupLabels_.clear(); optionIds_.clear(); optionLabels_.clear(); optionIdsByGroup_.clear();
+	const std::vector<bool> previousNumericGroups = optionGroupIsNumeric_;
+	optionGroupIds_.clear(); optionGroupLabels_.clear(); optionGroupIsNumeric_.clear();
+	optionIds_.clear(); optionLabels_.clear(); optionIdsByGroup_.clear();
 	const DemoStep* step = currentStep();
 	const sortinglogic::AlgorithmDescriptor* descriptor = step
 		? sortinglogic::algorithmDescriptorById(step->familyId, step->variantId) : nullptr;
@@ -334,6 +363,7 @@ void DemoEditorView::synchronizeOptions()
 			{
 				const std::string groupId = descriptor->supportedOptions[i].groupId;
 				optionGroupIds_.push_back(groupId);
+				optionGroupIsNumeric_.push_back(isNumericProperty(descriptor->supportedOptions[i]));
 				std::string caption = groupId;
 				for (std::size_t option = 0; option < descriptor->supportedOptions.size(); ++option)
 					if (groupId == descriptor->supportedOptions[option].groupId)
@@ -344,36 +374,68 @@ void DemoEditorView::synchronizeOptions()
 	for (std::size_t groupIndex = 0; groupIndex < optionSlotWidgetIds_.size(); ++groupIndex)
 	{
 		UiWidget* option = controls_.find(optionSlotWidgetIds_[groupIndex]);
+		UiEditableField* field = groupIndex < optionSlotFieldIds_.size()
+			? controls_.findEditableField(optionSlotFieldIds_[groupIndex]) : nullptr;
 		if (!option) continue;
 		if (!descriptor || groupIndex >= optionGroupIds_.size())
 		{
 			option->setOptions(std::vector<std::string>(1, "No algorithm options"));
 			option->setSelectedIndex(0);
+			controls_.setWidgetVisible(optionSlotWidgetIds_[groupIndex], false);
+			if (field) controls_.setWidgetVisible(optionSlotFieldIds_[groupIndex], false);
 			continue;
 		}
 		const std::string& groupId = optionGroupIds_[groupIndex];
+		const sortinglogic::AlgorithmPropertyDescriptor* schema = nullptr;
 		std::string selectedStableId;
 		std::string declaredDefault;
 		std::vector<std::string> optionNames;
 		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
 			if (groupId == descriptor->supportedOptions[i].groupId)
 			{
-				optionIdsByGroup_[groupIndex].push_back(descriptor->supportedOptions[i].stableId);
-				optionNames.push_back(descriptor->supportedOptions[i].displayName);
-				if (descriptor->supportedOptions[i].isDefault) declaredDefault = descriptor->supportedOptions[i].stableId;
+				if (!schema) schema = &descriptor->supportedOptions[i];
+				if (!isNumericProperty(descriptor->supportedOptions[i]))
+				{
+					optionIdsByGroup_[groupIndex].push_back(descriptor->supportedOptions[i].stableId);
+					optionNames.push_back(descriptor->supportedOptions[i].displayName);
+				}
+				if (descriptor->supportedOptions[i].isDefault)
+					declaredDefault = defaultPropertyValue(descriptor->supportedOptions[i]);
 			}
 		const std::map<std::string, std::string>::const_iterator current = step->optionSelections.find(groupId);
 		if (current != step->optionSelections.end()) selectedStableId = current->second;
-		if (std::find(optionIdsByGroup_[groupIndex].begin(), optionIdsByGroup_[groupIndex].end(), selectedStableId) ==
-			optionIdsByGroup_[groupIndex].end()) selectedStableId = declaredDefault;
-		optionIds_ = optionIdsByGroup_[groupIndex]; optionLabels_ = optionNames;
-		option->setOptions(optionNames.empty() ? std::vector<std::string>(1, "No options") : optionNames);
-		int selected = 0;
-		for (std::size_t i = 0; i < optionIdsByGroup_[groupIndex].size(); ++i)
-			if (optionIdsByGroup_[groupIndex][i] == selectedStableId) selected = static_cast<int>(i);
-		option->setSelectedIndex(selected);
+		const bool numeric = schema && isNumericProperty(*schema);
+		if (numeric)
+		{
+			if (selectedStableId.empty() || selectedStableId == schema->stableId) selectedStableId = declaredDefault;
+			if (field)
+			{
+				field->setLabel(schema->caption ? schema->caption : groupId);
+				field->setNumericKind(schema->valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal
+					? UiEditableFieldKind::FiniteDecimal
+					: schema->minimumNumericValue < 0.0 ? UiEditableFieldKind::SignedInteger : UiEditableFieldKind::UnsignedInteger);
+				field->setNumericBounds(schema->minimumNumericValue, schema->maximumNumericValue);
+				field->setValue(selectedStableId);
+			}
+			controls_.setWidgetVisible(optionSlotWidgetIds_[groupIndex], false);
+			option->setOptions(std::vector<std::string>(1, "Numeric value"));
+			option->setSelectedIndex(0);
+		}
+		else
+		{
+			if (std::find(optionIdsByGroup_[groupIndex].begin(), optionIdsByGroup_[groupIndex].end(), selectedStableId) ==
+				optionIdsByGroup_[groupIndex].end()) selectedStableId = declaredDefault;
+			optionIds_ = optionIdsByGroup_[groupIndex]; optionLabels_ = optionNames;
+			option->setOptions(optionNames.empty() ? std::vector<std::string>(1, "No options") : optionNames);
+			int selected = 0;
+			for (std::size_t i = 0; i < optionIdsByGroup_[groupIndex].size(); ++i)
+				if (optionIdsByGroup_[groupIndex][i] == selectedStableId) selected = static_cast<int>(i);
+			option->setSelectedIndex(selected);
+			controls_.setWidgetVisible(optionSlotWidgetIds_[groupIndex], false);
+		}
+		if (field) controls_.setWidgetVisible(optionSlotFieldIds_[groupIndex], false);
 	}
-	if (previousGroupIds != optionGroupIds_) laidOutWidth_ = -1;
+	if (previousGroupIds != optionGroupIds_ || previousNumericGroups != optionGroupIsNumeric_) laidOutWidth_ = -1;
 }
 
 void DemoEditorView::synchronizeQueue()
@@ -547,7 +609,11 @@ void DemoEditorView::synchronize(const DemoPresetStore& presets, const DemoPrese
 	controls_.setWidgetEnabled("demo_option_group", false);
 	controls_.setWidgetEnabled("demo_option", false);
 	for (std::size_t i = 0; i < optionSlotWidgetIds_.size(); ++i)
+	{
 		controls_.setWidgetEnabled(optionSlotWidgetIds_[i], editable && step && i < optionGroupIds_.size());
+		if (i < optionSlotFieldIds_.size())
+			controls_.setWidgetEnabled(optionSlotFieldIds_[i], editable && step && i < optionGroupIds_.size());
+	}
 	controls_.setWidgetEnabled("demo_override", editable && step);
 	controls_.setWidgetEnabled("demo_class", editable);
 	controls_.setWidgetEnabled("demo_domain", editable && !sharedAndrut);
@@ -696,15 +762,30 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 		for (std::size_t i = 0; i < optionSlotWidgetIds_.size(); ++i)
 		{
 			UiWidget* option = controls_.find(optionSlotWidgetIds_[i]);
+			UiEditableField* numericField = i < optionSlotFieldIds_.size()
+				? controls_.findEditableField(optionSlotFieldIds_[i]) : nullptr;
 			if (!option) continue;
 			const bool active = i < optionGroupIds_.size();
 			UiRect row = active ? optionViewport_.itemBounds(i, optionRowHeight) : UiRect();
 			const bool fullyVisible = active && row.y >= optionPaneBounds_.y && row.y + row.height <= optionPaneBounds_.y + optionPaneBounds_.height;
-			controls_.setWidgetVisible(optionSlotWidgetIds_[i], active && fullyVisible);
+			const DemoStep* step = currentStep();
+			const sortinglogic::AlgorithmDescriptor* descriptor = step
+				? sortinglogic::algorithmDescriptorById(step->familyId, step->variantId) : nullptr;
+			const sortinglogic::AlgorithmPropertyDescriptor* schema = nullptr;
+			if (active && descriptor)
+				for (std::size_t property = 0; property < descriptor->supportedOptions.size(); ++property)
+					if (optionGroupIds_[i] == descriptor->supportedOptions[property].groupId)
+					{ schema = &descriptor->supportedOptions[property]; break; }
+			const bool numeric = schema && isNumericProperty(*schema);
+			controls_.setWidgetVisible(optionSlotWidgetIds_[i], active && fullyVisible && !numeric);
+			if (numericField) controls_.setWidgetVisible(optionSlotFieldIds_[i], active && fullyVisible && numeric);
 			if (active)
 			{
-				labelBounds_[optionSlotWidgetIds_[i]] = UiRect(row.x, row.y, row.width, 14.0f);
-				option->setBounds(UiRect(row.x, row.y + 16.0f, row.width, 26.0f));
+				const std::string& controlId = numeric ? optionSlotFieldIds_[i] : optionSlotWidgetIds_[i];
+				labelBounds_[controlId] = UiRect(row.x, row.y, row.width, 14.0f);
+				if (numeric && numericField)
+					numericField->setBounds(UiRect(row.x, row.y + 16.0f, row.width, 26.0f));
+				else option->setBounds(UiRect(row.x, row.y + 16.0f, row.width, 26.0f));
 			}
 		}
 		// The option viewport is measured after common controls and ends before
@@ -828,6 +909,11 @@ bool DemoEditorView::editingNumeric() const
 	for (std::size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
 	{
 		const UiEditableField* field = controls_.findEditableField(ids[i]);
+		if (field && field->editing()) return true;
+	}
+	for (std::size_t i = 0; i < optionSlotFieldIds_.size(); ++i)
+	{
+		const UiEditableField* field = controls_.findEditableField(optionSlotFieldIds_[i]);
 		if (field && field->editing()) return true;
 	}
 	return false;
@@ -1010,6 +1096,18 @@ AppAction DemoEditorView::mapUiAction(const UiAction& emitted)
 		payload.value = currentStep() ? currentStep()->fixedDurationSeconds : 10.0f;
 		return demoAction(AppActionKind::DemoSetStepTiming, payload);
 	}
+	const std::string numericOptionPrefix = "demo_option_value_";
+	if (id.compare(0, numericOptionPrefix.size(), numericOptionPrefix) == 0 &&
+		emitted.event.kind == UiEventKind::TextEntered && currentStep())
+	{
+		const std::size_t groupIndex = static_cast<std::size_t>(std::strtoul(id.c_str() + numericOptionPrefix.size(), nullptr, 10));
+		if (groupIndex >= optionGroupIds_.size()) return AppAction();
+		DemoActionPayload payload;
+		payload.stepIndex = selectedStep_;
+		payload.optionGroupId = optionGroupIds_[groupIndex];
+		payload.optionStableId = emitted.event.text;
+		return demoAction(AppActionKind::DemoSetStepOption, payload);
+	}
 	if (id == "demo_completion_scan")
 	{
 		DemoActionPayload payload; payload.stepIndex = selectedStep_; payload.flag = !(currentStep() && currentStep()->completionScanEnabled);
@@ -1187,10 +1285,14 @@ void DemoEditorView::composeText(const DemoEditorPalette& palette, UiPaintContex
 		for (std::size_t i = 0; i < optionGroupLabels_.size(); ++i)
 		{
 			if (i >= optionSlotWidgetIds_.size()) break;
-			const UiWidget* option = controls_.find(optionSlotWidgetIds_[i]);
-			const std::map<std::string, UiRect>::const_iterator bounds = labelBounds_.find(optionSlotWidgetIds_[i]);
-			if (option && option->visible() && bounds != labelBounds_.end())
-				submitText(context, "#" + optionSlotWidgetIds_[i] + "_caption", optionGroupLabels_[i],
+			const std::string controlId = i < optionGroupIsNumeric_.size() && optionGroupIsNumeric_[i]
+				? optionSlotFieldIds_[i] : optionSlotWidgetIds_[i];
+			const UiWidget* option = controls_.find(controlId);
+			const UiEditableField* field = controls_.findEditableField(controlId);
+			const bool visible = (option && option->visible()) || (field && field->visible());
+			const std::map<std::string, UiRect>::const_iterator bounds = labelBounds_.find(controlId);
+			if (visible && bounds != labelBounds_.end())
+				submitText(context, "#" + controlId + "_caption", optionGroupLabels_[i],
 					bounds->second, 12.0f, palette.mutedText, UiPaintLayer::SettingsText, optionPaneBounds_, true);
 		}
 		const std::map<std::string, UiRect>::const_iterator optionsHeading = labelBounds_.find("demo_options_heading");
@@ -1356,9 +1458,10 @@ void DemoEditorView::composeFields(const DemoEditorPalette& palette, UiPaintCont
 		const UiEditableField& field = *controls_.editableFields()[i];
 		if (!field.visible()) continue;
 		const UiRect bounds = field.bounds();
+		const bool optionField = field.id().find("demo_option_value_") == 0;
 		const bool classRecipeField = activeTab_ == DemoEditorTab::ClassInputs &&
 			(field.id() == "demo_count_value" || field.id() == "demo_seed_value");
-		const UiRect fieldClip = classRecipeField ? classInputViewportBounds_ : inspectorBounds_;
+		const UiRect fieldClip = optionField ? optionPaneBounds_ : classRecipeField ? classInputViewportBounds_ : inspectorBounds_;
 		const UiControlPaintStyle style = resolveUiControlPaintStyle(palette.preset, palette.theme, "value", field.enabled(),
 			false, field.focused(), field.focused(), paletteMap(palette));
 		const std::map<std::string, UiRect>::const_iterator measuredLabel = labelBounds_.find(field.id());

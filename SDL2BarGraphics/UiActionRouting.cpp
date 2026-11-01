@@ -47,14 +47,25 @@ namespace ui
 			const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(
 				sortinglogic::FamilyId(action.familyId), sortinglogic::VariantId(action.variantId));
 			if (!descriptor) return AppAction();
+			const std::string requested = !action.optionStableId.empty() ? action.optionStableId : action.text;
+			for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
+			{
+				const sortinglogic::AlgorithmOptionDescriptor& property = descriptor->supportedOptions[i];
+				if (action.optionGroupId != property.groupId) continue;
+				if (property.valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger ||
+					property.valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal)
+					return requested.empty() ? AppAction() : AppAction(AppActionKind::SetAlgorithmOption,
+						descriptor->familyId, descriptor->variantId, action.optionGroupId, requested, 0);
+				break;
+			}
 
 			int optionIndex = 0;
 			for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
 			{
 				const sortinglogic::AlgorithmOptionDescriptor& option = descriptor->supportedOptions[i];
 				if (action.optionGroupId != option.groupId) continue;
-				const bool stableIdMatches = !action.optionStableId.empty() && action.optionStableId == option.stableId;
-				const bool selectionMatches = action.optionStableId.empty() && optionIndex == action.selection;
+				const bool stableIdMatches = !requested.empty() && requested == option.stableId;
+				const bool selectionMatches = requested.empty() && optionIndex == action.selection;
 				if (stableIdMatches || selectionMatches)
 					return AppAction(AppActionKind::SetAlgorithmOption, descriptor->familyId, descriptor->variantId,
 						action.optionGroupId, option.stableId, option.value);

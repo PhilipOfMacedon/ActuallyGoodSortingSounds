@@ -105,7 +105,7 @@ enum class UiWidgetKind
 	Slider
 };
 
-enum class UiEditableFieldKind { UnsignedInteger, FiniteDecimal, BoundedText };
+enum class UiEditableFieldKind { UnsignedInteger, SignedInteger, FiniteDecimal, BoundedText };
 
 enum class UiWidgetPresentation { Standard, RadioGroup, DosScrollbar, EditableLabel, Toggle };
 enum class UiControlRole { Standard, PanelToggle, Settings, AlgorithmChoice, BuildTrace, Playback, Reset, EditableValue, Choice };
@@ -390,6 +390,8 @@ public:
 	bool invalid() const { return invalid_; }
 	void setValue(const std::string& value);
 	void setLabel(const std::string& value) { label_ = value; }
+	void setNumericBounds(double minimum, double maximum);
+	void setNumericKind(UiEditableFieldKind kind);
 	void setBounds(const UiRect& bounds) { bounds_ = bounds; }
 	void setEnabled(bool value);
 	void setVisible(bool value);

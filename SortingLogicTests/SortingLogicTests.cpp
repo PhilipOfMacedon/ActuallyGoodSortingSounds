@@ -1,4 +1,5 @@
 #include "../SortingLogic/SortingLogic.h"
+#include "../SortingLogic/AlgorithmConfigurationResolver.h"
 #include "../SortingLogic/TraceBuildService.h"
 #include "../SortingLogic/TracePresentationPolicy.h"
 #include "SortingLogicTestSupport.h"
@@ -156,6 +157,49 @@ namespace sortinglogic_tests
 		check(!syntheticHidden.workspaceVisible("staging") && synthetic.supportedOptions[0].caption &&
 			std::string(synthetic.supportedOptions[0].caption) == "Staging workspace",
 			"presentation resolver honors generic visibility values and custom property captions");
+
+		std::vector<AlgorithmPropertyDescriptor> typedProperties;
+		typedProperties.push_back(AlgorithmPropertyDescriptor(0, "steady", "Steady", "transport_mode", true,
+			"Transport mode", "Synthetic choice setting."));
+		typedProperties.push_back(AlgorithmPropertyDescriptor(1, "bursty", "Bursty", "transport_mode", false,
+			"Transport mode", "Synthetic choice setting."));
+		typedProperties.push_back(AlgorithmPropertyDescriptor::boundedInteger("bucket_count", "Bucket count", 8, 2, 32,
+			"Bucket count", "Synthetic bounded integer."));
+		typedProperties.push_back(AlgorithmPropertyDescriptor::finiteDecimal("scatter", "Scatter", 0.375, 0.0, 1.0,
+			"Scatter amount", "Synthetic finite decimal."));
+		AlgorithmDescriptor typedSynthetic(SortAlgorithm::Insertion, "test.typed", "Typed synthetic strategy", "O(n)",
+			"O(1)", true, true, true, true, nullptr, typedProperties);
+		TraceBuildRequest typedRequest;
+		typedRequest.optionSelections["transport_mode"] = "bursty";
+		typedRequest.optionSelections["bucket_count"] = "12";
+		typedRequest.optionSelections["scatter"] = "0.625";
+		const AlgorithmConfiguration resolvedTyped = detail::resolveAlgorithmConfiguration(typedRequest, typedSynthetic);
+		check(resolvedTyped.value("transport_mode", -1) == 1 &&
+			resolvedTyped.properties.find("transport_mode")->second.choiceId == "bursty",
+			"typed resolver carries stable choice identity and its runtime value");
+		check(resolvedTyped.value("bucket_count", -1) == 12 &&
+			resolvedTyped.properties.find("bucket_count")->second.type == AlgorithmPropertyValueType::BoundedInteger,
+			"typed resolver accepts a bounded integer inside its catalog range");
+		check(std::fabs(resolvedTyped.numericValue("scatter", -1.0) - 0.625) < 0.000001 &&
+			resolvedTyped.properties.find("scatter")->second.type == AlgorithmPropertyValueType::FiniteDecimal,
+			"typed resolver preserves a finite decimal value");
+		bool rejectedBoundedInteger = false;
+		try
+		{
+			typedRequest.optionSelections["bucket_count"] = "33";
+			(void)detail::resolveAlgorithmConfiguration(typedRequest, typedSynthetic);
+		}
+		catch (const std::invalid_argument&) { rejectedBoundedInteger = true; }
+		check(rejectedBoundedInteger, "typed resolver rejects numeric values outside registered bounds");
+		bool rejectedNonFiniteDecimal = false;
+		try
+		{
+			typedRequest.optionSelections["bucket_count"] = "12";
+			typedRequest.optionSelections["scatter"] = "nan";
+			(void)detail::resolveAlgorithmConfiguration(typedRequest, typedSynthetic);
+		}
+		catch (const std::invalid_argument&) { rejectedNonFiniteDecimal = true; }
+		check(rejectedNonFiniteDecimal, "typed resolver rejects non-finite decimal values");
 
 		std::set<std::string> sourceClasses;
 		std::set<std::string> coveredVariants;

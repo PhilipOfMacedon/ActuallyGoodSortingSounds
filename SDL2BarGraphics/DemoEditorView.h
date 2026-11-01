@@ -77,10 +77,12 @@ private:
 	std::vector<std::string> complexityLabels_;
 	std::vector<std::string> optionGroupIds_;
 	std::vector<std::string> optionGroupLabels_;
+	std::vector<bool> optionGroupIsNumeric_;
 	std::vector<std::string> optionIds_;
 	std::vector<std::string> optionLabels_;
 	std::vector<std::vector<std::string> > optionIdsByGroup_;
 	std::vector<std::string> optionSlotWidgetIds_;
+	std::vector<std::string> optionSlotFieldIds_;
 	std::map<std::string, UiRect> labelBounds_;
 	UiRect panelBounds_;
 	UiRect headerBounds_;

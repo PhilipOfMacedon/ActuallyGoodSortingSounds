@@ -1,7 +1,10 @@
 #include "AppController.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <cstdlib>
+#include <limits>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -823,26 +826,34 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::SetAlgorithmOption:
 	{
 		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(action.familyId, action.variantId);
+		const sortinglogic::AlgorithmOptionDescriptor* schema = nullptr;
 		const sortinglogic::AlgorithmOptionDescriptor* option = nullptr;
-			if (descriptor)
+		if (descriptor)
 			for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
-				if (std::string(descriptor->supportedOptions[i].groupId) == action.optionGroupId &&
-					descriptor->supportedOptions[i].stableId == action.optionStableId)
+				if (std::string(descriptor->supportedOptions[i].groupId) == action.optionGroupId)
 				{
-					option = &descriptor->supportedOptions[i];
-					break;
+					if (!schema) schema = &descriptor->supportedOptions[i];
+					if (descriptor->supportedOptions[i].stableId == action.optionStableId)
+					{
+						option = &descriptor->supportedOptions[i];
+						break;
+					}
 				}
-		const std::string previousStableId = descriptor && option
+		const bool numeric = schema && (schema->valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger ||
+			schema->valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal);
+		const std::string requestedValue = !action.optionStableId.empty() ? action.optionStableId : action.text;
+		const std::string previousStableId = descriptor && schema
 			? algorithmOptionStableId(preferences_, *descriptor, action.optionGroupId) : std::string();
-		if (!descriptor || !option || static_cast<sortinglogic::SortAlgorithm>(preferences_.simulation.algorithm) != descriptor->id)
+		if (!descriptor || !schema || (!numeric && !option) || requestedValue.empty() ||
+			static_cast<sortinglogic::SortAlgorithm>(preferences_.simulation.algorithm) != descriptor->id)
 			result = sortinglogic::CommandResult(false, "The selected algorithm option is not available for the active algorithm.");
 		else
 		{
-			result = activeSimulation().setAlgorithmOption(action.optionGroupId, action.optionStableId);
+			result = activeSimulation().setAlgorithmOption(action.optionGroupId, requestedValue);
 		}
-		if (result.accepted && previousStableId != option->stableId)
+		if (result.accepted && previousStableId != requestedValue)
 			preferences_.algorithmOptions[algorithmOptionSettingsKey(descriptor->familyId, descriptor->variantId,
-				action.optionGroupId)] = option->stableId;
+				action.optionGroupId)] = requestedValue;
 		break;
 	}
 	case AppActionKind::SetAudioParameter:
@@ -1450,14 +1461,38 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		DemoStep& step = demoEditorDraft_.steps[payload.stepIndex];
 		const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(step.familyId, step.variantId);
 		if (!descriptor) return sortinglogic::CommandResult(false, "The step algorithm is unavailable; its option cannot be validated.");
+		const sortinglogic::AlgorithmOptionDescriptor* schema = nullptr;
+		bool registeredChoice = false;
 		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
-			if (payload.optionGroupId == descriptor->supportedOptions[i].groupId &&
-				payload.optionStableId == descriptor->supportedOptions[i].stableId)
+			if (payload.optionGroupId == descriptor->supportedOptions[i].groupId)
 			{
-				step.optionSelections[payload.optionGroupId] = payload.optionStableId;
-				refreshDemoDraftDirty();
-				return sortinglogic::CommandResult(true, "Demo step option updated.");
+				if (!schema) schema = &descriptor->supportedOptions[i];
+				if (payload.optionStableId == descriptor->supportedOptions[i].stableId) registeredChoice = true;
 			}
+		bool valid = registeredChoice;
+		if (schema && schema->valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger)
+		{
+			char* end = nullptr;
+			errno = 0;
+			const long value = std::strtol(payload.optionStableId.c_str(), &end, 10);
+			valid = !payload.optionStableId.empty() && errno != ERANGE && end == payload.optionStableId.c_str() + payload.optionStableId.size() &&
+				value >= (std::numeric_limits<int>::min)() && value <= (std::numeric_limits<int>::max)() &&
+				static_cast<double>(value) >= schema->minimumNumericValue && static_cast<double>(value) <= schema->maximumNumericValue;
+		}
+		else if (schema && schema->valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal)
+		{
+			char* end = nullptr;
+			errno = 0;
+			const double value = std::strtod(payload.optionStableId.c_str(), &end);
+			valid = !payload.optionStableId.empty() && errno != ERANGE && end == payload.optionStableId.c_str() + payload.optionStableId.size() &&
+				std::isfinite(value) && value >= schema->minimumNumericValue && value <= schema->maximumNumericValue;
+		}
+		if (valid)
+		{
+			step.optionSelections[payload.optionGroupId] = payload.optionStableId;
+			refreshDemoDraftDirty();
+			return sortinglogic::CommandResult(true, "Demo step property updated.");
+		}
 		return sortinglogic::CommandResult(false, "That option is not registered for the selected algorithm step.");
 	}
 	if (action.kind == AppActionKind::DemoSetStepOverride || action.kind == AppActionKind::DemoClearStepOverride)

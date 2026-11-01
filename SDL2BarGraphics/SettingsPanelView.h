@@ -73,6 +73,8 @@ private:
 	{
 		std::string controlId;
 		std::string groupId;
+		bool numeric;
+		AlgorithmOptionBinding() : controlId(), groupId(), numeric(false) {}
 	};
 
 	UIRoot controls_;

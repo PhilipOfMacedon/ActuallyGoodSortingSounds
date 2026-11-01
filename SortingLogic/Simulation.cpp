@@ -1,7 +1,9 @@
 #include "SortingLogic.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <cstdlib>
 #include <iomanip>
 #include <limits>
 #include <random>
@@ -11,6 +13,29 @@
 
 namespace sortinglogic
 {
+	namespace
+	{
+		void applyAlgorithmPropertyDefault(AlgorithmConfiguration& configuration,
+			const AlgorithmPropertyDescriptor& property)
+		{
+			switch (property.valueType)
+			{
+			case AlgorithmPropertyValueType::Boolean:
+				configuration.setBooleanValue(property.groupId, property.value != 0);
+				break;
+			case AlgorithmPropertyValueType::Choice:
+				configuration.setChoiceValue(property.groupId, property.stableId, property.value);
+				break;
+			case AlgorithmPropertyValueType::BoundedInteger:
+				configuration.setValue(property.groupId, property.value);
+				break;
+			case AlgorithmPropertyValueType::FiniteDecimal:
+				configuration.setDecimalValue(property.groupId, property.numericDefaultValue);
+				break;
+			}
+		}
+	}
+
 	std::uint32_t Simulation::createFreshSeed()
 	{
 		std::random_device source;
@@ -35,7 +60,7 @@ namespace sortinglogic
 		if (initialAlgorithm)
 			for (std::size_t i = 0; i < initialAlgorithm->supportedOptions.size(); ++i)
 				if (initialAlgorithm->supportedOptions[i].isDefault)
-					algorithmConfiguration_.setValue(initialAlgorithm->supportedOptions[i].groupId, initialAlgorithm->supportedOptions[i].value);
+					applyAlgorithmPropertyDefault(algorithmConfiguration_, initialAlgorithm->supportedOptions[i]);
 		status_ = "Ready. Input shuffle seed " + std::to_string(inputSeed_) + ".";
 	}
 
@@ -258,7 +283,7 @@ namespace sortinglogic
 		algorithmConfiguration_ = AlgorithmConfiguration();
 		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
 			if (descriptor->supportedOptions[i].isDefault)
-				algorithmConfiguration_.setValue(descriptor->supportedOptions[i].groupId, descriptor->supportedOptions[i].value);
+				applyAlgorithmPropertyDefault(algorithmConfiguration_, descriptor->supportedOptions[i]);
 		prepareItems(baselineKind_, baselineKind_ == BaselineKind::Shuffle ? inputSeed_ : 0);
 		status_ = std::string("Algorithm set to ") + algorithmDisplayName(algorithm) + ".";
 		if (domainChanged) status_ += std::string(" Input domain changed to ") + inputDomainName(domain_) + ".";
@@ -322,30 +347,78 @@ namespace sortinglogic
 		const AlgorithmDescriptor* descriptor = algorithmDescriptor(algorithm_);
 		if (!descriptor) return CommandResult(false, "The active algorithm has no registered option catalog.");
 
+		const AlgorithmOptionDescriptor* schema = nullptr;
 		const AlgorithmOptionDescriptor* selected = nullptr;
 		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
-			if (groupId == descriptor->supportedOptions[i].groupId && stableId == descriptor->supportedOptions[i].stableId)
+		{
+			if (groupId != descriptor->supportedOptions[i].groupId) continue;
+			if (!schema) schema = &descriptor->supportedOptions[i];
+			if (stableId == descriptor->supportedOptions[i].stableId)
 			{
 				selected = &descriptor->supportedOptions[i];
 				break;
 			}
-		if (!selected) return CommandResult(false, "The selected algorithm option is not registered for the active algorithm.");
+		}
+		if (!schema) return CommandResult(false, "The selected algorithm property is not registered for the active algorithm.");
+
+		int requestedInteger = 0;
+		double requestedDecimal = 0.0;
+		if (schema->valueType == AlgorithmPropertyValueType::BoundedInteger)
+		{
+			char* end = nullptr;
+			errno = 0;
+			const long parsed = std::strtol(stableId.c_str(), &end, 10);
+			if (stableId.empty() || errno == ERANGE || end != stableId.c_str() + stableId.size() ||
+				parsed < (std::numeric_limits<int>::min)() || parsed > (std::numeric_limits<int>::max)())
+				return CommandResult(false, "The integer property value is invalid.");
+			requestedInteger = static_cast<int>(parsed);
+			if (requestedInteger < schema->minimumNumericValue || requestedInteger > schema->maximumNumericValue)
+				return CommandResult(false, "The integer property value is outside its registered bounds.");
+		}
+		else if (schema->valueType == AlgorithmPropertyValueType::FiniteDecimal)
+		{
+			char* end = nullptr;
+			errno = 0;
+			requestedDecimal = std::strtod(stableId.c_str(), &end);
+			if (stableId.empty() || errno == ERANGE || end != stableId.c_str() + stableId.size() || !std::isfinite(requestedDecimal))
+				return CommandResult(false, "The decimal property value is invalid.");
+			if (requestedDecimal < schema->minimumNumericValue || requestedDecimal > schema->maximumNumericValue)
+				return CommandResult(false, "The decimal property value is outside its registered bounds.");
+		}
+		else if (!selected)
+			return CommandResult(false, "The selected algorithm option is not registered for the active algorithm.");
 
 		int currentValue = 0;
-		if (!algorithmConfiguration_.optionValue(selected->groupId, currentValue))
-			currentValue = selected->value;
-		if (currentValue == selected->value)
-			return CommandResult(true, std::string(selected->displayName) + " is already selected.");
-		algorithmConfiguration_.setValue(selected->groupId, selected->value);
-		if (selected->effect == AlgorithmPropertyEffect::RebuildTrace)
+		bool unchanged = false;
+		if (schema->valueType == AlgorithmPropertyValueType::FiniteDecimal)
+			unchanged = algorithmConfiguration_.numericValue(groupId, schema->numericDefaultValue) == requestedDecimal;
+		else
+		{
+			if (!algorithmConfiguration_.optionValue(groupId, currentValue)) currentValue = schema->value;
+			unchanged = currentValue == (schema->valueType == AlgorithmPropertyValueType::BoundedInteger ? requestedInteger : selected->value);
+		}
+		if (unchanged) return CommandResult(true, std::string(schema->displayName) + " is already selected.");
+
+		if (schema->valueType == AlgorithmPropertyValueType::Boolean)
+			algorithmConfiguration_.setBooleanValue(groupId, selected->value != 0);
+		else if (schema->valueType == AlgorithmPropertyValueType::Choice)
+			algorithmConfiguration_.setChoiceValue(groupId, selected->stableId, selected->value);
+		else if (schema->valueType == AlgorithmPropertyValueType::BoundedInteger)
+			algorithmConfiguration_.setValue(groupId, requestedInteger);
+		else
+			algorithmConfiguration_.setDecimalValue(groupId, requestedDecimal);
+
+		if (schema->effect == AlgorithmPropertyEffect::RebuildTrace)
 			replaceTraceWithBaseline();
-		else if (selected->effect == AlgorithmPropertyEffect::RebuildTimeline && trace_)
+		else if (schema->effect == AlgorithmPropertyEffect::RebuildTimeline && trace_)
 		{
 			std::shared_ptr<SortTrace> refreshed = std::make_shared<SortTrace>(*trace_);
 			refreshed->configuration = algorithmConfiguration_;
 			trace_ = refreshed;
 		}
-		status_ = std::string(descriptor->displayName) + " option set to " + selected->displayName + ".";
+		status_ = std::string(descriptor->displayName) + " property set to " +
+			((schema->valueType == AlgorithmPropertyValueType::BoundedInteger ||
+			  schema->valueType == AlgorithmPropertyValueType::FiniteDecimal) ? stableId : selected->displayName) + ".";
 		return CommandResult(true, status_);
 	}
 

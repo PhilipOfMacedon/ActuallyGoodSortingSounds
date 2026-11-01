@@ -246,14 +246,32 @@ namespace sortinglogic
 
 	enum class AlgorithmPropertyValueType { Boolean, Choice, BoundedInteger, FiniteDecimal };
 	enum class AlgorithmPropertyEffect { RebuildTrace, RebuildTimeline, UpdateVisuals };
+	struct AlgorithmPropertyValue
+	{
+		AlgorithmPropertyValueType type;
+		bool booleanValue;
+		int integerValue;
+		double decimalValue;
+		std::string choiceId;
+		AlgorithmPropertyValue() : type(AlgorithmPropertyValueType::Choice), booleanValue(false), integerValue(0),
+			decimalValue(0.0), choiceId() {}
+	};
+	typedef std::map<std::string, AlgorithmPropertyValue> AlgorithmPropertyValues;
 
 	struct AlgorithmConfiguration
 	{
 		std::map<std::string, int> values;
+		std::map<std::string, double> numericValues;
+		AlgorithmPropertyValues properties;
 		int value(const std::string& propertyId, int fallback = 0) const
 		{
 			const std::map<std::string, int>::const_iterator found = values.find(propertyId);
 			return found == values.end() ? fallback : found->second;
+		}
+		double numericValue(const std::string& propertyId, double fallback = 0.0) const
+		{
+			const std::map<std::string, double>::const_iterator found = numericValues.find(propertyId);
+			return found == numericValues.end() ? fallback : found->second;
 		}
 		bool optionValue(const std::string& propertyId, int& result) const
 		{
@@ -262,7 +280,40 @@ namespace sortinglogic
 			result = found->second;
 			return true;
 		}
-		void setValue(const std::string& propertyId, int propertyValue) { values[propertyId] = propertyValue; }
+		void setValue(const std::string& propertyId, int propertyValue)
+		{
+			values[propertyId] = propertyValue;
+			AlgorithmPropertyValue typed;
+			typed.type = AlgorithmPropertyValueType::BoundedInteger;
+			typed.integerValue = propertyValue;
+			properties[propertyId] = typed;
+		}
+		void setBooleanValue(const std::string& propertyId, bool propertyValue)
+		{
+			values[propertyId] = propertyValue ? 1 : 0;
+			AlgorithmPropertyValue typed;
+			typed.type = AlgorithmPropertyValueType::Boolean;
+			typed.booleanValue = propertyValue;
+			typed.integerValue = propertyValue ? 1 : 0;
+			properties[propertyId] = typed;
+		}
+		void setChoiceValue(const std::string& propertyId, const std::string& choiceId, int propertyValue)
+		{
+			values[propertyId] = propertyValue;
+			AlgorithmPropertyValue typed;
+			typed.type = AlgorithmPropertyValueType::Choice;
+			typed.choiceId = choiceId;
+			typed.integerValue = propertyValue;
+			properties[propertyId] = typed;
+		}
+		void setDecimalValue(const std::string& propertyId, double propertyValue)
+		{
+			numericValues[propertyId] = propertyValue;
+			AlgorithmPropertyValue typed;
+			typed.type = AlgorithmPropertyValueType::FiniteDecimal;
+			typed.decimalValue = propertyValue;
+			properties[propertyId] = typed;
+		}
 	};
 
 	struct AlgorithmPropertyDescriptor
@@ -277,6 +328,9 @@ namespace sortinglogic
 		AlgorithmPropertyEffect effect;
 		int minimumValue;
 		int maximumValue;
+		double numericDefaultValue;
+		double minimumNumericValue;
+		double maximumNumericValue;
 		bool isDefault;
 		AlgorithmPropertyDescriptor(int optionValue, const char* optionId, const char* name, const char* propertyId = "primary",
 			bool defaultOption = false, const char* propertyCaption = nullptr, const char* description = nullptr,
@@ -285,7 +339,27 @@ namespace sortinglogic
 			int minimum = 0, int maximum = 0)
 			: value(optionValue), groupId(propertyId), stableId(optionId), displayName(name),
 			caption(propertyCaption ? propertyCaption : propertyId), helpText(description ? description : ""),
-			valueType(type), effect(changeEffect), minimumValue(minimum), maximumValue(maximum), isDefault(defaultOption) {}
+			valueType(type), effect(changeEffect), minimumValue(minimum), maximumValue(maximum),
+			numericDefaultValue(static_cast<double>(optionValue)), minimumNumericValue(static_cast<double>(minimum)),
+			maximumNumericValue(static_cast<double>(maximum)), isDefault(defaultOption) {}
+		static AlgorithmPropertyDescriptor boundedInteger(const char* propertyId, const char* name, int defaultValue,
+			int minimum, int maximum, const char* propertyCaption = nullptr, const char* description = nullptr,
+			AlgorithmPropertyEffect changeEffect = AlgorithmPropertyEffect::RebuildTrace)
+		{
+			return AlgorithmPropertyDescriptor(defaultValue, "numeric_value", name, propertyId, true,
+				propertyCaption, description, AlgorithmPropertyValueType::BoundedInteger, changeEffect, minimum, maximum);
+		}
+		static AlgorithmPropertyDescriptor finiteDecimal(const char* propertyId, const char* name, double defaultValue,
+			double minimum, double maximum, const char* propertyCaption = nullptr, const char* description = nullptr,
+			AlgorithmPropertyEffect changeEffect = AlgorithmPropertyEffect::RebuildTrace)
+		{
+			AlgorithmPropertyDescriptor descriptor(0, "numeric_value", name, propertyId, true,
+				propertyCaption, description, AlgorithmPropertyValueType::FiniteDecimal, changeEffect, 0, 0);
+			descriptor.numericDefaultValue = defaultValue;
+			descriptor.minimumNumericValue = minimum;
+			descriptor.maximumNumericValue = maximum;
+			return descriptor;
+		}
 	};
 	typedef AlgorithmPropertyDescriptor AlgorithmOptionDescriptor;
 

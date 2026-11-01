@@ -386,6 +386,22 @@ void UiEditableField::setValue(const std::string& value)
 	invalid_ = false;
 }
 
+void UiEditableField::setNumericBounds(double minimum, double maximum)
+{
+	minimum_ = minimum;
+	maximum_ = maximum;
+	invalid_ = !valid(value_);
+	if (editing_) invalid_ = !valid(draft_);
+}
+
+void UiEditableField::setNumericKind(UiEditableFieldKind kind)
+{
+	if (kind == UiEditableFieldKind::BoundedText) return;
+	kind_ = kind;
+	invalid_ = !valid(value_);
+	if (editing_) invalid_ = !valid(draft_);
+}
+
 void UiEditableField::setEnabled(bool value)
 {
 	enabled_ = value;
@@ -407,7 +423,10 @@ bool UiEditableField::append(const std::string& text)
 		const char value = text[i];
 		const bool allowed = kind_ == UiEditableFieldKind::BoundedText
 			? value >= 32 && value != 127
-			: (value >= '0' && value <= '9') || (kind_ == UiEditableFieldKind::FiniteDecimal && (value == '.' || value == '-'));
+			: (value >= '0' && value <= '9') ||
+			  ((kind_ == UiEditableFieldKind::FiniteDecimal || kind_ == UiEditableFieldKind::SignedInteger) && value == '-') ||
+			  (kind_ == UiEditableFieldKind::FiniteDecimal &&
+				(value == '.' || value == 'e' || value == 'E' || value == '+'));
 		if (allowed) { draft_.push_back(value); changed = true; }
 	}
 	invalid_ = !valid(draft_);
@@ -434,6 +453,14 @@ bool UiEditableField::valid(const std::string& value) const
 	if (value.empty()) return false;
 	if (kind_ == UiEditableFieldKind::UnsignedInteger)
 		for (std::size_t i = 0; i < value.size(); ++i) if (value[i] < '0' || value[i] > '9') return false;
+	if (kind_ == UiEditableFieldKind::SignedInteger)
+	{
+		errno = 0;
+		char* end = nullptr;
+		const long parsed = std::strtol(value.c_str(), &end, 10);
+		return errno != ERANGE && end && end != value.c_str() && *end == '\0' &&
+			static_cast<double>(parsed) >= minimum_ && static_cast<double>(parsed) <= maximum_;
+	}
 	errno = 0;
 	char* end = nullptr;
 	const double parsed = std::strtod(value.c_str(), &end);

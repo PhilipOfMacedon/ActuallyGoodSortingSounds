@@ -4,7 +4,44 @@
 #include "UserSettingsValidation.h"
 
 #include <cmath>
+#include <cerrno>
+#include <cstdlib>
+#include <iomanip>
 #include <map>
+#include <sstream>
+
+namespace
+{
+	bool validNumericPropertyValue(const sortinglogic::AlgorithmPropertyDescriptor& property, const std::string& text)
+	{
+		if (text.empty()) return false;
+		char* end = nullptr;
+		errno = 0;
+		if (property.valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger)
+		{
+			const long value = std::strtol(text.c_str(), &end, 10);
+			return errno != ERANGE && end == text.c_str() + text.size() &&
+				static_cast<double>(value) >= property.minimumNumericValue &&
+				static_cast<double>(value) <= property.maximumNumericValue;
+		}
+		if (property.valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal)
+		{
+			const double value = std::strtod(text.c_str(), &end);
+			return errno != ERANGE && end == text.c_str() + text.size() && std::isfinite(value) &&
+				value >= property.minimumNumericValue && value <= property.maximumNumericValue;
+		}
+		return false;
+	}
+
+	std::string defaultNumericPropertyValue(const sortinglogic::AlgorithmPropertyDescriptor& property)
+	{
+		if (property.valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger)
+			return std::to_string(property.value);
+		std::ostringstream value;
+		value << std::setprecision(17) << property.numericDefaultValue;
+		return value.str();
+	}
+}
 
 std::string variantAudioSettingsKey(const sortinglogic::FamilyId& family, const sortinglogic::VariantId& variant)
 {
@@ -22,18 +59,31 @@ std::string algorithmOptionStableId(const UserPreferences& preferences,
 {
 	const std::string key = algorithmOptionSettingsKey(algorithm.familyId, algorithm.variantId, groupId);
 	const std::map<std::string, std::string>::const_iterator stored = preferences.algorithmOptions.find(key);
-	if (stored != preferences.algorithmOptions.end())
-		for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
-			if (std::string(algorithm.supportedOptions[i].groupId) == groupId &&
-				stored->second == algorithm.supportedOptions[i].stableId)
-				return stored->second;
 	const sortinglogic::AlgorithmOptionDescriptor* defaultOption = nullptr;
+	const sortinglogic::AlgorithmOptionDescriptor* groupSchema = nullptr;
 	for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
 	{
 		const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[i];
 		if (std::string(option.groupId) != groupId) continue;
+		if (!groupSchema) groupSchema = &option;
 		if (!defaultOption && option.isDefault) defaultOption = &option;
 	}
+	if (stored != preferences.algorithmOptions.end() && groupSchema)
+	{
+		if (groupSchema->valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger ||
+			groupSchema->valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal)
+		{
+			if (validNumericPropertyValue(*groupSchema, stored->second)) return stored->second;
+		}
+		else
+			for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
+				if (std::string(algorithm.supportedOptions[i].groupId) == groupId &&
+					stored->second == algorithm.supportedOptions[i].stableId)
+					return stored->second;
+	}
+	if (groupSchema && (groupSchema->valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger ||
+		groupSchema->valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal))
+		return defaultNumericPropertyValue(*groupSchema);
 	return defaultOption ? defaultOption->stableId : std::string();
 }
 
@@ -45,6 +95,12 @@ int algorithmOptionValue(const UserPreferences& preferences,
 		if (std::string(algorithm.supportedOptions[i].groupId) == groupId &&
 			stableId == algorithm.supportedOptions[i].stableId)
 			return algorithm.supportedOptions[i].value;
+	for (std::size_t i = 0; i < algorithm.supportedOptions.size(); ++i)
+		if (std::string(algorithm.supportedOptions[i].groupId) == groupId &&
+			(algorithm.supportedOptions[i].valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger ||
+			 algorithm.supportedOptions[i].valueType == sortinglogic::AlgorithmPropertyValueType::FiniteDecimal))
+			return static_cast<int>(algorithm.supportedOptions[i].valueType == sortinglogic::AlgorithmPropertyValueType::BoundedInteger
+				? std::strtol(stableId.c_str(), nullptr, 10) : std::strtod(stableId.c_str(), nullptr));
 	return 0;
 }
 
@@ -138,7 +194,7 @@ bool UserPreferences::isValid() const
 					{
 						const sortinglogic::AlgorithmOptionDescriptor& option = algorithm.supportedOptions[optionIndex];
 						if (algorithmOptionSettingsKey(algorithm.familyId, algorithm.variantId, option.groupId) == i->first &&
-							option.stableId == i->second)
+							algorithmOptionStableId(*this, algorithm, option.groupId) == i->second)
 						{
 							knownOption = true;
 							break;
