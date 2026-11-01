@@ -5,10 +5,11 @@
 
 enum class RenderLayer : std::uint32_t
 {
-	ChartBars = 0,
-	ChartGaps = 1,
-	HeldItem = 2,
-	ChartLabels = 3,
+	ChartBackground = 0,
+	ChartBars = 1,
+	ChartGaps = 2,
+	HeldItem = 3,
+	ChartLabels = 4,
 	MainControls = 100,
 	MainText = 110,
 	Dropdown = 150,

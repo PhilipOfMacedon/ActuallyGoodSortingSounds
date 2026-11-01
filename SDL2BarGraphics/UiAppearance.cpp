@@ -12,7 +12,7 @@ namespace
 		"color.shifted", "color.write_target", "color.gap", "color.panel", "color.button",
 		"color.disabled_button", "color.value_button", "color.accent", "color.run", "color.play_active",
 		"color.timeline_rail", "color.timeline_thumb", "color.reset", "color.text", "color.muted_text",
-		"color.overlay_dim", "color.border" };
+		"color.overlay_dim", "color.border", "color.chart_background", "color.workspace_background" };
 	const UiColor builtInColors[][21] =
 	{
 		{ { .10f,.10f,.10f,1 },{ .22f,.71f,.84f,1 },{ .98f,.62f,.26f,1 },{ 1,.83f,.28f,1 },{ .67f,.46f,.96f,1 },{ .35f,.84f,.58f,1 },{ .96f,.28f,.54f,1 },{ .10f,.16f,.20f,1 },{ .13f,.24f,.31f,1 },{ .10f,.16f,.19f,1 },{ .10f,.16f,.20f,1 },{ .29f,.72f,.64f,1 },{ .48f,.28f,.12f,1 },{ .18f,.42f,.34f,1 },{ .09f,.14f,.17f,1 },{ .91f,.78f,.34f,1 },{ .30f,.21f,.35f,1 },{ .93f,.96f,.98f,1 },{ .68f,.76f,.79f,1 },{ 0,0,0,.58f },{ .25f,.38f,.43f,1 } },
@@ -20,7 +20,7 @@ namespace
 		{ { .015f,.015f,.015f,1 },{ .88f,.88f,.88f,1 },{ .60f,.60f,.60f,1 },{ 1,1,1,1 },{ .43f,.43f,.43f,1 },{ .74f,.74f,.74f,1 },{ 1,1,1,1 },{ .07f,.07f,.07f,1 },{ .16f,.16f,.16f,1 },{ .08f,.08f,.08f,1 },{ .11f,.11f,.11f,1 },{ .42f,.42f,.42f,1 },{ .28f,.28f,.28f,1 },{ .22f,.22f,.22f,1 },{ .07f,.07f,.07f,1 },{ .95f,.95f,.95f,1 },{ .25f,.25f,.25f,1 },{ 1,1,1,1 },{ .70f,.70f,.70f,1 },{ 0,0,0,.68f },{ .63f,.63f,.63f,1 } },
 		{ { .91f,.93f,.94f,1 },{ .08f,.47f,.63f,1 },{ .86f,.37f,.09f,1 },{ .82f,.61f,.06f,1 },{ .48f,.31f,.75f,1 },{ .12f,.55f,.32f,1 },{ .80f,.12f,.26f,1 },{ .82f,.85f,.86f,1 },{ .72f,.79f,.81f,1 },{ .79f,.82f,.83f,1 },{ .85f,.87f,.88f,1 },{ .09f,.43f,.51f,1 },{ .78f,.35f,.08f,1 },{ .15f,.48f,.33f,1 },{ .78f,.82f,.83f,1 },{ .76f,.55f,.04f,1 },{ .43f,.27f,.51f,1 },{ .07f,.10f,.12f,1 },{ .31f,.37f,.39f,1 },{ .12f,.16f,.18f,.50f },{ .35f,.43f,.45f,1 } },
 		{ { .035f,.040f,.052f,1 },{ 0,.79f,.86f,1 },{ 1,.55f,.05f,1 },{ .12f,.92f,.22f,1 },{ .72f,.30f,.88f,1 },{ .98f,.62f,.05f,1 },{ .10f,.13f,.18f,1 },{ .08f,.14f,.25f,1 },{ .13f,.20f,.32f,1 },{ .07f,.11f,.18f,1 },{ .08f,.14f,.23f,1 },{ .05f,.66f,.77f,1 },{ .13f,.20f,.32f,1 },{ .06f,.55f,.18f,1 },{ .25f,.32f,.43f,1 },{ .84f,.89f,.95f,1 },{ .14f,.20f,.33f,1 },{ .90f,.94f,.99f,1 },{ .64f,.73f,.84f,1 },{ 0,0,0,.68f },{ .60f,.68f,.79f,1 } },
-		{ { .025f,.035f,.055f,1 },{ 0,.88f,.90f,1 },{ 1,.58f,.04f,1 },{ .15f,.92f,.24f,1 },{ .75f,.35f,.85f,1 },{ .98f,.62f,.02f,1 },{ .77f,.77f,.77f,1 },{ .06f,.13f,.25f,1 },{ .75f,.75f,.75f,1 },{ .38f,.38f,.38f,1 },{ .75f,.75f,.75f,1 },{ .08f,.26f,.62f,1 },{ .55f,.55f,.55f,1 },{ .12f,.47f,.18f,1 },{ .30f,.30f,.30f,1 },{ .86f,.86f,.86f,1 },{ .32f,.32f,.32f,1 },{ .05f,.07f,.10f,1 },{ .73f,.73f,.73f,1 },{ 0,0,0,.55f },{ .28f,.28f,.28f,1 } }
+		{ { .025f,.035f,.055f,1 },{ .08f,.48f,.62f,1 },{ 1,.58f,.04f,1 },{ .15f,.92f,.24f,1 },{ .75f,.35f,.85f,1 },{ .98f,.62f,.02f,1 },{ .77f,.77f,.77f,1 },{ .06f,.13f,.25f,1 },{ .75f,.75f,.75f,1 },{ .38f,.38f,.38f,1 },{ .75f,.75f,.75f,1 },{ .08f,.26f,.62f,1 },{ .55f,.55f,.55f,1 },{ .12f,.47f,.18f,1 },{ .30f,.30f,.30f,1 },{ .86f,.86f,.86f,1 },{ .32f,.32f,.32f,1 },{ .05f,.07f,.10f,1 },{ .73f,.73f,.73f,1 },{ 0,0,0,.55f },{ .28f,.28f,.28f,1 } }
 	};
 	std::string paletteStableId(PaletteId id)
 	{
@@ -82,7 +82,9 @@ namespace
 			{ "color.text", text, "Primary text" },
 			{ "color.muted_text", UiColor(0.68f,0.76f,0.79f,1), "Secondary text" },
 			{ "color.overlay_dim", UiColor(0,0,0,0.58f), "Modal backdrop" },
-			{ "color.border", UiColor(0.25f,0.38f,0.43f,1), "Control borders" }
+			{ "color.border", UiColor(0.25f,0.38f,0.43f,1), "Control borders" },
+			{ "color.chart_background", UiColor(0.10f,0.10f,0.10f,1), "Main array chart background" },
+			{ "color.workspace_background", UiColor(0.10f,0.10f,0.10f,1), "Auxiliary workspace lane backgrounds" }
 		};
 		for (std::size_t i = 0; i < sizeof(colors) / sizeof(colors[0]); ++i)
 			values.push_back(token(colors[i].id, UiTokenCategory::Colors,
@@ -392,8 +394,16 @@ UiColor uiPaletteColor(PaletteId palette, const std::string& tokenId)
 {
 	std::size_t paletteIndex = static_cast<std::size_t>(palette);
 	if (paletteIndex >= sizeof(builtInColors) / sizeof(builtInColors[0])) paletteIndex = 0;
+	// New chart surfaces inherit the prior frame-clear color by default. This
+	// keeps old palettes visually unchanged while allowing the two surfaces to
+	// be customized independently.
+	if (tokenId == "color.chart_background" || tokenId == "color.workspace_background")
+		return builtInColors[paletteIndex][0];
 	for (std::size_t i = 0; i < sizeof(colorTokenIds) / sizeof(colorTokenIds[0]); ++i)
+	{
+		if (i >= sizeof(builtInColors[0]) / sizeof(builtInColors[0][0])) break;
 		if (tokenId == colorTokenIds[i]) return builtInColors[paletteIndex][i];
+	}
 	return UiColor();
 }
 
@@ -404,6 +414,8 @@ UiColor uiPresetPaletteColor(UiPresetId preset, PaletteId palette, const std::st
 	{
 		if (tokenId == "color.panel") color = uiPaletteColor(palette, "color.button");
 		else if (tokenId == "color.background") color = uiPaletteColor(palette, "color.button");
+		else if (tokenId == "color.chart_background" || tokenId == "color.workspace_background")
+			color = uiPaletteColor(palette, "color.button");
 		else if (tokenId == "color.muted_text") color = UiColor(.32f,.32f,.32f,1.0f);
 	}
 	return color;
@@ -430,6 +442,13 @@ std::map<std::string, UiColor> effectiveUiPalette(UiPresetId preset, const UiThe
 		if (value.overrides.count("color.panel") == 0) colors["color.panel"] = colors["color.button"];
 		if (value.overrides.count("color.background") == 0) colors["color.background"] = colors["color.panel"];
 		if (value.overrides.count("color.muted_text") == 0) colors["color.muted_text"] = UiColor(.32f,.32f,.32f,1.0f);
+	}
+	const char* inheritedSurfaces[] = { "color.chart_background", "color.workspace_background" };
+	for (std::size_t i = 0; i < sizeof(inheritedSurfaces) / sizeof(inheritedSurfaces[0]); ++i)
+	{
+		const std::string id(inheritedSurfaces[i]);
+		const bool customValueExists = value.palette == PaletteId::Customized && value.customColors.count(id) != 0;
+		if (!customValueExists && value.overrides.count(id) == 0) colors[id] = colors["color.background"];
 	}
 	return colors;
 }
@@ -466,11 +485,9 @@ bool validateUiThemeCustomization(UiPresetId preset, const UiThemeCustomization&
 			if (error) *error = "Custom palette contains an invalid color token: " + item->first;
 			return false;
 		}
-	if (value.palette == PaletteId::Customized && value.customColors.size() != sizeof(colorTokenIds) / sizeof(colorTokenIds[0]))
-	{
-		if (error) *error = "Customized palette must contain every registered color token.";
-		return false;
-	}
+	// Older saved custom palettes are allowed to omit newly registered tokens.
+	// Effective palette resolution supplies their inherited defaults, and the
+	// next explicit color edit materializes the complete current token set.
 	for (std::map<std::string, UiTokenValue>::const_iterator item = value.overrides.begin(); item != value.overrides.end(); ++item)
 	{
 		const UiTokenDescriptor* descriptor = findUiToken(definition, item->first);

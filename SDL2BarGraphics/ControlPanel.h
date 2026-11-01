@@ -144,6 +144,8 @@ private:
 	void updateWidgetStates(const sortinglogic::RenderSnapshot& snapshot, bool playbackPending);
 	void syncLabels(const sortinglogic::RenderSnapshot& snapshot);
 	void drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, const ThemePalette& palette);
+	bool autoHideClassicMenuStrip() const;
+	bool classicMenuStripVisible() const;
 	void drawMainControlPaintCommand(const UiPaintCommand& command, const ThemePalette& palette);
 	void drawSettingsPanel(const ThemePalette& palette, const std::string& audioStatus);
 	void drawSettingsPaintCommand(const UiPaintCommand& command, const ThemePalette& palette);

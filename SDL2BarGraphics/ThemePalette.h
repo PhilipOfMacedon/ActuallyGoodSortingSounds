@@ -7,6 +7,8 @@
 struct ThemePalette
 {
 	glm::vec4 background;
+	glm::vec4 chartBackground;
+	glm::vec4 workspaceBackground;
 	glm::vec4 bar;
 	glm::vec4 compared;
 	glm::vec4 held;

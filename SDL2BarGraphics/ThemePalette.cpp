@@ -11,13 +11,13 @@ namespace
 	{
 		ThemePalette result;
 		const char* ids[] = {
-			"color.background", "color.bar", "color.compared", "color.held", "color.shifted",
+			"color.background", "color.chart_background", "color.workspace_background", "color.bar", "color.compared", "color.held", "color.shifted",
 			"color.write_target", "color.gap", "color.panel", "color.button", "color.disabled_button",
 			"color.value_button", "color.accent", "color.run", "color.play_active", "color.timeline_rail",
 			"color.timeline_thumb", "color.reset", "color.text", "color.muted_text", "color.overlay_dim", "color.border"
 		};
 		glm::vec4* fields[] = {
-			&result.background, &result.bar, &result.compared, &result.held, &result.shifted,
+			&result.background, &result.chartBackground, &result.workspaceBackground, &result.bar, &result.compared, &result.held, &result.shifted,
 			&result.writeTarget, &result.gap, &result.panel, &result.button, &result.disabledButton,
 			&result.valueButton, &result.accent, &result.run, &result.playActive, &result.timelineRail,
 			&result.timelineThumb, &result.reset, &result.text, &result.mutedText, &result.overlayDim, &result.border

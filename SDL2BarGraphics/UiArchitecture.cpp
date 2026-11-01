@@ -510,7 +510,9 @@ UiControlPaintStyle resolveUiControlPaintStyle(UiPresetId preset, const UiThemeC
 	else if (role == "run") style.fill = color("color.run", UiColor(0.48f,0.28f,0.12f,1));
 	else if (role == "play-active") style.fill = color("color.play_active", UiColor(0.18f,0.42f,0.34f,1));
 	else if (role == "play") style.fill = color("color.button", UiColor(0.13f,0.24f,0.31f,1));
-	else if (role == "reset") style.fill = color("color.reset", UiColor(0.30f,0.21f,0.35f,1));
+	else if (role == "reset") style.fill = preset == UiPresetId::ClassicWindows95
+		? color("color.button", UiColor(0.75f,0.75f,0.75f,1))
+		: color("color.reset", UiColor(0.30f,0.21f,0.35f,1));
 	else if (role == "value") style.fill = color("color.value_button", UiColor(0.10f,0.16f,0.20f,1));
 	else style.fill = color("color.button", UiColor(0.13f,0.24f,0.31f,1));
 	if (pressed)

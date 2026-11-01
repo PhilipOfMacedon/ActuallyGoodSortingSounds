@@ -24,6 +24,7 @@
 
 namespace
 {
+	const float ClassicMenuRevealFraction = 0.20f;
 	const MaterialId PanelMaterial = MaterialId::Panel;
 	const MaterialId ButtonMaterial = MaterialId::Button;
 	const MaterialId ValueMaterial = MaterialId::ValueButton;
@@ -230,6 +231,8 @@ namespace
 	{
 		std::map<std::string, UiColor> colors;
 		colors["color.background"] = UiColor(palette.background.r, palette.background.g, palette.background.b, palette.background.a);
+		colors["color.chart_background"] = UiColor(palette.chartBackground.r, palette.chartBackground.g, palette.chartBackground.b, palette.chartBackground.a);
+		colors["color.workspace_background"] = UiColor(palette.workspaceBackground.r, palette.workspaceBackground.g, palette.workspaceBackground.b, palette.workspaceBackground.a);
 		colors["color.bar"] = UiColor(palette.bar.r, palette.bar.g, palette.bar.b, palette.bar.a);
 		colors["color.compared"] = UiColor(palette.compared.r, palette.compared.g, palette.compared.b, palette.compared.a);
 		colors["color.held"] = UiColor(palette.held.r, palette.held.g, palette.held.b, palette.held.a);
@@ -814,6 +817,7 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	const UiPresetId preset = renderPreferences_.appearance.activePreset;
 	const bool classicVga = preset == UiPresetId::FlatVgaDos || preset == UiPresetId::ClassicWindows95;
 	const bool windows95 = preset == UiPresetId::ClassicWindows95;
+	const bool showClassicMenuStrip = classicMenuStripVisible();
 	algorithmProfileView_.beginFrame();
 	const UiRect screen(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
 	auto renderMainControl = [this, &palette](const UiPaintCommand& command)
@@ -821,8 +825,9 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 		drawMainControlPaintCommand(command, palette);
 	};
 	DispatchingUiPaintContext<decltype(renderMainControl)> paintContext(renderMainControl);
-	submitBox(headerBounds_, windows95 ? palette.accent : palette.panel, PanelMaterial, UiLayer);
-	if (layoutResult_.menuBar.height > 0.0f)
+	if (showClassicMenuStrip)
+		submitBox(headerBounds_, windows95 ? palette.accent : palette.panel, PanelMaterial, UiLayer);
+	if (showClassicMenuStrip && layoutResult_.menuBar.height > 0.0f)
 	{
 		submitBox(layoutResult_.menuBar, windows95 ? palette.button : palette.panel, PanelMaterial, UiLayer);
 		const glm::vec4 menuEdge = windows95 ? glm::vec4(0.33f, 0.33f, 0.33f, 1.0f) :
@@ -861,15 +866,18 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 			}
 		}
 	}
-	mainControlsView_.compose(MainControlsPaintSection::HeaderButtons, screen, paintContext);
+	if (showClassicMenuStrip)
+		mainControlsView_.compose(MainControlsPaintSection::HeaderButtons, screen, paintContext);
 	float titleLeft = 48.0f;
 	float titleRight = static_cast<float>(width_) - 54.0f;
 	if (classicVga && !windows95 && mainControlsView_.findControl("menu_tools")->visible())
 		titleLeft = mainControlsView_.findControl("menu_tools")->bounds().x + mainControlsView_.findControl("menu_tools")->bounds().width + 12.0f;
 	if (!mainControlsView_.findControl("settings")->visible()) titleRight = static_cast<float>(width_) - 12.0f;
 	UiRect titleBounds(titleLeft, 5.0f, std::max(1.0f, titleRight - titleLeft), 22.0f);
-	if (!windows95) drawText(*title_, titleBounds, 17.0f, palette.text, TextLayer, ClipBounds(), TextOverflowPolicy::Marquee);
-	mainControlsView_.compose(MainControlsPaintSection::Menus, screen, paintContext);
+	if (showClassicMenuStrip && !windows95)
+		drawText(*title_, titleBounds, 17.0f, palette.text, TextLayer, ClipBounds(), TextOverflowPolicy::Marquee);
+	if (showClassicMenuStrip)
+		mainControlsView_.compose(MainControlsPaintSection::Menus, screen, paintContext);
 	if (!settings_.visual.panelExpanded)
 	{
 		const UiRect chart = chartViewport_;
@@ -881,18 +889,19 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 			const float triangleWidth = 14.0f;
 			const float triangleX = chart.x + 10.0f;
 			const float triangleY = chart.y + 7.0f;
-			const glm::vec4 white(1.0f, 1.0f, 1.0f, 1.0f);
+			const glm::vec4 summaryColor = toGlmColor(readableUiTextColor(
+				toUiColor(palette.text), toUiColor(palette.chartBackground), 4.5f));
 			for (int row = 0; row < 7; ++row)
 			{
 				const int rowFromTip = snapshot.direction == sortinglogic::SortDirection::Ascending ? row : 6 - row;
 				const float rowWidth = static_cast<float>(rowFromTip + 1) * cell;
 				const UiRect pixelRow(triangleX + (triangleWidth - rowWidth) * 0.5f,
 					triangleY + static_cast<float>(row) * cell, rowWidth, cell);
-				submitBox(pixelRow, white, MaterialId::PixelIcon, TextLayer);
+				submitBox(pixelRow, summaryColor, MaterialId::PixelIcon, TextLayer);
 			}
 			const UiRect summaryBounds(triangleX + triangleWidth + 8.0f, chart.y + 3.0f,
 				std::max(0.0f, chart.x + chart.width - (triangleX + triangleWidth + 16.0f)), 26.0f);
-			drawText(*collapsedSummary_, summaryBounds, 20.0f, white, TextLayer,
+			drawText(*collapsedSummary_, summaryBounds, 20.0f, summaryColor, TextLayer,
 				ClipBounds(chart.x, chart.y, chart.width, chart.height), TextOverflowPolicy::Marquee,
 				TextHorizontalAlignment::Left);
 		}
@@ -980,6 +989,28 @@ void ControlPanel::drawMainPanel(const sortinglogic::RenderSnapshot& snapshot, c
 	}
 	// Open combo options are submitted last within the UI layer, preserving their painter order over the chart.
 	mainControlsView_.compose(MainControlsPaintSection::Popups, screen, paintContext);
+}
+
+bool ControlPanel::autoHideClassicMenuStrip() const
+{
+	return !settings_.visual.panelExpanded &&
+		renderPreferences_.appearance.activePreset != UiPresetId::Current;
+}
+
+bool ControlPanel::classicMenuStripVisible() const
+{
+	if (!autoHideClassicMenuStrip()) return true;
+	const char* menuIds[] = { "menu_file", "menu_view", "menu_tools" };
+	for (std::size_t i = 0; i < sizeof(menuIds) / sizeof(menuIds[0]); ++i)
+	{
+		const UiWidget* menu = mainControlsView_.findControl(menuIds[i]);
+		if (menu && menu->expanded()) return true;
+	}
+	int pointerX = 0;
+	int pointerY = 0;
+	SDL_GetMouseState(&pointerX, &pointerY);
+	(void)pointerX;
+	return static_cast<float>(pointerY) <= static_cast<float>(height_) * ClassicMenuRevealFraction;
 }
 
 void ControlPanel::drawMainControlPaintCommand(const UiPaintCommand& command, const ThemePalette& palette)
@@ -1371,11 +1402,11 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 	{
 		static const char* playIcon[] = { "..#....", "..##...", "..###..", "..##...", "..#...." };
 		static const char* pauseIcon[] = { ".##.##.", ".##.##.", ".##.##.", ".##.##.", ".##.##." };
-		// The vertical stroke is the separator; the triangle points toward the
-		// direction of travel. Keeping the arrowhead on the center row avoids
-		// the old asymmetric, nearly-symbol-shaped glyphs in the Win95 preset.
-		static const char* previousIcon[] = { "...#..#", "..##..#", ".######", "..##..#", "...#..#" };
-		static const char* nextIcon[] = { "#..#...", "#..##..", "######.", "#..##..", "#..#..." };
+		// Keep two blank pixel columns between each arrowhead and its separator.
+		// The center row must preserve that gap too, or the two shapes fuse into
+		// one strange glyph at the exact size where users can finally see it.
+		static const char* previousIcon[] = { "...#..#", "..##..#", ".###..#", "..##..#", "...#..#" };
+		static const char* nextIcon[] = { "#..#...", "#..##..", "#..###.", "#..##..", "#..#..." };
 		static const char* resetIcon[] = { ".#####.", "##...#.", "#..##..", "#..##..", ".#...##", ".#####." };
 		const char* const* icon = widget.id() == "reset" ? resetIcon :
 			widget.id() == "previous" ? previousIcon : widget.id() == "next" ? nextIcon :
@@ -1386,7 +1417,7 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 		const float iconX = widget.bounds().x + 8.0f;
 		const float iconY = widget.bounds().y + (widget.bounds().height - rows * pixel) * 0.5f;
 		const glm::vec4 iconColor = widget.id() == "play" ? palette.writeTarget :
-			widget.id() == "reset" ? palette.shifted : palette.bar;
+			widget.id() == "reset" ? palette.text : palette.bar;
 		for (int row = 0; row < rows; ++row)
 			for (int column = 0; column < columns; ++column)
 				if (icon[row][column] == '#')

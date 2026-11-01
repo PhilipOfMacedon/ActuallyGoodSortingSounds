@@ -81,6 +81,11 @@ void ArrayRenderer::render(
 	const float auxiliaryHeight = laneCount == 0 ? 0.0f : std::min(areaHeight * 0.30f, static_cast<float>(laneCount) * 38.0f);
 	const float mainBottom = bottom - auxiliaryHeight - (laneCount ? 6.0f : 0.0f);
 	const float mainHeight = std::max(0.0f, mainBottom - top);
+	const std::string previewLane = workspacePreview_.selectedId();
+	const bool previewActive = !previewLane.empty() && !hiddenWorkspace(snapshot, previewLane);
+	const glm::vec4& mainSurface = previewActive ? palette.workspaceBackground : palette.chartBackground;
+	renderer_.submit(QuadInstance(glm::vec2(left, top), glm::vec2(right - left, std::max(0.0f, mainBottom - top)),
+		RenderDescriptor(mainSurface, 0, MaterialId::Panel), RenderLayer::ChartBackground, chartClip));
 	const float columnWidth = std::max(0.0f, right - left) / static_cast<float>(snapshot.state.slots.size());
 	const BarSlotMetrics spacing = calculateBarSlotMetrics(columnWidth, spacingMode);
 	// A workspace can be visually hidden while its semantic roles remain useful
@@ -95,8 +100,6 @@ void ArrayRenderer::render(
 	laneLabelWidths_.clear();
 	workspaceTargets_.clear();
 
-	const std::string previewLane = workspacePreview_.selectedId();
-	const bool previewActive = !previewLane.empty() && !hiddenWorkspace(snapshot, previewLane);
 	if (!previewActive)
 	for (std::size_t index = 0; index < snapshot.state.slots.size(); ++index)
 	{
@@ -129,6 +132,8 @@ void ArrayRenderer::render(
 			if (hiddenWorkspace(snapshot, lane->first)) continue;
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
+			renderer_.submit(QuadInstance(glm::vec2(left, laneTop), glm::vec2(right - left, laneHeight),
+				RenderDescriptor(palette.workspaceBackground, 0, MaterialId::Panel), RenderLayer::ChartBackground, chartClip));
 			laneGeometry[lane->first] = std::make_pair(lane->second.size(), laneNumber);
 			workspaceTargets_.push_back(UiPressHoldTarget(lane->first, UiRect(left, laneTop, right - left, laneHeight)));
 			submitLaneLabel(lane->first, workspaceCaption(snapshot, lane->first), right - 112.0f, laneTop + 1.0f, palette.text);
@@ -151,6 +156,8 @@ void ArrayRenderer::render(
 			if (hiddenWorkspace(snapshot, lane->first)) continue;
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
+			renderer_.submit(QuadInstance(glm::vec2(left, laneTop), glm::vec2(right - left, laneHeight),
+				RenderDescriptor(palette.workspaceBackground, 0, MaterialId::Panel), RenderLayer::ChartBackground, chartClip));
 			laneGeometry[lane->first] = std::make_pair(lane->second.size(), laneNumber);
 			workspaceTargets_.push_back(UiPressHoldTarget(lane->first, UiRect(left, laneTop, right - left, laneHeight)));
 			submitLaneLabel(lane->first, workspaceCaption(snapshot, lane->first), right - 112.0f, laneTop + 1.0f, palette.text);
@@ -172,6 +179,8 @@ void ArrayRenderer::render(
 		{
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
+			renderer_.submit(QuadInstance(glm::vec2(left, laneTop), glm::vec2(right - left, laneHeight),
+				RenderDescriptor(palette.workspaceBackground, 0, MaterialId::Panel), RenderLayer::ChartBackground, chartClip));
 			laneGeometry["discard"] = std::make_pair(snapshot.state.discardedItems.size(), laneNumber);
 			workspaceTargets_.push_back(UiPressHoldTarget("discard", UiRect(left, laneTop, right - left, laneHeight)));
 			submitLaneLabel("discard", workspaceCaption(snapshot, "discard"), right - 112.0f, laneTop + 1.0f, palette.text);

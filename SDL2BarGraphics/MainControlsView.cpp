@@ -373,7 +373,8 @@ void MainControlsView::synchronize(const UserPreferences& preferences, UiPresetI
 	// Every frame starts from the complete manual presentation. Demo overrides
 	// never survive the session that supplied them.
 	setControlActionAndPresentation("play", AppAction(AppActionKind::GenerateAndPlay), screenModel.playCaption, screenModel.playEnabled);
-	setControlActionAndPresentation("previous", AppAction(AppActionKind::PreviousEvent), "< Event", snapshot.hasTrace && snapshot.cursor > 0);
+	setControlActionAndPresentation("previous", AppAction(AppActionKind::PreviousEvent),
+		activePreset == UiPresetId::ClassicWindows95 ? "Event" : "< Event", snapshot.hasTrace && snapshot.cursor > 0);
 	setControlActionAndPresentation("next", AppAction(AppActionKind::NextEvent), activePreset == UiPresetId::ClassicWindows95 ? "Step" : "Event >",
 		snapshot.hasTrace && snapshot.cursor < snapshot.eventCount);
 	setControlActionAndPresentation("reset", AppAction(AppActionKind::Reset), "Reset", true);
