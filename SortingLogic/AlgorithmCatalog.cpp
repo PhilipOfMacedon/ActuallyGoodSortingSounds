@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,53 @@ namespace sortinglogic
 			if (contains(time, "o(n)") || contains(time, "linear") || contains(time, "n + 1"))
 				return DemoComplexityClass::Linear;
 			return DemoComplexityClass::DemonstrationUnknown;
+		}
+
+		void registerReconstructionProperty(AlgorithmDescriptor& algorithm)
+		{
+			algorithm.reconstructionPresentationSupported = true;
+			algorithm.primaryWritesAreReconstruction = true;
+			algorithm.reconstructionCoverage = ReconstructionCoverageKind::IncrementalPublication;
+			algorithm.supportedOptions.push_back(AlgorithmPropertyDescriptor(1, "detailed", "Detailed", "reconstruction_mode",
+				true, "Reconstruction", "Publish every reconstructed item as a reversible operation."));
+			algorithm.supportedOptions.push_back(AlgorithmPropertyDescriptor(0, "compact_reference", "Compact/reference", "reconstruction_mode",
+				false, "Reconstruction", "Keep the variant's compact publication and former cadence."));
+		}
+
+		void registerRadixBaseProperty(AlgorithmDescriptor& algorithm, int defaultBase, int maximumBase)
+		{
+			struct BaseChoice { int value; const char* stableId; const char* name; };
+			static const BaseChoice choices[] = {
+				{ 2, "base_2", "Base 2" }, { 4, "base_4", "Base 4" }, { 8, "base_8", "Base 8" },
+				{ 10, "base_10", "Base 10" }, { 16, "base_16", "Base 16" }, { 32, "base_32", "Base 32" },
+				{ 64, "base_64", "Base 64" }, { 128, "base_128", "Base 128" }, { 256, "base_256", "Base 256" }
+			};
+			for (std::size_t i = 0; i < sizeof(choices) / sizeof(choices[0]); ++i)
+				if (choices[i].value <= maximumBase || choices[i].value == defaultBase)
+					algorithm.supportedOptions.push_back(AlgorithmPropertyDescriptor(choices[i].value,
+						choices[i].stableId, choices[i].name, "radix_base", choices[i].value == defaultBase,
+						"Radix base", "Choose the digit or bucket base used by this algorithm."));
+		}
+
+		bool isRegisteredReconstructionVariant(const AlgorithmDescriptor& algorithm)
+		{
+			static const char* const stableIds[] = {
+				"arrayv.classic_tournament_sort", "arrayv.tournament_sort", "arrayv.hanoi_sort",
+				"arrayv.library_sort", "arrayv.simplified_library_sort", "arrayv.classic_tree_sort",
+				"arrayv.tree_sort", "arrayv.strand_sort", "arrayv.aa_tree_sort", "arrayv.avl_tree_sort",
+				"arrayv.splay_tree_sort", "arrayv.red_black_tree_sort", "arrayv.out_of_place_heap",
+				"merge", "counting", "radix", "arrayv.classic_gravity", "arrayv.gravity", "arrayv.pigeonhole",
+				"arrayv.lsd_radix", "arrayv.msd_radix", "arrayv.shatter",
+				"arrayv.simplistic_gravity", "arrayv.static", "arrayv.time"
+			};
+			// Only these registered strategies publish reconstructed primary output.
+			// Auxiliary-space metadata is not evidence of reconstruction: several
+			// in-place, network, and novelty strategies use scratch storage while
+			// keeping their normal direct-operation presentation.
+			const std::string stableId = algorithm.stableId ? algorithm.stableId : "";
+			for (std::size_t i = 0; i < sizeof(stableIds) / sizeof(stableIds[0]); ++i)
+				if (stableId == stableIds[i]) return true;
+			return false;
 		}
 	}
 
@@ -192,14 +241,10 @@ namespace sortinglogic
 				"partition-sorts", "stackless-dual-pivot", "Partition Sorts", std::vector<SemanticRole>{ SemanticRole::Pivot, SemanticRole::CurrentMaximum, SemanticRole::HeldKey }),
 			AlgorithmDescriptor(SortAlgorithm::Shell, "shell", "Shell Sort", "sequence dependent", "O(1)", false, true, true, true, &buildShellRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Halving), "halving", "Halving", "gap_sequence",
-						AlgorithmOptionTarget::ShellGapSequence, true),
-					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Knuth), "knuth", "Knuth", "gap_sequence",
-						AlgorithmOptionTarget::ShellGapSequence),
-					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Ciura), "ciura", "Ciura", "gap_sequence",
-						AlgorithmOptionTarget::ShellGapSequence),
-					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Tokuda), "tokuda", "Tokuda", "gap_sequence",
-						AlgorithmOptionTarget::ShellGapSequence)
+					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Halving), "halving", "Halving", "gap_sequence", true),
+					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Knuth), "knuth", "Knuth", "gap_sequence"),
+					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Ciura), "ciura", "Ciura", "gap_sequence"),
+					AlgorithmOptionDescriptor(static_cast<int>(ShellGapSequence::Tokuda), "tokuda", "Tokuda", "gap_sequence")
 				},
 				std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("gap_passes", "Gap passes"),
@@ -320,11 +365,11 @@ namespace sortinglogic
 				"merge-hybrid", "parallel-block-merge", "Merge and Hybrid Sorts", std::vector<SemanticRole>{ SemanticRole::HeldKey, SemanticRole::ComparedItem, SemanticRole::AuxiliaryCopy, SemanticRole::WriteTarget }),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvOptimizedRotateMerge, "arrayv.optimized_rotate_merge_sort", "Optimized Rotate Merge Sort", "O(n log n) buffered; O(n log² n) rotation fallback", "Configured power-of-two temporary buffer", true, false, true, true, &buildArrayvOptimizedRotateMergeRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(16, "items_16", "16 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize),
-					AlgorithmOptionDescriptor(32, "items_32", "32 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize),
-					AlgorithmOptionDescriptor(64, "items_64", "64 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize, true),
-					AlgorithmOptionDescriptor(128, "items_128", "128 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize),
-					AlgorithmOptionDescriptor(256, "items_256", "256 items", "rotate_buffer_capacity", AlgorithmOptionTarget::RotateMergeBufferSize)
+					AlgorithmOptionDescriptor(16, "items_16", "16 items", "rotate_buffer_capacity"),
+					AlgorithmOptionDescriptor(32, "items_32", "32 items", "rotate_buffer_capacity"),
+					AlgorithmOptionDescriptor(64, "items_64", "64 items", "rotate_buffer_capacity", true),
+					AlgorithmOptionDescriptor(128, "items_128", "128 items", "rotate_buffer_capacity"),
+					AlgorithmOptionDescriptor(256, "items_256", "256 items", "rotate_buffer_capacity")
 				}, std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("optimized_rotate_runs", "32-item insertion runs"),
 					AlgorithmMetricDescriptor("optimized_rotate_merges", "Merge ranges"),
@@ -337,9 +382,9 @@ namespace sortinglogic
 				"merge-hybrid", "optimized-rotate", "Merge and Hybrid Sorts", std::vector<SemanticRole>{ SemanticRole::ProbedItem, SemanticRole::AuxiliaryCopy, SemanticRole::ComparedItem, SemanticRole::WriteTarget }),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvGrail, "arrayv.grail_sort", "Grail Sort", "O(n log n)", "O(1), fixed 512-item, or O(√n) buffer", true, false, true, true, &buildArrayvGrailRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(0, "in_place", "In-place", "grail_buffer_mode", AlgorithmOptionTarget::GrailBufferMode, true),
-					AlgorithmOptionDescriptor(1, "static_buffer", "Static buffer (up to 512 items)", "grail_buffer_mode", AlgorithmOptionTarget::GrailBufferMode),
-					AlgorithmOptionDescriptor(2, "dynamic_buffer", "Dynamic √n buffer", "grail_buffer_mode", AlgorithmOptionTarget::GrailBufferMode)
+					AlgorithmOptionDescriptor(0, "in_place", "In-place", "grail_buffer_mode", true),
+					AlgorithmOptionDescriptor(1, "static_buffer", "Static buffer (up to 512 items)", "grail_buffer_mode"),
+					AlgorithmOptionDescriptor(2, "dynamic_buffer", "Dynamic √n buffer", "grail_buffer_mode")
 				}, std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("grail_runs", "Sixteen-item insertion runs"),
 					AlgorithmMetricDescriptor("grail_merges", "Block merge ranges"),
@@ -669,14 +714,8 @@ namespace sortinglogic
 				MaxItemCount, "general permutation sort", "insertion-methods", "recursive-shell", "Insertion Methods", std::vector<SemanticRole>{ SemanticRole::HeldKey }),
 			AlgorithmDescriptor(SortAlgorithm::Merge, "merge", "Merge Sort", "O(n log n)", "O(n)", true, false, true, true, &buildMergeRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(static_cast<int>(MergeExecutionMode::BottomUp), "bottom_up", "Bottom-up", "execution_mode",
-						AlgorithmOptionTarget::MergeExecutionMode, true),
-					AlgorithmOptionDescriptor(static_cast<int>(MergeExecutionMode::TopDown), "top_down", "Top-down", "execution_mode",
-						AlgorithmOptionTarget::MergeExecutionMode),
-					AlgorithmOptionDescriptor(static_cast<int>(MergeWritebackMode::AnimatedWrites), "animated_writes", "Animated item writes", "writeback_mode",
-						AlgorithmOptionTarget::MergeWritebackMode),
-					AlgorithmOptionDescriptor(static_cast<int>(MergeWritebackMode::AtomicRangeWrite), "compare_then_write_range", "Compare, then write range", "writeback_mode",
-						AlgorithmOptionTarget::MergeWritebackMode, true)
+					AlgorithmOptionDescriptor(static_cast<int>(MergeExecutionMode::BottomUp), "bottom_up", "Bottom-up", "execution_mode", true),
+					AlgorithmOptionDescriptor(static_cast<int>(MergeExecutionMode::TopDown), "top_down", "Top-down", "execution_mode")
 				}, std::vector<AlgorithmMetricDescriptor>{
 					AlgorithmMetricDescriptor("merge_passes", "Merge passes")
 				}, MaxItemCount, "general permutation sort", "merge-sort", "merge", "Merge Sorts"),
@@ -861,11 +900,11 @@ namespace sortinglogic
 				"heap-sorts", "ternary", "Heap Sorts"),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvBaseNHeap, "arrayv.base_n_heap", "Base-N Max Heap Sort", "O(n logᵦ n)", "O(1)", false, true, true, true, &buildArrayvBaseNHeapRequest,
 				std::vector<AlgorithmOptionDescriptor>{
-					AlgorithmOptionDescriptor(4, "base_4", "Base 4", "heap_arity", AlgorithmOptionTarget::HeapArity, true),
-					AlgorithmOptionDescriptor(2, "base_2", "Base 2", "heap_arity", AlgorithmOptionTarget::HeapArity),
-					AlgorithmOptionDescriptor(3, "base_3", "Base 3", "heap_arity", AlgorithmOptionTarget::HeapArity),
-					AlgorithmOptionDescriptor(8, "base_8", "Base 8", "heap_arity", AlgorithmOptionTarget::HeapArity),
-					AlgorithmOptionDescriptor(16, "base_16", "Base 16", "heap_arity", AlgorithmOptionTarget::HeapArity)
+					AlgorithmOptionDescriptor(4, "base_4", "Base 4", "heap_arity", true),
+					AlgorithmOptionDescriptor(2, "base_2", "Base 2", "heap_arity"),
+					AlgorithmOptionDescriptor(3, "base_3", "Base 3", "heap_arity"),
+					AlgorithmOptionDescriptor(8, "base_8", "Base 8", "heap_arity"),
+					AlgorithmOptionDescriptor(16, "base_16", "Base 16", "heap_arity")
 				}, std::vector<AlgorithmMetricDescriptor>(), MaxItemCount, "general permutation sort",
 				"heap-sorts", "base-n", "Heap Sorts"),
 			AlgorithmDescriptor(SortAlgorithm::ArrayvMinHeap, "arrayv.min_heap", "Min Heap Sort", "O(n log n)", "O(1)", false, true, true, true, &buildArrayvMinHeapRequest,
@@ -1237,6 +1276,42 @@ namespace sortinglogic
 			};
 			for (std::size_t i = 0; i < descriptors.size(); ++i)
 			{
+				const std::string stableId = descriptors[i].stableId ? descriptors[i].stableId : "";
+				if (stableId == "radix") registerRadixBaseProperty(descriptors[i], 10, 256);
+				else if (stableId == "arrayv.lsd_radix") registerRadixBaseProperty(descriptors[i], 4, 256);
+				else if (stableId == "arrayv.american_flag") registerRadixBaseProperty(descriptors[i], 128, 256);
+				else if (stableId == "arrayv.stackless_american_flag") registerRadixBaseProperty(descriptors[i], 16, 256);
+				else if (stableId == "arrayv.in_place_lsd_radix" || stableId == "arrayv.rotate_lsd_radix" ||
+					stableId == "arrayv.rotate_msd_radix") registerRadixBaseProperty(descriptors[i], 4, 16);
+				else if (stableId == "arrayv.msd_radix") registerRadixBaseProperty(descriptors[i], 4, 64);
+				if (isRegisteredReconstructionVariant(descriptors[i]))
+					registerReconstructionProperty(descriptors[i]);
+				else if (descriptors[i].inPlace)
+					descriptors[i].reconstructionCoverage = ReconstructionCoverageKind::DirectMainOperations;
+				else
+					descriptors[i].reconstructionCoverage = ReconstructionCoverageKind::DeclaredNonReconstruction;
+				if (descriptors[i].stableId && std::string(descriptors[i].stableId) == "merge")
+				{
+					descriptors[i].comparisonCadenceOnly = true;
+					descriptors[i].fixedDurationUsesEligibleEvents = true;
+					descriptors[i].auxiliaryWritesAudible = false;
+					descriptors[i].workspaces.push_back(AlgorithmWorkspaceDescriptor(
+						"merge", "Merge buffer", WorkspaceStorageKind::Items, SemanticRole::AuxiliaryCopy, "buffer_visibility"));
+					descriptors[i].supportedOptions.push_back(AlgorithmPropertyDescriptor(1, "visible", "Visible", "buffer_visibility",
+						true, "Buffer visualization", "Show the reusable merge buffer in the chart.",
+						AlgorithmPropertyValueType::Boolean, AlgorithmPropertyEffect::UpdateVisuals));
+					descriptors[i].supportedOptions.push_back(AlgorithmPropertyDescriptor(0, "hidden", "Hidden", "buffer_visibility",
+						false, "Buffer visualization", "Hide the reusable merge buffer in the chart.",
+						AlgorithmPropertyValueType::Boolean, AlgorithmPropertyEffect::UpdateVisuals));
+				}
+				if (descriptors[i].familyId.find("distribution") != std::string::npos ||
+					descriptors[i].familyId.find("radix") != std::string::npos)
+				{
+					descriptors[i].probeAccentsSupported = true;
+					descriptors[i].auxiliaryWritesAudible = true;
+				}
+				if (descriptors[i].behavior && contains(descriptors[i].behavior, "discard"))
+					descriptors[i].discardAccentsSupported = true;
 				descriptors[i].demoComplexity = classifyDemoComplexity(descriptors[i]);
 				descriptors[i].preferredDemoDomain = descriptors[i].supportsNormalizedFloat
 					? InputDomain::NormalizedFloats : InputDomain::IntegerPermutation;
@@ -1244,6 +1319,128 @@ namespace sortinglogic
 			return descriptors;
 		}();
 		return algorithms;
+	}
+
+	std::vector<std::string> validateAlgorithmCatalog()
+	{
+		std::vector<std::string> issues;
+		std::set<std::string> stableIds;
+		std::set<std::string> variantIds;
+		const std::vector<AlgorithmDescriptor>& catalog = algorithmCatalog();
+		for (std::size_t algorithmIndex = 0; algorithmIndex < catalog.size(); ++algorithmIndex)
+		{
+			const AlgorithmDescriptor& algorithm = catalog[algorithmIndex];
+			const std::string stableId = algorithm.stableId ? algorithm.stableId : "";
+			const std::string familyVariant = algorithm.familyId + std::string(1, '\x1f') + algorithm.variantId;
+			const std::string label = stableId.empty() ? std::string("<unnamed algorithm>") : stableId;
+			if (stableId.empty() || !stableIds.insert(stableId).second)
+				issues.push_back(label + ": missing or duplicate stable algorithm ID");
+			if (algorithm.familyId.empty() || algorithm.variantId.empty() || !variantIds.insert(familyVariant).second)
+				issues.push_back(label + ": missing or duplicate family/variant ID");
+			if (!algorithm.buildRequest) issues.push_back(label + ": missing trace builder strategy");
+			if (algorithm.reconstructionCoverage == ReconstructionCoverageKind::Unresolved)
+				issues.push_back(label + ": unresolved reconstruction coverage");
+			if (algorithm.reconstructionPresentationSupported !=
+				(algorithm.reconstructionCoverage == ReconstructionCoverageKind::IncrementalPublication))
+				issues.push_back(label + ": reconstruction capability and coverage classification disagree");
+			if (algorithm.primaryWritesAreReconstruction && !algorithm.reconstructionPresentationSupported)
+				issues.push_back(label + ": primary-write reconstruction has no registered presentation strategy");
+
+			std::map<std::string, int> defaultsByGroup;
+			std::map<std::string, std::set<std::string> > stableChoicesByGroup;
+			std::map<std::string, std::set<int> > valuesByGroup;
+			std::map<std::string, AlgorithmPropertyValueType> typesByGroup;
+			for (std::size_t optionIndex = 0; optionIndex < algorithm.supportedOptions.size(); ++optionIndex)
+			{
+				const AlgorithmPropertyDescriptor& property = algorithm.supportedOptions[optionIndex];
+				if (!property.groupId || !*property.groupId || !property.stableId || !*property.stableId ||
+					!property.displayName || !*property.displayName || !property.caption || !*property.caption)
+				{
+					issues.push_back(label + ": property is missing a stable ID, display name, or caption");
+					continue;
+				}
+				const std::string group(property.groupId);
+				if (!stableChoicesByGroup[group].insert(property.stableId).second)
+					issues.push_back(label + ": duplicate property choice ID in " + group);
+				if (!valuesByGroup[group].insert(property.value).second)
+					issues.push_back(label + ": duplicate property value in " + group);
+				if (property.isDefault) ++defaultsByGroup[group];
+				if (typesByGroup.find(group) == typesByGroup.end()) typesByGroup[group] = property.valueType;
+				else if (typesByGroup[group] != property.valueType)
+					issues.push_back(label + ": property group mixes value types in " + group);
+				if ((property.valueType == AlgorithmPropertyValueType::BoundedInteger ||
+					property.valueType == AlgorithmPropertyValueType::FiniteDecimal) &&
+					property.minimumValue > property.maximumValue)
+					issues.push_back(label + ": property has invalid numeric bounds in " + group);
+				if (property.effect != AlgorithmPropertyEffect::RebuildTrace &&
+					property.effect != AlgorithmPropertyEffect::RebuildTimeline &&
+					property.effect != AlgorithmPropertyEffect::UpdateVisuals)
+					issues.push_back(label + ": property has an unsupported change effect in " + group);
+			}
+			for (std::map<std::string, int>::const_iterator group = defaultsByGroup.begin(); group != defaultsByGroup.end(); ++group)
+				if (group->second != 1) issues.push_back(label + ": property group must declare exactly one default in " + group->first);
+			for (std::map<std::string, AlgorithmPropertyValueType>::const_iterator group = typesByGroup.begin();
+				group != typesByGroup.end(); ++group)
+			{
+				if (defaultsByGroup[group->first] != 1)
+					issues.push_back(label + ": property group has no unique declared default in " + group->first);
+				if (group->second == AlgorithmPropertyValueType::Boolean &&
+					(valuesByGroup[group->first].count(0) != 1 || valuesByGroup[group->first].count(1) != 1))
+					issues.push_back(label + ": boolean property must register false and true values in " + group->first);
+				if (group->second == AlgorithmPropertyValueType::Choice && valuesByGroup[group->first].empty())
+					issues.push_back(label + ": choice property has no registered values in " + group->first);
+				if (group->second == AlgorithmPropertyValueType::BoundedInteger ||
+					group->second == AlgorithmPropertyValueType::FiniteDecimal)
+				{
+					for (std::size_t propertyIndex = 0; propertyIndex < algorithm.supportedOptions.size(); ++propertyIndex)
+					{
+						const AlgorithmPropertyDescriptor& property = algorithm.supportedOptions[propertyIndex];
+						if (group->first == property.groupId &&
+							(property.value < property.minimumValue || property.value > property.maximumValue))
+							issues.push_back(label + ": numeric property default/choice lies outside its declared bounds in " + group->first);
+					}
+				}
+			}
+			std::set<std::string> workspaceIds;
+			for (std::size_t workspaceIndex = 0; workspaceIndex < algorithm.workspaces.size(); ++workspaceIndex)
+			{
+				const AlgorithmWorkspaceDescriptor& workspace = algorithm.workspaces[workspaceIndex];
+				if (workspace.stableId.empty() || workspace.caption.empty() || !workspaceIds.insert(workspace.stableId).second)
+					issues.push_back(label + ": workspace descriptor has an empty or duplicate stable ID/caption");
+				if (!workspace.visibilityPropertyId.empty() &&
+					defaultsByGroup.find(workspace.visibilityPropertyId) == defaultsByGroup.end())
+					issues.push_back(label + ": workspace visibility references an unregistered property " + workspace.visibilityPropertyId);
+				else if (!workspace.visibilityPropertyId.empty())
+				{
+					const std::string& propertyId = workspace.visibilityPropertyId;
+					if (typesByGroup[propertyId] != AlgorithmPropertyValueType::Boolean)
+						issues.push_back(label + ": workspace visibility binding must reference a Boolean property " + propertyId);
+					for (std::size_t propertyIndex = 0; propertyIndex < algorithm.supportedOptions.size(); ++propertyIndex)
+					{
+						const AlgorithmPropertyDescriptor& property = algorithm.supportedOptions[propertyIndex];
+						if (propertyId == property.groupId && property.effect != AlgorithmPropertyEffect::UpdateVisuals)
+							issues.push_back(label + ": workspace visibility binding must update visuals only " + propertyId);
+					}
+				}
+			}
+			if (algorithm.reconstructionPresentationSupported &&
+				defaultsByGroup.find("reconstruction_mode") == defaultsByGroup.end())
+				issues.push_back(label + ": reconstruction strategy has no registered reconstruction_mode property");
+			if (algorithm.reconstructionPresentationSupported)
+			{
+				std::size_t detailedDefaults = 0, compactChoices = 0;
+				for (std::size_t propertyIndex = 0; propertyIndex < algorithm.supportedOptions.size(); ++propertyIndex)
+				{
+					const AlgorithmPropertyDescriptor& property = algorithm.supportedOptions[propertyIndex];
+					if (std::string(property.groupId) != "reconstruction_mode") continue;
+					if (property.isDefault && property.value == 1 && std::string(property.stableId) == "detailed") ++detailedDefaults;
+					if (!property.isDefault && property.value == 0 && std::string(property.stableId) == "compact_reference") ++compactChoices;
+				}
+				if (detailedDefaults != 1 || compactChoices != 1)
+					issues.push_back(label + ": reconstruction strategy must default to detailed and register compact_reference");
+			}
+		}
+		return issues;
 	}
 
 	const char* demoComplexityClassName(DemoComplexityClass value)

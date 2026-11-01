@@ -57,9 +57,6 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 		AppAction(AppActionKind::SetInputPattern));
 	controls_.addComboBox("playback_timing", std::vector<std::string>{ "Fixed duration", "Reference cadence" },
 		static_cast<int>(preferences.simulation.playbackTimingMode), AppAction(AppActionKind::SetPlaybackTimingMode));
-	controls_.addComboBox("merge_buffer_visualization", settingsBooleanOptions(),
-		preferences.simulation.mergeBufferVisualizationEnabled ? 1 : 0,
-		AppAction(AppActionKind::SetMergeBufferVisualization));
 	controls_.addComboBox("completion_scan", settingsBooleanOptions(), preferences.simulation.completionScanEnabled ? 1 : 0,
 		AppAction(AppActionKind::SetCompletionScan));
 
@@ -70,7 +67,6 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 	captions_["domain"] = "Input domain";
 	captions_["pattern"] = "Input pattern";
 	captions_["playback_timing"] = "Playback timing";
-	captions_["merge_buffer_visualization"] = "Merge buffer visualization";
 	captions_["completion_scan"] = "Completion scan";
 
 	const std::vector<sortinglogic::AlgorithmDescriptor>& algorithms = sortinglogic::algorithmCatalog();
@@ -107,7 +103,7 @@ void SettingsPanelView::initializeControls(const UserPreferences& preferences)
 			binding.controlId = id;
 			binding.groupId = groupId;
 			algorithmOptionsById_[algorithmKey].push_back(binding);
-			captions_[id] = settingsAlgorithmOptionCaption(groupId);
+			captions_[id] = option.caption ? option.caption : groupId;
 		}
 	}
 
@@ -178,14 +174,11 @@ void SettingsPanelView::synchronizeControls(const UserPreferences& preferences,
 	controls_.find("domain")->setSelectedIndex(static_cast<int>(preferences.simulation.domain));
 	controls_.find("pattern")->setSelectedIndex(static_cast<int>(preferences.simulation.pattern));
 	controls_.find("playback_timing")->setSelectedIndex(static_cast<int>(preferences.simulation.playbackTimingMode));
-	controls_.find("merge_buffer_visualization")->setSelectedIndex(preferences.simulation.mergeBufferVisualizationEnabled ? 1 : 0);
 	controls_.find("completion_scan")->setSelectedIndex(preferences.simulation.completionScanEnabled ? 1 : 0);
 
 	controls_.setWidgetEnabled("domain", !setupBusy);
 	controls_.setWidgetEnabled("pattern", !setupBusy);
 	controls_.setWidgetEnabled("playback_timing", !setupBusy);
-	controls_.setWidgetEnabled("merge_buffer_visualization",
-		!setupBusy && snapshot.algorithm == sortinglogic::SortAlgorithm::Merge);
 	controls_.setWidgetEnabled("completion_scan", !setupBusy);
 
 	const int algorithmKey = static_cast<int>(snapshot.algorithm);

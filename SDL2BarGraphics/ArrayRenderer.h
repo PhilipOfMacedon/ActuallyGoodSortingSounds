@@ -36,11 +36,12 @@ private:
 	ActiveRoleLookup workspaceRoleLookup_;
 	std::map<std::string, std::unique_ptr<TextLabel> > laneLabels_;
 	std::map<std::string, glm::vec2> laneLabelPositions_;
+	std::unique_ptr<TextLabel> reconstructionLabel_;
 	RenderDescriptor descriptorForRole(sortinglogic::SemanticRole role, const ThemePalette& palette) const;
 	RenderDescriptor descriptorForItem(
 		std::uint64_t itemId,
 		const ActiveRoleLookup& roles,
 		const ThemePalette& palette,
 		const std::string& lane = "main") const;
-	void submitLaneLabel(const std::string& lane, float x, float y, const glm::vec4& color);
+	void submitLaneLabel(const std::string& lane, const std::string& caption, float x, float y, const glm::vec4& color);
 };

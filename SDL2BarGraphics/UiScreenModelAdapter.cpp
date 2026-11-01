@@ -3,6 +3,7 @@
 #include "PlaybackTimebase.h"
 
 #include <iomanip>
+#include <set>
 #include <sstream>
 
 namespace
@@ -40,11 +41,28 @@ UiScreenModel buildUiScreenModel(const sortinglogic::RenderSnapshot& snapshot,
 	model.inputDomain = sortinglogic::inputDomainName(snapshot.domain);
 	model.inputPattern = sortinglogic::inputPatternName(snapshot.pattern);
 	model.direction = model.descending ? "Descending" : "Ascending";
-	if (snapshot.algorithm == sortinglogic::SortAlgorithm::Shell)
-		model.shellGapSequence = sortinglogic::shellGapSequenceName(snapshot.shellGapSequence);
 	const sortinglogic::AlgorithmDescriptor* algorithm = sortinglogic::algorithmDescriptor(snapshot.algorithm);
 	if (algorithm)
 	{
+		std::set<std::string> seenProperties;
+		for (std::size_t optionIndex = 0; optionIndex < algorithm->supportedOptions.size(); ++optionIndex)
+		{
+			const sortinglogic::AlgorithmOptionDescriptor& option = algorithm->supportedOptions[optionIndex];
+			const std::string propertyId(option.groupId);
+			if (!seenProperties.insert(propertyId).second) continue;
+			int selectedValue = option.value;
+			snapshot.configuration.optionValue(propertyId, selectedValue);
+			for (std::size_t candidateIndex = 0; candidateIndex < algorithm->supportedOptions.size(); ++candidateIndex)
+			{
+				const sortinglogic::AlgorithmOptionDescriptor& candidate = algorithm->supportedOptions[candidateIndex];
+				if (propertyId != candidate.groupId || candidate.value != selectedValue) continue;
+				if (!model.algorithmOptionsSummary.empty()) model.algorithmOptionsSummary += " | ";
+				model.algorithmOptionsSummary += (candidate.caption ? candidate.caption : candidate.groupId);
+				model.algorithmOptionsSummary += ": ";
+				model.algorithmOptionsSummary += candidate.displayName;
+				break;
+			}
+		}
 		UiAlgorithmCapabilities& capabilities = model.algorithmCapabilities;
 		capabilities.available = true;
 		capabilities.stable = algorithm->stable;

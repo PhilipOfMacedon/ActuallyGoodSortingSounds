@@ -560,7 +560,7 @@ namespace sortinglogic
 
 		void baseNHeapSort(Recorder& recorder)
 		{
-			arityHeapSort(recorder, static_cast<std::size_t>(recorder.trace.configuration.heapArity), false, false);
+			arityHeapSort(recorder, static_cast<std::size_t>(recorder.trace.configuration.value("heap_arity", 4)), false, false);
 		}
 
 		void minHeapSort(Recorder& recorder)

@@ -93,6 +93,7 @@ private:
 	SoundEngine::EventAccentSummary lastEventAccents_;
 	bool hasComparison_;
 	bool lastComparisonIsProbe_;
+	bool lastComparisonIsReconstruction_;
 	std::map<std::uint64_t, float> valuesById_;
 	std::map<std::string, std::size_t> workspaceSizes_;
 	float minimumValue_;
@@ -157,7 +158,7 @@ private:
 	std::thread timelineWorker_;
 
 	void recomputeComparison(const sortinglogic::SortTrace* trace, std::size_t cursor,
-		SoundEngine::AudioComparison& comparison, bool& hasComparison, bool& isProbe) const;
+		SoundEngine::AudioComparison& comparison, bool& hasComparison, bool& isProbe, bool& isReconstruction) const;
 	bool makeComparison(const sortinglogic::SortTrace& trace, const sortinglogic::SemanticEvent& event,
 		SoundEngine::AudioComparison& comparison) const;
 	void requestTimelineBuild(const std::shared_ptr<const sortinglogic::SortTrace>& trace, double durationSeconds,

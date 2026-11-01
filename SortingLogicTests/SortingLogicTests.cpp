@@ -62,6 +62,16 @@ namespace sortinglogic_tests
 	void testPinnedCatalogCoverage()
 	{
 		using namespace sortinglogic;
+		const std::vector<std::string> registrationIssues = validateAlgorithmCatalog();
+		std::string registrationSummary;
+		for (std::size_t issue = 0; issue < registrationIssues.size(); ++issue)
+		{
+			if (!registrationSummary.empty()) registrationSummary += "; ";
+			registrationSummary += registrationIssues[issue];
+		}
+		check(registrationIssues.empty(), "algorithm registrations satisfy the static property, workspace, and presentation contracts" +
+			(registrationSummary.empty() ? std::string() : ": " + registrationSummary));
+
 		std::ifstream manifest("arrayv-catalog-coverage.csv");
 		if (!manifest) manifest.open("agent-memory/arrayv-catalog-coverage.csv");
 		if (!manifest) throw std::runtime_error("could not open arrayv-catalog-coverage.csv from the test output or repository root");
@@ -87,26 +97,30 @@ namespace sortinglogic_tests
 		std::set<std::string> catalogVariantIds;
 		for (std::size_t i = 0; i < catalog.size(); ++i)
 		{
+			check(catalog[i].reconstructionCoverage != ReconstructionCoverageKind::Unresolved,
+				"every registered variant declares reconstruction coverage: " + catalog[i].variantId);
 			check(catalogStableIds.insert(catalog[i].stableId ? catalog[i].stableId : "").second,
 				"catalog stable IDs are unique");
 			check(catalogVariantIds.insert(catalog[i].familyId + "\n" + catalog[i].variantId).second,
 				"catalog family and variant pairs are unique");
 			std::map<std::string, std::size_t> defaultCountByGroup;
-			std::map<std::string, AlgorithmOptionTarget> targetByGroup;
+			std::map<std::string, std::pair<AlgorithmPropertyValueType, AlgorithmPropertyEffect> > contractByGroup;
 			std::set<std::string> optionIds;
 			for (std::size_t option = 0; option < catalog[i].supportedOptions.size(); ++option)
 			{
 				const AlgorithmOptionDescriptor& descriptor = catalog[i].supportedOptions[option];
 				const std::string group(descriptor.groupId);
-				check(descriptor.target != AlgorithmOptionTarget::Unbound,
-					"catalog options declare a trace-configuration target: " + catalog[i].variantId + "/" + group);
+				check(descriptor.caption && descriptor.caption[0] != '\0' && descriptor.helpText &&
+					static_cast<int>(descriptor.valueType) >= static_cast<int>(AlgorithmPropertyValueType::Boolean) &&
+					static_cast<int>(descriptor.valueType) <= static_cast<int>(AlgorithmPropertyValueType::FiniteDecimal),
+					"catalog properties declare display metadata and a supported value type: " + catalog[i].variantId + "/" + group);
 				check(optionIds.insert(group + "\n" + descriptor.stableId).second,
 					"stable option IDs are unique within each catalog group");
-				const std::pair<std::map<std::string, AlgorithmOptionTarget>::iterator, bool> targetInsertion =
-					targetByGroup.insert(std::make_pair(group, descriptor.target));
-				if (!targetInsertion.second)
-					check(targetInsertion.first->second == descriptor.target,
-						"every choice in a catalog option group uses the same configuration target");
+				const std::pair<std::map<std::string, std::pair<AlgorithmPropertyValueType, AlgorithmPropertyEffect> >::iterator, bool> contractInsertion =
+					contractByGroup.insert(std::make_pair(group, std::make_pair(descriptor.valueType, descriptor.effect)));
+				if (!contractInsertion.second)
+					check(contractInsertion.first->second == std::make_pair(descriptor.valueType, descriptor.effect),
+						"every choice in a catalog property group uses one value type and change effect");
 				if (descriptor.isDefault) ++defaultCountByGroup[group];
 				else defaultCountByGroup.insert(std::make_pair(group, 0));
 			}
@@ -114,6 +128,34 @@ namespace sortinglogic_tests
 				group != defaultCountByGroup.end(); ++group)
 				check(group->second == 1, "each catalog option group declares exactly one default: " + catalog[i].variantId + "/" + group->first);
 		}
+
+		// Exercise the same resolver used by render/audio consumers with an
+		// intentionally synthetic registration. The test makes sure custom
+		// captions, semantic workspace bindings, and visibility defaults travel
+		// through the shared descriptor path without an algorithm-ID branch.
+		std::vector<AlgorithmPropertyDescriptor> syntheticProperties;
+		syntheticProperties.push_back(AlgorithmPropertyDescriptor(1, "enabled", "Show staging lane", "staging_visibility",
+			true, "Staging workspace", "A custom presentation property.", AlgorithmPropertyValueType::Boolean,
+			AlgorithmPropertyEffect::UpdateVisuals));
+		syntheticProperties.push_back(AlgorithmPropertyDescriptor(0, "disabled", "Hide staging lane", "staging_visibility",
+			false, "Staging workspace", "A custom presentation property.", AlgorithmPropertyValueType::Boolean,
+			AlgorithmPropertyEffect::UpdateVisuals));
+		AlgorithmDescriptor synthetic(SortAlgorithm::Insertion, "test.synthetic", "Synthetic strategy", "O(n)", "O(1)",
+			true, true, true, true, nullptr, syntheticProperties);
+		synthetic.reconstructionPresentationSupported = true;
+		synthetic.primaryWritesAreReconstruction = true;
+		synthetic.reconstructionCoverage = ReconstructionCoverageKind::IncrementalPublication;
+		synthetic.workspaces.push_back(AlgorithmWorkspaceDescriptor("staging", "Staging lane", WorkspaceStorageKind::Items,
+			SemanticRole::AuxiliaryCopy, "staging_visibility"));
+		const ResolvedAlgorithmPresentation syntheticDefault = resolveAlgorithmPresentation(&synthetic, AlgorithmConfiguration());
+		check(syntheticDefault.properties.value("staging_visibility", -1) == 1 && syntheticDefault.workspaceVisible("staging"),
+			"presentation resolver applies registered defaults to a semantic workspace binding");
+		AlgorithmConfiguration hiddenConfiguration;
+		hiddenConfiguration.setValue("staging_visibility", 0);
+		const ResolvedAlgorithmPresentation syntheticHidden = resolveAlgorithmPresentation(&synthetic, hiddenConfiguration);
+		check(!syntheticHidden.workspaceVisible("staging") && synthetic.supportedOptions[0].caption &&
+			std::string(synthetic.supportedOptions[0].caption) == "Staging workspace",
+			"presentation resolver honors generic visibility values and custom property captions");
 
 		std::set<std::string> sourceClasses;
 		std::set<std::string> coveredVariants;
@@ -149,19 +191,26 @@ namespace sortinglogic_tests
 				"manifest source " + source + " resolves to a registered family/variant ID");
 			if (source == "GrailSort")
 			{
-				const bool optionsMatch = descriptor && descriptor->supportedOptions.size() == 3 &&
-					descriptor->supportedOptions[0].value == 0 && std::string(descriptor->supportedOptions[0].stableId) == "in_place" &&
-					descriptor->supportedOptions[1].value == 1 && std::string(descriptor->supportedOptions[1].stableId) == "static_buffer" &&
-					descriptor->supportedOptions[2].value == 2 && std::string(descriptor->supportedOptions[2].stableId) == "dynamic_buffer";
+				std::vector<const AlgorithmPropertyDescriptor*> options;
+				for (std::size_t option = 0; descriptor && option < descriptor->supportedOptions.size(); ++option)
+					if (std::string(descriptor->supportedOptions[option].groupId) == "grail_buffer_mode")
+						options.push_back(&descriptor->supportedOptions[option]);
+				const bool optionsMatch = options.size() == 3 && options[0]->value == 0 && std::string(options[0]->stableId) == "in_place" &&
+					options[1]->value == 1 && std::string(options[1]->stableId) == "static_buffer" &&
+					options[2]->value == 2 && std::string(options[2]->stableId) == "dynamic_buffer";
 				check(optionsMatch && fields[optionsColumn].find("grail_buffer_mode=") == 0,
 					"Grail manifest options match the registered stable buffer-mode IDs");
 			}
 			else if (source == "OptimizedRotateMergeSort")
 			{
 				const int expectedCapacities[] = { 16, 32, 64, 128, 256 };
-				bool optionsMatch = descriptor && descriptor->supportedOptions.size() == 5;
+				std::vector<const AlgorithmPropertyDescriptor*> options;
+				for (std::size_t option = 0; descriptor && option < descriptor->supportedOptions.size(); ++option)
+					if (std::string(descriptor->supportedOptions[option].groupId) == "rotate_buffer_capacity")
+						options.push_back(&descriptor->supportedOptions[option]);
+				bool optionsMatch = options.size() == 5;
 				for (std::size_t option = 0; optionsMatch && option < 5; ++option)
-					optionsMatch = descriptor->supportedOptions[option].value == expectedCapacities[option];
+					optionsMatch = options[option]->value == expectedCapacities[option];
 				check(optionsMatch && fields[optionsColumn].find("rotate_buffer_capacity=") == 0 &&
 					fields[optionsColumn].find("64 (default)") != std::string::npos,
 					"Optimized Rotate Merge manifest capacities match the registered buffer options and default");
@@ -253,7 +302,7 @@ namespace sortinglogic_tests
 	void verifyAlgorithmCase(const std::string& label, const std::vector<sortinglogic::SortItem>& input,
 		sortinglogic::InputProfile profile, sortinglogic::SortAlgorithm algorithm, sortinglogic::SortDirection direction,
 		sortinglogic::InputDomain domain,
-		sortinglogic::MergeWritebackMode mergeMode,
+		bool compactReference,
 		sortinglogic::MergeExecutionMode mergeExecution)
 	{
 		using namespace sortinglogic;
@@ -264,8 +313,17 @@ namespace sortinglogic_tests
 		}
 		TraceBuildRequest request;
 		request.input = input; request.profile = profile; request.domain = domain; request.algorithm = algorithm; request.direction = direction;
-		request.inputSeed = 0xA551u; request.shellGapSequence = ShellGapSequence::Tokuda; request.mergeWritebackMode = mergeMode;
-		request.mergeExecutionMode = mergeExecution;
+		request.inputSeed = 0xA551u;
+		const AlgorithmDescriptor* descriptor = algorithmDescriptor(algorithm);
+		for (std::size_t option = 0; descriptor && option < descriptor->supportedOptions.size(); ++option)
+		{
+			const std::string group = descriptor->supportedOptions[option].groupId;
+			if (group == "gap_sequence") request.optionSelections[group] = "tokuda";
+			else if (group == "reconstruction_mode") request.optionSelections[group] =
+				compactReference ? "compact_reference" : "detailed";
+			else if (group == "execution_mode") request.optionSelections[group] =
+				mergeExecution == MergeExecutionMode::TopDown ? "top_down" : "bottom_up";
+		}
 		SortTrace trace;
 		try { trace = SortTraceBuilder::build(request); }
 		catch (const std::exception& e) { check(false, label + " failed to build: " + e.what()); return; }
@@ -282,10 +340,26 @@ namespace sortinglogic_tests
 		SortState state = trace.initialState;
 		cursorCheckpoints.insert(std::make_pair(0, state));
 		std::uint64_t observedComparisons = 0;
+		const AlgorithmDescriptor* algorithmInfo = algorithmDescriptor(algorithm);
+		const bool expectsDetailedReconstruction = algorithmInfo && algorithmInfo->reconstructionPresentationSupported &&
+			trace.configuration.value("reconstruction_mode", 0) != 0;
+		const TraceAudioPresentationPolicy audioPresentation(trace);
 		for (std::size_t i = 0; i < trace.events.size(); ++i)
 		{
 			const SemanticEvent& event = trace.events[i];
 			check(event.sequence == i, label + " preserves ordered event sequence");
+			if (expectsDetailedReconstruction && event.type == SemanticEventType::WriteRange)
+				check(false, label + " expands reconstructed main-array ranges into per-item reversible operations");
+			if (event.reconstructive)
+			{
+				check((event.type == SemanticEventType::WriteItem || event.type == SemanticEventType::Swap) &&
+					event.hasTransferProvenance && event.destinationWorkspace == "main" &&
+					event.reconstructionPhaseId >= 0 && event.reconstructionProgress >= 0.0f && event.reconstructionProgress <= 1.0f,
+					label + " records granular reconstruction provenance, phase, destination, and progress");
+				check(audioPresentation.classify(event) == TraceAudioEventKind::Reconstruction &&
+					audioPresentation.contributesToReferenceCadence(event),
+					label + " gives every detailed reconstruction operation one Reference-cadence slot");
+			}
 			if (event.type == SemanticEventType::Compare)
 			{
 				++observedComparisons;
@@ -340,12 +414,11 @@ namespace sortinglogic_tests
 			for (std::size_t i = 0; i < state.discardedItems.size(); ++i)
 				seen[state.discardedItems[i].stableId] = true;
 		check(seen.size() == input.size(), label + " preserves every primary item exactly once");
-		const AlgorithmDescriptor* descriptor = algorithmDescriptor(algorithm);
-		if (descriptor && input.size() >= 2)
-			for (std::size_t metric = 0; metric < descriptor->metrics.size(); ++metric)
-				check(state.metrics.algorithm.find(descriptor->metrics[metric].key) != state.metrics.algorithm.end(),
-					label + " records catalog metric " + descriptor->metrics[metric].displayName);
-		if (descriptor && descriptor->stable)
+		if (algorithmInfo && input.size() >= 2)
+			for (std::size_t metric = 0; metric < algorithmInfo->metrics.size(); ++metric)
+				check(state.metrics.algorithm.find(algorithmInfo->metrics[metric].key) != state.metrics.algorithm.end(),
+					label + " records catalog metric " + algorithmInfo->metrics[metric].displayName);
+		if (algorithmInfo && algorithmInfo->stable)
 			for (std::size_t i = 1; i < state.slots.size(); ++i)
 				if (compareItems(state.slots[i - 1].item, state.slots[i].item, direction) == ComparisonResult::Equal)
 					check(originalPosition[state.slots[i - 1].item.stableId] < originalPosition[state.slots[i].item.stableId],
@@ -428,7 +501,7 @@ namespace sortinglogic_tests
 			"reducing the input to the catalogued ceiling re-enables the novelty algorithm");
 		Simulation configured(12, 0xC0A1u);
 		check(configured.selectAlgorithm(SortAlgorithm::Shell).accepted &&
-			configured.setShellGapSequence(ShellGapSequence::Ciura).accepted,
+			configured.setAlgorithmOption("gap_sequence", "ciura").accepted,
 			"simulation accepts a Shell option through its configuration owner");
 		TraceBuildRequest shellRequest;
 		check(configured.beginTraceBuild(shellRequest).accepted, "configured Shell run starts from simulation state");
@@ -437,7 +510,7 @@ namespace sortinglogic_tests
 		catch (const std::exception& e) { check(false, std::string("configured Shell trace builds: ") + e.what()); }
 		configured.completeTraceBuild(shellResult);
 		const std::shared_ptr<const SortTrace> configuredShellTrace = configured.currentTrace();
-		check(configuredShellTrace && configuredShellTrace->configuration.shellGapSequence == ShellGapSequence::Ciura,
+		check(configuredShellTrace && configuredShellTrace->configuration.value("gap_sequence") == static_cast<int>(ShellGapSequence::Ciura),
 			"simulation's named algorithm configuration reaches both typed trace state and its compatibility field");
 		check(configured.selectAlgorithm(SortAlgorithm::ArrayvGrail).accepted &&
 			configured.setAlgorithmOption("grail_buffer_mode", "static_buffer").accepted,
@@ -450,8 +523,7 @@ namespace sortinglogic_tests
 		catch (const std::exception& e) { check(false, std::string("configured Grail trace builds from Simulation request: ") + e.what()); }
 		configured.completeTraceBuild(grailResult);
 		const std::shared_ptr<const SortTrace> configuredGrailTrace = configured.currentTrace();
-		check(configuredGrailTrace && configuredGrailTrace->configuration.grailBufferMode == GrailBufferMode::StaticBuffer &&
-			configuredGrailTrace->configuration.grailBufferMode == GrailBufferMode::StaticBuffer,
+		check(configuredGrailTrace && configuredGrailTrace->configuration.value("grail_buffer_mode") == static_cast<int>(GrailBufferMode::StaticBuffer),
 			"Simulation request preserves typed Grail mode and its legacy trace projection without controller patch-up");
 		if (configuredGrailTrace)
 		{
@@ -462,9 +534,9 @@ namespace sortinglogic_tests
 				"Simulation-produced non-default Grail configuration retains its normal sorted result");
 		}
 		check(configured.selectAlgorithm(SortAlgorithm::Merge).accepted &&
-			configured.setMergeExecutionMode(MergeExecutionMode::TopDown).accepted &&
-			configured.setMergeWritebackMode(MergeWritebackMode::AnimatedWrites).accepted,
-			"simulation accepts independent Merge choices through the same configuration owner");
+			configured.setAlgorithmOption("execution_mode", "top_down").accepted &&
+			configured.setAlgorithmOption("reconstruction_mode", "detailed").accepted,
+			"simulation accepts independent registered Merge properties through the generic configuration owner");
 		TraceBuildRequest mergeRequest;
 		check(configured.beginTraceBuild(mergeRequest).accepted, "configured Merge run starts from simulation state");
 		TraceBuildResult mergeResult;
@@ -472,9 +544,9 @@ namespace sortinglogic_tests
 		catch (const std::exception& e) { check(false, std::string("configured Merge trace builds: ") + e.what()); }
 		configured.completeTraceBuild(mergeResult);
 		const std::shared_ptr<const SortTrace> configuredMergeTrace = configured.currentTrace();
-		check(configuredMergeTrace && configuredMergeTrace->configuration.mergeExecutionMode == MergeExecutionMode::TopDown &&
-			configuredMergeTrace->configuration.mergeWritebackMode == MergeWritebackMode::AnimatedWrites,
-			"simulation configuration preserves independent typed Merge choices in the built trace");
+		check(configuredMergeTrace && configuredMergeTrace->configuration.value("execution_mode") == static_cast<int>(MergeExecutionMode::TopDown) &&
+			configuredMergeTrace->configuration.value("reconstruction_mode") == 1,
+			"simulation configuration preserves independent registered Merge properties in the built trace");
 		for (ShellGapSequence sequence = ShellGapSequence::Halving; sequence <= ShellGapSequence::Tokuda;
 			sequence = static_cast<ShellGapSequence>(static_cast<int>(sequence) + 1))
 		{
@@ -841,6 +913,7 @@ namespace sortinglogic_tests
 		SemanticEvent probe;
 		probe.type = SemanticEventType::Probe;
 		probe.firstItemId = 23;
+		probe.firstRole = SemanticRole::ProbedItem;
 		SemanticEvent auxiliaryWrite;
 		auxiliaryWrite.type = SemanticEventType::AuxiliaryItemWrite;
 		auxiliaryWrite.workspaceName = "output";
@@ -856,18 +929,25 @@ namespace sortinglogic_tests
 		const TraceAudioPresentationPolicy countingPolicy(counting);
 		check(countingPolicy.classify(counting.events[0]) == TraceAudioEventKind::ProbeAsComparison,
 			"distribution-only traces route meaningful probes through the comparison voice");
-		check(countingPolicy.classify(counting.events[1]) == TraceAudioEventKind::AuxiliaryItemWrite &&
-			countingPolicy.classify(counting.events[2]) == TraceAudioEventKind::DistributionUpdate,
-			"auxiliary item writes and counter bookkeeping have distinct shared presentation routes");
-		check(countingPolicy.classify(counting.events[3]) == TraceAudioEventKind::DiscardAccent,
-			"discard events receive the discard presentation route");
+		check(countingPolicy.classify(counting.events[1]) == TraceAudioEventKind::AuxiliaryItemWrite,
+			"registered distribution capabilities route auxiliary item writes (kind=" +
+			std::to_string(static_cast<int>(countingPolicy.classify(counting.events[1]))) + ")");
+		check(countingPolicy.classify(counting.events[2]) == TraceAudioEventKind::DistributionUpdate,
+			"counter bookkeeping uses its registered distribution presentation route");
+		SortTrace discardingTrace = counting;
+		discardingTrace.algorithm = SortAlgorithm::CanonicalStalinFilter;
+		const TraceAudioPresentationPolicy discardingPolicy(discardingTrace);
+		check(discardingPolicy.classify(counting.events[3]) == TraceAudioEventKind::DiscardAccent,
+			"discard events receive the capability registered by a discard algorithm (kind=" +
+			std::to_string(static_cast<int>(discardingPolicy.classify(counting.events[3]))) + ")");
 		TraceAudioOperandProjection probeOperands;
 		check(countingPolicy.projectOperands(counting.events[0], probeOperands) && !probeOperands.hasSecondOperand &&
 			probeOperands.firstItemId == 23 && probeOperands.firstRole == SemanticRole::ProbedItem,
 			"single-item probes share the same stable-ID and semantic-role projection");
 		const std::vector<std::size_t> countingIndices = collectAudioEventIndices(counting);
 		check(countingIndices.size() == 2 && countingIndices[0] == 0 && countingIndices[1] == 1,
-			"reference cadence includes audible probes and auxiliary writes but excludes bookkeeping and discards");
+			"reference cadence includes audible probes and auxiliary writes but excludes bookkeeping and discards (size=" +
+			std::to_string(countingIndices.size()) + ")");
 		check(supportsAudioControlCategory(*algorithmDescriptor(SortAlgorithm::Counting), AudioControlCategory::Probe) &&
 			supportsAudioControlCategory(*algorithmDescriptor(SortAlgorithm::Counting), AudioControlCategory::Auxiliary),
 			"shared presentation policy exposes Counting's supported operation gain categories");
@@ -897,7 +977,8 @@ namespace sortinglogic_tests
 
 		SortTrace hiddenMerge;
 		hiddenMerge.algorithm = SortAlgorithm::Merge;
-		hiddenMerge.mergeBufferVisualizationEnabled = false;
+		hiddenMerge.configuration.setValue("buffer_visibility", 0);
+		hiddenMerge.configuration.setValue("reconstruction_mode", 1);
 		SemanticEvent mergeWrite = auxiliaryWrite;
 		mergeWrite.workspaceName = "merge";
 		SemanticEvent mergeMutation;
@@ -910,36 +991,46 @@ namespace sortinglogic_tests
 		hiddenMerge.comparisonEventIndices.push_back(2);
 		const TraceAudioPresentationPolicy hiddenMergePolicy(hiddenMerge);
 		check(hiddenMergePolicy.classify(mergeWrite) == TraceAudioEventKind::Silent &&
-			!hiddenMergePolicy.contributesToReferenceCadence(mergeWrite) &&
-			!hiddenMergePolicy.frameAccentVisible(mergeMutation),
+			!hiddenMergePolicy.contributesToReferenceCadence(mergeWrite),
 			"canonical Merge keeps auxiliary writes and non-comparison accents out of the reference score");
+		check(!hiddenMergePolicy.frameAccentVisible(mergeMutation),
+			std::string("canonical Merge hides non-comparison frame accents under its registered comparison-only strategy (visible=") +
+			(hiddenMergePolicy.frameAccentVisible(mergeMutation) ? "true" : "false") + ")");
 		check(hiddenMergePolicy.classify(completionCompare) == TraceAudioEventKind::Comparison &&
 			hiddenMergePolicy.contributesToReferenceCadence(completionCompare) &&
 			hiddenMergePolicy.frameAccentVisible(completionCompare) && hiddenMergePolicy.usesComparisonCadence(),
-			"completion scans stay audible on the canonical Merge comparison schedule");
+			"completion scans stay audible on the canonical Merge comparison schedule (kind=" +
+			std::to_string(static_cast<int>(hiddenMergePolicy.classify(completionCompare))) + ", cadence=" +
+			(hiddenMergePolicy.usesComparisonCadence() ? "true" : "false") + ")");
 		SortTrace visibleMerge = hiddenMerge;
-		visibleMerge.mergeBufferVisualizationEnabled = true;
+		visibleMerge.configuration.setValue("buffer_visibility", 1);
 		const TraceAudioPresentationPolicy visibleMergePolicy(visibleMerge);
 		check(visibleMergePolicy.classify(mergeWrite) == TraceAudioEventKind::Silent &&
 			!visibleMergePolicy.contributesToReferenceCadence(mergeWrite) &&
 			collectAudioEventIndices(visibleMerge).size() == collectAudioEventIndices(hiddenMerge).size(),
 			"canonical Merge audio event eligibility is invariant under auxiliary-lane visibility");
-		check(!isWorkspaceVisible(SortAlgorithm::Merge, false, "merge") &&
-			isWorkspaceVisible(SortAlgorithm::Merge, false, "counts") &&
-			isWorkspaceVisible(SortAlgorithm::Merge, true, "merge") &&
-			visibleRoleWorkspace(SortAlgorithm::Merge, false, "merge") == "main",
-			"audio and chart consumers share Merge lane visibility and main-array role projection");
+		const AlgorithmDescriptor* mergeDescriptor = algorithmDescriptor(SortAlgorithm::Merge);
+		const AlgorithmConfiguration hiddenConfiguration = hiddenMerge.configuration;
+		AlgorithmConfiguration visibleConfiguration = hiddenConfiguration;
+		visibleConfiguration.setValue("buffer_visibility", 1);
+		check(!isWorkspaceVisible(*mergeDescriptor, hiddenConfiguration, "merge") &&
+			isWorkspaceVisible(*mergeDescriptor, hiddenConfiguration, "unbound_workspace") &&
+			isWorkspaceVisible(*mergeDescriptor, visibleConfiguration, "merge"),
+			std::string("workspace visibility resolves through registered descriptor bindings (hidden=") +
+			(isWorkspaceVisible(*mergeDescriptor, hiddenConfiguration, "merge") ? "true" : "false") + ", visible=" +
+			(isWorkspaceVisible(*mergeDescriptor, visibleConfiguration, "merge") ? "true" : "false") + ")");
 		RenderSnapshot mergeSnapshot;
 		mergeSnapshot.algorithm = SortAlgorithm::Merge;
-		mergeSnapshot.mergeBufferVisualizationEnabled = false;
+		mergeSnapshot.configuration = hiddenConfiguration;
+		mergeSnapshot.workspaces = mergeDescriptor->workspaces;
 		mergeSnapshot.activeRoles.push_back(ActiveRole(SemanticRole::ComparedItem, 11, 0, "merge"));
 		mergeSnapshot.activeRoles.push_back(ActiveRole(SemanticRole::WriteTarget, 12, 1, "main"));
 		const std::vector<ActiveRole> hiddenMergeRoles = visibleRolesOnMainArray(mergeSnapshot);
 		check(hiddenMergeRoles.size() == 2 && hiddenMergeRoles[0].lane == "main" && hiddenMergeRoles[1].lane == "main",
-			"hidden Merge buffer projects its semantic roles onto the visible primary array");
-		mergeSnapshot.mergeBufferVisualizationEnabled = true;
+			"hidden workspace projects its semantic roles onto the visible primary array");
+		mergeSnapshot.configuration = visibleConfiguration;
 		check(visibleRolesOnMainArray(mergeSnapshot)[0].lane == "merge",
-			"visible Merge buffer preserves the role's auxiliary lane identity");
+			"visible workspace preserves the role's auxiliary lane identity");
 		check(supportsAudioControlCategory(*algorithmDescriptor(SortAlgorithm::CanonicalStalinFilter), AudioControlCategory::Discard),
 			"catalog behavior labels declare discard audio controls");
 	}
@@ -1136,8 +1227,8 @@ namespace sortinglogic_tests
 		testBurntPancakeOrientation();
 		activeStage = "testSortingNetworkSchedules";
 		testSortingNetworkSchedules();
-		activeStage = "testMergeWritebackModes";
-		testMergeWritebackModes();
+		activeStage = "testMergeReconstructionModes";
+		testMergeReconstructionModes();
 		activeStage = "testSimulationAndProfiles";
 		testSimulationAndProfiles();
 		activeStage = "testSnapshotAnnotations";
@@ -1226,6 +1317,8 @@ namespace sortinglogic_tests
 		{"testBalancedTreeSorts", "testBalancedTreeSorts", testBalancedTreeSorts, true},
 		{"testSplayTreeSort", "testSplayTreeSort", testSplayTreeSort, true},
 		{"verifyProfilesAndAlgorithms", "verifyProfilesAndAlgorithms", verifyProfilesAndAlgorithms, true},
+		{"testCompactReconstructionModes", "testCompactReconstructionModes", testCompactReconstructionModes, true},
+		{"testDetailedReconstructionCoverage", "testDetailedReconstructionCoverage", testDetailedReconstructionCoverage, true},
 		{"testBurntPancakeOrientation", "testBurntPancakeOrientation", testBurntPancakeOrientation, true},
 		{"testSortingNetworkSchedules", "testSortingNetworkSchedules", testSortingNetworkSchedules, true},
 		{"testMatrixSortShapes", "testMatrixSortShapes", testMatrixSortShapes, true},
@@ -1233,7 +1326,7 @@ namespace sortinglogic_tests
 		{"testStoogeFamilyVariants", "testStoogeFamilyVariants", testStoogeFamilyVariants, true},
 		{"testRecursiveExchangeNoveltyVariants", "testRecursiveExchangeNoveltyVariants", testRecursiveExchangeNoveltyVariants, true},
 		{"testFunSortVariants", "testFunSortVariants", testFunSortVariants, true},
-		{"testMergeWritebackModes", "testMergeWritebackModes", testMergeWritebackModes, true},
+		{"testMergeReconstructionModes", "testMergeReconstructionModes", testMergeReconstructionModes, true},
 		{"testSimulationAndProfiles", "testSimulationAndProfiles", testSimulationAndProfiles, true},
 		{"testSnapshotAnnotations", "testSnapshotAnnotations", testSnapshotAnnotations, true},
 		{"testTraceServiceAndPlayback", "testTraceServiceAndPlayback", testTraceServiceAndPlayback, true},
@@ -1254,6 +1347,9 @@ namespace sortinglogic_tests
 
 	const TestCommand testCommands[] = {
 		{"--catalog-coverage-only", "Pinned ArrayV catalog coverage: ", TestCommandKind::CatalogCoverage, "" },
+		{"--catalog-algorithms-only", "Catalog algorithm behavior: ", TestCommandKind::Focused, "verifyProfilesAndAlgorithms" },
+		{"--compact-reconstruction-only", "Compact reconstruction modes: ", TestCommandKind::Focused, "testCompactReconstructionModes" },
+		{"--detailed-reconstruction-only", "Detailed reconstruction coverage: ", TestCommandKind::Focused, "testDetailedReconstructionCoverage" },
 		{"--trace-memory-profile", "", TestCommandKind::TraceMemoryProfile, "" },
 		{"--binary-insertion-only", "Focused Binary Insertion tests: ", TestCommandKind::Focused, "testBinaryInsertionStrategy" },
 		{"--pancake-family-only", "Focused Pancake family tests: ", TestCommandKind::Focused, "testPancakeStrategyFamily" },

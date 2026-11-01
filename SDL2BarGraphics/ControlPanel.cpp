@@ -702,7 +702,6 @@ void ControlPanel::processAction(const UiAction& action, AppAction& output)
 		return;
 	}
 	if (action.appAction.kind == AppActionKind::SelectAlgorithm ||
-		action.appAction.kind == AppActionKind::SetShellGapSequence ||
 		action.appAction.kind == AppActionKind::SetAlgorithmOption)
 	{
 		output = ui::normalizeCatalogAction(action.appAction);

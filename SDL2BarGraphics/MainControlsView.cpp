@@ -311,7 +311,7 @@ void MainControlsView::synchronizeText(const UserPreferences& preferences, UiPre
 		detailText << screenModel.inputDomain << " / " << screenModel.inputPattern << "  |  ";
 		if (facts.available) detailText << (facts.stable ? "Stable" : "Unstable") << (facts.inPlace ? ", in-place" : ", auxiliary space")
 			<< "  |  " << facts.timeComplexity << " time, " << facts.spaceComplexity << " space  |  ";
-		if (!screenModel.shellGapSequence.empty()) detailText << "Gap sequence: " << screenModel.shellGapSequence << "  |  ";
+		if (!screenModel.algorithmOptionsSummary.empty()) detailText << screenModel.algorithmOptionsSummary << "  |  ";
 		if (snapshot.hasTrace) detailText << "Event " << snapshot.cursor << "/" << snapshot.eventCount;
 		else if (snapshot.buildingTrace) detailText << "Building trace";
 		else detailText << "No trace";

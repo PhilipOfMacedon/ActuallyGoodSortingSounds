@@ -20,18 +20,18 @@
 
 namespace sortinglogic_tests
 {
-	void testMergeWritebackModes()
+	void testMergeReconstructionModes()
 	{
 		using namespace sortinglogic;
 		const std::vector<SortItem> input = floats({ 0.8f, 0.1f, 0.6f, 0.2f, 0.4f, 0.3f });
-		TraceBuildRequest atomicRequest;
-		atomicRequest.input = input;
-		atomicRequest.algorithm = SortAlgorithm::Merge;
-		atomicRequest.mergeWritebackMode = MergeWritebackMode::AtomicRangeWrite;
-		const SortTrace atomic = SortTraceBuilder::build(atomicRequest);
-		check(atomic.familyId == "merge-sort" && atomic.variantId == "merge",
+		TraceBuildRequest compactRequest;
+		compactRequest.input = input;
+		compactRequest.algorithm = SortAlgorithm::Merge;
+		compactRequest.optionSelections["reconstruction_mode"] = "compact_reference";
+		const SortTrace compact = SortTraceBuilder::build(compactRequest);
+		check(compact.familyId == "merge-sort" && compact.variantId == "merge",
 			"trace identifies its algorithm by stable family and variant strings");
-		TraceBuildRequest stableIdRequest = atomicRequest;
+		TraceBuildRequest stableIdRequest = compactRequest;
 		stableIdRequest.familyId = "merge-sort";
 		stableIdRequest.variantId = "merge";
 		check(SortTraceBuilder::build(stableIdRequest).familyId == stableIdRequest.familyId,
@@ -41,117 +41,117 @@ namespace sortinglogic_tests
 		try { SortTraceBuilder::build(stableIdRequest); }
 		catch (const std::invalid_argument&) { rejectedUnknownVariant = true; }
 		check(rejectedUnknownVariant, "trace builder rejects unregistered stable variant identifiers");
-		TraceBuildRequest animatedRequest = atomicRequest;
-		animatedRequest.mergeWritebackMode = MergeWritebackMode::AnimatedWrites;
-		const SortTrace animated = SortTraceBuilder::build(animatedRequest);
-		TraceBuildRequest topDownAtomicRequest = atomicRequest;
-		topDownAtomicRequest.mergeExecutionMode = MergeExecutionMode::TopDown;
-		const SortTrace topDownAtomic = SortTraceBuilder::build(topDownAtomicRequest);
-		TraceBuildRequest topDownAnimatedRequest = animatedRequest;
-		topDownAnimatedRequest.mergeExecutionMode = MergeExecutionMode::TopDown;
-		const SortTrace topDownAnimated = SortTraceBuilder::build(topDownAnimatedRequest);
-		TraceBuildRequest stableOptionRequest = atomicRequest;
+		TraceBuildRequest detailedRequest = compactRequest;
+		detailedRequest.optionSelections["reconstruction_mode"] = "detailed";
+		const SortTrace detailed = SortTraceBuilder::build(detailedRequest);
+		TraceBuildRequest topDownCompactRequest = compactRequest;
+		topDownCompactRequest.optionSelections["execution_mode"] = "top_down";
+		const SortTrace topDownCompact = SortTraceBuilder::build(topDownCompactRequest);
+		TraceBuildRequest topDownDetailedRequest = detailedRequest;
+		topDownDetailedRequest.optionSelections["execution_mode"] = "top_down";
+		const SortTrace topDownDetailed = SortTraceBuilder::build(topDownDetailedRequest);
+		TraceBuildRequest stableOptionRequest = compactRequest;
 		stableOptionRequest.optionSelections["execution_mode"] = "top_down";
-		stableOptionRequest.optionSelections["writeback_mode"] = "animated_writes";
+		stableOptionRequest.optionSelections["reconstruction_mode"] = "detailed";
 		const SortTrace stableOptionTrace = SortTraceBuilder::build(stableOptionRequest);
-		check(stableOptionTrace.configuration.mergeExecutionMode == MergeExecutionMode::TopDown &&
-			stableOptionTrace.configuration.mergeWritebackMode == MergeWritebackMode::AnimatedWrites &&
-			stableOptionTrace.events.size() == topDownAnimated.events.size(),
-			"stable Merge option IDs override legacy request fields and resolve to the same configured trace");
-		TraceBuildRequest explicitConfigurationRequest = atomicRequest;
-		explicitConfigurationRequest.mergeExecutionMode = MergeExecutionMode::TopDown;
+		check(stableOptionTrace.configuration.value("execution_mode") == static_cast<int>(MergeExecutionMode::TopDown) &&
+			stableOptionTrace.configuration.value("reconstruction_mode") == 1 &&
+			stableOptionTrace.events.size() == topDownDetailed.events.size(),
+			"registered Merge properties resolve to the same configured trace");
+		TraceBuildRequest explicitConfigurationRequest = compactRequest;
 		AlgorithmConfiguration explicitConfiguration;
 		explicitConfigurationRequest.setConfiguration(explicitConfiguration);
 		const SortTrace explicitConfigurationTrace = SortTraceBuilder::build(explicitConfigurationRequest);
-		check(explicitConfigurationTrace.configuration.mergeExecutionMode == MergeExecutionMode::BottomUp,
-			"explicit typed configuration takes precedence over a conflicting legacy request field, including its default value");
+		check(explicitConfigurationTrace.configuration.value("execution_mode") == static_cast<int>(MergeExecutionMode::BottomUp),
+			"explicit typed configuration keeps the declared Merge execution default");
 		TraceBuildRequest typedHeapRequest;
 		typedHeapRequest.input = floats({ 0.8f, 0.1f, 0.6f, 0.2f, 0.4f, 0.3f });
 		typedHeapRequest.algorithm = SortAlgorithm::ArrayvBaseNHeap;
-		typedHeapRequest.bucketCount = 2;
 		AlgorithmConfiguration typedHeapConfiguration;
-		typedHeapConfiguration.heapArity = 8;
+		typedHeapConfiguration.setValue("heap_arity", 8);
 		typedHeapRequest.setConfiguration(typedHeapConfiguration);
 		const SortTrace typedHeapTrace = SortTraceBuilder::build(typedHeapRequest);
 		SortState typedHeapEnd = typedHeapTrace.initialState;
 		for (std::size_t i = 0; i < typedHeapTrace.events.size(); ++i) applyEventForward(typedHeapEnd, typedHeapTrace.events[i]);
-		check(typedHeapTrace.configuration.heapArity == 8 &&
+		check(typedHeapTrace.configuration.value("heap_arity") == 8 &&
 			isSorted(typedHeapEnd, SortDirection::Ascending),
 			"typed Base-N heap arity drives the strategy without duplicating it in trace metadata");
-		const SortAlgorithm legacyBucketRadixAlgorithms[] = {
+		const SortAlgorithm configuredRadixAlgorithms[] = {
 			SortAlgorithm::ArrayvAmericanFlag, SortAlgorithm::ArrayvStacklessAmericanFlag
 		};
-		for (std::size_t i = 0; i < sizeof(legacyBucketRadixAlgorithms) / sizeof(legacyBucketRadixAlgorithms[0]); ++i)
+		for (std::size_t i = 0; i < sizeof(configuredRadixAlgorithms) / sizeof(configuredRadixAlgorithms[0]); ++i)
 		{
-			TraceBuildRequest legacyBucketRequest;
-			legacyBucketRequest.algorithm = legacyBucketRadixAlgorithms[i];
-			legacyBucketRequest.domain = InputDomain::NonnegativeIntegerKeys;
-			legacyBucketRequest.bucketCount = 4;
-			legacyBucketRequest.input = integers({ 3, 0, 2, 1 });
-			const SortTrace legacyBucketTrace = SortTraceBuilder::build(legacyBucketRequest);
-			check(legacyBucketTrace.configuration.radixBase == 4,
-				"legacy bucket count resolves to the typed radix base for " + std::string(algorithmDisplayName(legacyBucketRadixAlgorithms[i])));
+			TraceBuildRequest configuredRequest;
+			configuredRequest.algorithm = configuredRadixAlgorithms[i];
+			configuredRequest.domain = InputDomain::NonnegativeIntegerKeys;
+			configuredRequest.optionSelections["radix_base"] = "base_4";
+			configuredRequest.input = integers({ 3, 0, 2, 1 });
+			const SortTrace configuredTrace = SortTraceBuilder::build(configuredRequest);
+			check(configuredTrace.configuration.value("radix_base") == 4,
+				"registered radix-base property configures " + std::string(algorithmDisplayName(configuredRadixAlgorithms[i])));
 		}
 		TraceBuildRequest invalidTypedHeapRequest = typedHeapRequest;
 		AlgorithmConfiguration invalidTypedHeapConfiguration;
-		invalidTypedHeapConfiguration.heapArity = 1;
+		invalidTypedHeapConfiguration.setValue("heap_arity", 1);
 		invalidTypedHeapRequest.setConfiguration(invalidTypedHeapConfiguration);
 		bool rejectedInvalidTypedHeap = false;
 		try { SortTraceBuilder::build(invalidTypedHeapRequest); }
 		catch (const std::invalid_argument&) { rejectedInvalidTypedHeap = true; }
 		check(rejectedInvalidTypedHeap, "typed algorithm configuration rejects a choice absent from the catalog");
-		TraceBuildRequest unknownOptionRequest = atomicRequest;
+		TraceBuildRequest unknownOptionRequest = compactRequest;
 		unknownOptionRequest.optionSelections["execution_mode"] = "missing_mode";
 		bool rejectedUnknownOption = false;
 		try { SortTraceBuilder::build(unknownOptionRequest); }
 		catch (const std::invalid_argument&) { rejectedUnknownOption = true; }
 		check(rejectedUnknownOption, "trace builder rejects option IDs missing from the selected catalog variant");
-		std::size_t atomicRangeWrites = 0, atomicItemWrites = 0, animatedItemWrites = 0, animatedRangeWrites = 0;
-		for (std::size_t i = 0; i < atomic.events.size(); ++i)
+		std::size_t compactRangeWrites = 0, compactItemWrites = 0, detailedItemWrites = 0, detailedRangeWrites = 0, reconstructiveWrites = 0;
+		for (std::size_t i = 0; i < compact.events.size(); ++i)
 		{
-			if (atomic.events[i].type == SemanticEventType::WriteRange) ++atomicRangeWrites;
-			if (atomic.events[i].type == SemanticEventType::WriteItem) ++atomicItemWrites;
+			if (compact.events[i].type == SemanticEventType::WriteRange) ++compactRangeWrites;
+			if (compact.events[i].type == SemanticEventType::WriteItem) ++compactItemWrites;
 		}
-		for (std::size_t i = 0; i < animated.events.size(); ++i)
+		for (std::size_t i = 0; i < detailed.events.size(); ++i)
 		{
-			if (animated.events[i].type == SemanticEventType::WriteRange) ++animatedRangeWrites;
-			if (animated.events[i].type == SemanticEventType::WriteItem) ++animatedItemWrites;
+			if (detailed.events[i].type == SemanticEventType::WriteRange) ++detailedRangeWrites;
+			if (detailed.events[i].type == SemanticEventType::WriteItem) ++detailedItemWrites;
+			if (detailed.events[i].reconstructive) ++reconstructiveWrites;
 		}
-		check(atomicRangeWrites > 0 && atomicItemWrites == 0 && animatedItemWrites > 0 && animatedRangeWrites == 0,
-			"Merge writeback configuration switches between atomic ranges and item-by-item writes");
-		SortState atomicEnd = atomic.initialState, animatedEnd = animated.initialState;
-		for (std::size_t i = 0; i < atomic.events.size(); ++i) applyEventForward(atomicEnd, atomic.events[i]);
-		for (std::size_t i = 0; i < animated.events.size(); ++i) applyEventForward(animatedEnd, animated.events[i]);
-		check(isSorted(atomicEnd, SortDirection::Ascending) && isSorted(animatedEnd, SortDirection::Ascending) &&
-			sameSlots(atomicEnd.slots, animatedEnd.slots) && atomicEnd.metrics.primaryWrites == animatedEnd.metrics.primaryWrites,
-			"both Merge writeback modes produce the same final array and logical write count");
-		SortState topDownAtomicEnd = topDownAtomic.initialState, topDownAnimatedEnd = topDownAnimated.initialState;
-		for (std::size_t i = 0; i < topDownAtomic.events.size(); ++i) applyEventForward(topDownAtomicEnd, topDownAtomic.events[i]);
-		for (std::size_t i = 0; i < topDownAnimated.events.size(); ++i) applyEventForward(topDownAnimatedEnd, topDownAnimated.events[i]);
-		check(topDownAtomic.configuration.mergeExecutionMode == MergeExecutionMode::TopDown &&
-			isSorted(topDownAtomicEnd, SortDirection::Ascending) && isSorted(topDownAnimatedEnd, SortDirection::Ascending) &&
-			sameSlots(topDownAtomicEnd.slots, topDownAnimatedEnd.slots),
-			"top-down Merge supports both independent writeback styles and reaches the same result");
-		verifyAlgorithmCase("Merge atomic writeback", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
-			SortDirection::Descending, InputDomain::NormalizedFloats, MergeWritebackMode::AtomicRangeWrite);
-		verifyAlgorithmCase("Merge animated writeback", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
-			SortDirection::Descending, InputDomain::NormalizedFloats, MergeWritebackMode::AnimatedWrites);
-		verifyAlgorithmCase("Merge top-down atomic ascending", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
-			SortDirection::Ascending, InputDomain::NormalizedFloats, MergeWritebackMode::AtomicRangeWrite, MergeExecutionMode::TopDown);
-		verifyAlgorithmCase("Merge top-down atomic descending", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
-			SortDirection::Descending, InputDomain::NormalizedFloats, MergeWritebackMode::AtomicRangeWrite, MergeExecutionMode::TopDown);
-		verifyAlgorithmCase("Merge top-down animated ascending", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
-			SortDirection::Ascending, InputDomain::NormalizedFloats, MergeWritebackMode::AnimatedWrites, MergeExecutionMode::TopDown);
-		verifyAlgorithmCase("Merge top-down animated descending", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
-			SortDirection::Descending, InputDomain::NormalizedFloats, MergeWritebackMode::AnimatedWrites, MergeExecutionMode::TopDown);
+		check(compactRangeWrites > 0 && compactItemWrites == 0 && detailedItemWrites > 0 && detailedRangeWrites == 0 &&
+			reconstructiveWrites > 0 && detailed.configuration.value("reconstruction_mode") == 1,
+			"Merge configuration switches between compact publication and scored per-item reconstruction");
+		SortState compactEnd = compact.initialState, detailedEnd = detailed.initialState;
+		for (std::size_t i = 0; i < compact.events.size(); ++i) applyEventForward(compactEnd, compact.events[i]);
+		for (std::size_t i = 0; i < detailed.events.size(); ++i) applyEventForward(detailedEnd, detailed.events[i]);
+		check(isSorted(compactEnd, SortDirection::Ascending) && isSorted(detailedEnd, SortDirection::Ascending) &&
+			sameSlots(compactEnd.slots, detailedEnd.slots) && compactEnd.metrics.primaryWrites == detailedEnd.metrics.primaryWrites,
+			"both Merge presentation modes produce the same final array and logical write count");
+		SortState topDownCompactEnd = topDownCompact.initialState, topDownDetailedEnd = topDownDetailed.initialState;
+		for (std::size_t i = 0; i < topDownCompact.events.size(); ++i) applyEventForward(topDownCompactEnd, topDownCompact.events[i]);
+		for (std::size_t i = 0; i < topDownDetailed.events.size(); ++i) applyEventForward(topDownDetailedEnd, topDownDetailed.events[i]);
+		check(topDownCompact.configuration.value("execution_mode") == static_cast<int>(MergeExecutionMode::TopDown) &&
+			isSorted(topDownCompactEnd, SortDirection::Ascending) && isSorted(topDownDetailedEnd, SortDirection::Ascending) &&
+			sameSlots(topDownCompactEnd.slots, topDownDetailedEnd.slots),
+			"top-down Merge supports both presentation modes and reaches the same result");
+		verifyAlgorithmCase("Merge compact reference", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
+			SortDirection::Descending, InputDomain::NormalizedFloats, true);
+		verifyAlgorithmCase("Merge detailed reconstruction", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
+			SortDirection::Descending, InputDomain::NormalizedFloats);
+		verifyAlgorithmCase("Merge top-down compact ascending", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
+			SortDirection::Ascending, InputDomain::NormalizedFloats, true, MergeExecutionMode::TopDown);
+		verifyAlgorithmCase("Merge top-down compact descending", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
+			SortDirection::Descending, InputDomain::NormalizedFloats, true, MergeExecutionMode::TopDown);
+		verifyAlgorithmCase("Merge top-down detailed ascending", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
+			SortDirection::Ascending, InputDomain::NormalizedFloats, false, MergeExecutionMode::TopDown);
+		verifyAlgorithmCase("Merge top-down detailed descending", input, InputProfile::NormalizedFloat, SortAlgorithm::Merge,
+			SortDirection::Descending, InputDomain::NormalizedFloats, false, MergeExecutionMode::TopDown);
 		const AlgorithmDescriptor* mergeDescriptor = algorithmDescriptor(SortAlgorithm::Merge);
-		bool hasExecutionGroup = false, hasWritebackGroup = false;
+		bool hasExecutionGroup = false, hasReconstructionGroup = false;
 		for (std::size_t i = 0; mergeDescriptor && i < mergeDescriptor->supportedOptions.size(); ++i)
 		{
 			hasExecutionGroup = hasExecutionGroup || std::string(mergeDescriptor->supportedOptions[i].groupId) == "execution_mode";
-			hasWritebackGroup = hasWritebackGroup || std::string(mergeDescriptor->supportedOptions[i].groupId) == "writeback_mode";
+			hasReconstructionGroup = hasReconstructionGroup || std::string(mergeDescriptor->supportedOptions[i].groupId) == "reconstruction_mode";
 		}
-		check(hasExecutionGroup && hasWritebackGroup, "Merge options remain separately grouped by stable metadata IDs");
+		check(hasExecutionGroup && hasReconstructionGroup, "Merge execution and reconstruction remain separate registered properties");
 	}
 	void testMergeFamilyVariants()
 	{
@@ -241,8 +241,8 @@ namespace sortinglogic_tests
 		}
 		const std::map<std::string, std::uint64_t>::const_iterator passes = finalState.metrics.algorithm.find("merge_passes");
 		check(trace.complete && passes != finalState.metrics.algorithm.end() && passes->second == 5 &&
-			phaseBegins == 5 && phaseEnds == 5,
-			"Iterative Top-down Merge emits five balanced layers for 17 items and closes each phase");
+			phaseBegins >= 5 && phaseEnds == phaseBegins,
+			"Iterative Top-down Merge emits five layers and balances layer/reconstruction phase markers");
 
 		request.maxOperations = 8;
 		const SortTrace partial = SortTraceBuilder::build(request);
@@ -351,8 +351,8 @@ namespace sortinglogic_tests
 		}
 		const std::map<std::string, std::uint64_t>::const_iterator tasks = finalState.metrics.algorithm.find("parallel_merge_tasks");
 		check(trace.complete && tasks != finalState.metrics.algorithm.end() && tasks->second == 30 &&
-			phaseBegins == 30 && phaseEnds == 30,
-			"Parallel Merge groups all 30 recursive sibling tasks and closes their phase markers");
+			phaseBegins >= 30 && phaseEnds == phaseBegins,
+			"Parallel Merge groups recursive sibling tasks and balances task/reconstruction phase markers");
 		check(deterministicEvents, "Parallel Merge replaces thread races with a repeatable deterministic trace schedule");
 
 		request.maxOperations = 64;
@@ -1357,14 +1357,19 @@ namespace sortinglogic_tests
 		std::vector<int> values;
 		for (std::size_t i = 0; i < 800; ++i) values.push_back(static_cast<int>(random() % 83));
 		std::uint64_t previousBufferMerges = 0, previousFallbackMerges = 0;
-		for (std::size_t choice = 0; choice < descriptor->supportedOptions.size(); ++choice)
+		std::vector<const AlgorithmOptionDescriptor*> bufferChoices;
+		for (std::size_t optionIndex = 0; optionIndex < descriptor->supportedOptions.size(); ++optionIndex)
+			if (std::string(descriptor->supportedOptions[optionIndex].groupId) == "rotate_buffer_capacity")
+				bufferChoices.push_back(&descriptor->supportedOptions[optionIndex]);
+		for (std::size_t choice = 0; choice < bufferChoices.size(); ++choice)
 		{
 			TraceBuildRequest request;
 			request.algorithm = algorithm;
 			request.input = integers(values);
 			request.profile = InputProfile::IntegerKeys;
 			request.domain = InputDomain::NonnegativeIntegerKeys;
-			request.rotateMergeBufferSize = descriptor->supportedOptions[choice].value;
+			request.optionSelections["rotate_buffer_capacity"] = bufferChoices[choice]->stableId;
+			const int configuredBufferCapacity = bufferChoices[choice]->value;
 			for (int direction = 0; direction < 2; ++direction)
 			{
 				request.direction = direction == 0 ? SortDirection::Ascending : SortDirection::Descending;
@@ -1373,14 +1378,14 @@ namespace sortinglogic_tests
 				for (std::size_t event = 0; event < trace.events.size(); ++event) applyEventForward(replay, trace.events[event]);
 				const std::uint64_t bufferMerges = replay.metrics.algorithm.find("optimized_rotate_buffer_merges")->second;
 				const std::uint64_t fallbackMerges = replay.metrics.algorithm.find("optimized_rotate_in_place_merges")->second;
-				const bool hasExpectedBufferedPath = request.rotateMergeBufferSize == 16 || bufferMerges > 0;
-				if (!trace.complete || trace.configuration.rotateMergeBufferSize != request.rotateMergeBufferSize || !isSorted(replay, request.direction) ||
+				const bool hasExpectedBufferedPath = configuredBufferCapacity == 16 || bufferMerges > 0;
+				if (!trace.complete || trace.configuration.value("rotate_buffer_capacity") != configuredBufferCapacity || !isSorted(replay, request.direction) ||
 					!hasExpectedBufferedPath || fallbackMerges == 0)
-					std::cerr << "Optimized Rotate diagnostic: capacity=" << request.rotateMergeBufferSize << " direction=" << direction
-						<< " complete=" << trace.complete << " traceCapacity=" << trace.configuration.rotateMergeBufferSize
+					std::cerr << "Optimized Rotate diagnostic: capacity=" << configuredBufferCapacity << " direction=" << direction
+						<< " complete=" << trace.complete << " traceCapacity=" << trace.configuration.value("rotate_buffer_capacity")
 						<< " sorted=" << isSorted(replay, request.direction) << " bufferMerges=" << bufferMerges
 						<< " fallbackMerges=" << fallbackMerges << " events=" << trace.events.size() << '\n';
-				check(trace.complete && trace.configuration.rotateMergeBufferSize == request.rotateMergeBufferSize && isSorted(replay, request.direction) &&
+				check(trace.complete && trace.configuration.value("rotate_buffer_capacity") == configuredBufferCapacity && isSorted(replay, request.direction) &&
 					hasExpectedBufferedPath && fallbackMerges > 0,
 					"Optimized Rotate Merge sorts 800 duplicate-heavy items with both configured merge paths");
 				if (direction == 0)
@@ -1398,7 +1403,7 @@ namespace sortinglogic_tests
 
 		TraceBuildRequest partialRequest;
 		partialRequest.algorithm = algorithm;
-		partialRequest.rotateMergeBufferSize = 16;
+		partialRequest.optionSelections["rotate_buffer_capacity"] = "items_16";
 		partialRequest.maxOperations = 37;
 		partialRequest.profile = InputProfile::IntegerKeys;
 		partialRequest.domain = InputDomain::NonnegativeIntegerKeys;
@@ -1428,13 +1433,13 @@ namespace sortinglogic_tests
 				{
 					TraceBuildRequest request;
 					request.algorithm = SortAlgorithm::ArrayvGrail;
-					request.bucketCount = static_cast<int>(mode);
+					request.optionSelections["grail_buffer_mode"] = mode == 0 ? "in_place" : mode == 1 ? "static_buffer" : "dynamic_buffer";
 					request.profile = InputProfile::IntegerKeys;
 					request.domain = InputDomain::NonnegativeIntegerKeys;
 					request.direction = direction == 0 ? SortDirection::Ascending : SortDirection::Descending;
 					request.input = integers(values);
 					const SortTrace trace = SortTraceBuilder::build(request);
-					check(trace.configuration.grailBufferMode == static_cast<GrailBufferMode>(mode), "Grail Sort retains its selected buffer mode in the trace");
+					check(trace.configuration.value("grail_buffer_mode") == static_cast<int>(mode), "Grail Sort retains its selected buffer mode in the trace");
 					verifyAlgorithmCase("Grail Sort option mode boundary case", integers(values), InputProfile::IntegerKeys,
 						SortAlgorithm::ArrayvGrail, request.direction, InputDomain::NonnegativeIntegerKeys);
 				}
@@ -1446,7 +1451,7 @@ namespace sortinglogic_tests
 			{
 				TraceBuildRequest request;
 				request.algorithm = SortAlgorithm::ArrayvGrail;
-				request.bucketCount = mode;
+				request.optionSelections["grail_buffer_mode"] = mode == 0 ? "in_place" : mode == 1 ? "static_buffer" : "dynamic_buffer";
 				request.profile = InputProfile::IntegerKeys;
 				request.domain = InputDomain::NonnegativeIntegerKeys;
 				request.direction = direction == 0 ? SortDirection::Ascending : SortDirection::Descending;

@@ -23,7 +23,7 @@ namespace
 	bool sameTimelineGains(const SoundEngine::AudioTimelineGainSettings& a, const SoundEngine::AudioTimelineGainSettings& b)
 	{
 		if (a.comparisonGain != b.comparisonGain || a.heldKeyGain != b.heldKeyGain || a.probeGain != b.probeGain ||
-			a.auxiliaryGain != b.auxiliaryGain) return false;
+			a.auxiliaryGain != b.auxiliaryGain || a.reconstructionGain != b.reconstructionGain) return false;
 		for (std::size_t i = 0; i < SoundEngine::AudioTimelineRoleCount; ++i)
 			if (a.roleGain[i] != b.roleGain[i]) return false;
 		return true;
@@ -78,6 +78,11 @@ namespace
 			normalizedById[trace.input[i].stableId] = maximum == minimum ? 0.5 : (value - minimum) / (maximum - minimum);
 		}
 		std::vector<SoundEngine::AudioTimelineInputEvent> events(trace.events.size());
+		const auto normalizeCapturedValue = [minimum, maximum](float value)
+		{
+			const double captured = static_cast<double>(value);
+			return maximum == minimum ? 0.5 : (captured - minimum) / (maximum - minimum);
+		};
 		for (std::size_t i = 0; i < trace.events.size(); ++i)
 		{
 			const sortinglogic::SemanticEvent& source = trace.events[i];
@@ -87,15 +92,31 @@ namespace
 			sortinglogic::TraceAudioOperandProjection operands;
 			if (policy.projectOperands(source, operands))
 			{
-				const auto first = normalizedById.find(operands.firstItemId);
-				if (first == normalizedById.end()) continue;
+				double firstPosition = 0.5;
+				double secondPosition = 0.5;
+				if (operands.hasCapturedValues)
+				{
+					firstPosition = normalizeCapturedValue(operands.firstValue);
+					if (operands.hasSecondOperand) secondPosition = normalizeCapturedValue(operands.secondValue);
+				}
+				else
+				{
+					const auto first = normalizedById.find(operands.firstItemId);
+					if (first == normalizedById.end()) continue;
+					firstPosition = first->second;
+				}
 				if (operands.hasSecondOperand)
 				{
-					const auto second = normalizedById.find(operands.secondItemId);
-					if (second == normalizedById.end()) continue;
-					event.kind = SoundEngine::TimelineEventKind::Comparison;
-					event.firstPosition = first->second;
-					event.secondPosition = second->second;
+					if (!operands.hasCapturedValues)
+					{
+						const auto second = normalizedById.find(operands.secondItemId);
+						if (second == normalizedById.end()) continue;
+						secondPosition = second->second;
+					}
+					event.kind = kind == sortinglogic::TraceAudioEventKind::Reconstruction
+						? SoundEngine::TimelineEventKind::Reconstruction : SoundEngine::TimelineEventKind::Comparison;
+					event.firstPosition = firstPosition;
+					event.secondPosition = secondPosition;
 					event.firstRole = static_cast<std::uint8_t>(audioRole(operands.firstRole));
 					event.secondRole = static_cast<std::uint8_t>(audioRole(operands.secondRole));
 					if (operands.reverseOrder)
@@ -107,8 +128,9 @@ namespace
 				}
 				else
 				{
-					event.kind = SoundEngine::TimelineEventKind::Probe;
-					event.firstPosition = event.secondPosition = first->second;
+					event.kind = kind == sortinglogic::TraceAudioEventKind::Reconstruction
+						? SoundEngine::TimelineEventKind::Reconstruction : SoundEngine::TimelineEventKind::Probe;
+					event.firstPosition = event.secondPosition = firstPosition;
 					event.firstRole = static_cast<std::uint8_t>(audioRole(operands.firstRole));
 					event.firstGain = 1.0;
 					event.secondGain = 0.0;
@@ -128,7 +150,7 @@ namespace
 		std::unique_ptr<SoundEngine::PreparedAudioTimeline> timeline(new SoundEngine::PreparedAudioTimeline());
 		if (!timeline->prepare(events, trace.events.size(), timingMode, durationSeconds,
 			playbacktimebase::ReferenceTimelineSampleRate, playbacktimebase::ReferenceCadenceEventsPerSecond, &error,
-			policy.usesComparisonCadence()
+			policy.fixedDurationUsesEligibleEvents()
 				? SoundEngine::FixedDurationSchedule::EligibleEvents
 				: SoundEngine::FixedDurationSchedule::SourceCursor))
 			return std::unique_ptr<SoundEngine::PreparedAudioTimeline>();
@@ -161,7 +183,7 @@ bool LatestAudioStateMailbox::consumeLatest(AudioPresentationState& state)
 }
 
 AudioPresentationBridge::AudioPresentationBridge()
-	: lastTrace_(nullptr), lastSessionIdentity_(0), tracePolicy_(), lastCursor_(0), lastComparison_(), lastEventAccents_(), hasComparison_(false), lastComparisonIsProbe_(false), valuesById_(),
+	: lastTrace_(nullptr), lastSessionIdentity_(0), tracePolicy_(), lastCursor_(0), lastComparison_(), lastEventAccents_(), hasComparison_(false), lastComparisonIsProbe_(false), lastComparisonIsReconstruction_(false), valuesById_(),
 	  workspaceSizes_(), minimumValue_(0.0f), maximumValue_(0.0f), lastPublished_(), hasPublished_(false), revision_(0),
 	  timelines_(), currentTimeline_(nullptr), timelineGeneration_(0), seekRevision_(0), audioParameterRevision_(1),
 	  transportRevision_(0), lastTransportCursor_(0),
@@ -238,6 +260,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		lastEventAccents_ = SoundEngine::EventAccentSummary();
 		hasComparison_ = false;
 		lastComparisonIsProbe_ = false;
+		lastComparisonIsReconstruction_ = false;
 	}
 	const bool rebuildTimeline = traceChanged || lastTimelineDurationSeconds_ != playbackState.durationSeconds ||
 		lastTimingMode_ != timingMode;
@@ -257,10 +280,12 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		lastEventAccents_ = SoundEngine::EventAccentSummary();
 		lastCursor_ = 0;
 		lastComparisonIsProbe_ = false;
+		lastComparisonIsReconstruction_ = false;
 	}
 	else if (playbackState.cursor < lastCursor_)
 	{
-		recomputeComparison(rawTrace, playbackState.cursor, lastComparison_, hasComparison_, lastComparisonIsProbe_);
+		recomputeComparison(rawTrace, playbackState.cursor, lastComparison_, hasComparison_,
+			lastComparisonIsProbe_, lastComparisonIsReconstruction_);
 		lastCursor_ = playbackState.cursor;
 		lastEventAccents_ = SoundEngine::EventAccentSummary();
 	}
@@ -279,6 +304,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 					lastComparison_ = comparison;
 					hasComparison_ = true;
 					lastComparisonIsProbe_ = false;
+					lastComparisonIsReconstruction_ = false;
 				}
 			}
 			else if (kind == sortinglogic::TraceAudioEventKind::ProbeAsComparison)
@@ -289,8 +315,20 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 					lastComparison_ = comparison;
 					hasComparison_ = true;
 					lastComparisonIsProbe_ = true;
+					lastComparisonIsReconstruction_ = false;
 				}
 			}
+			else if (kind == sortinglogic::TraceAudioEventKind::Reconstruction)
+				{
+					SoundEngine::AudioComparison comparison;
+					if (makeComparison(*rawTrace, event, comparison))
+					{
+						lastComparison_ = comparison;
+						hasComparison_ = true;
+						lastComparisonIsProbe_ = false;
+						lastComparisonIsReconstruction_ = true;
+					}
+				}
 			else
 			{
 				if (!tracePolicy_.frameAccentVisible(event)) continue;
@@ -335,6 +373,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	{
 		hasComparison_ = false;
 		lastComparisonIsProbe_ = false;
+		lastComparisonIsReconstruction_ = false;
 	}
 
 	AudioPresentationState current;
@@ -346,6 +385,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 	current.timelineGains.probeGain = parameters.accentRouting[probeCategory] ? parameters.accentGain[probeCategory] : 0.0;
 	const std::size_t auxiliaryCategory = static_cast<std::size_t>(SoundEngine::AccentCategory::Distribution);
 	current.timelineGains.auxiliaryGain = parameters.accentRouting[auxiliaryCategory] ? parameters.accentGain[auxiliaryCategory] : 0.0;
+	current.timelineGains.reconstructionGain = gainFromDecibels(parameters.reconstructionBoostDb);
 	for (std::size_t i = 0; i < SoundEngine::RoleCount; ++i)
 		current.timelineGains.roleGain[i] = gainFromDecibels(parameters.roleBoostDb[i]);
 	current.eventAccents = lastEventAccents_;
@@ -356,7 +396,7 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		reconstructedParameters.idlePolicy == SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
 	current.comparison = lastComparison_;
 	SoundEngine::AudioComparison burstOrder = lastComparison_;
-	if (!lastComparisonIsProbe_ && tracePolicy_.reverseAudioOperandOrder())
+	if (!lastComparisonIsProbe_ && !lastComparisonIsReconstruction_ && tracePolicy_.reverseAudioOperandOrder())
 	{
 		std::swap(burstOrder.firstPosition, burstOrder.secondPosition);
 		std::swap(burstOrder.firstRole, burstOrder.secondRole);
@@ -380,8 +420,10 @@ void AudioPresentationBridge::update(const sortinglogic::Simulation& simulation,
 		const float secondRoleDb = secondRole < SoundEngine::RoleCount ? parameters.roleBoostDb[secondRole] : 0.0f;
 		const float firstHeldDb = burstOrder.firstRole == SoundEngine::ComparisonRole::HeldKey ? parameters.heldKeyBoostDb : 0.0f;
 		const float secondHeldDb = burstOrder.secondRole == SoundEngine::ComparisonRole::HeldKey ? parameters.heldKeyBoostDb : 0.0f;
-		current.burstComparison.firstGain = gainFromDecibels(parameters.comparisonBoostDb + firstRoleDb + firstHeldDb);
-		current.burstComparison.secondGain = gainFromDecibels(parameters.comparisonBoostDb + secondRoleDb + secondHeldDb);
+		const float primaryLevel = lastComparisonIsReconstruction_
+			? parameters.reconstructionBoostDb : parameters.comparisonBoostDb;
+		current.burstComparison.firstGain = gainFromDecibels(primaryLevel + firstRoleDb + firstHeldDb);
+		current.burstComparison.secondGain = gainFromDecibels(primaryLevel + secondRoleDb + secondHeldDb);
 	}
 	current.timeline = currentTimeline_;
 	current.timelineGeneration = timelineGeneration_;
@@ -642,10 +684,11 @@ void AudioPresentationBridge::timelineWorkerLoop()
 }
 
 void AudioPresentationBridge::recomputeComparison(const sortinglogic::SortTrace* trace, std::size_t cursor,
-	SoundEngine::AudioComparison& comparison, bool& hasComparison, bool& isProbe) const
+	SoundEngine::AudioComparison& comparison, bool& hasComparison, bool& isProbe, bool& isReconstruction) const
 {
 	hasComparison = false;
 	isProbe = false;
+	isReconstruction = false;
 	comparison = SoundEngine::AudioComparison();
 	if (!trace) return;
 	const std::size_t end = std::min(cursor, trace->events.size());
@@ -659,7 +702,8 @@ void AudioPresentationBridge::recomputeComparison(const sortinglogic::SortTrace*
 		{
 			const sortinglogic::TraceAudioEventKind kind = tracePolicy_.classify(trace->events[eventIndex]);
 			if (kind != sortinglogic::TraceAudioEventKind::Comparison &&
-				kind != sortinglogic::TraceAudioEventKind::ProbeAsComparison)
+				kind != sortinglogic::TraceAudioEventKind::ProbeAsComparison &&
+				kind != sortinglogic::TraceAudioEventKind::Reconstruction)
 				continue;
 			SoundEngine::AudioComparison previous;
 			if (makeComparison(*trace, trace->events[eventIndex], previous))
@@ -667,6 +711,7 @@ void AudioPresentationBridge::recomputeComparison(const sortinglogic::SortTrace*
 				comparison = previous;
 				hasComparison = true;
 				isProbe = kind == sortinglogic::TraceAudioEventKind::ProbeAsComparison;
+				isReconstruction = kind == sortinglogic::TraceAudioEventKind::Reconstruction;
 				return;
 			}
 		}
@@ -678,6 +723,20 @@ bool AudioPresentationBridge::makeComparison(const sortinglogic::SortTrace& trac
 {
 	sortinglogic::TraceAudioOperandProjection operands;
 	if (!sortinglogic::projectAudioOperands(trace, event, operands)) return false;
+	if (operands.hasCapturedValues)
+	{
+		const float first = SoundEngine::normalizeValue(operands.firstValue, minimumValue_, maximumValue_);
+		if (!operands.hasSecondOperand)
+		{
+			comparison = SoundEngine::AudioComparison(first, first,
+				audioRole(operands.firstRole), SoundEngine::ComparisonRole::None);
+			return true;
+		}
+		const float second = SoundEngine::normalizeValue(operands.secondValue, minimumValue_, maximumValue_);
+		comparison = SoundEngine::AudioComparison(first, second,
+			audioRole(operands.firstRole), audioRole(operands.secondRole));
+		return true;
+	}
 	const std::map<std::uint64_t, float>::const_iterator first = valuesById_.find(operands.firstItemId);
 	if (first == valuesById_.end()) return false;
 	if (!operands.hasSecondOperand)

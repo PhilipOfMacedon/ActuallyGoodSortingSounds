@@ -12,6 +12,7 @@ This directory keeps project-local working context that should survive across im
 - [Interface ideas](interface-ideas.md): user-approved visual directions that remain proposals until implementation is requested.
 - [Demo UI repairs](demo-ui-repairs.md): transport handoff, shared component/preset repairs, approved three-tab editor, completion-scan migration, and SDL input diagnosis.
 - [UI release polish](ui-release-polish.md): measured demo options/recipe layout, viewport hit-testing, appearance palette persistence, audio defaults, and verification results.
+- [Reconstruction coverage](reconstruction-coverage.md): catalog-wide classification of direct operations, incremental output publication, and declared non-reconstruction behavior, with test evidence in the companion CSV.
 
 ## Local owner guidance
 
@@ -25,3 +26,5 @@ The coding and Git workflow references supplied by the owner are saved verbatim 
 - Do not treat an unverified hypothesis as an implementation requirement.
 
 Current status: the historical first refactoring wave is recorded in [the refactoring roadmap](refactoring-roadmap.md). The app now has separate sorting and sound libraries, and the pinned coverage manifest records all 208 upstream rows as `implemented_and_tested`. That recorded status does not rule out undiscovered correctness bugs. The next proposed wave addresses structural debt; see [the architecture audit](structural-architecture-audit.md). Roster implementation evidence remains in [sorting roster progress](sorting-roster-progress.md).
+
+The current reconstruction presentation audit covers all 212 registered algorithm variants in [the reconstruction coverage inventory](reconstruction-coverage.md). Detailed publication is an explicit catalog capability with a selectable compact/reference policy; direct in-place algorithms retain their ordinary trace semantics.

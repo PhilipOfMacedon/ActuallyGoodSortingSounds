@@ -463,6 +463,17 @@ namespace SoundEngine
 			comparison.firstGain *= timelineGains_.auxiliaryGain;
 			comparison.secondGain = 0.0;
 		}
+		else if (selected.kind == TimelineEventKind::Reconstruction)
+		{
+			comparison.firstGain *= timelineGains_.reconstructionGain;
+			comparison.secondGain *= timelineGains_.reconstructionGain;
+			if (comparison.firstRole < AudioTimelineRoleCount)
+				comparison.firstGain *= timelineGains_.roleGain[comparison.firstRole];
+			if (comparison.secondRole < AudioTimelineRoleCount)
+				comparison.secondGain *= timelineGains_.roleGain[comparison.secondRole];
+			if (comparison.firstRole == 1) comparison.firstGain *= timelineGains_.heldKeyGain;
+			if (comparison.secondRole == 1) comparison.secondGain *= timelineGains_.heldKeyGain;
+		}
 		else
 		{
 			comparison.firstGain *= timelineGains_.comparisonGain;

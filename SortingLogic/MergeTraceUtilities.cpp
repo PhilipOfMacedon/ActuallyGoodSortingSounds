@@ -14,9 +14,11 @@ namespace sortinglogic
 			if (middle >= last) return;
 			const std::size_t begin = r.trace.events.size();
 			for (std::size_t i = first; i < last; ++i) r.writeAuxiliary("merge", i, r.at(i));
+			const bool detailed = r.detailedReconstructionEnabled();
 			std::vector<SortItem> merged;
-			if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite)
-				merged.reserve(last - first);
+			const std::string outputLane = "merge_output";
+			if (detailed) r.resizeAuxiliary(outputLane, last - first);
+			else merged.reserve(last - first);
 			std::size_t left = first, right = middle;
 			for (std::size_t out = first; out < last; ++out)
 			{
@@ -31,12 +33,14 @@ namespace sortinglogic
 						chosen = r.auxiliaryAt("merge", left++);
 					else chosen = r.auxiliaryAt("merge", right++);
 				}
-				if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite) merged.push_back(chosen);
-				else r.writeMain(out, chosen);
+				if (detailed) r.writeAuxiliary(outputLane, out - first, chosen);
+				else merged.push_back(chosen);
 			}
-			if (r.trace.configuration.mergeWritebackMode == MergeWritebackMode::AtomicRangeWrite)
-				r.writeMainRange(first, merged);
-			r.annotate("main", RegionKind::Contiguous, first, last, 1, -1, "Merge range", begin);
+			if (detailed)
+				r.publishAuxiliaryToMain(outputLane, 0, first, last - first, "Merge range reconstruction");
+			else r.writeMainRange(first, merged);
+			r.annotate("main", RegionKind::Contiguous, first, last, 1, -1,
+				detailed ? "Merged range" : "Merge range", detailed ? r.trace.events.size() : begin);
 		}
 
 		void traceStableKWayMerge(Recorder& r, const std::vector<std::size_t>& boundaries, const std::string& lane,

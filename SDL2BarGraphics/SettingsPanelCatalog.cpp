@@ -77,7 +77,6 @@ SettingsPanelAlgorithmPresentation settingsPanelAlgorithmPresentation(
 	{
 		presentation.familyId = algorithm->familyId;
 		presentation.variantId = algorithm->variantId;
-		presentation.showsMergeBufferVisualization = algorithm->id == sortinglogic::SortAlgorithm::Merge;
 
 		std::set<std::string> groups;
 		for (std::size_t option = 0; option < algorithm->supportedOptions.size(); ++option)
@@ -113,6 +112,10 @@ SettingsPanelAlgorithmPresentation settingsPanelAlgorithmPresentation(
 		case AlgorithmAudioChannel::DiscardAccent:
 			visible = algorithm && sortinglogic::supportsAudioControlCategory(*algorithm,
 				sortinglogic::AudioControlCategory::Discard);
+			break;
+		case AlgorithmAudioChannel::Reconstruction:
+			visible = algorithm && sortinglogic::supportsAudioControlCategory(*algorithm,
+				sortinglogic::AudioControlCategory::Reconstruction);
 			break;
 		default:
 			for (std::size_t role = 0; role < roleChannels.size(); ++role)

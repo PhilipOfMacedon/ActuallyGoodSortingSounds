@@ -139,19 +139,130 @@ namespace sortinglogic_tests
 				request.profile = InputProfile::IntegerKeys;
 				request.domain = InputDomain::NonnegativeIntegerKeys;
 				request.direction = directionIndex == 0 ? SortDirection::Ascending : SortDirection::Descending;
-				request.bucketCount = arities[arityIndex];
+				AlgorithmConfiguration configuration;
+				configuration.setValue("heap_arity", arities[arityIndex]);
+				request.setConfiguration(configuration);
 				const SortTrace trace = SortTraceBuilder::build(request);
 				SortState replay = trace.initialState;
 				for (std::size_t event = 0; event < trace.events.size(); ++event)
 					applyEventForward(replay, trace.events[event]);
 				std::string reason;
-				check(trace.complete && trace.configuration.heapArity == arities[arityIndex] &&
+				check(trace.complete && trace.configuration.value("heap_arity") == arities[arityIndex] &&
 					isSorted(replay, request.direction) && validateState(replay, request.input.size(), &reason),
 					"Base-N Heap arity " + std::to_string(arities[arityIndex]) + " sorts and preserves identities");
 				for (std::size_t event = trace.events.size(); event > 0; --event)
 					applyEventBackward(replay, trace.events[event - 1]);
 				check(sameState(replay, trace.initialState),
 					"Base-N Heap arity " + std::to_string(arities[arityIndex]) + " rewinds exactly");
+			}
+		}
+	}
+
+	void testCompactReconstructionModes()
+	{
+		using namespace sortinglogic;
+		const std::vector<AlgorithmDescriptor>& catalog = algorithmCatalog();
+		for (std::size_t algorithmIndex = 0; algorithmIndex < catalog.size(); ++algorithmIndex)
+		{
+			const AlgorithmDescriptor& descriptor = catalog[algorithmIndex];
+			if (!descriptor.reconstructionPresentationSupported) continue;
+			InputDomain domain = InputDomain::NormalizedFloats;
+			InputProfile profile = InputProfile::NormalizedFloat;
+			std::vector<SortItem> input = floats({ 0.7f, 0.2f, 0.7f, 0.1f });
+			if (!descriptor.supportsNormalizedFloat)
+			{
+				profile = InputProfile::IntegerKeys;
+				domain = descriptor.supportedDomains.empty() ? InputDomain::NonnegativeIntegerKeys : descriptor.supportedDomains.front();
+				input = integers({ 3, 1, 2, 0 });
+				if (domain == InputDomain::SignedIntegerKeys)
+					for (std::size_t i = 0; i < input.size(); ++i)
+						input[i] = SortItem(input[i].stableId, input[i].integerKey - 2, input[i].value);
+				else if (domain == InputDomain::IntegerPermutation)
+				{
+					const int permutation[] = { 3, 1, 2, 0 };
+					for (std::size_t i = 0; i < input.size(); ++i)
+						input[i] = SortItem(input[i].stableId, permutation[i], static_cast<float>(permutation[i]) / 4.0f);
+				}
+			}
+			for (int direction = 0; direction < 2; ++direction)
+				verifyAlgorithmCase(std::string(descriptor.displayName) + " compact/reference mode",
+					input, profile, descriptor.id, direction == 0 ? SortDirection::Ascending : SortDirection::Descending,
+					domain, true);
+		}
+	}
+
+	void testDetailedReconstructionCoverage()
+	{
+		using namespace sortinglogic;
+		const std::vector<AlgorithmDescriptor>& catalog = algorithmCatalog();
+		for (std::size_t algorithmIndex = 0; algorithmIndex < catalog.size(); ++algorithmIndex)
+		{
+			const AlgorithmDescriptor& descriptor = catalog[algorithmIndex];
+			if (!descriptor.reconstructionPresentationSupported) continue;
+
+			const std::size_t initialCount = std::min<std::size_t>(64, descriptor.safeMaxItemCount);
+			if (initialCount < 2)
+			{
+				check(false, std::string(descriptor.stableId) + " reconstruction registration supports at least two items");
+				continue;
+			}
+
+			InputDomain domain = InputDomain::NormalizedFloats;
+			InputProfile profile = InputProfile::NormalizedFloat;
+			if (!descriptor.supportsNormalizedFloat)
+			{
+				profile = InputProfile::IntegerKeys;
+				domain = descriptor.supportedDomains.empty() ? InputDomain::NonnegativeIntegerKeys : descriptor.supportedDomains.front();
+			}
+			for (int directionIndex = 0; directionIndex < 2; ++directionIndex)
+			{
+				SortTrace trace;
+				std::size_t count = initialCount;
+				while (count >= 2)
+				{
+					std::vector<SortItem> input;
+					for (std::size_t i = 0; i < count; ++i)
+					{
+						const int key = static_cast<int>(i);
+						const float value = static_cast<float>(key) / static_cast<float>(count - 1);
+						input.push_back(profile == InputProfile::NormalizedFloat
+							? SortItem(9000 + i, value)
+							: SortItem(9000 + i, key, value));
+					}
+					std::mt19937 random(static_cast<unsigned int>(descriptor.id) ^ static_cast<unsigned int>(count) ^ 0x5EEDu);
+					std::shuffle(input.begin(), input.end(), random);
+					TraceBuildRequest request;
+					request.algorithm = descriptor.id;
+					request.familyId = descriptor.familyId;
+					request.variantId = descriptor.variantId;
+					request.input.swap(input);
+					request.profile = profile;
+					request.domain = domain;
+					request.direction = directionIndex == 0 ? SortDirection::Ascending : SortDirection::Descending;
+					try { trace = SortTraceBuilder::build(request); }
+					catch (const std::exception& error)
+					{
+						check(false, std::string(descriptor.stableId) + " detailed reconstruction build failed: " + error.what());
+						break;
+					}
+					if (trace.complete && trace.outcome != AlgorithmOutcome::IncompleteDemonstration) break;
+					count /= 2;
+				}
+
+				std::size_t reconstructiveWrites = 0;
+				for (std::size_t eventIndex = 0; eventIndex < trace.events.size(); ++eventIndex)
+				{
+					const SemanticEvent& event = trace.events[eventIndex];
+					if (!event.reconstructive) continue;
+					if (event.type == SemanticEventType::WriteItem || event.type == SemanticEventType::Swap)
+						++reconstructiveWrites;
+				}
+				check(trace.complete && trace.outcome != AlgorithmOutcome::IncompleteDemonstration,
+					std::string(descriptor.stableId) + " completes its representative reconstruction input");
+				check(trace.configuration.value("reconstruction_mode", 0) == 1,
+					std::string(descriptor.stableId) + " defaults to detailed reconstruction");
+				check(reconstructiveWrites > 0,
+					std::string(descriptor.stableId) + " emits granular reconstruction operations for a scrambled input");
 			}
 		}
 	}
@@ -541,6 +652,7 @@ namespace sortinglogic_tests
 				request.direction = direction == 0 ? SortDirection::Ascending : SortDirection::Descending;
 				request.profile = InputProfile::IntegerKeys;
 				request.domain = InputDomain::NonnegativeIntegerKeys;
+				request.optionSelections["reconstruction_mode"] = "compact_reference";
 				request.inputSeed = 0x13579BDFu;
 				for (std::size_t i = 0; i < 8; ++i)
 					request.input.push_back(SortItem(100 + i, keys[i], static_cast<float>(keys[i] + 1) / 8.0f));
@@ -549,6 +661,11 @@ namespace sortinglogic_tests
 					"Counting/Radix baseline event and audio-eligibility counts stay unchanged");
 				const std::uint64_t actualEventHash = distributionFixtureHash(trace, false);
 				const std::uint64_t actualAudioHash = distributionFixtureHash(trace, true);
+				if (actualEventHash != eventHashes[algorithm][direction] || actualAudioHash != audioHashes[algorithm][direction])
+					std::cerr << "Distribution fixture diagnostic: algorithm=" << algorithm << " direction=" << direction
+						<< " events=" << trace.events.size() << " audio=" << trace.audioEventIndices.size()
+						<< " eventHash=" << actualEventHash << " expectedEventHash=" << eventHashes[algorithm][direction]
+						<< " audioHash=" << actualAudioHash << " expectedAudioHash=" << audioHashes[algorithm][direction] << "\n";
 				check(actualEventHash == eventHashes[algorithm][direction] && actualAudioHash == audioHashes[algorithm][direction],
 					"Counting/Radix deterministic event order and audio operands match the frozen fixture");
 			}

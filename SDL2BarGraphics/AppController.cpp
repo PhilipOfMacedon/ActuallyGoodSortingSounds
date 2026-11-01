@@ -98,9 +98,6 @@ namespace
 		case AppActionKind::SetPanelExpanded:
 		case AppActionKind::TogglePanelExpanded:
 		case AppActionKind::SetAlgorithmOption:
-		case AppActionKind::SetShellGapSequence:
-		case AppActionKind::SetMergeWritebackMode:
-		case AppActionKind::SetMergeExecutionMode:
 		case AppActionKind::SetAudioParameter:
 		case AppActionKind::SetReconstructedAudioParameter:
 		case AppActionKind::RestoreReconstructedDefaults:
@@ -114,7 +111,6 @@ namespace
 		case AppActionKind::SetDirection:
 		case AppActionKind::SetPlaybackTimingMode:
 		case AppActionKind::SetCompletionScan:
-		case AppActionKind::SetMergeBufferVisualization:
 		case AppActionKind::BuildTrace:
 		case AppActionKind::GenerateAndPlay:
 		case AppActionKind::TogglePlayback:
@@ -167,7 +163,6 @@ namespace
 		case AppActionKind::DemoSetStepTiming:
 		case AppActionKind::DemoSetStepDirection:
 		case AppActionKind::DemoSetStepCompletionScan:
-		case AppActionKind::DemoSetStepMergeBufferVisualization:
 		case AppActionKind::DemoSetStepOption:
 		case AppActionKind::DemoSetStepOverride:
 		case AppActionKind::DemoClearStepOverride:
@@ -240,7 +235,6 @@ namespace
 			if (x.familyId != y.familyId || x.variantId != y.variantId || x.optionSelections != y.optionSelections ||
 				x.direction != y.direction || x.timingMode != y.timingMode || x.fixedDurationSeconds != y.fixedDurationSeconds ||
 				x.completionScanEnabled != y.completionScanEnabled ||
-				x.mergeBufferVisualizationEnabled != y.mergeBufferVisualizationEnabled ||
 				x.hasInputOverride != y.hasInputOverride ||
 				(x.hasInputOverride && !sameDemoRecipe(x.inputOverride, y.inputOverride))) return false;
 		}
@@ -289,7 +283,6 @@ AppController::AppController(ISettingsPersistence& settingsPersistence,
 		preferences_.simulation.familyId, preferences_.simulation.variantId);
 	if (savedAlgorithm && sortinglogic::algorithmSupports(savedAlgorithm->id, preferences_.simulation.domain))
 		activeSimulation().selectAlgorithm(savedAlgorithm->id);
-	activeSimulation().setMergeBufferVisualizationEnabled(preferences_.simulation.mergeBufferVisualizationEnabled);
 	activeSimulation().setCompletionScanEnabled(preferences_.simulation.completionScanEnabled);
 	const sortinglogic::AlgorithmDescriptor* activeAlgorithm = sortinglogic::algorithmDescriptor(activeSimulation().algorithm());
 	if (activeAlgorithm)
@@ -665,16 +658,6 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 				preferences_.simulation.completionScanEnabled = activeSimulation().completionScanEnabled();
 		}
 		break;
-	case AppActionKind::SetMergeBufferVisualization:
-		if (action.selection < 0 || action.selection > 1)
-			result = sortinglogic::CommandResult(false, "The selected Merge Sort buffer visualization setting is invalid.");
-		else
-		{
-			result = activeSimulation().setMergeBufferVisualizationEnabled(action.selection == 1);
-			if (result.accepted)
-				preferences_.simulation.mergeBufferVisualizationEnabled = activeSimulation().mergeBufferVisualizationEnabled();
-		}
-		break;
 	case AppActionKind::BuildTrace:
 		result = requestTraceBuild(false);
 		break;
@@ -862,48 +845,6 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 				action.optionGroupId)] = option->stableId;
 		break;
 	}
-	case AppActionKind::SetShellGapSequence:
-		if (action.selection < static_cast<int>(sortinglogic::ShellGapSequence::Halving) ||
-			action.selection > static_cast<int>(sortinglogic::ShellGapSequence::Tokuda))
-			result = sortinglogic::CommandResult(false, "The selected Shell gap sequence is invalid.");
-		else
-		{
-			result = activeSimulation().setShellGapSequence(static_cast<sortinglogic::ShellGapSequence>(action.selection));
-			if (result.accepted)
-			{
-				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
-				if (descriptor) storeAlgorithmOption(preferences_, *descriptor, "gap_sequence", action.selection);
-			}
-		}
-		break;
-	case AppActionKind::SetMergeWritebackMode:
-		if (action.selection < static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites) ||
-			action.selection > static_cast<int>(sortinglogic::MergeWritebackMode::AtomicRangeWrite))
-			result = sortinglogic::CommandResult(false, "The selected Merge Sort writeback mode is invalid.");
-		else
-		{
-			result = activeSimulation().setMergeWritebackMode(static_cast<sortinglogic::MergeWritebackMode>(action.selection));
-			if (result.accepted)
-			{
-				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
-				if (descriptor) storeAlgorithmOption(preferences_, *descriptor, "writeback_mode", action.selection);
-			}
-		}
-		break;
-	case AppActionKind::SetMergeExecutionMode:
-		if (action.selection < static_cast<int>(sortinglogic::MergeExecutionMode::BottomUp) ||
-			action.selection > static_cast<int>(sortinglogic::MergeExecutionMode::TopDown))
-			result = sortinglogic::CommandResult(false, "The selected Merge Sort execution mode is invalid.");
-		else
-		{
-			result = activeSimulation().setMergeExecutionMode(static_cast<sortinglogic::MergeExecutionMode>(action.selection));
-			if (result.accepted)
-			{
-				const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
-				if (descriptor) storeAlgorithmOption(preferences_, *descriptor, "execution_mode", action.selection);
-			}
-		}
-		break;
 	case AppActionKind::SetAudioParameter:
 		preferences_.audio = audioSettingsActions::apply(preferences_.audio, action);
 		break;
@@ -966,7 +907,6 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::DemoSetStepTiming:
 	case AppActionKind::DemoSetStepDirection:
 	case AppActionKind::DemoSetStepCompletionScan:
-	case AppActionKind::DemoSetStepMergeBufferVisualization:
 	case AppActionKind::DemoSetStepOption:
 	case AppActionKind::DemoSetStepOverride:
 	case AppActionKind::DemoClearStepOverride:
@@ -1159,13 +1099,6 @@ void AppController::createDemoSessionForCurrentStep()
 	if (!configured.accepted)
 	{
 		demoRunner_.fail("Could not apply the step completion scan setting: " + configured.message);
-		finishDemoIfNeeded();
-		return;
-	}
-	configured = demoSession_->simulation.setMergeBufferVisualizationEnabled(step->mergeBufferVisualizationEnabled);
-	if (!configured.accepted)
-	{
-		demoRunner_.fail("Could not apply the Merge buffer visualization setting: " + configured.message);
 		finishDemoIfNeeded();
 		return;
 	}
@@ -1489,8 +1422,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		return sortinglogic::CommandResult(true, "Demo step algorithm updated.");
 	}
 	if (action.kind == AppActionKind::DemoSetStepTiming || action.kind == AppActionKind::DemoSetStepDirection ||
-		action.kind == AppActionKind::DemoSetStepCompletionScan ||
-		action.kind == AppActionKind::DemoSetStepMergeBufferVisualization)
+		action.kind == AppActionKind::DemoSetStepCompletionScan)
 	{
 		if (payload.stepIndex >= demoEditorDraft_.steps.size()) return sortinglogic::CommandResult(false, "The selected demo step is unavailable.");
 		DemoStep& step = demoEditorDraft_.steps[payload.stepIndex];
@@ -1508,8 +1440,7 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 			if (payload.direction < 0 || payload.direction > 1) return sortinglogic::CommandResult(false, "Step direction is invalid.");
 			step.direction = static_cast<sortinglogic::SortDirection>(payload.direction);
 		}
-		else if (action.kind == AppActionKind::DemoSetStepCompletionScan) step.completionScanEnabled = payload.flag;
-		else step.mergeBufferVisualizationEnabled = payload.flag;
+		else step.completionScanEnabled = payload.flag;
 		refreshDemoDraftDirty();
 		return sortinglogic::CommandResult(true, "Demo step settings updated.");
 	}
@@ -1831,7 +1762,6 @@ void AppController::synchronizeSimulationPreferences()
 	}
 	preferences_.simulation.domain = activeSimulation().domain();
 	preferences_.simulation.pattern = activeSimulation().pattern();
-	preferences_.simulation.mergeBufferVisualizationEnabled = activeSimulation().mergeBufferVisualizationEnabled();
 	preferences_.simulation.completionScanEnabled = activeSimulation().completionScanEnabled();
 }
 

@@ -3,6 +3,7 @@
 #include "SortingLogicInternal.h"
 
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -17,25 +18,27 @@ namespace sortinglogic
 			explicit Recorder(const TraceBuildRequest& request)
 				: trace(), state(makeInitialState(request.input)), maxOperations(request.maxOperations),
 				maxWorkSteps(request.maxWorkSteps), maxTraceBytes(request.maxTraceBytes),
-				completionScanEnabled(request.completionScanEnabled), cancellation(request.cancellation), nextGroupId(0)
+				completionScanEnabled(request.completionScanEnabled), cancellation(request.cancellation), nextGroupId(0),
+				descriptor_(nullptr), detailedReconstruction_(false)
 			{
 				trace.algorithm = request.algorithm;
-				const AlgorithmDescriptor* algorithm = algorithmDescriptor(request.algorithm);
-				trace.familyId = algorithm ? algorithm->familyId : FamilyId();
-				trace.variantId = algorithm ? algorithm->variantId : VariantId();
+				descriptor_ = algorithmDescriptor(request.algorithm);
+				trace.familyId = descriptor_ ? descriptor_->familyId : FamilyId();
+				trace.variantId = descriptor_ ? descriptor_->variantId : VariantId();
 				trace.direction = request.direction;
 				trace.domain = request.domain;
 				trace.pattern = request.pattern;
 				trace.configuration = request.configuration;
-				trace.mergeBufferVisualizationEnabled = request.mergeBufferVisualizationEnabled;
+				if (descriptor_) trace.workspaces = descriptor_->workspaces;
+				detailedReconstruction_ = descriptor_ && descriptor_->reconstructionPresentationSupported &&
+					trace.configuration.value("reconstruction_mode", 0) != 0;
 				trace.inputSeed = request.inputSeed;
 				trace.input = request.input;
-				const AlgorithmDescriptor* descriptor = algorithmDescriptor(request.algorithm);
-				trace.outcome = descriptor && descriptor->stable
+				trace.outcome = descriptor_ && descriptor_->stable
 					? AlgorithmOutcome::SortedStablePermutation : AlgorithmOutcome::SortedPermutation;
-				if (descriptor)
-					for (std::size_t i = 0; i < descriptor->metrics.size(); ++i)
-						state.metrics.algorithm[descriptor->metrics[i].key] = 0;
+				if (descriptor_)
+					for (std::size_t i = 0; i < descriptor_->metrics.size(); ++i)
+						state.metrics.algorithm[descriptor_->metrics[i].key] = 0;
 				trace.initialState = state;
 				trace.snapshots.insert(std::make_pair(static_cast<std::size_t>(0), state));
 				trace.accountedBytes = accountedStateBytes(state) * 2u;
@@ -51,6 +54,14 @@ namespace sortinglogic
 			bool completionScanEnabled;
 			std::shared_ptr<std::atomic<bool> > cancellation;
 			int nextGroupId;
+			const AlgorithmDescriptor* descriptor_;
+			bool detailedReconstruction_;
+			int activeReconstructionPhaseId = -1;
+			std::string activeReconstructionLabel;
+			std::size_t reconstructionProgressIndex = 0;
+			std::size_t reconstructionProgressCount = 0;
+
+			bool detailedReconstructionEnabled() const { return detailedReconstruction_; }
 
 			void chargeWork(std::size_t amount = 1)
 			{
@@ -116,6 +127,8 @@ namespace sortinglogic
 				event.secondLane = secondLane;
 				event.firstItemId = first.stableId;
 				event.secondItemId = second.stableId;
+				event.item = first;
+				event.secondItem = second;
 				event.comparisonBasis = basis;
 				event.comparison = compareItems(first, second, trace.direction, basis);
 				event.firstRole = firstRole;
@@ -206,6 +219,73 @@ namespace sortinglogic
 				append(event);
 			}
 
+			int beginReconstruction(const std::string& label, std::size_t operationCount)
+			{
+				if (activeReconstructionPhaseId >= 0)
+					throw std::logic_error("Reconstruction phases cannot be nested.");
+				activeReconstructionLabel = label;
+				reconstructionProgressIndex = 0;
+				reconstructionProgressCount = operationCount;
+				activeReconstructionPhaseId = beginPhase(label);
+				trace.events.back().reconstructionPhaseId = activeReconstructionPhaseId;
+				trace.events.back().reconstructionLabel = label;
+				return activeReconstructionPhaseId;
+			}
+
+			void endReconstruction(int phaseId, const std::string& label)
+			{
+				endPhase(phaseId, label);
+				trace.events.back().reconstructionPhaseId = phaseId;
+				trace.events.back().reconstructionLabel = label;
+				for (std::size_t i = 0; i < trace.annotations.size(); ++i)
+					if (trace.annotations[i].group == phaseId && trace.annotations[i].endCursor == 0)
+						trace.annotations[i].endCursor = trace.events.size() + 1;
+				activeReconstructionPhaseId = -1;
+				activeReconstructionLabel.clear();
+				reconstructionProgressIndex = reconstructionProgressCount = 0;
+			}
+
+			void setReconstructionProgress(std::size_t completed, std::size_t total)
+			{
+				reconstructionProgressIndex = completed;
+				reconstructionProgressCount = total;
+			}
+
+			void markReconstructionFrontier(const std::string& lane, std::size_t first, std::size_t last,
+				const std::string& label)
+			{
+				if (activeReconstructionPhaseId < 0 || first >= last) return;
+				for (std::size_t i = 0; i < trace.annotations.size(); ++i)
+					if (trace.annotations[i].group == activeReconstructionPhaseId &&
+						trace.annotations[i].label == label && trace.annotations[i].endCursor == 0)
+						trace.annotations[i].endCursor = trace.events.size();
+				RegionAnnotation region;
+				region.lane = lane;
+				region.kind = RegionKind::Contiguous;
+				region.first = first;
+				region.last = last - 1;
+				region.stride = 1;
+				region.group = activeReconstructionPhaseId;
+				region.label = label;
+				// The placement event has already been appended. The frontier becomes
+				// visible at the cursor after that event, never one frame early.
+				region.beginCursor = trace.events.size();
+				region.endCursor = 0;
+				trace.annotations.push_back(region);
+			}
+
+			void stageReconstructionOutput(const std::string& lane, const std::vector<SortItem>& items)
+			{
+				SemanticEvent event;
+				event.type = SemanticEventType::StageReconstructionOutput;
+				event.workspaceName = lane;
+				event.beforeSlots = state.auxiliaryItems[lane];
+				event.afterSlots.reserve(items.size());
+				for (std::size_t i = 0; i < items.size(); ++i) event.afterSlots.push_back(SortSlot(items[i]));
+				event.presentationOnly = true;
+				append(event);
+			}
+
 			void hold(std::size_t index)
 			{
 				SemanticEvent event;
@@ -264,10 +344,29 @@ namespace sortinglogic
 				event.type = SemanticEventType::Swap;
 				event.firstIndex = first;
 				event.secondIndex = second;
-				event.firstItemId = at(first).stableId;
-				event.secondItemId = at(second).stableId;
+				event.item = at(first);
+				event.secondItem = at(second);
+				event.firstItemId = event.item.stableId;
+				event.secondItemId = event.secondItem.stableId;
 				event.firstRole = role;
 				event.secondRole = SemanticRole::WriteTarget;
+				if (activeReconstructionPhaseId >= 0)
+				{
+					event.reconstructive = true;
+					event.reconstructionPhaseId = activeReconstructionPhaseId;
+					event.reconstructionLabel = activeReconstructionLabel;
+					event.reconstructionProgress = reconstructionProgressCount == 0 ? 1.0f :
+						static_cast<float>(reconstructionProgressIndex) / static_cast<float>(reconstructionProgressCount);
+					event.sourceWorkspace = "main";
+					event.sourceIndex = first;
+					event.destinationWorkspace = "main";
+					event.destinationIndex = second;
+					event.secondSourceWorkspace = "main";
+					event.secondSourceIndex = second;
+					event.secondDestinationWorkspace = "main";
+					event.secondDestinationIndex = first;
+					event.hasTransferProvenance = true;
+				}
 				append(event);
 			}
 
@@ -302,8 +401,13 @@ namespace sortinglogic
 				append(event);
 			}
 
-			void writeMain(std::size_t index, const SortItem& item, SemanticRole role = SemanticRole::WriteTarget)
+			void writeMain(std::size_t index, const SortItem& item, SemanticRole role = SemanticRole::WriteTarget,
+				const std::string& sourceWorkspace = std::string(), std::size_t sourceIndex = NoGapIndex)
 			{
+				const bool registeredReconstructionWrite = detailedReconstruction_ && descriptor_->primaryWritesAreReconstruction;
+				const bool ownsReconstructionPhase = registeredReconstructionWrite && activeReconstructionPhaseId < 0;
+				int implicitPhaseId = -1;
+				if (ownsReconstructionPhase) implicitPhaseId = nextGroupId++;
 				SemanticEvent event;
 				event.type = SemanticEventType::WriteItem;
 				event.firstIndex = index;
@@ -321,13 +425,91 @@ namespace sortinglogic
 				event.item = item;
 				event.firstItemId = item.stableId;
 				event.firstRole = role;
+				if (activeReconstructionPhaseId >= 0 || registeredReconstructionWrite)
+				{
+					event.reconstructive = true;
+					event.reconstructionPhaseId = activeReconstructionPhaseId >= 0 ? activeReconstructionPhaseId : implicitPhaseId;
+					event.reconstructionLabel = activeReconstructionPhaseId >= 0
+						? activeReconstructionLabel : "Main-array reconstruction";
+					event.reconstructionProgress = activeReconstructionPhaseId < 0 || reconstructionProgressCount == 0 ? 1.0f :
+						static_cast<float>(reconstructionProgressIndex) / static_cast<float>(reconstructionProgressCount);
+					event.sourceWorkspace = sourceWorkspace.empty() ? (event.secondIndex == NoGapIndex ? "" : "main") : sourceWorkspace;
+					event.sourceIndex = sourceIndex == NoGapIndex ? event.secondIndex : sourceIndex;
+					if (event.sourceWorkspace.empty())
+						for (std::map<std::string, std::vector<SortSlot> >::const_iterator lane = state.auxiliaryItems.begin();
+							lane != state.auxiliaryItems.end() && event.sourceWorkspace.empty(); ++lane)
+							for (std::size_t source = 0; source < lane->second.size(); ++source)
+								if (lane->second[source].occupied && lane->second[source].item.stableId == item.stableId)
+								{
+									event.sourceWorkspace = lane->first;
+									event.sourceIndex = source;
+									break;
+								}
+					event.destinationWorkspace = "main";
+					event.destinationIndex = index;
+					event.hasTransferProvenance = !event.sourceWorkspace.empty();
+				}
 				append(event);
+				if (ownsReconstructionPhase)
+				{
+					RegionAnnotation region;
+					region.lane = "main";
+					region.kind = RegionKind::Contiguous;
+					region.first = region.last = index;
+					region.stride = 1;
+					region.group = implicitPhaseId;
+					region.label = "Published item";
+					region.beginCursor = trace.events.size();
+					region.endCursor = trace.events.size() + 1;
+					trace.annotations.push_back(region);
+				}
+			}
+
+			void writeMainFromAuxiliary(std::size_t destination, const std::string& sourceLane, std::size_t source,
+				std::size_t frontierFirst, std::size_t completed, std::size_t total)
+			{
+				setReconstructionProgress(completed, total);
+				writeMain(destination, auxiliaryAt(sourceLane, source), SemanticRole::WriteTarget, sourceLane, source);
+				markReconstructionFrontier("main", frontierFirst, frontierFirst + completed, "Published output");
+			}
+
+			void publishAuxiliaryToMain(const std::string& sourceLane, std::size_t sourceFirst,
+				std::size_t destinationFirst, std::size_t count, const std::string& phaseLabel)
+			{
+				require(sourceFirst <= state.auxiliaryItems[sourceLane].size() &&
+					count <= state.auxiliaryItems[sourceLane].size() - sourceFirst,
+					"Auxiliary publication range is out of bounds.");
+				require(destinationFirst <= state.slots.size() && count <= state.slots.size() - destinationFirst,
+					"Primary publication range is out of bounds.");
+				if (!detailedReconstruction_)
+				{
+					for (std::size_t i = 0; i < count; ++i)
+						writeMain(destinationFirst + i, auxiliaryAt(sourceLane, sourceFirst + i));
+					return;
+				}
+				const int phaseId = beginReconstruction(phaseLabel, count);
+				for (std::size_t i = 0; i < count; ++i)
+					writeMainFromAuxiliary(destinationFirst + i, sourceLane, sourceFirst + i,
+						destinationFirst, i + 1, count);
+				endReconstruction(phaseId, phaseLabel);
 			}
 
 			void writeMainRange(std::size_t first, const std::vector<SortItem>& items)
 			{
 				require(first <= state.slots.size() && items.size() <= state.slots.size() - first,
 					"Primary range write is out of range.");
+				if (detailedReconstruction_)
+				{
+					const std::string lane = "reconstruction_output";
+					resizeAuxiliary(lane, items.size());
+					stageReconstructionOutput(lane, items);
+					const int phaseId = beginReconstruction("Output publication", items.size());
+					for (std::size_t i = 0; i < items.size(); ++i)
+						writeMainFromAuxiliary(first + i, lane, i, first, i + 1, items.size());
+					endReconstruction(phaseId, "Output publication");
+					resizeAuxiliary(lane, 0);
+					return;
+				}
 				SemanticEvent event;
 				event.type = SemanticEventType::WriteRange;
 				event.firstIndex = first;
@@ -351,6 +533,7 @@ namespace sortinglogic
 
 			void resizeAuxiliary(const std::string& lane, std::size_t size)
 			{
+				registerWorkspace(lane, WorkspaceStorageKind::Items);
 				const std::map<std::string, std::vector<SortSlot> >::const_iterator found = state.auxiliaryItems.find(lane);
 				const std::size_t oldSize = found == state.auxiliaryItems.end() ? 0 : found->second.size();
 				if (oldSize == size) return;
@@ -384,6 +567,7 @@ namespace sortinglogic
 
 			void resizeCounters(const std::string& lane, std::size_t size)
 			{
+				registerWorkspace(lane, WorkspaceStorageKind::Counters);
 				const std::map<std::string, std::vector<int> >::const_iterator found = state.integerWorkspaces.find(lane);
 				const std::size_t oldSize = found == state.integerWorkspaces.end() ? 0 : found->second.size();
 				if (oldSize == size) return;
@@ -465,6 +649,28 @@ namespace sortinglogic
 				trace.annotations.push_back(region);
 			}
 
+			void registerWorkspace(const std::string& lane, WorkspaceStorageKind kind)
+			{
+				for (std::size_t i = 0; i < trace.workspaces.size(); ++i)
+					if (trace.workspaces[i].stableId == lane) return;
+				const AlgorithmDescriptor* descriptor = algorithmDescriptor(trace.algorithm);
+				if (descriptor)
+					for (std::size_t i = 0; i < descriptor->workspaces.size(); ++i)
+						if (descriptor->workspaces[i].stableId == lane)
+						{
+							trace.workspaces.push_back(descriptor->workspaces[i]);
+							return;
+						}
+				std::string caption = lane;
+				for (std::size_t i = 0; i < caption.size(); ++i)
+				{
+					if (caption[i] == '_') caption[i] = ' ';
+					else if (i == 0 || caption[i - 1] == ' ')
+						caption[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(caption[i])));
+				}
+				trace.workspaces.push_back(AlgorithmWorkspaceDescriptor(lane, caption, kind));
+			}
+
 			void finish()
 			{
 				if (completionScanEnabled)
@@ -482,6 +688,18 @@ namespace sortinglogic
 			{
 				trace.complete = false;
 				trace.completionReason = reason;
+				if (activeReconstructionPhaseId >= 0)
+				{
+					// A budget stop must not leave an open phase annotation whose range
+					// runs past the partial trace. Keep the last published frontier
+					// visible at the final cursor without fabricating a semantic event.
+					for (std::size_t i = 0; i < trace.annotations.size(); ++i)
+						if (trace.annotations[i].group == activeReconstructionPhaseId && trace.annotations[i].endCursor == 0)
+							trace.annotations[i].endCursor = trace.events.size() + 1;
+					activeReconstructionPhaseId = -1;
+					activeReconstructionLabel.clear();
+					reconstructionProgressIndex = reconstructionProgressCount = 0;
+				}
 			const std::size_t cursor = trace.events.size();
 			if (trace.snapshots.find(cursor) == trace.snapshots.end())
 			{

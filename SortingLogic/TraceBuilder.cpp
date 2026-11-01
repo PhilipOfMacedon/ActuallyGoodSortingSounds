@@ -32,12 +32,6 @@ namespace sortinglogic
 		TraceBuildRequest resolvedRequest = request;
 		resolvedRequest.configuration = detail::resolveAlgorithmConfiguration(request, *descriptor);
 		resolvedRequest.domain = effectiveDomain(request);
-		if (resolvedRequest.configuration.mergeWritebackMode != MergeWritebackMode::AnimatedWrites &&
-			resolvedRequest.configuration.mergeWritebackMode != MergeWritebackMode::AtomicRangeWrite)
-			throw std::invalid_argument("The requested Merge Sort writeback mode is invalid.");
-		if (resolvedRequest.configuration.mergeExecutionMode != MergeExecutionMode::BottomUp &&
-			resolvedRequest.configuration.mergeExecutionMode != MergeExecutionMode::TopDown)
-			throw std::invalid_argument("The requested Merge Sort execution mode is invalid.");
 		const InputDomain domain = resolvedRequest.domain;
 		if (!inputPatternCompatible(domain, resolvedRequest.pattern))
 			throw std::invalid_argument("The selected input pattern is incompatible with this data domain.");

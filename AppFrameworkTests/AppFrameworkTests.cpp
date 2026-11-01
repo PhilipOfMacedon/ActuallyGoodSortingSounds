@@ -323,9 +323,8 @@ namespace
 		check(prefabs.size() == 2 && prefabs[0].name == "Classic Five" && prefabs[1].name == "Ten-sort Tour",
 			"demo catalog provides the two immutable requested presets");
 		DemoStep newStep;
-		check(newStep.timingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence &&
-			newStep.mergeBufferVisualizationEnabled,
-			"new demo steps default to reference cadence and visible Merge buffers");
+		check(newStep.timingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence,
+			"new demo steps default to reference cadence");
 		check(inputPatternFixedItemCount(InputPattern::AndrutReference) == 100 &&
 			inputPatternFixedItemCount(InputPattern::Random) == 0 &&
 			!inputPatternUsesSeed(InputPattern::AndrutReference) && inputPatternUsesSeed(InputPattern::Random),
@@ -350,8 +349,12 @@ namespace
 				prefabs[0].steps[0].familyId == algorithmDescriptor(SortAlgorithm::Insertion)->familyId &&
 				prefabs[1].steps[5].familyId == algorithmDescriptor(SortAlgorithm::Quick)->familyId,
 				"prefab sequences retain their curated algorithm order");
-			check(prefabs[0].steps[0].completionScanEnabled && prefabs[1].steps[0].completionScanEnabled,
-				"new built-in demo steps enable completion scans by default");
+			check(prefabs[0].steps[0].completionScanEnabled && prefabs[1].steps[0].completionScanEnabled &&
+				prefabs[0].steps[3].optionSelections.find("reconstruction_mode") != prefabs[0].steps[3].optionSelections.end() &&
+				prefabs[0].steps[3].optionSelections.find("reconstruction_mode")->second == "detailed" &&
+				prefabs[0].steps[3].optionSelections.find("buffer_visibility") != prefabs[0].steps[3].optionSelections.end() &&
+				prefabs[0].steps[3].optionSelections.find("buffer_visibility")->second == "visible",
+				"built-in demo steps enable completion scans, detailed reconstruction, and Merge buffers by default");
 			check(prefabs[0].classInputs.at(DemoComplexityClass::Quadratic).itemCount == 80 &&
 				prefabs[0].classInputs.at(DemoComplexityClass::NLogN).itemCount == 320 &&
 				prefabs[1].classInputs.at(DemoComplexityClass::KeyDependent).itemCount == 512 &&
@@ -367,7 +370,8 @@ namespace
 		unknown.familyId = "removed-family";
 		unknown.variantId = "old-sort";
 		unknown.completionScanEnabled = false;
-		unknown.mergeBufferVisualizationEnabled = false;
+		unknown.optionSelections["buffer_visibility"] = "hidden";
+		unknown.optionSelections["reconstruction_mode"] = "compact_reference";
 		unknown.hasInputOverride = true;
 		unknown.inputOverride = DemoInputRecipe(42u, 64);
 		unknown.optionSelections["old-option"] = "old-value";
@@ -386,24 +390,27 @@ namespace
 		check(DemoPresetStore::decode(encoded, decoded, &issues, &error) && decoded.size() == 1 &&
 			decoded[0].steps.size() == 6 && decoded[0].steps[5].familyId == "removed-family" &&
 			decoded[0].steps[5].optionSelections["old-option"] == "old-value" &&
-			!decoded[0].steps[5].completionScanEnabled && !decoded[0].steps[5].mergeBufferVisualizationEnabled && issues.empty(),
-			"v3 preset codec round-trips order, options, scan and visualization settings, overrides, and unavailable references");
-		check(encoded.find("version=3\n") == 0 && decoded[0].steps[0].mergeBufferVisualizationEnabled,
-			"v3 preset output persists Merge buffer visualization enabled by default");
+			!decoded[0].steps[5].completionScanEnabled &&
+			decoded[0].steps[5].optionSelections["buffer_visibility"] == "hidden" &&
+			decoded[0].steps[5].optionSelections["reconstruction_mode"] == "compact_reference" && issues.empty(),
+			"v4 preset codec round-trips order, generic options, scan, overrides, and unavailable references");
+		check(encoded.find("version=4\n") == 0 &&
+			decoded[0].steps[3].optionSelections["reconstruction_mode"] == "detailed",
+			"v4 preset output persists detailed reconstruction as a registered property");
 		const std::string legacyV1 = "version=1\nP\tlegacy\tLegacy\t1\t0\nS\tlegacy\t0\tinsertion-methods\tinsertion\t0\t1\t10\t0\t0\t80\t0\t0\t\n";
 		check(DemoPresetStore::decode(legacyV1, decoded, &issues, &error) && decoded.size() == 1 &&
 			decoded[0].steps.size() == 1 && !decoded[0].steps[0].completionScanEnabled &&
-			decoded[0].steps[0].mergeBufferVisualizationEnabled &&
 			decoded[0].steps[0].timingMode == SoundEngine::PlaybackTimingMode::ReferenceCadence,
-			"v1 demo presets preserve timing, disable completion scans, and enable prior Merge visualization behavior");
-		const std::string legacyV2 = "version=2\nP\tlegacy2\tLegacy\t1\t0\nS\tlegacy2\t0\tmerge-methods\tmerge\t0\t0\t10\t1\t77\t400\t0\t6\t\t1\n";
+			"v1 demo presets preserve timing and disable completion scans");
+		const std::string legacyV2 = "version=2\nP\tlegacy2\tLegacy\t1\t0\nS\tlegacy2\t0\tmerge-sort\tmerge\t0\t0\t10\t1\t77\t400\t0\t6\t\t1\n";
 		check(DemoPresetStore::decode(legacyV2, decoded, &issues, &error) && decoded.size() == 1 &&
 			decoded[0].steps.size() == 1 && decoded[0].steps[0].completionScanEnabled &&
-			decoded[0].steps[0].mergeBufferVisualizationEnabled &&
+			decoded[0].steps[0].optionSelections["reconstruction_mode"] == "detailed" &&
+			decoded[0].steps[0].optionSelections["buffer_visibility"] == "visible" &&
 			decoded[0].steps[0].inputOverride.itemCount == 100 &&
 			decoded[0].steps[0].inputOverride.seed == 77u &&
 			decoded[0].steps[0].timingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
-			"v2 migration preserves scan, timing, and seed while normalizing Andrut overrides to 100 items");
+			"v2 migration adopts detailed reconstruction, preserves scan/timing/seed, and normalizes Andrut overrides to 100 items");
 		const std::string legacyAndrutClass = "version=2\nP\tlegacy3\tLegacy\t1\t0\nR\tlegacy3\t4\t99\t320\t0\t6\n";
 		check(DemoPresetStore::decode(legacyAndrutClass, decoded, &issues, &error) && decoded.size() == 1 &&
 			decoded[0].classInputs.at(DemoComplexityClass::Quadratic).itemCount == 100 &&
@@ -534,7 +541,7 @@ namespace
 			for (const UiPaintCommand& command : mergePaint.commands())
 				if (option && command.elementId == option->id() && command.primitive == UiPaintPrimitive::Control &&
 					command.layer == UiPaintLayer::SettingsControls) optionControlUsesControlsLayer = true;
-			if (option && option->options().size() == 2 && option->options()[0] == "Hidden" && option->options()[1] == "Visible")
+			if (option && option->options().size() == 2 && option->options()[0] == "Visible" && option->options()[1] == "Hidden")
 				visualizationSlot = slot;
 		}
 		check(initialOptionVisible && optionBackdropUsesPanelLayer && optionControlUsesControlsLayer &&
@@ -559,13 +566,14 @@ namespace
 				mergeEditor.layoutComboPopups([](const std::string& text) { return static_cast<float>(text.size() * 8); });
 				mergeEditor.handleInput(UiInputEvent(UiInputType::PointerDown, control.x + control.width * 0.5f,
 					control.y + control.height * 0.5f), ignored);
-				const UiRect hidden = visualization->optionBounds(0);
+				const UiRect hidden = visualization->optionBounds(1);
 				AppAction toggleVisualization;
 				mergeEditor.handleInput(UiInputEvent(UiInputType::PointerDown, hidden.x + hidden.width * 0.5f,
 					hidden.y + hidden.height * 0.5f), toggleVisualization);
-				check(toggleVisualization.kind == AppActionKind::DemoSetStepMergeBufferVisualization &&
-					toggleVisualization.demo && !toggleVisualization.demo->flag,
-					"the Merge buffer presentation selector emits a typed per-step visibility action");
+				check(toggleVisualization.kind == AppActionKind::DemoSetStepOption &&
+					toggleVisualization.demo && toggleVisualization.demo->optionGroupId == "buffer_visibility" &&
+					(toggleVisualization.demo->optionStableId == "visible" || toggleVisualization.demo->optionStableId == "hidden"),
+					"the Merge buffer presentation selector emits a typed registered per-step property action");
 			}
 		}
 
@@ -887,7 +895,7 @@ namespace
 		using namespace sortinglogic;
 		Simulation simulation(800, 0xA61u);
 		if (!simulation.selectAlgorithm(SortAlgorithm::Merge).accepted ||
-			!simulation.setMergeWritebackMode(MergeWritebackMode::AtomicRangeWrite).accepted)
+			!simulation.setAlgorithmOption("reconstruction_mode", "compact_reference").accepted)
 			throw std::runtime_error("could not configure Merge for the render-cost profile");
 		TraceBuildRequest request;
 		if (!simulation.beginTraceBuild(request).accepted) throw std::runtime_error("could not begin the profiling trace");
@@ -2125,13 +2133,14 @@ namespace
 			invalidSelection.kind == AppActionKind::None,
 			"algorithm selection converts legacy catalog indices to stable IDs and rejects invalid selections");
 
-		AppAction shellSelection(AppActionKind::SetShellGapSequence, 0.0f, 2);
+		AppAction shellSelection(AppActionKind::SetAlgorithmOption, shell->familyId, shell->variantId, "gap_sequence");
+		shellSelection.selection = 2;
 		const AppAction normalizedShell = ui::normalizeCatalogAction(shellSelection);
-		AppAction invalidShell(AppActionKind::SetShellGapSequence, 0.0f, 99);
+		AppAction invalidShell(AppActionKind::SetAlgorithmOption, shell->familyId, shell->variantId, "gap_sequence");
+		invalidShell.selection = 99;
 		const AppAction fallbackShell = ui::normalizeCatalogAction(invalidShell);
-		check(normalizedShell.selection == shell->supportedOptions[2].value &&
-			fallbackShell.selection == static_cast<int>(sortinglogic::ShellGapSequence::Halving),
-			"Shell option indices resolve through catalog values with the established safe fallback");
+		check(normalizedShell.optionStableId == "ciura" && fallbackShell.kind == AppActionKind::None,
+			"generic option indices resolve through stable catalog IDs and reject invalid selections");
 
 		const sortinglogic::AlgorithmOptionDescriptor& option = merge->supportedOptions[0];
 		int groupIndex = 0;
@@ -3577,7 +3586,10 @@ namespace
 		preferences.simulation.domain = sortinglogic::InputDomain::NonnegativeIntegerKeys;
 		preferences.simulation.pattern = sortinglogic::InputPattern::FewUnique;
 		preferences.simulation.playbackTimingMode = SoundEngine::PlaybackTimingMode::ReferenceCadence;
-		preferences.simulation.mergeBufferVisualizationEnabled = false;
+		preferences.algorithmOptions[algorithmOptionSettingsKey(merge->familyId, merge->variantId,
+			"buffer_visibility")] = "hidden";
+		preferences.algorithmOptions[algorithmOptionSettingsKey(merge->familyId, merge->variantId,
+			"reconstruction_mode")] = "detailed";
 		preferences.simulation.completionScanEnabled = true;
 		preferences.reconstructedAudio.masterLevel = 0.42;
 		preferences.reconstructedAudio.idlePolicy = SoundEngine::ReconstructedIdlePolicy::ReleaseSelection;
@@ -3597,7 +3609,9 @@ namespace
 		const UiWidget* domain = view.controls().find("domain");
 		const UiWidget* pattern = view.controls().find("pattern");
 		const UiWidget* timing = view.controls().find("playback_timing");
-		const UiWidget* mergeBuffer = view.controls().find("merge_buffer_visualization");
+		const std::string bufferVisibilityId = settingsAlgorithmOptionControlId(merge->familyId, merge->variantId,
+			"buffer_visibility");
+		const UiWidget* mergeBuffer = view.controls().find(bufferVisibilityId);
 		const UiWidget* completionScan = view.controls().find("completion_scan");
 		check(domain && domain->selectedIndex() == static_cast<int>(preferences.simulation.domain) && !domain->enabled(),
 			"settings view synchronizes simulation selections and disables setup while the run is busy");
@@ -3607,7 +3621,7 @@ namespace
 		check(timing && timing->selectedIndex() == static_cast<int>(SoundEngine::PlaybackTimingMode::ReferenceCadence) &&
 			!timing->enabled(),
 			"settings view preserves playback timing selection and busy-state gating");
-		check(mergeBuffer && mergeBuffer->selectedIndex() == 0 && !mergeBuffer->enabled() &&
+		check(mergeBuffer && mergeBuffer->selectedIndex() == 1 && !mergeBuffer->enabled() &&
 			completionScan && completionScan->selectedIndex() == 1 && !completionScan->enabled(),
 			"settings view synchronizes algorithm-specific and completion controls under the busy rule");
 
@@ -3707,11 +3721,11 @@ namespace
 
 		const std::vector<std::string> mergeControls = settingsPanelControlIds(
 			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, &mergePresentation);
-		check(contains(mergeControls, "merge_buffer_visualization") &&
+		check(contains(mergeControls, settingsAlgorithmOptionControlId(merge->familyId, merge->variantId, "buffer_visibility")) &&
 			contains(mergeControls, settingsAlgorithmOptionControlId(merge->familyId, merge->variantId, "execution_mode")) &&
-			contains(mergeControls, settingsAlgorithmOptionControlId(merge->familyId, merge->variantId, "writeback_mode")) &&
-			contains(mergeControls, "algorithm_audio_03"),
-			"Merge settings expose its registered options, buffer preference, and auxiliary audio level");
+			contains(mergeControls, settingsAlgorithmOptionControlId(merge->familyId, merge->variantId, "reconstruction_mode")) &&
+			contains(mergeControls, "algorithm_audio_12"),
+			"Merge settings expose registered options, buffer visibility, and its reconstruction audio level");
 
 		const std::vector<std::string> countingControls = settingsPanelControlIds(
 			SettingsPanelPage::Algorithm, SettingsAudioGroup::Basic, &countingPresentation);
@@ -3753,13 +3767,15 @@ namespace
 			merge->familyId, merge->variantId, "execution_mode"));
 		const UiWidget* shellGaps = view.controls().find(settingsAlgorithmOptionControlId(
 			shell->familyId, shell->variantId, "gap_sequence"));
-		check(view.controls().find("domain")->visible() && view.controls().find("merge_buffer_visualization")->visible() &&
+		check(view.controls().find("domain")->visible() && view.controls().find(settingsAlgorithmOptionControlId(
+			merge->familyId, merge->variantId, "buffer_visibility"))->visible() &&
 			mergeExecution && mergeExecution->visible() && shellGaps && !shellGaps->visible(),
 			"settings view selects Merge rows from its own page state and the stable algorithm ID pair");
 
 		view.layoutForAlgorithmSelection(shell->familyId, shell->variantId, 8.0f);
 		check(shellGaps->visible() && !mergeExecution->visible() &&
-			!view.controls().find("merge_buffer_visualization")->visible(),
+			!view.controls().find(settingsAlgorithmOptionControlId(merge->familyId, merge->variantId,
+				"buffer_visibility"))->visible(),
 			"changing stable algorithm IDs updates visible rows without exposing prior algorithm controls");
 
 		view.layoutForAlgorithmSelection("unknown-family", "unknown-variant", 8.0f);
@@ -3836,7 +3852,7 @@ namespace
 			"missing settings use ascending Insertion Sort");
 		check(defaults.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
 			"fixed-duration playback remains the default timing mode");
-		check(defaults.version == 9 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
+		check(defaults.version == 10 && defaults.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			defaults.simulation.familyId == "insertion-methods" && defaults.simulation.variantId == "insertion" &&
 			defaults.simulation.domain == sortinglogic::InputDomain::NormalizedFloats,
 			"new settings use stable algorithm IDs and showcase defaults");
@@ -3880,7 +3896,8 @@ namespace
 		saved.simulation.pattern = sortinglogic::InputPattern::NearlySorted;
 		saved.algorithmOptions[algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence")] = "ciura";
 		saved.algorithmOptions[algorithmOptionSettingsKey("merge-sort", "merge", "execution_mode")] = "top_down";
-		saved.algorithmOptions[algorithmOptionSettingsKey("merge-sort", "merge", "writeback_mode")] = "animated_writes";
+		saved.algorithmOptions[algorithmOptionSettingsKey("merge-sort", "merge", "buffer_visibility")] = "hidden";
+		saved.algorithmOptions[algorithmOptionSettingsKey("merge-sort", "merge", "reconstruction_mode")] = "compact_reference";
 		saved.algorithmOptions[algorithmOptionSettingsKey("merge-hybrid", "optimized-rotate", "rotate_buffer_capacity")] = "items_128";
 		saved.audio.masterLevel = 0.73f;
 		saved.audio.bedLevel = 0.42f;
@@ -3967,16 +3984,16 @@ namespace
 		check(conflictingLegacyProfile.simulation.domain == sortinglogic::InputDomain::NormalizedFloats,
 			"authoritative input domain wins over a conflicting compatibility profile key");
 		const sortinglogic::AlgorithmDescriptor* savedMerge = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
-		check(savedMerge && algorithmOptionValue(loaded, *savedMerge, "writeback_mode") ==
-			static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites),
-			"settings round-trip configurable Merge Sort writeback mode");
+		check(savedMerge && algorithmOptionStableId(loaded, *savedMerge, "reconstruction_mode") == "compact_reference",
+			"settings round-trip the explicit Compact/reference presentation selection");
 		check(savedMerge && algorithmOptionValue(loaded, *savedMerge, "execution_mode") ==
 			static_cast<int>(sortinglogic::MergeExecutionMode::TopDown),
 			"settings round-trip top-down and bottom-up Merge execution mode");
 		check(loaded.algorithmOptions.find(algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence")) != loaded.algorithmOptions.end() &&
 			loaded.algorithmOptions.find(algorithmOptionSettingsKey("insertion-methods", "shell", "gap_sequence"))->second == "ciura" &&
 			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "execution_mode"))->second == "top_down" &&
-			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "writeback_mode"))->second == "animated_writes" &&
+			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "buffer_visibility"))->second == "hidden" &&
+			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-sort", "merge", "reconstruction_mode"))->second == "compact_reference" &&
 			loaded.algorithmOptions.find(algorithmOptionSettingsKey("merge-hybrid", "optimized-rotate", "rotate_buffer_capacity"))->second == "items_128",
 			"algorithm option values round-trip by stable family, variant, and option IDs");
 		check(loaded.familyAudioDefaults.find("merge-sort") != loaded.familyAudioDefaults.end() &&
@@ -4031,7 +4048,7 @@ namespace
 
 		writeFile(path, "version=1\npalette=light\nspacing=none\npanel_expanded=0\nitem_count=123\nduration_seconds=42\ndescending=1\nalgorithm=0\n");
 		const UserPreferences migrated = store.load();
-		check(migrated.version == 9 && migrated.visual.palette == PaletteId::Light && migrated.visual.spacing == BarSpacingMode::None &&
+		check(migrated.version == 10 && migrated.visual.palette == PaletteId::Light && migrated.visual.spacing == BarSpacingMode::None &&
 			migrated.simulation.itemCount == 123 && migrated.simulation.durationSeconds == 42 && migrated.simulation.descending,
 			"version-1 settings migrate without losing appearance or simulation values");
 		check(migrated.simulation.playbackTimingMode == SoundEngine::PlaybackTimingMode::FixedDuration,
@@ -4044,7 +4061,7 @@ namespace
 			"version-1 settings receive the selected profile audio defaults");
 		writeFile(path, "version=2\npalette=amber\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nalgorithm=0\naudio_master=0.61\n");
 		const UserPreferences migratedV2 = store.load();
-		check(migratedV2.version == 9 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
+		check(migratedV2.version == 10 && migratedV2.visual.palette == PaletteId::Amber && migratedV2.audio.masterLevel == 0.61f &&
 			migratedV2.simulation.algorithm == static_cast<int>(sortinglogic::SortAlgorithm::Insertion) &&
 			migratedV2.simulation.domain == sortinglogic::InputDomain::NormalizedFloats,
 			"version-2 settings retain existing values and migrate new fields");
@@ -4100,7 +4117,7 @@ namespace
 			"unknown v5 option IDs safely fall back to the catalog and typed default");
 		writeFile(path, "version=6\npalette=light\nspacing=compact\npanel_expanded=1\nitem_count=80\nduration_seconds=10\ndescending=0\nfamily_id=insertion-methods\nvariant_id=insertion\nprofile=normalized_float\nfamily_audio.insertion-methods.comparison=8.5\nvariant_audio.insertion-methods.insertion.comparison=-6.5\n");
 		const UserPreferences migratedV6 = store.load();
-		check(migratedV6.version == 9 &&
+		check(migratedV6.version == 10 &&
 			familyAudioLevels(migratedV6, "insertion-methods").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 8.5f &&
 			variantAudioLevels(migratedV6, "insertion-methods", "insertion").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == -6.5f,
 			"version-6 migration to version-8 preserves family and variant algorithm audio gains");
@@ -4115,13 +4132,14 @@ namespace
 		check(malformedLegacyAppearance.isValid() && malformedLegacyAppearance.simulation.itemCount == 92 &&
 			malformedLegacyAppearance.appearance.themes.at(UiPresetId::Current).palette == PaletteId::Cyan,
 			"malformed version-7 compatibility palette falls back without discarding valid simulation settings");
-		writeFile(path, "version=7\npalette=amber\nspacing=comfortable\npanel_expanded=0\nitem_count=96\nduration_seconds=12\ndescending=1\nfamily_id=merge-sort\nvariant_id=merge\nprofile=normalized_float\nmerge_execution_mode=bottom_up\nmerge_writeback_mode=animated_writes\noption.merge-sort.merge.execution_mode=top_down\noption.merge-sort.merge.writeback_mode=animated_writes\nfamily_audio.merge-sort.comparison=5.5\nvariant_audio.merge-sort.merge.comparison=-2.5\n");
+		writeFile(path, "version=7\npalette=amber\nspacing=comfortable\npanel_expanded=0\nitem_count=96\nduration_seconds=12\ndescending=1\nfamily_id=merge-sort\nvariant_id=merge\nprofile=normalized_float\nmerge_execution_mode=bottom_up\nmerge_writeback_mode=animated_writes\nmerge_buffer_visualization=0\noption.merge-sort.merge.execution_mode=top_down\noption.merge-sort.merge.writeback_mode=animated_writes\nfamily_audio.merge-sort.comparison=5.5\nvariant_audio.merge-sort.merge.comparison=-2.5\n");
 		const UserPreferences migratedV7 = store.load();
-		check(migratedV7.version == 9 && migratedV7.simulation.familyId == "merge-sort" &&
+		check(migratedV7.version == 10 && migratedV7.simulation.familyId == "merge-sort" &&
 			migratedV7.simulation.variantId == "merge" &&
 			algorithmOptionValue(migratedV7, *savedMerge, "execution_mode") == static_cast<int>(sortinglogic::MergeExecutionMode::TopDown) &&
-			algorithmOptionValue(migratedV7, *savedMerge, "writeback_mode") == static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites),
-			"version-7 to version-8 migration preserves the selected algorithm and stable execution options");
+			algorithmOptionStableId(migratedV7, *savedMerge, "reconstruction_mode") == "detailed" &&
+			algorithmOptionStableId(migratedV7, *savedMerge, "buffer_visibility") == "hidden",
+			"version-7 migration preserves execution settings and adopts detailed reconstruction with saved visibility");
 		check(familyAudioLevels(migratedV7, "merge-sort").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == 5.5f &&
 			variantAudioLevels(migratedV7, "merge-sort", "merge").decibels[static_cast<std::size_t>(AlgorithmAudioChannel::Comparison)] == -2.5f,
 			"version-7 to version-8 migration preserves family and variant audio gain overrides");
@@ -4130,7 +4148,7 @@ namespace
 			"ui_active_preset=current\nui.current.palette=amber\n"
 			"ui.current.override.color.bar=color:0.1,0.2,0.3,0.4\n"
 			"ui.current.override.typography.body_size=number:19\n");
-		check(migratedV8Appearance.version == 9 &&
+		check(migratedV8Appearance.version == 10 &&
 			migratedV8Appearance.appearance.themes.at(UiPresetId::Current).palette == PaletteId::Customized &&
 			migratedV8Appearance.appearance.themes.at(UiPresetId::Current).customPaletteBase == PaletteId::Amber &&
 			migratedV8Appearance.appearance.themes.size() == 3 &&
@@ -5145,7 +5163,7 @@ namespace
 			probeBridge.update(counting, counting.playbackState(), parameters, probeMailbox);
 			AudioPresentationState probeState;
 			check(probeMailbox.consumeLatest(probeState) && probeState.hasComparison && probeState.burstComparison.probeOnly &&
-				probeState.burstComparison.firstRole == static_cast<std::uint8_t>(SoundEngine::ComparisonRole::ProbedItem),
+				probeState.burstComparison.firstRole == static_cast<std::uint8_t>(SoundEngine::ComparisonRole::ProcessedItem),
 				"comparison-free distribution traces sonify real item probes as single-participant notes");
 		}
 		std::size_t counterWorkspaceSize = 0;
@@ -5315,11 +5333,6 @@ namespace
 			"Shell Sort can be selected in the normalized-float profile");
 		check(!app.dispatch(AppAction(AppActionKind::SelectAlgorithm, "unregistered", "missing")).accepted,
 			"unregistered family and variant IDs are rejected safely");
-		check(app.dispatch(AppAction(AppActionKind::SetShellGapSequence, 0.0f,
-			static_cast<int>(sortinglogic::ShellGapSequence::Ciura))).accepted &&
-			algorithmOptionValue(app.preferences(), *sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell), "gap_sequence") ==
-			static_cast<int>(sortinglogic::ShellGapSequence::Ciura),
-			"Shell sequence selection dispatches and persists");
 		const sortinglogic::AlgorithmDescriptor* shell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
 		check(shell && app.dispatch(AppAction(AppActionKind::SetAlgorithmOption, shell->familyId, shell->variantId,
 			"gap_sequence", "tokuda", static_cast<int>(sortinglogic::ShellGapSequence::Tokuda))).accepted &&
@@ -5336,7 +5349,7 @@ namespace
 		}
 		check(app.snapshot().hasTrace, "Shell trace completes through the existing single-job service");
 		const std::shared_ptr<const sortinglogic::SortTrace> shellTrace = app.simulation().currentTrace();
-		check(shellTrace && shellTrace->configuration.shellGapSequence == sortinglogic::ShellGapSequence::Tokuda,
+		check(shellTrace && shellTrace->configuration.value("gap_sequence") == static_cast<int>(sortinglogic::ShellGapSequence::Tokuda),
 			"stable Shell option selection is resolved into the built trace");
 		check(app.dispatch(AppAction(AppActionKind::TogglePlayback)).accepted, "showcase trace starts playback");
 		const int writesBeforeBusyProfile = persistence.writes;
@@ -5382,15 +5395,14 @@ namespace
 		const int topDownValue = static_cast<int>(sortinglogic::MergeExecutionMode::TopDown);
 		const AppAction topDown(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId,
 			"execution_mode", "top_down", topDownValue);
-		check(app.dispatch(topDown).accepted && app.snapshot().mergeExecutionMode == sortinglogic::MergeExecutionMode::TopDown &&
+		check(app.dispatch(topDown).accepted && algorithmOptionStableId(app.preferences(), *merge, "execution_mode") == "top_down" &&
 			app.preferences().algorithmOptions.find(algorithmOptionSettingsKey(merge->familyId, merge->variantId, "execution_mode"))->second == "top_down",
 			"Merge execution order dispatches and persists through stable option metadata");
-		const int animatedValue = static_cast<int>(sortinglogic::MergeWritebackMode::AnimatedWrites);
-		const AppAction animated(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId,
-			"writeback_mode", "animated_writes", animatedValue);
-		check(app.dispatch(animated).accepted && app.snapshot().mergeWritebackMode == sortinglogic::MergeWritebackMode::AnimatedWrites &&
-			app.preferences().algorithmOptions.find(algorithmOptionSettingsKey(merge->familyId, merge->variantId, "writeback_mode"))->second == "animated_writes",
-			"Merge writeback remains independent and uses its own stable option group");
+		const AppAction detailed(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId,
+			"reconstruction_mode", "detailed", 1);
+		check(app.dispatch(detailed).accepted &&
+			algorithmOptionStableId(app.preferences(), *merge, "reconstruction_mode") == "detailed",
+			"Merge reconstruction presentation is controlled through the registered property group");
 		const int writesBeforeInvalid = persistence.writes;
 		const AppAction invalid(AppActionKind::SetAlgorithmOption, merge->familyId, merge->variantId,
 			"execution_mode", "missing_option", topDownValue);
@@ -5406,9 +5418,9 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> mergeTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(mergeTrace && mergeTrace->configuration.mergeExecutionMode == sortinglogic::MergeExecutionMode::TopDown &&
-			mergeTrace->configuration.mergeWritebackMode == sortinglogic::MergeWritebackMode::AnimatedWrites,
-			"stable Merge option selections resolve into the trace independently");
+		check(mergeTrace && mergeTrace->configuration.value("execution_mode") == static_cast<int>(sortinglogic::MergeExecutionMode::TopDown) &&
+			mergeTrace->configuration.value("reconstruction_mode") == 1,
+			"registered Merge options resolve into the trace independently");
 
 		const sortinglogic::AlgorithmDescriptor* baseN = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::ArrayvBaseNHeap);
 		check(baseN && app.dispatch(AppAction(AppActionKind::SelectAlgorithm, baseN->familyId, baseN->variantId)).accepted,
@@ -5428,8 +5440,8 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> baseNTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(baseNTrace && baseNTrace->configuration.heapArity == 8 &&
-			app.simulation().algorithmConfiguration().heapArity == 8,
+		check(baseNTrace && baseNTrace->configuration.value("heap_arity") == 8 &&
+			app.simulation().algorithmConfiguration().value("heap_arity") == 8,
 			"AppController routes catalog-selected heap arity into the immutable trace request");
 
 		const sortinglogic::AlgorithmDescriptor* rotateMerge = sortinglogic::algorithmDescriptor(
@@ -5453,7 +5465,7 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> rotateTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(rotateTrace && rotateTrace->configuration.rotateMergeBufferSize == 16,
+		check(rotateTrace && rotateTrace->configuration.value("rotate_buffer_capacity") == 16,
 			"AppController routes configured temporary-buffer capacity into the immutable trace request");
 
 		const sortinglogic::AlgorithmDescriptor* grail = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::ArrayvGrail);
@@ -5471,7 +5483,7 @@ namespace
 		}
 		const std::shared_ptr<const sortinglogic::SortTrace> grailTrace = app.snapshot().hasTrace
 			? app.simulation().currentTrace() : std::shared_ptr<const sortinglogic::SortTrace>();
-		check(grailTrace && grailTrace->configuration.grailBufferMode == sortinglogic::GrailBufferMode::StaticBuffer,
+		check(grailTrace && grailTrace->configuration.value("grail_buffer_mode") == static_cast<int>(sortinglogic::GrailBufferMode::StaticBuffer),
 			"AppController routes Grail's selected buffer mode into the immutable trace request");
 	}
 

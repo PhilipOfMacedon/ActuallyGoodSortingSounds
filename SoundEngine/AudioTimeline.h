@@ -8,7 +8,7 @@
 namespace SoundEngine
 {
 enum class PlaybackTimingMode : std::uint8_t { FixedDuration, ReferenceCadence };
-enum class TimelineEventKind : std::uint8_t { Other, Comparison, Probe, Auxiliary };
+enum class TimelineEventKind : std::uint8_t { Other, Comparison, Probe, Auxiliary, Reconstruction };
 enum class FixedDurationSchedule : std::uint8_t { SourceCursor, EligibleEvents };
 
 static const std::size_t AudioTimelineRoleCount = 8;
@@ -21,6 +21,7 @@ struct AudioTimelineGainSettings
     double heldKeyGain;
     double probeGain;
     double auxiliaryGain;
+    double reconstructionGain;
     double roleGain[AudioTimelineRoleCount];
     AudioTimelineGainSettings();
 };

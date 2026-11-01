@@ -86,6 +86,8 @@ namespace sortinglogic
 		{
 			std::size_t bytes = sizeof(SemanticEvent) + dynamicStringBytes(event.firstLane) + dynamicStringBytes(event.secondLane) +
 				dynamicStringBytes(event.workspaceName) + dynamicStringBytes(event.metricName) +
+				dynamicStringBytes(event.sourceWorkspace) + dynamicStringBytes(event.destinationWorkspace) + dynamicStringBytes(event.reconstructionLabel) +
+				dynamicStringBytes(event.secondSourceWorkspace) + dynamicStringBytes(event.secondDestinationWorkspace) +
 				(event.beforeSlots.capacity() + event.afterSlots.capacity()) * sizeof(SortSlot) +
 				event.beforeCounters.capacity() * sizeof(int);
 			if (event.type == SemanticEventType::ResizeAuxiliary) bytes += event.afterSize * sizeof(SortSlot);

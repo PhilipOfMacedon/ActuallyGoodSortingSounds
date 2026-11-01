@@ -27,9 +27,10 @@ namespace sortinglogic
 				"grail_buffer_writes", "grail_comparisons" }) r.declareMetric(key);
 			if (count < 2) return;
 			std::size_t bufferCapacity = 0;
-			if (r.trace.configuration.grailBufferMode == GrailBufferMode::StaticBuffer)
+			const GrailBufferMode bufferMode = static_cast<GrailBufferMode>(r.trace.configuration.value("grail_buffer_mode", 0));
+			if (bufferMode == GrailBufferMode::StaticBuffer)
 				bufferCapacity = (std::min)(std::size_t(512), count / 2);
-			else if (r.trace.configuration.grailBufferMode == GrailBufferMode::DynamicBuffer)
+			else if (bufferMode == GrailBufferMode::DynamicBuffer)
 				bufferCapacity = static_cast<std::size_t>(std::sqrt(static_cast<double>(count)));
 			if (bufferCapacity > 0) r.resizeAuxiliary("grail_buffer", bufferCapacity);
 			const std::size_t runSize = 16;

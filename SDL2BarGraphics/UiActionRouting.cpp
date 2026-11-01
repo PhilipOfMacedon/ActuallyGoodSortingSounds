@@ -42,17 +42,6 @@ namespace ui
 				: AppAction();
 		}
 
-		if (action.kind == AppActionKind::SetShellGapSequence)
-		{
-			AppAction normalized = action;
-			const sortinglogic::AlgorithmDescriptor* shell = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
-			if (shell && action.selection >= 0 && static_cast<std::size_t>(action.selection) < shell->supportedOptions.size())
-				normalized.selection = shell->supportedOptions[static_cast<std::size_t>(action.selection)].value;
-			else
-				normalized.selection = static_cast<int>(sortinglogic::ShellGapSequence::Halving);
-			return normalized;
-		}
-
 		if (action.kind == AppActionKind::SetAlgorithmOption)
 		{
 			const sortinglogic::AlgorithmDescriptor* descriptor = sortinglogic::algorithmDescriptorById(

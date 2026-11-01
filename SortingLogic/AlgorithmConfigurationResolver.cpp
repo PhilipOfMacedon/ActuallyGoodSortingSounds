@@ -9,26 +9,12 @@ namespace sortinglogic
 	{
 		namespace
 		{
-			AlgorithmConfiguration importLegacyConfiguration(const TraceBuildRequest& request,
-				const AlgorithmDescriptor& descriptor)
+			AlgorithmConfiguration defaultConfiguration(const AlgorithmDescriptor& descriptor)
 			{
 				AlgorithmConfiguration configuration;
-				configuration.shellGapSequence = request.shellGapSequence;
-				configuration.mergeWritebackMode = request.mergeWritebackMode;
-				configuration.mergeExecutionMode = request.mergeExecutionMode;
-				configuration.radixBase = request.radixBase;
-				configuration.timeMagnitude = request.timeMagnitude;
-				configuration.rotateMergeBufferSize = request.rotateMergeBufferSize;
-				if (request.bucketCount >= 2 &&
-					(descriptor.id == SortAlgorithm::ArrayvAmericanFlag || descriptor.id == SortAlgorithm::ArrayvStacklessAmericanFlag))
-					configuration.radixBase = request.bucketCount;
-				if (descriptor.id == SortAlgorithm::ArrayvBaseNHeap && request.bucketCount >= 2)
-					configuration.heapArity = request.bucketCount;
-				if (descriptor.id == SortAlgorithm::ArrayvGrail)
-				{
-					if (request.bucketCount == 1) configuration.grailBufferMode = GrailBufferMode::StaticBuffer;
-					else if (request.bucketCount == 2) configuration.grailBufferMode = GrailBufferMode::DynamicBuffer;
-				}
+				for (std::size_t i = 0; i < descriptor.supportedOptions.size(); ++i)
+					if (descriptor.supportedOptions[i].isDefault)
+						configuration.setValue(descriptor.supportedOptions[i].groupId, descriptor.supportedOptions[i].value);
 				return configuration;
 			}
 
@@ -42,21 +28,33 @@ namespace sortinglogic
 					if (!validatedGroups.insert(option.groupId).second) continue;
 
 					int selectedValue = 0;
-					if (!configuration.optionValue(option.target, selectedValue))
-						throw std::invalid_argument("The requested algorithm option group has no trace configuration binding.");
+					if (!configuration.optionValue(option.groupId, selectedValue))
+						throw std::invalid_argument("The requested algorithm property has no registered value.");
 					bool registeredValue = false;
 					for (std::size_t candidateIndex = 0; candidateIndex < descriptor.supportedOptions.size(); ++candidateIndex)
 					{
 						const AlgorithmOptionDescriptor& candidate = descriptor.supportedOptions[candidateIndex];
-						if (candidate.groupId == option.groupId && candidate.target == option.target &&
-							candidate.value == selectedValue)
+						if (candidate.groupId == option.groupId && candidate.value == selectedValue)
 						{
 							registeredValue = true;
 							break;
 						}
 					}
 					if (!registeredValue)
-						throw std::invalid_argument("The explicit algorithm configuration contains an unregistered choice value.");
+						throw std::invalid_argument("The algorithm configuration contains an unregistered property choice.");
+				}
+				for (std::map<std::string, int>::const_iterator value = configuration.values.begin();
+					value != configuration.values.end(); ++value)
+				{
+					bool registeredGroup = false;
+					for (std::size_t optionIndex = 0; optionIndex < descriptor.supportedOptions.size(); ++optionIndex)
+						if (value->first == descriptor.supportedOptions[optionIndex].groupId)
+						{
+							registeredGroup = true;
+							break;
+						}
+					if (!registeredGroup)
+						throw std::invalid_argument("The algorithm configuration contains an unregistered property ID.");
 				}
 			}
 		}
@@ -64,8 +62,11 @@ namespace sortinglogic
 		AlgorithmConfiguration resolveAlgorithmConfiguration(const TraceBuildRequest& request,
 			const AlgorithmDescriptor& descriptor)
 		{
-			AlgorithmConfiguration configuration = request.hasExplicitConfiguration
-				? request.configuration : importLegacyConfiguration(request, descriptor);
+			AlgorithmConfiguration configuration = defaultConfiguration(descriptor);
+			if (request.hasExplicitConfiguration)
+				for (std::map<std::string, int>::const_iterator value = request.configuration.values.begin();
+					value != request.configuration.values.end(); ++value)
+					configuration.setValue(value->first, value->second);
 
 			for (std::map<std::string, std::string>::const_iterator selected = request.optionSelections.begin();
 				selected != request.optionSelections.end(); ++selected)
@@ -82,12 +83,51 @@ namespace sortinglogic
 				}
 				if (!resolved)
 					throw std::invalid_argument("The requested algorithm option ID is not registered for this algorithm.");
-				if (!configuration.setOptionValue(resolved->target, resolved->value))
-					throw std::invalid_argument("The requested algorithm option group has no trace configuration binding.");
+				configuration.setValue(resolved->groupId, resolved->value);
 			}
 
-			if (request.hasExplicitConfiguration) validateExplicitChoiceOptions(configuration, descriptor);
+			// Configuration values may enter through the typed API or the stable-ID
+			// compatibility adapter above, but every value must resolve to a property
+			// registered for this selected strategy.
+			validateExplicitChoiceOptions(configuration, descriptor);
 			return configuration;
 		}
+	}
+
+	bool ResolvedAlgorithmPresentation::workspaceVisible(const std::string& stableId) const
+	{
+		for (std::size_t i = 0; i < workspaces.size(); ++i)
+		{
+			const AlgorithmWorkspaceDescriptor& workspace = workspaces[i];
+			if (workspace.stableId != stableId || workspace.visibilityPropertyId.empty()) continue;
+			return properties.value(workspace.visibilityPropertyId, 1) != 0;
+		}
+		return true;
+	}
+
+	ResolvedAlgorithmPresentation resolveAlgorithmPresentation(const AlgorithmDescriptor* descriptor,
+		const AlgorithmConfiguration& configuration)
+	{
+		ResolvedAlgorithmPresentation presentation;
+		presentation.properties = configuration;
+		if (!descriptor) return presentation;
+		presentation.registeredAlgorithm = true;
+		presentation.workspaces = descriptor->workspaces;
+		presentation.reverseAudioOperandOrder = descriptor->reverseAudioOperandOrder;
+		presentation.comparisonCadenceOnly = descriptor->comparisonCadenceOnly;
+		presentation.fixedDurationUsesEligibleEvents = descriptor->fixedDurationUsesEligibleEvents;
+		presentation.reconstructionSupported = descriptor->reconstructionPresentationSupported;
+		presentation.auxiliaryWritesAudible = descriptor->auxiliaryWritesAudible;
+		presentation.mainChangeAccentsVisible = descriptor->mainChangeAccentsVisible;
+		presentation.probeAccentsSupported = descriptor->probeAccentsSupported;
+		presentation.discardAccentsSupported = descriptor->discardAccentsSupported;
+		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
+		{
+			const AlgorithmOptionDescriptor& property = descriptor->supportedOptions[i];
+			int ignored = 0;
+			if (property.isDefault && !presentation.properties.optionValue(property.groupId, ignored))
+				presentation.properties.setValue(property.groupId, property.value);
+		}
+		return presentation;
 	}
 }

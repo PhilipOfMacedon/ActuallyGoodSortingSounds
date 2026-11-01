@@ -105,6 +105,7 @@ namespace SoundEngine
 		BedCombFilterParameters bedComb;
 		float comparisonBoostDb;
 		float heldKeyBoostDb;
+		float reconstructionBoostDb;
 		std::array<float, RoleCount> roleBoostDb;
 		float tauBelowBins;
 		float tauAboveBins;

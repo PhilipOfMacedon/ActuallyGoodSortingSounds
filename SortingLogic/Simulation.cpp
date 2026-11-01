@@ -23,7 +23,6 @@ namespace sortinglogic
 		durationSeconds_(10.0f), elapsedSeconds_(0.0f), direction_(SortDirection::Ascending), algorithm_(SortAlgorithm::Insertion),
 		domain_(profile == InputProfile::NormalizedFloat ? InputDomain::NormalizedFloats : InputDomain::NonnegativeIntegerKeys),
 		pattern_(InputPattern::Random), algorithmConfiguration_(),
-		mergeBufferVisualizationEnabled_(true),
 		completionScanEnabled_(false),
 		baselineKind_(BaselineKind::Shuffle),
 		buildingTrace_(false), playing_(false), status_()
@@ -32,6 +31,11 @@ namespace sortinglogic
 			throw std::invalid_argument("Initial item count must be between " + std::to_string(MinItemCount) +
 				" and " + std::to_string(MaxItemCount) + ".");
 		prepareItems(BaselineKind::Shuffle, startupSeed);
+		const AlgorithmDescriptor* initialAlgorithm = algorithmDescriptor(algorithm_);
+		if (initialAlgorithm)
+			for (std::size_t i = 0; i < initialAlgorithm->supportedOptions.size(); ++i)
+				if (initialAlgorithm->supportedOptions[i].isDefault)
+					algorithmConfiguration_.setValue(initialAlgorithm->supportedOptions[i].groupId, initialAlgorithm->supportedOptions[i].value);
 		status_ = "Ready. Input shuffle seed " + std::to_string(inputSeed_) + ".";
 	}
 
@@ -251,6 +255,10 @@ namespace sortinglogic
 		domain_ = nextDomain;
 		if (patternChanged) pattern_ = InputPattern::Random;
 		algorithm_ = algorithm;
+		algorithmConfiguration_ = AlgorithmConfiguration();
+		for (std::size_t i = 0; i < descriptor->supportedOptions.size(); ++i)
+			if (descriptor->supportedOptions[i].isDefault)
+				algorithmConfiguration_.setValue(descriptor->supportedOptions[i].groupId, descriptor->supportedOptions[i].value);
 		prepareItems(baselineKind_, baselineKind_ == BaselineKind::Shuffle ? inputSeed_ : 0);
 		status_ = std::string("Algorithm set to ") + algorithmDisplayName(algorithm) + ".";
 		if (domainChanged) status_ += std::string(" Input domain changed to ") + inputDomainName(domain_) + ".";
@@ -307,43 +315,6 @@ namespace sortinglogic
 		return CommandResult(true, status_);
 	}
 
-	CommandResult Simulation::setShellGapSequence(ShellGapSequence sequence)
-	{
-		const CommandResult allowed = checkPreparationAllowed(); if (!allowed.accepted) { status_ = allowed.message; return allowed; }
-		if (sequence < ShellGapSequence::Halving || sequence > ShellGapSequence::Tokuda) return CommandResult(false, "Invalid Shell gap sequence.");
-		if (algorithmConfiguration_.shellGapSequence == sequence) return CommandResult(true, "Shell gap sequence is unchanged.");
-		algorithmConfiguration_.shellGapSequence = sequence;
-		replaceTraceWithBaseline(); status_ = std::string("Shell gap sequence set to ") + shellGapSequenceName(sequence) + "."; return CommandResult(true, status_);
-	}
-
-	CommandResult Simulation::setMergeWritebackMode(MergeWritebackMode mode)
-	{
-		const CommandResult allowed = checkPreparationAllowed();
-		if (!allowed.accepted) { status_ = allowed.message; return allowed; }
-		if (mode != MergeWritebackMode::AnimatedWrites && mode != MergeWritebackMode::AtomicRangeWrite)
-			return CommandResult(false, "Invalid Merge Sort writeback mode.");
-		if (algorithmConfiguration_.mergeWritebackMode == mode) return CommandResult(true, "Merge Sort writeback mode is unchanged.");
-		algorithmConfiguration_.mergeWritebackMode = mode;
-		replaceTraceWithBaseline();
-		status_ = std::string("Merge Sort writeback set to ") +
-			(mode == MergeWritebackMode::AtomicRangeWrite ? "comparison phase then atomic range write." : "animated item writes.");
-		return CommandResult(true, status_);
-	}
-
-	CommandResult Simulation::setMergeExecutionMode(MergeExecutionMode mode)
-	{
-		const CommandResult allowed = checkPreparationAllowed();
-		if (!allowed.accepted) { status_ = allowed.message; return allowed; }
-		if (mode != MergeExecutionMode::BottomUp && mode != MergeExecutionMode::TopDown)
-			return CommandResult(false, "Invalid Merge Sort execution mode.");
-		if (algorithmConfiguration_.mergeExecutionMode == mode) return CommandResult(true, "Merge Sort execution mode is unchanged.");
-		algorithmConfiguration_.mergeExecutionMode = mode;
-		replaceTraceWithBaseline();
-		status_ = std::string("Merge Sort execution set to ") +
-			(mode == MergeExecutionMode::BottomUp ? "bottom-up." : "top-down.");
-		return CommandResult(true, status_);
-	}
-
 	CommandResult Simulation::setAlgorithmOption(const std::string& groupId, const std::string& stableId)
 	{
 		const CommandResult allowed = checkPreparationAllowed();
@@ -361,14 +332,19 @@ namespace sortinglogic
 		if (!selected) return CommandResult(false, "The selected algorithm option is not registered for the active algorithm.");
 
 		int currentValue = 0;
-		if (!algorithmConfiguration_.optionValue(selected->target, currentValue))
-			return CommandResult(false, "The selected algorithm option has no configuration binding.");
+		if (!algorithmConfiguration_.optionValue(selected->groupId, currentValue))
+			currentValue = selected->value;
 		if (currentValue == selected->value)
 			return CommandResult(true, std::string(selected->displayName) + " is already selected.");
-		if (!algorithmConfiguration_.setOptionValue(selected->target, selected->value))
-			return CommandResult(false, "The selected algorithm option has no configuration binding.");
-
-		replaceTraceWithBaseline();
+		algorithmConfiguration_.setValue(selected->groupId, selected->value);
+		if (selected->effect == AlgorithmPropertyEffect::RebuildTrace)
+			replaceTraceWithBaseline();
+		else if (selected->effect == AlgorithmPropertyEffect::RebuildTimeline && trace_)
+		{
+			std::shared_ptr<SortTrace> refreshed = std::make_shared<SortTrace>(*trace_);
+			refreshed->configuration = algorithmConfiguration_;
+			trace_ = refreshed;
+		}
 		status_ = std::string(descriptor->displayName) + " option set to " + selected->displayName + ".";
 		return CommandResult(true, status_);
 	}
@@ -381,18 +357,6 @@ namespace sortinglogic
 		completionScanEnabled_ = enabled;
 		replaceTraceWithBaseline();
 		status_ = std::string("Completion scan ") + (enabled ? "enabled." : "disabled.");
-		return CommandResult(true, status_);
-	}
-
-	CommandResult Simulation::setMergeBufferVisualizationEnabled(bool enabled)
-	{
-		const CommandResult allowed = checkPreparationAllowed();
-		if (!allowed.accepted) { status_ = allowed.message; return allowed; }
-		if (mergeBufferVisualizationEnabled_ == enabled)
-			return CommandResult(true, "Merge buffer visualization setting is unchanged.");
-		mergeBufferVisualizationEnabled_ = enabled;
-		replaceTraceWithBaseline();
-		status_ = std::string("Merge buffer visualization ") + (enabled ? "enabled." : "disabled.");
 		return CommandResult(true, status_);
 	}
 
@@ -415,7 +379,6 @@ namespace sortinglogic
 		request.domain = domain_; request.pattern = pattern_;
 		request.setConfiguration(algorithmConfiguration_);
 		request.completionScanEnabled = completionScanEnabled_;
-		request.mergeBufferVisualizationEnabled = mergeBufferVisualizationEnabled_;
 		trace_.reset(); currentState_ = makeInitialState(request.input); cursor_ = 0; elapsedSeconds_ = 0.0f; playing_ = false;
 		buildingTrace_ = true; status_ = "Building deterministic trace from a copy of the prepared input..."; return CommandResult(true, status_);
 	}
@@ -562,15 +525,32 @@ namespace sortinglogic
 			roles.push_back(ActiveRole(SemanticRole::WriteTarget, event.item.stableId, event.secondIndex));
 		}
 		else if (event.type == SemanticEventType::PlaceKey || event.type == SemanticEventType::WriteItem)
-			roles.push_back(ActiveRole(SemanticRole::WriteTarget, event.item.stableId, event.firstIndex, event.firstLane));
+		{
+			if (event.reconstructive && event.hasTransferProvenance && !event.sourceWorkspace.empty())
+				roles.push_back(ActiveRole(SemanticRole::AuxiliaryCopy, event.item.stableId, event.sourceIndex, event.sourceWorkspace));
+			roles.push_back(ActiveRole(SemanticRole::WriteTarget, event.item.stableId, event.destinationIndex == NoGapIndex
+				? event.firstIndex : event.destinationIndex, event.destinationWorkspace.empty() ? event.firstLane : event.destinationWorkspace));
+		}
 		else if (event.type == SemanticEventType::WriteRange)
 			for (std::size_t i = 0; i < event.afterSlots.size(); ++i)
 				if (event.afterSlots[i].occupied)
 					roles.push_back(ActiveRole(SemanticRole::WriteTarget, event.afterSlots[i].item.stableId, event.firstIndex + i, event.firstLane));
 		else if (event.type == SemanticEventType::Swap)
 		{
-			roles.push_back(ActiveRole(event.firstRole, event.firstItemId, event.firstIndex));
-			roles.push_back(ActiveRole(event.secondRole, event.secondItemId, event.secondIndex));
+			if (event.reconstructive && event.hasTransferProvenance)
+			{
+				roles.push_back(ActiveRole(event.firstRole, event.firstItemId,
+					event.destinationIndex == NoGapIndex ? event.secondIndex : event.destinationIndex,
+					event.destinationWorkspace.empty() ? "main" : event.destinationWorkspace));
+				roles.push_back(ActiveRole(event.secondRole, event.secondItemId,
+					event.secondDestinationIndex == NoGapIndex ? event.firstIndex : event.secondDestinationIndex,
+					event.secondDestinationWorkspace.empty() ? "main" : event.secondDestinationWorkspace));
+			}
+			else
+			{
+				roles.push_back(ActiveRole(event.firstRole, event.firstItemId, event.firstIndex, event.firstLane));
+				roles.push_back(ActiveRole(event.secondRole, event.secondItemId, event.secondIndex, event.secondLane));
+			}
 		}
 		else if (event.type == SemanticEventType::AuxiliaryItemWrite)
 			roles.push_back(ActiveRole(SemanticRole::AuxiliaryCopy, event.item.stableId, event.firstIndex, event.workspaceName));
@@ -589,10 +569,27 @@ namespace sortinglogic
 		const AlgorithmDescriptor* selected = algorithmDescriptor(algorithm_);
 		result.familyId = selected ? selected->familyId : FamilyId();
 		result.variantId = selected ? selected->variantId : VariantId();
-		result.shellGapSequence = algorithmConfiguration_.shellGapSequence;
-		result.mergeWritebackMode = algorithmConfiguration_.mergeWritebackMode;
-		result.mergeExecutionMode = algorithmConfiguration_.mergeExecutionMode;
-		result.mergeBufferVisualizationEnabled = mergeBufferVisualizationEnabled_;
+		result.configuration = algorithmConfiguration_;
+		result.workspaces.clear();
+		if (trace_) result.workspaces = trace_->workspaces;
+		else if (selected) result.workspaces = selected->workspaces;
+		result.reconstructionProgress = -1.0f;
+		result.reconstructionLabel.clear();
+		if (trace_ && cursor_ > 0)
+		{
+			const SemanticEvent& active = trace_->events[cursor_ - 1];
+			if (active.reconstructive)
+			{
+				result.reconstructionProgress = active.reconstructionProgress;
+				result.reconstructionLabel = active.reconstructionLabel;
+			}
+			else if ((active.type == SemanticEventType::PhaseBegin || active.type == SemanticEventType::PhaseEnd) &&
+				active.reconstructionPhaseId >= 0)
+			{
+				result.reconstructionProgress = active.type == SemanticEventType::PhaseEnd ? 1.0f : 0.0f;
+				result.reconstructionLabel = active.reconstructionLabel;
+			}
+		}
 		result.cursor = cursor_; result.eventCount = trace_ ? trace_->events.size() : 0; result.itemCount = itemCount_; result.inputSeed = inputSeed_;
 		result.audioEligibleEventCount = trace_ ? trace_->audioEventIndices.size() : 0;
 		result.durationSeconds = durationSeconds_; result.elapsedSeconds = elapsedSeconds_; result.hasTrace = static_cast<bool>(trace_);

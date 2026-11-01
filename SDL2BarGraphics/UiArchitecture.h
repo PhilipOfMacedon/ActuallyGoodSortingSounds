@@ -88,7 +88,7 @@ struct UiScreenModel
 	std::string algorithm;
 	std::string inputDomain;
 	std::string inputPattern;
-	std::string shellGapSequence;
+	std::string algorithmOptionsSummary;
 	std::string direction;
 	std::string playCaption;
 	std::string durationCaption;

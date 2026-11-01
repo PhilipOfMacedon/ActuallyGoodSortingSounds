@@ -147,7 +147,7 @@ UiScreenModel::UiScreenModel()
 	: preset(UiPresetId::Current), transport(UiTransportState::NoTrace), setupEnabled(true), runEnabled(false), playEnabled(false),
 		countEditable(true), durationEditable(true), descending(false), hasTrace(false), buildingTrace(false), playing(false), completed(false),
 		itemCount(0), cursor(0), eventCount(0), audioEligibleEventCount(0), seed(0), algorithm(), inputDomain(), inputPattern(),
-		shellGapSequence(), direction("Ascending"), playCaption("Generate & Play"), durationCaption(), status(),
+	algorithmOptionsSummary(), direction("Ascending"), playCaption("Generate & Play"), durationCaption(), status(),
 		algorithmCapabilities(), telemetry()
 {
 }

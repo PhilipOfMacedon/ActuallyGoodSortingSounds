@@ -55,6 +55,7 @@ SoundEngine::Parameters effectiveAudioParameters(const UserPreferences& preferen
 	};
 	audio.comparisonBoostDb = level(AlgorithmAudioChannel::Comparison);
 	audio.heldKeyBoostDb = level(AlgorithmAudioChannel::HeldKeyRole);
+	audio.reconstructionBoostDb = level(AlgorithmAudioChannel::Reconstruction);
 	const AlgorithmAudioChannel accentChannels[SoundEngine::AccentCategoryCount] = {
 		AlgorithmAudioChannel::ProbeAccent, AlgorithmAudioChannel::MainChangeAccent,
 		AlgorithmAudioChannel::AuxiliaryAccent, AlgorithmAudioChannel::DiscardAccent
@@ -114,6 +115,7 @@ const char* algorithmAudioChannelName(AlgorithmAudioChannel channel)
 	case AlgorithmAudioChannel::WriteTargetRole: return "Write-target emphasis";
 	case AlgorithmAudioChannel::ProbedItemRole: return "Probed-item emphasis";
 	case AlgorithmAudioChannel::ProcessedItemRole: return "Processed-item emphasis";
+	case AlgorithmAudioChannel::Reconstruction: return "Reconstruction";
 	default: return "Audio level";
 	}
 }

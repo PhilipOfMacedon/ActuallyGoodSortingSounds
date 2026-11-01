@@ -59,15 +59,14 @@ SimulationPreferences::SimulationPreferences() : itemCount(80), durationSeconds(
 	playbackTimingMode(SoundEngine::PlaybackTimingMode::FixedDuration), descending(false),
 	algorithm(static_cast<int>(sortinglogic::SortAlgorithm::Insertion)), familyId("insertion-methods"), variantId("insertion"),
 	domain(sortinglogic::InputDomain::NormalizedFloats),
-	pattern(sortinglogic::InputPattern::Random), mergeBufferVisualizationEnabled(true), completionScanEnabled(false) {}
+	pattern(sortinglogic::InputPattern::Random), completionScanEnabled(false) {}
 
 bool SimulationPreferences::operator==(const SimulationPreferences& other) const
 {
 	return itemCount == other.itemCount && durationSeconds == other.durationSeconds &&
 		playbackTimingMode == other.playbackTimingMode && descending == other.descending && algorithm == other.algorithm &&
 		familyId == other.familyId && variantId == other.variantId && domain == other.domain &&
-		pattern == other.pattern && mergeBufferVisualizationEnabled == other.mergeBufferVisualizationEnabled &&
-		completionScanEnabled == other.completionScanEnabled;
+		pattern == other.pattern && completionScanEnabled == other.completionScanEnabled;
 }
 
 UserPreferences::UserPreferences() : version(UserSettingsCurrentVersion), visual(), appearance(), simulation(), audio(), reconstructedAudio(), familyAudioDefaults(),

@@ -12,7 +12,8 @@ namespace sortinglogic
 		using detail::Recorder;
 		void shell(Recorder& r)
 		{
-			const std::vector<std::size_t> gaps = shellGaps(r.state.slots.size(), r.trace.configuration.shellGapSequence);
+			const std::vector<std::size_t> gaps = shellGaps(r.state.slots.size(),
+				static_cast<ShellGapSequence>(r.trace.configuration.value("gap_sequence", static_cast<int>(ShellGapSequence::Halving))));
 			for (std::size_t g = 0; g < gaps.size(); ++g)
 			{
 				const std::size_t gap = gaps[g];

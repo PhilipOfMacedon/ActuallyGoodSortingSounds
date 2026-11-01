@@ -202,19 +202,6 @@ namespace
 		return true;
 	}
 
-	const char* mergeWritebackModeName(sortinglogic::MergeWritebackMode mode)
-	{
-		return mode == sortinglogic::MergeWritebackMode::AnimatedWrites ? "animated_writes" : "atomic_range_write";
-	}
-
-	bool parseMergeWritebackMode(const std::string& value, sortinglogic::MergeWritebackMode& result)
-	{
-		if (value == "animated_writes") result = sortinglogic::MergeWritebackMode::AnimatedWrites;
-		else if (value == "atomic_range_write") result = sortinglogic::MergeWritebackMode::AtomicRangeWrite;
-		else return false;
-		return true;
-	}
-
 	const char* mergeExecutionModeName(sortinglogic::MergeExecutionMode mode)
 	{
 		return mode == sortinglogic::MergeExecutionMode::TopDown ? "top_down" : "bottom_up";
@@ -538,6 +525,7 @@ namespace
 		case AlgorithmAudioChannel::WriteTargetRole: return "role_write_target";
 		case AlgorithmAudioChannel::ProbedItemRole: return "role_probed_item";
 		case AlgorithmAudioChannel::ProcessedItemRole: return "role_processed_item";
+		case AlgorithmAudioChannel::Reconstruction: return "reconstruction";
 		default: return nullptr;
 		}
 	}
@@ -590,7 +578,6 @@ UserPreferences settingsini::decode(const std::string& content)
 	readAppearance(values, version, defaults);
 	if (!optionalBool(values, "panel_expanded", defaults.visual.panelExpanded) ||
 		!optionalBool(values, "descending", defaults.simulation.descending) ||
-		!optionalBool(values, "merge_buffer_visualization", defaults.simulation.mergeBufferVisualizationEnabled) ||
 		!optionalBool(values, "completion_scan", defaults.simulation.completionScanEnabled) ||
 		!optionalInt(values, "item_count", defaults.simulation.itemCount) ||
 		!optionalFloat(values, "duration_seconds", defaults.simulation.durationSeconds)) return UserPreferences();
@@ -598,11 +585,13 @@ UserPreferences settingsini::decode(const std::string& content)
 	if (found != values.end()) defaults.simulation.playbackTimingMode = parsePlaybackTimingMode(found->second);
 	if (version <= 3 && !optionalInt(values, "algorithm", defaults.simulation.algorithm)) return UserPreferences();
 	sortinglogic::ShellGapSequence legacyShellGap = sortinglogic::ShellGapSequence::Halving;
-	sortinglogic::MergeWritebackMode legacyMergeWriteback = sortinglogic::MergeWritebackMode::AtomicRangeWrite;
 	sortinglogic::MergeExecutionMode legacyMergeExecution = sortinglogic::MergeExecutionMode::BottomUp;
 	bool hasLegacyShellGap = false;
-	bool hasLegacyMergeWriteback = false;
 	bool hasLegacyMergeExecution = false;
+	bool legacyMergeBufferVisible = true;
+	const bool hasLegacyMergeBufferVisibility = values.find("merge_buffer_visualization") != values.end();
+	if (hasLegacyMergeBufferVisibility && !optionalBool(values, "merge_buffer_visualization", legacyMergeBufferVisible))
+		legacyMergeBufferVisible = true;
 	if (version < 3)
 	{
 		// v1/v2 stored the sole algorithm as catalog position zero.
@@ -622,12 +611,6 @@ UserPreferences settingsini::decode(const std::string& content)
 		{
 			if (!parseGapSequence(found->second, legacyShellGap)) return UserPreferences();
 			hasLegacyShellGap = true;
-		}
-		found = values.find("merge_writeback_mode");
-		if (found != values.end())
-		{
-			if (!parseMergeWritebackMode(found->second, legacyMergeWriteback)) return UserPreferences();
-			hasLegacyMergeWriteback = true;
 		}
 		found = values.find("merge_execution_mode");
 		if (found != values.end())
@@ -678,12 +661,6 @@ UserPreferences settingsini::decode(const std::string& content)
 			if (!parseGapSequence(found->second, legacyShellGap)) return UserPreferences();
 			hasLegacyShellGap = true;
 		}
-		found = values.find("merge_writeback_mode");
-		if (found != values.end())
-		{
-			if (!parseMergeWritebackMode(found->second, legacyMergeWriteback)) return UserPreferences();
-			hasLegacyMergeWriteback = true;
-		}
 		found = values.find("merge_execution_mode");
 		if (found != values.end())
 		{
@@ -693,8 +670,6 @@ UserPreferences settingsini::decode(const std::string& content)
 	}
 	if (hasLegacyShellGap)
 		migrateLegacyAlgorithmOption(defaults, sortinglogic::SortAlgorithm::Shell, "gap_sequence", static_cast<int>(legacyShellGap));
-	if (hasLegacyMergeWriteback)
-		migrateLegacyAlgorithmOption(defaults, sortinglogic::SortAlgorithm::Merge, "writeback_mode", static_cast<int>(legacyMergeWriteback));
 	if (hasLegacyMergeExecution)
 		migrateLegacyAlgorithmOption(defaults, sortinglogic::SortAlgorithm::Merge, "execution_mode", static_cast<int>(legacyMergeExecution));
 	// Stable metadata keys override the compatibility fields above. Unknown or
@@ -712,6 +687,22 @@ UserPreferences settingsini::decode(const std::string& content)
 			const std::string preferenceKey = algorithmOptionSettingsKey(algorithm.familyId, algorithm.variantId, option.groupId);
 			defaults.algorithmOptions[preferenceKey] = option.stableId;
 		}
+	}
+	if (version < 10)
+	{
+		// Every older affected configuration inherits the new detailed default.
+		// Former atomic Merge writeback is deliberately not carried forward as a
+		// compact selection; Compact/reference remains an explicit v10 choice.
+		const std::vector<sortinglogic::AlgorithmDescriptor>& catalog = sortinglogic::algorithmCatalog();
+		for (std::size_t algorithmIndex = 0; algorithmIndex < catalog.size(); ++algorithmIndex)
+			for (std::size_t optionIndex = 0; optionIndex < catalog[algorithmIndex].supportedOptions.size(); ++optionIndex)
+				if (std::string(catalog[algorithmIndex].supportedOptions[optionIndex].groupId) == "reconstruction_mode" &&
+					std::string(catalog[algorithmIndex].supportedOptions[optionIndex].stableId) == "detailed")
+					defaults.algorithmOptions[algorithmOptionSettingsKey(catalog[algorithmIndex].familyId,
+						catalog[algorithmIndex].variantId, "reconstruction_mode")] = "detailed";
+		if (hasLegacyMergeBufferVisibility)
+			migrateLegacyAlgorithmOption(defaults, sortinglogic::SortAlgorithm::Merge, "buffer_visibility",
+				legacyMergeBufferVisible ? 1 : 0);
 	}
 	if (version >= 2)
 	{
@@ -745,17 +736,6 @@ UserPreferences settingsini::decode(const std::string& content)
 
 std::string settingsini::encode(const UserPreferences& settings)
 {
-	const sortinglogic::AlgorithmDescriptor* shellDescriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Shell);
-	const sortinglogic::AlgorithmDescriptor* mergeDescriptor = sortinglogic::algorithmDescriptor(sortinglogic::SortAlgorithm::Merge);
-	const sortinglogic::ShellGapSequence shellGap = shellDescriptor
-		? static_cast<sortinglogic::ShellGapSequence>(algorithmOptionValue(settings, *shellDescriptor, "gap_sequence"))
-		: sortinglogic::ShellGapSequence::Halving;
-	const sortinglogic::MergeWritebackMode mergeWriteback = mergeDescriptor
-		? static_cast<sortinglogic::MergeWritebackMode>(algorithmOptionValue(settings, *mergeDescriptor, "writeback_mode"))
-		: sortinglogic::MergeWritebackMode::AtomicRangeWrite;
-	const sortinglogic::MergeExecutionMode mergeExecution = mergeDescriptor
-		? static_cast<sortinglogic::MergeExecutionMode>(algorithmOptionValue(settings, *mergeDescriptor, "execution_mode"))
-		: sortinglogic::MergeExecutionMode::BottomUp;
 	std::ostringstream contents;
 	contents << "version=" << UserSettingsCurrentVersion << "\n"
 		<< "palette=" << paletteName(settings.visual.palette) << "\n"
@@ -781,16 +761,12 @@ std::string settingsini::encode(const UserPreferences& settings)
 		<< std::setprecision(9) << "duration_seconds=" << settings.simulation.durationSeconds << "\n"
 		<< "playback_timing=" << playbackTimingModeName(settings.simulation.playbackTimingMode) << "\n"
 		<< "descending=" << (settings.simulation.descending ? 1 : 0) << "\n"
-		<< "merge_buffer_visualization=" << (settings.simulation.mergeBufferVisualizationEnabled ? 1 : 0) << "\n"
 		<< "completion_scan=" << (settings.simulation.completionScanEnabled ? 1 : 0) << "\n"
 		<< "family_id=" << settings.simulation.familyId << "\n"
 		<< "variant_id=" << settings.simulation.variantId << "\n"
 		<< "profile=" << profileName(sortinglogic::inputProfileForDomain(settings.simulation.domain)) << "\n"
 		<< "domain=" << domainName(settings.simulation.domain) << "\n"
-		<< "pattern=" << patternName(settings.simulation.pattern) << "\n"
-		<< "shell_gap_sequence=" << gapSequenceName(shellGap) << "\n"
-		<< "merge_writeback_mode=" << mergeWritebackModeName(mergeWriteback) << "\n"
-		<< "merge_execution_mode=" << mergeExecutionModeName(mergeExecution) << "\n";
+		<< "pattern=" << patternName(settings.simulation.pattern) << "\n";
 	const std::vector<sortinglogic::AlgorithmDescriptor>& optionCatalog = sortinglogic::algorithmCatalog();
 	for (std::size_t algorithmIndex = 0; algorithmIndex < optionCatalog.size(); ++algorithmIndex)
 	{

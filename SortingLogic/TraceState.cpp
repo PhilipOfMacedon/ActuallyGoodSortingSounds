@@ -14,10 +14,13 @@ namespace sortinglogic
 
 SemanticEvent::SemanticEvent()
 		: sequence(0), type(SemanticEventType::Complete), firstIndex(NoGapIndex), secondIndex(NoGapIndex),
-		firstItemId(NoItemId), secondItemId(NoItemId), item(), beforeItem(), beforeSecondItem(), beforeSlots(), afterSlots(), beforeCounters(), comparison(ComparisonResult::Equal),
+		firstItemId(NoItemId), secondItemId(NoItemId), item(), beforeItem(), beforeSecondItem(), secondItem(), beforeSlots(), afterSlots(), beforeCounters(), comparison(ComparisonResult::Equal),
 		comparisonBasis(ComparisonBasis::ValueOnly),
-		firstLane("main"), secondLane("main"), workspaceName(), firstRole(SemanticRole::ComparedItem),
-			secondRole(SemanticRole::ComparedItem), completionScan(false), beforeOccupied(false), beforeSecondOccupied(false),
+		firstLane("main"), secondLane("main"), workspaceName(), sourceWorkspace(), destinationWorkspace(), reconstructionLabel(),
+		secondSourceWorkspace(), secondDestinationWorkspace(), sourceIndex(NoGapIndex), destinationIndex(NoGapIndex),
+		secondSourceIndex(NoGapIndex), secondDestinationIndex(NoGapIndex), reconstructionProgress(0.0f), reconstructionPhaseId(-1),
+		firstRole(SemanticRole::ComparedItem), secondRole(SemanticRole::ComparedItem), completionScan(false), beforeOccupied(false), beforeSecondOccupied(false),
+		reconstructive(false), presentationOnly(false), hasTransferProvenance(false),
 			beforeBoolean(false), afterBoolean(false),
 		beforeCounter(0), afterCounter(0), beforeSize(0), afterSize(0), metricName(), metricDelta(0), groupId(-1)
 	{
@@ -26,19 +29,19 @@ SemanticEvent::SemanticEvent()
 	SortTrace::SortTrace()
 		: algorithm(SortAlgorithm::Insertion), familyId("insertion"), variantId("standard"),
 		direction(SortDirection::Ascending), domain(InputDomain::NormalizedFloats),
-		pattern(InputPattern::Random), configuration(), mergeBufferVisualizationEnabled(true),
+		pattern(InputPattern::Random), configuration(),
 		inputSeed(0), input(), initialState(), events(),
-		comparisonEventIndices(), probeEventIndices(), audioEventIndices(), annotations(), snapshots(), operationCount(0), workSteps(0),
+		comparisonEventIndices(), probeEventIndices(), audioEventIndices(), annotations(), workspaces(), snapshots(), operationCount(0), workSteps(0),
 		accountedBytes(0), complete(true), outcome(AlgorithmOutcome::SortedPermutation), completionReason()
 	{
 	}
 
 	RenderSnapshot::RenderSnapshot()
-		: state(), activeRoles(), activeRegions(), metrics(), direction(SortDirection::Ascending),
+		: state(), activeRoles(), activeRegions(), workspaces(), configuration(), reconstructionProgress(0.0f), reconstructionLabel(),
+		metrics(), direction(SortDirection::Ascending),
 		algorithm(SortAlgorithm::Insertion), familyId("insertion"), variantId("standard"),
 		domain(InputDomain::NormalizedFloats),
-		pattern(InputPattern::Random), shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
-		mergeExecutionMode(MergeExecutionMode::BottomUp), mergeBufferVisualizationEnabled(true),
+		pattern(InputPattern::Random),
 		cursor(0), eventCount(0), itemCount(0), audioEligibleEventCount(0), inputSeed(0), durationSeconds(10.0f), elapsedSeconds(0.0f),
 		hasTrace(false), buildingTrace(false), playing(false), complete(false), partial(false), runCompatible(true),
 		compatibilityMessage(), completionReason(), status()
@@ -190,6 +193,18 @@ SemanticEvent::SemanticEvent()
 			lane[event.firstIndex] = SortSlot(event.item); ++state.metrics.auxiliaryItemWrites;
 			break;
 		}
+		case SemanticEventType::StageReconstructionOutput:
+		{
+			std::vector<SortSlot>& lane = state.auxiliaryItems[event.workspaceName];
+			require(lane.size() == event.beforeSlots.size(), "Staged reconstruction output size is invalid.");
+			for (std::size_t i = 0; i < lane.size(); ++i)
+				require(lane[i].occupied == event.beforeSlots[i].occupied &&
+					(!lane[i].occupied || sameItem(lane[i].item, event.beforeSlots[i].item)),
+					"Staged reconstruction output before-state mismatch.");
+			lane = event.afterSlots;
+			state.metrics.auxiliaryItemWrites += static_cast<std::uint64_t>(event.afterSlots.size());
+			break;
+		}
 		case SemanticEventType::CounterWrite:
 			if (event.workspaceName == "__metric") state.metrics.algorithm[event.metricName] = static_cast<std::uint64_t>(event.afterCounter);
 			else
@@ -317,6 +332,19 @@ SemanticEvent::SemanticEvent()
 			break;
 		case SemanticEventType::AuxiliaryItemWrite:
 			state.auxiliaryItems[event.workspaceName][event.firstIndex] = event.beforeOccupied ? SortSlot(event.beforeItem) : SortSlot(); if (state.metrics.auxiliaryItemWrites) --state.metrics.auxiliaryItemWrites; break;
+		case SemanticEventType::StageReconstructionOutput:
+		{
+			std::vector<SortSlot>& lane = state.auxiliaryItems[event.workspaceName];
+			require(lane.size() == event.afterSlots.size(), "Reverse staged reconstruction output size is invalid.");
+			for (std::size_t i = 0; i < lane.size(); ++i)
+				require(lane[i].occupied == event.afterSlots[i].occupied &&
+					(!lane[i].occupied || sameItem(lane[i].item, event.afterSlots[i].item)),
+					"Staged reconstruction output after-state mismatch.");
+			lane = event.beforeSlots;
+			state.metrics.auxiliaryItemWrites -= (std::min<std::uint64_t>)(state.metrics.auxiliaryItemWrites,
+				static_cast<std::uint64_t>(event.afterSlots.size()));
+			break;
+		}
 		case SemanticEventType::CounterWrite:
 			if (event.workspaceName == "__metric")
 			{

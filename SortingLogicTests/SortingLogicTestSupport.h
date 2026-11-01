@@ -22,11 +22,13 @@ namespace sortinglogic_tests
 	void verifyAlgorithmCase(const std::string& label, const std::vector<sortinglogic::SortItem>& input,
 		sortinglogic::InputProfile profile, sortinglogic::SortAlgorithm algorithm, sortinglogic::SortDirection direction,
 		sortinglogic::InputDomain domain = sortinglogic::InputDomain::NormalizedFloats,
-		sortinglogic::MergeWritebackMode mergeMode = sortinglogic::MergeWritebackMode::AtomicRangeWrite,
+		bool compactReference = false,
 		sortinglogic::MergeExecutionMode mergeExecution = sortinglogic::MergeExecutionMode::BottomUp);
 
-	void testMergeWritebackModes();
+	void testMergeReconstructionModes();
 	void verifyProfilesAndAlgorithms();
+	void testCompactReconstructionModes();
+	void testDetailedReconstructionCoverage();
 	void testBurntPancakeOrientation();
 	void testBinaryInsertionStrategy();
 	void testPancakeStrategyFamily();

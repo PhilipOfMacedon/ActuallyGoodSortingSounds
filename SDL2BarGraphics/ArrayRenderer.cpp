@@ -3,6 +3,7 @@
 #include "ActiveRoleLookup.h"
 
 #include <algorithm>
+#include <cctype>
 #include <map>
 
 #include "LayoutMetrics.h"
@@ -16,15 +17,30 @@ namespace
 		return static_cast<std::size_t>(material) - FirstChartMaterial;
 	}
 
-	bool hiddenMergeBuffer(const sortinglogic::RenderSnapshot& snapshot, const std::string& lane)
+	bool hiddenWorkspace(const sortinglogic::RenderSnapshot& snapshot, const std::string& lane)
 	{
-		return !sortinglogic::isWorkspaceVisible(snapshot.algorithm, snapshot.mergeBufferVisualizationEnabled, lane);
+		return !sortinglogic::isWorkspaceVisible(snapshot, lane);
+	}
+
+	std::string workspaceCaption(const sortinglogic::RenderSnapshot& snapshot, const std::string& lane)
+	{
+		for (std::size_t i = 0; i < snapshot.workspaces.size(); ++i)
+			if (snapshot.workspaces[i].stableId == lane) return snapshot.workspaces[i].caption;
+		if (lane == "discard") return "Discarded items";
+		std::string caption = lane;
+		for (std::size_t i = 0; i < caption.size(); ++i)
+		{
+			if (caption[i] == '_') caption[i] = ' ';
+			else if (i == 0 || caption[i - 1] == ' ')
+				caption[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(caption[i])));
+		}
+		return caption;
 	}
 }
 
 ArrayRenderer::ArrayRenderer(Window& window, Renderer2D& renderer)
 	: window_(window), renderer_(renderer), materialBuckets_(), gapMarkers_(), mainRoleLookup_(),
-	  workspaceRoleLookup_(), laneLabels_(), laneLabelPositions_()
+	  workspaceRoleLookup_(), laneLabels_(), laneLabelPositions_(), reconstructionLabel_()
 {
 }
 
@@ -56,16 +72,14 @@ void ArrayRenderer::render(
 	std::size_t laneCount = snapshot.state.integerWorkspaces.size() + (snapshot.state.discardedItems.empty() ? 0 : 1);
 	for (std::map<std::string, std::vector<sortinglogic::SortSlot> >::const_iterator lane = snapshot.state.auxiliaryItems.begin();
 		lane != snapshot.state.auxiliaryItems.end(); ++lane)
-		if (!hiddenMergeBuffer(snapshot, lane->first)) ++laneCount;
+		if (!hiddenWorkspace(snapshot, lane->first)) ++laneCount;
 	const float auxiliaryHeight = laneCount == 0 ? 0.0f : std::min(areaHeight * 0.30f, static_cast<float>(laneCount) * 38.0f);
 	const float mainBottom = bottom - auxiliaryHeight - (laneCount ? 6.0f : 0.0f);
 	const float mainHeight = std::max(0.0f, mainBottom - top);
 	const float columnWidth = std::max(0.0f, right - left) / static_cast<float>(snapshot.state.slots.size());
 	const BarSlotMetrics spacing = calculateBarSlotMetrics(columnWidth, spacingMode);
-	// When Merge Sort's auxiliary buffer is hidden, compare/write roles still
-	// refer to the logical "merge" lane. The items being compared are visible in
-	// the primary array, so resolve those roles there rather than losing their
-	// highlight because the buffer lane was omitted from the chart.
+	// A workspace can be visually hidden while its semantic roles remain useful
+	// on the main sequence. Resolve those roles through the registered binding.
 	const std::vector<sortinglogic::ActiveRole> mainRoles = sortinglogic::visibleRolesOnMainArray(snapshot);
 	mainRoleLookup_.rebuild(mainRoles);
 	workspaceRoleLookup_.rebuild(snapshot.activeRoles);
@@ -102,11 +116,11 @@ void ArrayRenderer::render(
 		std::size_t laneNumber = 0;
 		for (std::map<std::string, std::vector<sortinglogic::SortSlot> >::const_iterator lane = snapshot.state.auxiliaryItems.begin(); lane != snapshot.state.auxiliaryItems.end(); ++lane)
 		{
-			if (hiddenMergeBuffer(snapshot, lane->first)) continue;
+			if (hiddenWorkspace(snapshot, lane->first)) continue;
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
 			laneGeometry[lane->first] = std::make_pair(lane->second.size(), laneNumber);
-			submitLaneLabel(lane->first, right - 112.0f, laneTop + 1.0f, palette.text);
+			submitLaneLabel(lane->first, workspaceCaption(snapshot, lane->first), right - 112.0f, laneTop + 1.0f, palette.text);
 			const float cellWidth = lane->second.empty() ? 0.0f : (right - left) / static_cast<float>(lane->second.size());
 			const BarSlotMetrics laneSpacing = calculateBarSlotMetrics(cellWidth, spacingMode);
 			for (std::size_t i = 0; i < lane->second.size(); ++i)
@@ -126,7 +140,7 @@ void ArrayRenderer::render(
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
 			laneGeometry[lane->first] = std::make_pair(lane->second.size(), laneNumber);
-			submitLaneLabel(lane->first, right - 112.0f, laneTop + 1.0f, palette.text);
+			submitLaneLabel(lane->first, workspaceCaption(snapshot, lane->first), right - 112.0f, laneTop + 1.0f, palette.text);
 			int maximum = 1;
 			for (std::size_t i = 0; i < lane->second.size(); ++i) maximum = std::max(maximum, lane->second[i]);
 			const float cellWidth = lane->second.empty() ? 0.0f : (right - left) / static_cast<float>(lane->second.size());
@@ -145,7 +159,7 @@ void ArrayRenderer::render(
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
 			laneGeometry["discard"] = std::make_pair(snapshot.state.discardedItems.size(), laneNumber);
-			submitLaneLabel("discard", right - 112.0f, laneTop + 1.0f, palette.text);
+			submitLaneLabel("discard", workspaceCaption(snapshot, "discard"), right - 112.0f, laneTop + 1.0f, palette.text);
 			const float cellWidth = (right - left) / static_cast<float>(snapshot.state.discardedItems.size());
 			const BarSlotMetrics laneSpacing = calculateBarSlotMetrics(cellWidth, spacingMode);
 			for (std::size_t i = 0; i < snapshot.state.discardedItems.size(); ++i)
@@ -225,19 +239,37 @@ void ArrayRenderer::render(
 	}
 	for (std::size_t i = 0; i < gapMarkers_.size(); ++i)
 		renderer_.submit(gapMarkers_[i]);
+	if (snapshot.reconstructionProgress >= 0.0f)
+	{
+		const float progressWidth = std::max(0.0f, right - left - 12.0f);
+		const float progress = std::max(0.0f, std::min(1.0f, snapshot.reconstructionProgress));
+		const float progressY = top + 5.0f;
+		renderer_.submit(QuadInstance(glm::vec2(left + 6.0f, progressY), glm::vec2(progressWidth, 3.0f),
+			RenderDescriptor(palette.timelineRail, 0, MaterialId::GapMarker), RenderLayer::ChartLabels, chartClip));
+		renderer_.submit(QuadInstance(glm::vec2(left + 6.0f, progressY), glm::vec2(progressWidth * progress, 3.0f),
+			RenderDescriptor(palette.accent, 0, MaterialId::GapMarker), RenderLayer::ChartLabels, chartClip));
+		if (!snapshot.reconstructionLabel.empty())
+		{
+			if (!reconstructionLabel_)
+				reconstructionLabel_.reset(new TextLabel(snapshot.reconstructionLabel, "Courier New Bold", 11,
+					SDL_Color{ 255, 255, 255, 255 }));
+			else reconstructionLabel_->setContent(snapshot.reconstructionLabel);
+			const glm::vec2 dimensions = reconstructionLabel_->getTextureDimensions();
+			if (reconstructionLabel_->getTextureId() && dimensions.y > 0.0f)
+			{
+				const float labelHeight = 12.0f;
+				const float labelWidth = std::min(progressWidth, labelHeight * dimensions.x / dimensions.y);
+				renderer_.submit(QuadInstance(glm::vec2(left + 6.0f, progressY + 4.0f), glm::vec2(labelWidth, labelHeight),
+					RenderDescriptor(palette.text, reconstructionLabel_->getTextureId(), MaterialId::Text), RenderLayer::ChartLabels, chartClip));
+			}
+		}
+	}
 	mainRoleLookup_.release();
 	workspaceRoleLookup_.release();
 }
 
-void ArrayRenderer::submitLaneLabel(const std::string& lane, float x, float y, const glm::vec4& color)
+void ArrayRenderer::submitLaneLabel(const std::string& lane, const std::string& caption, float x, float y, const glm::vec4& color)
 {
-	std::string caption = lane;
-	if (lane == "merge") caption = "Merge buffer";
-	else if (lane == "count_output") caption = "Stable output";
-	else if (lane == "radix_output") caption = "Radix output";
-	else if (lane == "counts") caption = "Key counts";
-	else if (lane == "digits") caption = "Digit buckets";
-	else if (lane == "discard") caption = "Discarded items";
 	SDL_Color text = {
 		static_cast<Uint8>(std::max(0.0f, std::min(255.0f, color.r * 255.0f))),
 		static_cast<Uint8>(std::max(0.0f, std::min(255.0f, color.g * 255.0f))),

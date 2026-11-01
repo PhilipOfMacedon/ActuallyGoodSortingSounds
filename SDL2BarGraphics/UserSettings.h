@@ -10,7 +10,7 @@
 #include "UiAppearance.h"
 #include "VisualSettingsTypes.h"
 
-static const int UserSettingsCurrentVersion = 9;
+static const int UserSettingsCurrentVersion = 10;
 
 struct VisualPreferences
 {
@@ -32,7 +32,6 @@ struct SimulationPreferences
 	sortinglogic::VariantId variantId;
 	sortinglogic::InputDomain domain;
 	sortinglogic::InputPattern pattern;
-	bool mergeBufferVisualizationEnabled;
 	bool completionScanEnabled;
 	SimulationPreferences();
 	bool operator==(const SimulationPreferences& other) const;
@@ -52,6 +51,7 @@ enum class AlgorithmAudioChannel : std::size_t
 	WriteTargetRole,
 	ProbedItemRole,
 	ProcessedItemRole,
+	Reconstruction,
 	Count
 };
 

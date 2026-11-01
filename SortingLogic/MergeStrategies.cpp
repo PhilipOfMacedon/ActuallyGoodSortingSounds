@@ -25,7 +25,7 @@ namespace sortinglogic
 				const std::size_t n = r.state.slots.size();
 				if (n < 2) return;
 				r.resizeAuxiliary("merge", n);
-				if (r.trace.configuration.mergeExecutionMode == MergeExecutionMode::TopDown)
+				if (r.trace.configuration.value("execution_mode", static_cast<int>(MergeExecutionMode::BottomUp)) == static_cast<int>(MergeExecutionMode::TopDown))
 				{
 					std::size_t maximumDepth = 0;
 					for (std::size_t span = n; span > 1; span = (span + 1) / 2) ++maximumDepth;
@@ -1790,7 +1790,8 @@ namespace sortinglogic
 				"optimized_rotate_in_place_merges", "optimized_rotate_buffer_writes", "optimized_rotate_comparisons",
 				"optimized_rotate_trimmed_items" }) r.declareMetric(key);
 			if (count < 2) return;
-			const std::size_t bufferCapacity = static_cast<std::size_t>((std::max)(1, (std::min)(256, r.trace.configuration.rotateMergeBufferSize)));
+			const std::size_t bufferCapacity = static_cast<std::size_t>((std::max)(1, (std::min)(256,
+				r.trace.configuration.value("rotate_buffer_capacity", 64))));
 			r.resizeAuxiliary("rotate_merge_buffer", bufferCapacity);
 
 			const auto bufferedMerge = [&r, bufferCapacity](std::size_t first, std::size_t middle, std::size_t last)

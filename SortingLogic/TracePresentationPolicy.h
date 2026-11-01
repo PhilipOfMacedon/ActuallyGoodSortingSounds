@@ -10,6 +10,7 @@ namespace sortinglogic
 		Comparison,
 		ProbeAsComparison,
 		ProbeAccent,
+		Reconstruction,
 		MainChangeAccent,
 		AuxiliaryItemWrite,
 		DistributionUpdate,
@@ -22,7 +23,8 @@ namespace sortinglogic
 		Probe,
 		MainChange,
 		Auxiliary,
-		Discard
+		Discard,
+		Reconstruction
 	};
 
 	struct TraceAudioOperandProjection
@@ -33,9 +35,12 @@ namespace sortinglogic
 		SemanticRole secondRole;
 		bool hasSecondOperand;
 		bool reverseOrder;
+		float firstValue;
+		float secondValue;
+		bool hasCapturedValues;
 		TraceAudioOperandProjection()
 			: firstItemId(0), secondItemId(0), firstRole(SemanticRole::ComparedItem), secondRole(SemanticRole::ComparedItem),
-			  hasSecondOperand(false), reverseOrder(false) {}
+			  hasSecondOperand(false), reverseOrder(false), firstValue(0.0f), secondValue(0.0f), hasCapturedValues(false) {}
 	};
 
 	// Resolves the trace-level presentation rules once so cadence, timeline
@@ -50,22 +55,23 @@ namespace sortinglogic
 		bool projectOperands(const SemanticEvent& event, TraceAudioOperandProjection& projection) const;
 		bool contributesToReferenceCadence(const SemanticEvent& event) const;
 		bool frameAccentVisible(const SemanticEvent& event) const;
-		bool usesComparisonCadence() const { return algorithm_ == SortAlgorithm::Merge; }
+		bool usesComparisonCadence() const { return presentation_.comparisonCadenceOnly; }
+		bool fixedDurationUsesEligibleEvents() const { return presentation_.fixedDurationUsesEligibleEvents; }
 		bool hasAlgorithmComparisons() const { return hasAlgorithmComparisons_; }
-		bool reverseAudioOperandOrder() const { return reverseAudioOperandOrder_; }
+		bool reverseAudioOperandOrder() const { return presentation_.reverseAudioOperandOrder; }
 
 	private:
-		SortAlgorithm algorithm_;
+		ResolvedAlgorithmPresentation presentation_;
 		bool hasAlgorithmComparisons_;
-		bool mergeBufferVisualizationEnabled_;
-		bool reverseAudioOperandOrder_;
 	};
 
 	std::vector<std::size_t> collectAudioEventIndices(const SortTrace& trace);
 	void populateAudioEventIndices(SortTrace& trace);
 	bool projectAudioOperands(const SortTrace& trace, const SemanticEvent& event, TraceAudioOperandProjection& projection);
-	bool isWorkspaceVisible(SortAlgorithm algorithm, bool mergeBufferVisualizationEnabled, const std::string& lane);
-	std::string visibleRoleWorkspace(SortAlgorithm algorithm, bool mergeBufferVisualizationEnabled, const std::string& lane);
+	bool isWorkspaceVisible(const AlgorithmDescriptor& algorithm, const AlgorithmConfiguration& configuration, const std::string& lane);
+	bool isWorkspaceVisible(const SortTrace& trace, const std::string& lane);
+	bool isWorkspaceVisible(const RenderSnapshot& snapshot, const std::string& lane);
+	std::string visibleRoleWorkspace(const RenderSnapshot& snapshot, const std::string& lane);
 	std::vector<ActiveRole> visibleRolesOnMainArray(const RenderSnapshot& snapshot);
 	bool supportsAudioControlCategory(const AlgorithmDescriptor& algorithm, AudioControlCategory category);
 }

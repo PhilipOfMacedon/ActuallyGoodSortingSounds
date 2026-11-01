@@ -29,7 +29,6 @@ namespace sortinglogic
 	enum class InputPattern { Random, Sorted, Reversed, NearlySorted, FewUnique, OrganPipe, AndrutReference = 6 };
 	enum class SortDirection { Ascending, Descending };
 	enum class ShellGapSequence { Halving, Knuth, Ciura, Tokuda };
-	enum class MergeWritebackMode { AnimatedWrites, AtomicRangeWrite };
 	enum class MergeExecutionMode { BottomUp, TopDown };
 	enum class GrailBufferMode { InPlace, StaticBuffer, DynamicBuffer };
 
@@ -149,7 +148,8 @@ namespace sortinglogic
 	{
 		Compare, Probe, HoldKey, ShiftItem, PlaceKey, Swap, WriteItem, DiscardItem,
 		WriteRange, AuxiliaryItemWrite, CounterWrite, ResizeAuxiliary, ResizeCounterWorkspace,
-		PhaseBegin, PhaseEnd, SetOrientation, ReplaceScalar, CompactRange, Complete, CarryWrite
+		PhaseBegin, PhaseEnd, SetOrientation, ReplaceScalar, CompactRange, Complete, CarryWrite,
+		StageReconstructionOutput
 	};
 	enum class AlgorithmOutcome
 	{
@@ -207,13 +207,20 @@ namespace sortinglogic
 		std::size_t firstIndex, secondIndex;
 		std::uint64_t firstItemId, secondItemId;
 		SortItem item, beforeItem, beforeSecondItem;
+		SortItem secondItem;
 		std::vector<SortSlot> beforeSlots, afterSlots;
 		std::vector<int> beforeCounters;
 		ComparisonResult comparison;
 		ComparisonBasis comparisonBasis;
 		std::string firstLane, secondLane, workspaceName;
+		std::string sourceWorkspace, destinationWorkspace, reconstructionLabel;
+		std::string secondSourceWorkspace, secondDestinationWorkspace;
+		std::size_t sourceIndex, destinationIndex, secondSourceIndex, secondDestinationIndex;
+		float reconstructionProgress;
+		int reconstructionPhaseId;
 		SemanticRole firstRole, secondRole;
 		bool completionScan, beforeOccupied, beforeSecondOccupied;
+		bool reconstructive, presentationOnly, hasTransferProvenance;
 		bool beforeBoolean, afterBoolean;
 		int beforeCounter, afterCounter;
 		std::size_t beforeSize, afterSize;
@@ -237,85 +244,78 @@ namespace sortinglogic
 	struct TraceBuildRequest;
 	typedef SortTrace (*AlgorithmTraceRequestBuilder)(const TraceBuildRequest&);
 
-	enum class AlgorithmOptionTarget
-	{
-		Unbound,
-		ShellGapSequence,
-		MergeExecutionMode,
-		MergeWritebackMode,
-		HeapArity,
-		GrailBufferMode,
-		RadixBase,
-		TimeMagnitude,
-		RotateMergeBufferSize
-	};
+	enum class AlgorithmPropertyValueType { Boolean, Choice, BoundedInteger, FiniteDecimal };
+	enum class AlgorithmPropertyEffect { RebuildTrace, RebuildTimeline, UpdateVisuals };
 
 	struct AlgorithmConfiguration
 	{
-		ShellGapSequence shellGapSequence;
-		MergeWritebackMode mergeWritebackMode;
-		MergeExecutionMode mergeExecutionMode;
-		GrailBufferMode grailBufferMode;
-		int radixBase;
-		int heapArity;
-		int timeMagnitude;
-		int rotateMergeBufferSize;
-		AlgorithmConfiguration()
-			: shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
-			mergeExecutionMode(MergeExecutionMode::BottomUp), grailBufferMode(GrailBufferMode::InPlace),
-			radixBase(0), heapArity(4), timeMagnitude(10), rotateMergeBufferSize(64) {}
-		bool optionValue(AlgorithmOptionTarget target, int& value) const
+		std::map<std::string, int> values;
+		int value(const std::string& propertyId, int fallback = 0) const
 		{
-			switch (target)
-			{
-			case AlgorithmOptionTarget::ShellGapSequence: value = static_cast<int>(shellGapSequence); return true;
-			case AlgorithmOptionTarget::MergeExecutionMode: value = static_cast<int>(mergeExecutionMode); return true;
-			case AlgorithmOptionTarget::MergeWritebackMode: value = static_cast<int>(mergeWritebackMode); return true;
-			case AlgorithmOptionTarget::HeapArity: value = heapArity; return true;
-			case AlgorithmOptionTarget::GrailBufferMode: value = static_cast<int>(grailBufferMode); return true;
-			case AlgorithmOptionTarget::RadixBase: value = radixBase; return true;
-			case AlgorithmOptionTarget::TimeMagnitude: value = timeMagnitude; return true;
-			case AlgorithmOptionTarget::RotateMergeBufferSize: value = rotateMergeBufferSize; return true;
-			case AlgorithmOptionTarget::Unbound: return false;
-			}
-			return false;
+			const std::map<std::string, int>::const_iterator found = values.find(propertyId);
+			return found == values.end() ? fallback : found->second;
 		}
-		bool setOptionValue(AlgorithmOptionTarget target, int value)
+		bool optionValue(const std::string& propertyId, int& result) const
 		{
-			switch (target)
-			{
-			case AlgorithmOptionTarget::ShellGapSequence: shellGapSequence = static_cast<ShellGapSequence>(value); return true;
-			case AlgorithmOptionTarget::MergeExecutionMode: mergeExecutionMode = static_cast<MergeExecutionMode>(value); return true;
-			case AlgorithmOptionTarget::MergeWritebackMode: mergeWritebackMode = static_cast<MergeWritebackMode>(value); return true;
-			case AlgorithmOptionTarget::HeapArity: heapArity = value; return true;
-			case AlgorithmOptionTarget::GrailBufferMode: grailBufferMode = static_cast<GrailBufferMode>(value); return true;
-			case AlgorithmOptionTarget::RadixBase: radixBase = value; return true;
-			case AlgorithmOptionTarget::TimeMagnitude: timeMagnitude = value; return true;
-			case AlgorithmOptionTarget::RotateMergeBufferSize: rotateMergeBufferSize = value; return true;
-			case AlgorithmOptionTarget::Unbound: return false;
-			}
-			return false;
+			const std::map<std::string, int>::const_iterator found = values.find(propertyId);
+			if (found == values.end()) return false;
+			result = found->second;
+			return true;
 		}
+		void setValue(const std::string& propertyId, int propertyValue) { values[propertyId] = propertyValue; }
 	};
 
-	struct AlgorithmOptionDescriptor
+	struct AlgorithmPropertyDescriptor
 	{
 		int value;
 		const char* groupId;
 		const char* stableId;
 		const char* displayName;
-		AlgorithmOptionTarget target;
+		const char* caption;
+		const char* helpText;
+		AlgorithmPropertyValueType valueType;
+		AlgorithmPropertyEffect effect;
+		int minimumValue;
+		int maximumValue;
 		bool isDefault;
-		AlgorithmOptionDescriptor(int optionValue, const char* optionId, const char* name, const char* optionGroup = "primary",
-			AlgorithmOptionTarget requestTarget = AlgorithmOptionTarget::Unbound, bool defaultOption = false)
-			: value(optionValue), groupId(optionGroup), stableId(optionId), displayName(name), target(requestTarget), isDefault(defaultOption) {}
+		AlgorithmPropertyDescriptor(int optionValue, const char* optionId, const char* name, const char* propertyId = "primary",
+			bool defaultOption = false, const char* propertyCaption = nullptr, const char* description = nullptr,
+			AlgorithmPropertyValueType type = AlgorithmPropertyValueType::Choice,
+			AlgorithmPropertyEffect changeEffect = AlgorithmPropertyEffect::RebuildTrace,
+			int minimum = 0, int maximum = 0)
+			: value(optionValue), groupId(propertyId), stableId(optionId), displayName(name),
+			caption(propertyCaption ? propertyCaption : propertyId), helpText(description ? description : ""),
+			valueType(type), effect(changeEffect), minimumValue(minimum), maximumValue(maximum), isDefault(defaultOption) {}
 	};
+	typedef AlgorithmPropertyDescriptor AlgorithmOptionDescriptor;
 
 	struct AlgorithmMetricDescriptor
 	{
 		const char* key;
 		const char* displayName;
 		AlgorithmMetricDescriptor(const char* metricKey, const char* name) : key(metricKey), displayName(name) {}
+	};
+
+	enum class WorkspaceStorageKind { Items, Counters, Indices, Nodes };
+	enum class ReconstructionCoverageKind
+	{
+		Unresolved,
+		DirectMainOperations,
+		IncrementalPublication,
+		AtomicPublication,
+		DeclaredNonReconstruction
+	};
+	struct AlgorithmWorkspaceDescriptor
+	{
+		std::string stableId;
+		std::string caption;
+		WorkspaceStorageKind kind;
+		SemanticRole visualRole;
+		std::string visibilityPropertyId;
+		AlgorithmWorkspaceDescriptor(const std::string& id = std::string(), const std::string& name = std::string(),
+			WorkspaceStorageKind storage = WorkspaceStorageKind::Items,
+			SemanticRole role = SemanticRole::AuxiliaryCopy, const std::string& visibility = std::string())
+			: stableId(id), caption(name), kind(storage), visualRole(role), visibilityPropertyId(visibility) {}
 	};
 
 	struct AlgorithmDescriptor
@@ -337,10 +337,20 @@ namespace sortinglogic
 		std::size_t safeMaxItemCount;
 		const char* behavior;
 		AlgorithmTraceRequestBuilder buildRequest;
-		std::vector<AlgorithmOptionDescriptor> supportedOptions;
+		std::vector<AlgorithmPropertyDescriptor> supportedOptions;
 		std::vector<AlgorithmMetricDescriptor> metrics;
 		std::vector<SemanticRole> comparisonAudioRoles;
 		bool reverseAudioOperandOrder;
+		bool comparisonCadenceOnly;
+		bool fixedDurationUsesEligibleEvents;
+		bool reconstructionPresentationSupported;
+		bool primaryWritesAreReconstruction;
+		bool auxiliaryWritesAudible;
+		bool mainChangeAccentsVisible;
+		bool probeAccentsSupported;
+		bool discardAccentsSupported;
+		ReconstructionCoverageKind reconstructionCoverage;
+		std::vector<AlgorithmWorkspaceDescriptor> workspaces;
 		std::vector<InputDomain> supportedDomains;
 		AlgorithmDescriptor(SortAlgorithm valueId, const char* key, const char* name, const char* time,
 			const char* space, bool isStable, bool isInPlace, bool floats, bool integers,
@@ -357,11 +367,43 @@ namespace sortinglogic
 			spaceComplexity(space), stable(isStable),
 			inPlace(isInPlace), supportsNormalizedFloat(floats), supportsIntegerKeys(integers), safeMaxItemCount(maximumItems),
 			behavior(behaviorLabel), buildRequest(requestBuilder),
-			supportedOptions(options), metrics(applicableMetrics), comparisonAudioRoles(audioRoles), reverseAudioOperandOrder(reverseAudioOperands),
+		supportedOptions(options), metrics(applicableMetrics), comparisonAudioRoles(audioRoles), reverseAudioOperandOrder(reverseAudioOperands),
+		comparisonCadenceOnly(false), fixedDurationUsesEligibleEvents(false), reconstructionPresentationSupported(false),
+		primaryWritesAreReconstruction(false),
+		auxiliaryWritesAudible(false), mainChangeAccentsVisible(false),
+		probeAccentsSupported(false), discardAccentsSupported(false),
+		reconstructionCoverage(ReconstructionCoverageKind::Unresolved), workspaces(),
 			supportedDomains(domains) {}
 	};
 
+	// Immutable policy snapshot resolved for one trace/simulation configuration.
+	// Shared render and audio consumers read this data instead of inspecting an
+	// algorithm ID or independently reinterpreting property defaults.
+	struct ResolvedAlgorithmPresentation
+	{
+		AlgorithmConfiguration properties;
+		std::vector<AlgorithmWorkspaceDescriptor> workspaces;
+		bool registeredAlgorithm;
+		bool reverseAudioOperandOrder;
+		bool comparisonCadenceOnly;
+		bool fixedDurationUsesEligibleEvents;
+		bool reconstructionSupported;
+		bool auxiliaryWritesAudible;
+		bool mainChangeAccentsVisible;
+		bool probeAccentsSupported;
+		bool discardAccentsSupported;
+		ResolvedAlgorithmPresentation()
+			: properties(), workspaces(), registeredAlgorithm(false), reverseAudioOperandOrder(false),
+			comparisonCadenceOnly(false), fixedDurationUsesEligibleEvents(false), reconstructionSupported(false),
+			auxiliaryWritesAudible(false), mainChangeAccentsVisible(false), probeAccentsSupported(false),
+			discardAccentsSupported(false) {}
+		bool workspaceVisible(const std::string& stableId) const;
+	};
+
 	const std::vector<AlgorithmDescriptor>& algorithmCatalog();
+	std::vector<std::string> validateAlgorithmCatalog();
+	ResolvedAlgorithmPresentation resolveAlgorithmPresentation(const AlgorithmDescriptor* descriptor,
+		const AlgorithmConfiguration& configuration);
 	const char* demoComplexityClassName(DemoComplexityClass value);
 	bool demoComplexityClassFor(SortAlgorithm algorithm, DemoComplexityClass& value);
 	const AlgorithmDescriptor* algorithmDescriptor(SortAlgorithm algorithm);
@@ -390,7 +432,6 @@ namespace sortinglogic
 		InputDomain domain;
 		InputPattern pattern;
 		AlgorithmConfiguration configuration;
-		bool mergeBufferVisualizationEnabled;
 		std::uint32_t inputSeed;
 		std::vector<SortItem> input;
 		SortState initialState;
@@ -399,6 +440,7 @@ namespace sortinglogic
 		std::vector<std::size_t> probeEventIndices;
 		std::vector<std::size_t> audioEventIndices;
 		std::vector<RegionAnnotation> annotations;
+		std::vector<AlgorithmWorkspaceDescriptor> workspaces;
 		std::map<std::size_t, SortState> snapshots;
 		std::size_t operationCount;
 		std::size_t workSteps;
@@ -428,15 +470,12 @@ namespace sortinglogic
 		InputProfile profile;
 		InputDomain domain;
 		InputPattern pattern;
-		// Canonical option values when hasExplicitConfiguration is true. The named
-		// fields below are compatibility inputs and are never written back from it.
+		// Canonical property values. Builders receive only the selected variant's
+		// registered properties; algorithm configuration never travels through
+		// variant-named request fields.
 		AlgorithmConfiguration configuration;
 		bool hasExplicitConfiguration;
-		ShellGapSequence shellGapSequence;
-		MergeWritebackMode mergeWritebackMode;
-		MergeExecutionMode mergeExecutionMode;
 		bool completionScanEnabled;
-		bool mergeBufferVisualizationEnabled;
 		std::uint32_t inputSeed;
 		std::uint64_t sessionId;
 		std::uint64_t requestGeneration;
@@ -445,20 +484,12 @@ namespace sortinglogic
 		std::size_t maxWorkSteps;
 		// Approximate accounted trace-payload budget, not a hard resident-memory limit.
 		std::size_t maxTraceBytes;
-		// Legacy direct-caller selector. The resolver maps it to radixBase,
-		// heapArity, or grailBufferMode according to the selected algorithm.
-		int radixBase;
-		int bucketCount;
-		int timeMagnitude;
-		int rotateMergeBufferSize;
 		TraceBuildRequest() : input(), optionSelections(), familyId(), variantId(), algorithm(SortAlgorithm::Insertion), direction(SortDirection::Ascending),
 			profile(InputProfile::NormalizedFloat), domain(InputDomain::NormalizedFloats), pattern(InputPattern::Random), configuration(),
 			hasExplicitConfiguration(false),
-			shellGapSequence(ShellGapSequence::Halving), mergeWritebackMode(MergeWritebackMode::AtomicRangeWrite),
-			mergeExecutionMode(MergeExecutionMode::BottomUp), completionScanEnabled(false),
-			mergeBufferVisualizationEnabled(true), inputSeed(0), sessionId(0), requestGeneration(0), cancellation(),
+			completionScanEnabled(false), inputSeed(0), sessionId(0), requestGeneration(0), cancellation(),
 			maxOperations(DefaultTraceOperationLimit), maxWorkSteps(DefaultTraceWorkLimit),
-			maxTraceBytes(DefaultTraceByteLimit), radixBase(0), bucketCount(0), timeMagnitude(10), rotateMergeBufferSize(64) {}
+			maxTraceBytes(DefaultTraceByteLimit) {}
 		void setConfiguration(const AlgorithmConfiguration& value)
 		{
 			configuration = value;
@@ -494,6 +525,10 @@ namespace sortinglogic
 		SortState state;
 		std::vector<ActiveRole> activeRoles;
 		std::vector<RegionAnnotation> activeRegions;
+		std::vector<AlgorithmWorkspaceDescriptor> workspaces;
+		AlgorithmConfiguration configuration;
+		float reconstructionProgress;
+		std::string reconstructionLabel;
 		SortMetrics metrics;
 		SortDirection direction;
 		SortAlgorithm algorithm;
@@ -501,10 +536,6 @@ namespace sortinglogic
 		VariantId variantId;
 		InputDomain domain;
 		InputPattern pattern;
-		ShellGapSequence shellGapSequence;
-		MergeWritebackMode mergeWritebackMode;
-		MergeExecutionMode mergeExecutionMode;
-		bool mergeBufferVisualizationEnabled;
 		std::size_t cursor, eventCount, itemCount, audioEligibleEventCount;
 		std::uint32_t inputSeed;
 		float durationSeconds, elapsedSeconds;
@@ -564,11 +595,7 @@ namespace sortinglogic
 		CommandResult setInputProfile(InputProfile profile);
 		CommandResult setInputDomain(InputDomain domain);
 		CommandResult setInputPattern(InputPattern pattern);
-		CommandResult setShellGapSequence(ShellGapSequence sequence);
-		CommandResult setMergeWritebackMode(MergeWritebackMode mode);
-		CommandResult setMergeExecutionMode(MergeExecutionMode mode);
 		CommandResult setAlgorithmOption(const std::string& groupId, const std::string& stableId);
-		CommandResult setMergeBufferVisualizationEnabled(bool enabled);
 		CommandResult setCompletionScanEnabled(bool enabled);
 		CommandResult beginTraceBuild(TraceBuildRequest& request);
 		void completeTraceBuild(TraceBuildResult result);
@@ -595,11 +622,7 @@ namespace sortinglogic
 		InputProfile profile() const { return inputProfileForDomain(domain_); }
 		InputDomain domain() const { return domain_; }
 		InputPattern pattern() const { return pattern_; }
-		ShellGapSequence shellGapSequence() const { return algorithmConfiguration_.shellGapSequence; }
-		MergeWritebackMode mergeWritebackMode() const { return algorithmConfiguration_.mergeWritebackMode; }
-		MergeExecutionMode mergeExecutionMode() const { return algorithmConfiguration_.mergeExecutionMode; }
 		AlgorithmConfiguration algorithmConfiguration() const { return algorithmConfiguration_; }
-		bool mergeBufferVisualizationEnabled() const { return mergeBufferVisualizationEnabled_; }
 		bool completionScanEnabled() const { return completionScanEnabled_; }
 		bool isBuildingTrace() const { return buildingTrace_; }
 		bool isPlaying() const { return playing_; }
@@ -620,7 +643,6 @@ namespace sortinglogic
 		InputDomain domain_;
 		InputPattern pattern_;
 		AlgorithmConfiguration algorithmConfiguration_;
-		bool mergeBufferVisualizationEnabled_;
 		bool completionScanEnabled_;
 		BaselineKind baselineKind_;
 		bool buildingTrace_, playing_;

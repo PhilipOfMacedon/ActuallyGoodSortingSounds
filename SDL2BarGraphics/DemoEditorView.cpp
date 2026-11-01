@@ -200,8 +200,7 @@ void DemoEditorView::createControls()
 		std::set<std::string> groups;
 		for (std::size_t option = 0; option < catalog[i].supportedOptions.size(); ++option)
 			groups.insert(catalog[i].supportedOptions[option].groupId);
-		const std::size_t presentationOptions = catalog[i].id == sortinglogic::SortAlgorithm::Merge ? 1u : 0u;
-		maximumOptionGroups = std::max(maximumOptionGroups, groups.size() + presentationOptions);
+		maximumOptionGroups = std::max(maximumOptionGroups, groups.size());
 	}
 	for (std::size_t i = 0; i < maximumOptionGroups; ++i)
 	{
@@ -336,18 +335,11 @@ void DemoEditorView::synchronizeOptions()
 				const std::string groupId = descriptor->supportedOptions[i].groupId;
 				optionGroupIds_.push_back(groupId);
 				std::string caption = groupId;
-				for (std::size_t c = 0; c < caption.size(); ++c)
-				{
-					if (caption[c] == '_' || caption[c] == '-') caption[c] = ' ';
-					else if (c == 0 || caption[c - 1] == ' ') caption[c] = static_cast<char>(std::toupper(static_cast<unsigned char>(caption[c])));
-				}
+				for (std::size_t option = 0; option < descriptor->supportedOptions.size(); ++option)
+					if (groupId == descriptor->supportedOptions[option].groupId)
+					{ caption = descriptor->supportedOptions[option].caption; break; }
 				optionGroupLabels_.push_back(caption);
 			}
-	if (descriptor && descriptor->id == sortinglogic::SortAlgorithm::Merge)
-	{
-		optionGroupIds_.push_back("merge_buffer_visualization");
-		optionGroupLabels_.push_back("Merge buffer visualization");
-	}
 	optionIdsByGroup_.resize(optionGroupIds_.size());
 	for (std::size_t groupIndex = 0; groupIndex < optionSlotWidgetIds_.size(); ++groupIndex)
 	{
@@ -360,14 +352,6 @@ void DemoEditorView::synchronizeOptions()
 			continue;
 		}
 		const std::string& groupId = optionGroupIds_[groupIndex];
-		if (groupId == "merge_buffer_visualization")
-		{
-			optionIdsByGroup_[groupIndex].push_back("off");
-			optionIdsByGroup_[groupIndex].push_back("on");
-			option->setOptions(std::vector<std::string>{ "Hidden", "Visible" });
-			option->setSelectedIndex(step->mergeBufferVisualizationEnabled ? 1 : 0);
-			continue;
-		}
 		std::string selectedStableId;
 		std::string declaredDefault;
 		std::vector<std::string> optionNames;
@@ -1038,11 +1022,6 @@ AppAction DemoEditorView::mapUiAction(const UiAction& emitted)
 		if (groupIndex >= optionGroupIds_.size() || groupIndex >= optionIdsByGroup_.size() ||
 			static_cast<std::size_t>(selection) >= optionIdsByGroup_[groupIndex].size()) return AppAction();
 		DemoActionPayload payload; payload.stepIndex = selectedStep_; payload.optionGroupId = optionGroupIds_[static_cast<std::size_t>(groupIndex)];
-		if (payload.optionGroupId == "merge_buffer_visualization")
-		{
-			payload.flag = selection == 1;
-			return demoAction(AppActionKind::DemoSetStepMergeBufferVisualization, payload);
-		}
 		payload.optionStableId = optionIdsByGroup_[groupIndex][static_cast<std::size_t>(selection)];
 		return demoAction(AppActionKind::DemoSetStepOption, payload);
 	}

@@ -1,22 +1,32 @@
 #include "TracePresentationPolicy.h"
 
-#include <algorithm>
-
 namespace sortinglogic
 {
+	namespace
+	{
+		const AlgorithmDescriptor* descriptorFor(const SortTrace& trace)
+		{
+			const AlgorithmDescriptor* descriptor = algorithmDescriptorById(trace.familyId, trace.variantId);
+			return descriptor && descriptor->id == trace.algorithm ? descriptor : algorithmDescriptor(trace.algorithm);
+		}
+
+		const AlgorithmDescriptor* descriptorFor(const RenderSnapshot& snapshot)
+		{
+			const AlgorithmDescriptor* descriptor = algorithmDescriptorById(snapshot.familyId, snapshot.variantId);
+			return descriptor && descriptor->id == snapshot.algorithm ? descriptor : algorithmDescriptor(snapshot.algorithm);
+		}
+
+	}
+
 	TraceAudioPresentationPolicy::TraceAudioPresentationPolicy()
-		: algorithm_(SortAlgorithm::Insertion), hasAlgorithmComparisons_(false), mergeBufferVisualizationEnabled_(true),
-		  reverseAudioOperandOrder_(false)
+		: presentation_(resolveAlgorithmPresentation(algorithmDescriptor(SortAlgorithm::Insertion), AlgorithmConfiguration())),
+		  hasAlgorithmComparisons_(false)
 	{
 	}
 
 	TraceAudioPresentationPolicy::TraceAudioPresentationPolicy(const SortTrace& trace)
-		: algorithm_(trace.algorithm), hasAlgorithmComparisons_(false),
-		  mergeBufferVisualizationEnabled_(trace.mergeBufferVisualizationEnabled), reverseAudioOperandOrder_(false)
+		: presentation_(resolveAlgorithmPresentation(descriptorFor(trace), trace.configuration)), hasAlgorithmComparisons_(false)
 	{
-		const AlgorithmDescriptor* descriptor = algorithmDescriptorById(trace.familyId, trace.variantId);
-		if (!descriptor) descriptor = algorithmDescriptor(trace.algorithm);
-		reverseAudioOperandOrder_ = descriptor && descriptor->reverseAudioOperandOrder;
 		if (!trace.comparisonEventIndices.empty())
 		{
 			const std::size_t firstComparison = trace.comparisonEventIndices.front();
@@ -33,14 +43,26 @@ namespace sortinglogic
 			return hasAlgorithmComparisons_ || event.completionScan
 				? TraceAudioEventKind::Comparison : TraceAudioEventKind::Silent;
 		case SemanticEventType::Probe:
-			return hasAlgorithmComparisons_
+			// Keep the established probe-only algorithm behavior: when a trace has
+			// no comparisons, its real item probes occupy the comparison timeline
+			// as single-operand notes. Registered probe accents apply when the
+			// algorithm also has comparison events.
+			return hasAlgorithmComparisons_ && presentation_.probeAccentsSupported
 				? TraceAudioEventKind::ProbeAccent : TraceAudioEventKind::ProbeAsComparison;
 		case SemanticEventType::AuxiliaryItemWrite:
-			if (algorithm_ == SortAlgorithm::Merge)
-				return TraceAudioEventKind::Silent;
-			if (!isWorkspaceVisible(algorithm_, mergeBufferVisualizationEnabled_, event.workspaceName))
-				return TraceAudioEventKind::Silent;
-			return TraceAudioEventKind::AuxiliaryItemWrite;
+			return !presentation_.registeredAlgorithm || presentation_.auxiliaryWritesAudible
+				? TraceAudioEventKind::AuxiliaryItemWrite : TraceAudioEventKind::Silent;
+		default:
+			break;
+		}
+
+		// Reconstruction is a semantic primary event with captured operands. It
+		// gets its own channel before the legacy movement accent can see it.
+		if (event.reconstructive)
+			return TraceAudioEventKind::Reconstruction;
+
+		switch (event.type)
+		{
 		case SemanticEventType::HoldKey:
 		case SemanticEventType::ShiftItem:
 		case SemanticEventType::PlaceKey:
@@ -54,7 +76,8 @@ namespace sortinglogic
 		case SemanticEventType::ResizeCounterWorkspace:
 			return TraceAudioEventKind::DistributionUpdate;
 		case SemanticEventType::DiscardItem:
-			return TraceAudioEventKind::DiscardAccent;
+			return presentation_.discardAccentsSupported
+				? TraceAudioEventKind::DiscardAccent : TraceAudioEventKind::Silent;
 		default:
 			return TraceAudioEventKind::Silent;
 		}
@@ -72,13 +95,34 @@ namespace sortinglogic
 			projection.firstRole = event.firstRole;
 			projection.secondRole = event.secondRole;
 			projection.hasSecondOperand = true;
-			projection.reverseOrder = reverseAudioOperandOrder_;
+			projection.reverseOrder = presentation_.reverseAudioOperandOrder;
+			projection.firstValue = event.item.value;
+			projection.secondValue = event.secondItem.value;
+			projection.hasCapturedValues = true;
 			return true;
 		}
-		if (kind == TraceAudioEventKind::ProbeAsComparison)
+		if (kind == TraceAudioEventKind::ProbeAsComparison || kind == TraceAudioEventKind::ProbeAccent)
 		{
 			projection.firstItemId = event.firstItemId;
-			projection.firstRole = SemanticRole::ProbedItem;
+			projection.firstRole = event.firstRole;
+			projection.firstValue = event.item.value;
+			projection.hasCapturedValues = true;
+			return true;
+		}
+		if (kind == TraceAudioEventKind::Reconstruction)
+		{
+			projection.firstItemId = event.item.stableId;
+			projection.firstRole = event.firstRole;
+			projection.firstValue = event.item.value;
+			projection.hasCapturedValues = true;
+			if (event.type == SemanticEventType::Swap)
+			{
+				projection.secondItemId = event.secondItem.stableId;
+				projection.secondRole = event.secondRole;
+				projection.secondValue = event.secondItem.value;
+				projection.hasSecondOperand = true;
+				projection.hasCapturedValues = true;
+			}
 			return true;
 		}
 		return false;
@@ -87,17 +131,16 @@ namespace sortinglogic
 	bool TraceAudioPresentationPolicy::contributesToReferenceCadence(const SemanticEvent& event) const
 	{
 		const TraceAudioEventKind kind = classify(event);
-		if (usesComparisonCadence())
-			return kind == TraceAudioEventKind::Comparison;
+		if (presentation_.comparisonCadenceOnly)
+			return kind == TraceAudioEventKind::Comparison || kind == TraceAudioEventKind::Reconstruction;
 		return kind == TraceAudioEventKind::Comparison || kind == TraceAudioEventKind::ProbeAsComparison ||
-			kind == TraceAudioEventKind::AuxiliaryItemWrite;
+			kind == TraceAudioEventKind::AuxiliaryItemWrite || kind == TraceAudioEventKind::Reconstruction;
 	}
 
 	bool TraceAudioPresentationPolicy::frameAccentVisible(const SemanticEvent& event) const
 	{
-		// Canonical Merge follows the reference comparison score regardless of
-		// whether its auxiliary lane is currently visible.
-		return algorithm_ != SortAlgorithm::Merge || event.type == SemanticEventType::Compare;
+		return !presentation_.comparisonCadenceOnly || classify(event) == TraceAudioEventKind::Comparison ||
+			classify(event) == TraceAudioEventKind::Reconstruction;
 	}
 
 	std::vector<std::size_t> collectAudioEventIndices(const SortTrace& trace)
@@ -120,22 +163,34 @@ namespace sortinglogic
 		return policy.projectOperands(event, projection);
 	}
 
-	bool isWorkspaceVisible(SortAlgorithm algorithm, bool mergeBufferVisualizationEnabled, const std::string& lane)
+	bool isWorkspaceVisible(const AlgorithmDescriptor& algorithm, const AlgorithmConfiguration& configuration,
+		const std::string& lane)
 	{
-		return algorithm != SortAlgorithm::Merge || mergeBufferVisualizationEnabled || lane != "merge";
+		return resolveAlgorithmPresentation(&algorithm, configuration).workspaceVisible(lane);
 	}
 
-	std::string visibleRoleWorkspace(SortAlgorithm algorithm, bool mergeBufferVisualizationEnabled, const std::string& lane)
+	bool isWorkspaceVisible(const SortTrace& trace, const std::string& lane)
 	{
-		return isWorkspaceVisible(algorithm, mergeBufferVisualizationEnabled, lane) ? lane : "main";
+		const AlgorithmDescriptor* descriptor = descriptorFor(trace);
+		return !descriptor || isWorkspaceVisible(*descriptor, trace.configuration, lane);
+	}
+
+	bool isWorkspaceVisible(const RenderSnapshot& snapshot, const std::string& lane)
+	{
+		const AlgorithmDescriptor* descriptor = descriptorFor(snapshot);
+		return !descriptor || isWorkspaceVisible(*descriptor, snapshot.configuration, lane);
+	}
+
+	std::string visibleRoleWorkspace(const RenderSnapshot& snapshot, const std::string& lane)
+	{
+		return isWorkspaceVisible(snapshot, lane) ? lane : "main";
 	}
 
 	std::vector<ActiveRole> visibleRolesOnMainArray(const RenderSnapshot& snapshot)
 	{
 		std::vector<ActiveRole> roles = snapshot.activeRoles;
 		for (std::size_t i = 0; i < roles.size(); ++i)
-			roles[i].lane = visibleRoleWorkspace(snapshot.algorithm,
-				snapshot.mergeBufferVisualizationEnabled, roles[i].lane);
+			roles[i].lane = visibleRoleWorkspace(snapshot, roles[i].lane);
 		return roles;
 	}
 
@@ -143,19 +198,12 @@ namespace sortinglogic
 	{
 		switch (category)
 		{
-		case AudioControlCategory::Comparison:
-			return true;
-		case AudioControlCategory::Probe:
-			return algorithm.id == SortAlgorithm::Counting || algorithm.id == SortAlgorithm::Radix;
-		case AudioControlCategory::MainChange:
-			// The bridge routes main changes, but the current contextual settings
-			// surface did not expose a main-change control.
-			return false;
-		case AudioControlCategory::Auxiliary:
-			return algorithm.id == SortAlgorithm::Merge || algorithm.id == SortAlgorithm::Counting ||
-				algorithm.id == SortAlgorithm::Radix;
-		case AudioControlCategory::Discard:
-			return algorithm.behavior && std::string(algorithm.behavior).find("discard") != std::string::npos;
+		case AudioControlCategory::Comparison: return true;
+		case AudioControlCategory::Probe: return resolveAlgorithmPresentation(&algorithm, AlgorithmConfiguration()).probeAccentsSupported;
+		case AudioControlCategory::MainChange: return resolveAlgorithmPresentation(&algorithm, AlgorithmConfiguration()).mainChangeAccentsVisible;
+		case AudioControlCategory::Auxiliary: return resolveAlgorithmPresentation(&algorithm, AlgorithmConfiguration()).auxiliaryWritesAudible;
+		case AudioControlCategory::Discard: return resolveAlgorithmPresentation(&algorithm, AlgorithmConfiguration()).discardAccentsSupported;
+		case AudioControlCategory::Reconstruction: return resolveAlgorithmPresentation(&algorithm, AlgorithmConfiguration()).reconstructionSupported;
 		}
 		return false;
 	}

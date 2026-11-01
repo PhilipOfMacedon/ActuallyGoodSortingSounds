@@ -63,7 +63,7 @@ namespace sortinglogic
 				r.writeAuxiliary("count_output", static_cast<std::size_t>(target), item);
 				r.writeCounter("counts", bucket, target);
 			}
-			for (std::size_t i = 0; i < n; ++i) r.writeMain(i, r.auxiliaryAt("count_output", i));
+			r.publishAuxiliaryToMain("count_output", 0, 0, n, "Counting Sort output reconstruction");
 		}
 
 		void radix(Recorder& r)
@@ -71,7 +71,8 @@ namespace sortinglogic
 			const std::size_t n = r.state.slots.size();
 			if (n == 0) return;
 			const int defaultBase = r.trace.algorithm == SortAlgorithm::ArrayvLsdRadix ? 4 : 10;
-			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 256) : defaultBase);
+			const int requestedBase = r.trace.configuration.value("radix_base", 0);
+			const std::size_t base = static_cast<std::size_t>(requestedBase >= 2 ? std::min(requestedBase, 256) : defaultBase);
 			r.resizeCounters("digits", base);
 			r.resizeAuxiliary("radix_output", n);
 			r.probe(0, SemanticRole::ProcessedItem);
@@ -108,7 +109,8 @@ namespace sortinglogic
 					r.writeAuxiliary("radix_output", static_cast<std::size_t>(target), item);
 					r.writeCounter("digits", digit, target);
 				}
-				for (std::size_t i = 0; i < n; ++i) r.writeMain(i, r.auxiliaryAt("radix_output", i));
+				r.publishAuxiliaryToMain("radix_output", 0, 0, n,
+					"Radix digit pass reconstruction");
 				r.addMetric("digit_passes");
 				for (std::size_t d = 0; d < base; ++d)
 					if (bucketBegin[d] != NoGapIndex)
@@ -144,7 +146,8 @@ namespace sortinglogic
 		{
 			const std::size_t n = r.state.slots.size();
 			if (n < 2) return;
-			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 256) : 128);
+			const int requestedBase = r.trace.configuration.value("radix_base", 0);
+			const std::size_t base = static_cast<std::size_t>(requestedBase >= 2 ? std::min(requestedBase, 256) : 128);
 			std::size_t bitsPerDigit = 0;
 			while ((static_cast<std::size_t>(1) << bitsPerDigit) < base) ++bitsPerDigit;
 			const std::size_t actualBase = static_cast<std::size_t>(1) << bitsPerDigit;
@@ -303,7 +306,8 @@ namespace sortinglogic
 		{
 			const std::size_t n = r.state.slots.size();
 			if (n < 2) return;
-			const std::size_t requested = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 256) : 16);
+			const int requestedBase = r.trace.configuration.value("radix_base", 0);
+			const std::size_t requested = static_cast<std::size_t>(requestedBase >= 2 ? std::min(requestedBase, 256) : 16);
 			std::size_t bits = 0;
 			while ((static_cast<std::size_t>(1) << bits) < requested) ++bits;
 			const std::size_t base = static_cast<std::size_t>(1) << bits;
@@ -469,7 +473,7 @@ namespace sortinglogic
 				r.writeAuxiliary("pigeonhole_output", target, item);
 				r.writeCounter("pigeonhole_next", bucket, static_cast<int>(target + 1));
 			}
-			for (std::size_t i = 0; i < n; ++i) r.writeMain(i, r.auxiliaryAt("pigeonhole_output", i));
+			r.publishAuxiliaryToMain("pigeonhole_output", 0, 0, n, "Pigeonhole output reconstruction");
 		}
 
 		void indexSort(Recorder& r)
@@ -546,7 +550,8 @@ namespace sortinglogic
 				const std::int64_t key = orderedIntegerKey(r.at(i), r.trace.direction);
 				minimum = std::min(minimum, key); maximum = std::max(maximum, key);
 			}
-			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 16) : 4);
+			const int requestedBase = r.trace.configuration.value("radix_base", 0);
+			const std::size_t base = static_cast<std::size_t>(requestedBase >= 2 ? std::min(requestedBase, 16) : 4);
 			std::int64_t place = 1;
 			do
 			{
@@ -568,7 +573,8 @@ namespace sortinglogic
 				minimum = std::min(minimum, key); maximum = std::max(maximum, key);
 			}
 			if (minimum == maximum) return;
-			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 16) : 4);
+			const int requestedBase = r.trace.configuration.value("radix_base", 0);
+			const std::size_t base = static_cast<std::size_t>(requestedBase >= 2 ? std::min(requestedBase, 16) : 4);
 			std::int64_t topPlace = 1;
 			while (topPlace <= (maximum - minimum) / static_cast<std::int64_t>(base)) topPlace *= static_cast<std::int64_t>(base);
 			if (!mostSignificantFirst)
@@ -607,7 +613,8 @@ namespace sortinglogic
 		void msdRadix(Recorder& r)
 		{
 			const std::size_t n = r.state.slots.size(); if (n < 2) return;
-			const std::size_t base = static_cast<std::size_t>(r.trace.configuration.radixBase >= 2 ? std::min(r.trace.configuration.radixBase, 64) : 4);
+			const int requestedBase = r.trace.configuration.value("radix_base", 0);
+			const std::size_t base = static_cast<std::size_t>(requestedBase >= 2 ? std::min(requestedBase, 64) : 4);
 			std::int64_t minimum = orderedIntegerKey(r.at(0), r.trace.direction), maximum = minimum;
 			for (std::size_t i = 0; i < n; ++i)
 			{
@@ -644,7 +651,8 @@ namespace sortinglogic
 					const std::size_t digit = static_cast<std::size_t>(((orderedIntegerKey(item, r.trace.direction) - minimum) / range.place) % static_cast<std::int64_t>(base));
 					r.writeAuxiliary("msd_radix_output", next[digit]++, item);
 				}
-				for (std::size_t i = range.first; i < range.last; ++i) r.writeMain(i, r.auxiliaryAt("msd_radix_output", i));
+				r.publishAuxiliaryToMain("msd_radix_output", range.first, range.first, range.last - range.first,
+					"MSD Radix prefix-bucket reconstruction");
 				for (std::size_t b = 0; b < base; ++b)
 				{
 					if (counts[b]) r.annotate("msd_radix_counts", RegionKind::Bucket, b, b + 1, 1, static_cast<int>(b),
@@ -687,7 +695,7 @@ namespace sortinglogic
 						r.writeAuxiliary("gravity_output", target++, r.at(i));
 				}
 			}
-			for (std::size_t i = 0; i < n; ++i) r.writeMain(i, r.auxiliaryAt("gravity_output", i));
+			r.publishAuxiliaryToMain("gravity_output", 0, 0, n, "Gravity Sort output reconstruction");
 			r.addMetric("gravity_columns", static_cast<std::uint64_t>(range));
 		}
 
@@ -736,7 +744,7 @@ namespace sortinglogic
 				{ return compareItems(a, b, r.trace.direction) == ComparisonResult::Less; });
 			r.resizeAuxiliary("gravity_bead_output", n);
 			for (std::size_t i = 0; i < n; ++i) r.writeAuxiliary("gravity_bead_output", i, items[i]);
-			for (std::size_t i = 0; i < n; ++i) r.writeMain(i, r.auxiliaryAt("gravity_bead_output", i));
+			r.publishAuxiliaryToMain("gravity_bead_output", 0, 0, n, "Bead output reconstruction");
 		}
 
 		void simplisticGravity(Recorder& r)
@@ -767,7 +775,7 @@ namespace sortinglogic
 					if (static_cast<std::size_t>(orderedIntegerKey(r.at(i), r.trace.direction) - minimum) == key)
 						r.writeAuxiliary("gravity_transfer_output", target++, r.at(i));
 				}
-			for (std::size_t i = 0; i < n; ++i) r.writeMain(i, r.auxiliaryAt("gravity_transfer_output", i));
+			r.publishAuxiliaryToMain("gravity_transfer_output", 0, 0, n, "Gravity transfer reconstruction");
 		}
 
 		void shatter(Recorder& r, bool simple)
@@ -807,7 +815,7 @@ namespace sortinglogic
 					{ return compareItems(a, b, r.trace.direction) == ComparisonResult::Less; });
 				for (std::size_t i = 0; i < buckets[b].size(); ++i) r.writeAuxiliary("shatter_output", starts[b] + i, buckets[b][i]);
 			}
-			for (std::size_t i = 0; i < n; ++i) r.writeMain(i, r.auxiliaryAt("shatter_output", i));
+			r.publishAuxiliaryToMain("shatter_output", 0, 0, n, "Shatter group output reconstruction");
 		}
 
 		void staticSort(Recorder& r)
@@ -840,14 +848,14 @@ namespace sortinglogic
 					{ return compareItems(a, b, r.trace.direction) == ComparisonResult::Less; });
 				for (std::size_t i = 0; i < buckets[b].size(); ++i) r.writeAuxiliary("static_output", cursor++, buckets[b][i]);
 			}
-			for (std::size_t i = 0; i < n; ++i) r.writeMain(i, r.auxiliaryAt("static_output", i));
+			r.publishAuxiliaryToMain("static_output", 0, 0, n, "Static bucket output reconstruction");
 		}
 
 		void timeSort(Recorder& r)
 		{
 			const std::size_t n = r.state.slots.size(); if (n < 2) return;
 			if (n > 128) throw TraceBudgetReached("Time Sort is limited to 128 items so deterministic deadline events stay inspectable.");
-			const int magnitude = std::max(1, std::min(1000, r.trace.configuration.timeMagnitude));
+			const int magnitude = std::max(1, std::min(1000, r.trace.configuration.value("time_magnitude", 10)));
 			r.resizeAuxiliary("time_deadlines", n);
 			std::vector<std::pair<std::int64_t, SortItem> > deadlines;
 			deadlines.reserve(n);
@@ -861,9 +869,9 @@ namespace sortinglogic
 			std::stable_sort(deadlines.begin(), deadlines.end(), [](const std::pair<std::int64_t, SortItem>& a, const std::pair<std::int64_t, SortItem>& b)
 				{ return a.first < b.first; });
 			r.endPhase(phase, "Deadline order published");
-			const int publish = r.beginPhase("Deadline publication");
-			for (std::size_t i = 0; i < n; ++i) r.writeMain(i, deadlines[i].second);
-			r.endPhase(publish, "Deadline publication complete");
+			r.resizeAuxiliary("time_output", n);
+			for (std::size_t i = 0; i < n; ++i) r.writeAuxiliary("time_output", i, deadlines[i].second);
+			r.publishAuxiliaryToMain("time_output", 0, 0, n, "Deadline output reconstruction");
 			for (std::size_t i = 1; i < n; ++i)
 			{
 				const SortItem a = r.at(i - 1), b = r.at(i);
@@ -903,19 +911,39 @@ namespace sortinglogic
 
 			std::uint64_t completedPasses = 0, probes = 0;
 			std::size_t output = 0;
+			const bool detailedReconstruction = r.detailedReconstructionEnabled();
 			for (std::int64_t currentRank = minimumRank; currentRank <= maximumRank; ++currentRank)
 			{
 				const int phase = r.beginPhase("Asynchronous value pass " + std::to_string(currentRank));
+				std::size_t thisPassOutputs = 0;
+				if (detailedReconstruction)
+					for (std::size_t source = 0; source < count; ++source)
+					{
+						r.chargeWork();
+						if (r.counter(consumedLane, source) == 0 && valueRank(r.auxiliaryAt(lane, source)) <= currentRank)
+							++thisPassOutputs;
+					}
+				const int reconstruction = detailedReconstruction && thisPassOutputs != 0
+					? r.beginReconstruction("Asynchronous emitted-item reconstruction", thisPassOutputs) : -1;
+				std::size_t completedThisPass = 0;
 				for (std::size_t source = 0; source < count; ++source)
 				{
 					r.probeAuxiliary(lane, source, SemanticRole::ProbedItem);
 					const SortItem item = r.auxiliaryAt(lane, source);
 					if (r.counter(consumedLane, source) == 0 && valueRank(item) <= currentRank)
 					{
-						r.writeMain(output++, item, SemanticRole::WriteTarget);
+						if (reconstruction >= 0)
+						{
+							++completedThisPass;
+							++output;
+							r.writeMainFromAuxiliary(output - 1, lane, source, 0, completedThisPass, thisPassOutputs);
+						}
+						else r.writeMain(output++, item, SemanticRole::WriteTarget);
 						r.writeCounter(consumedLane, source, 1);
 					}
 				}
+				if (reconstruction >= 0)
+					r.endReconstruction(reconstruction, "Asynchronous emitted-item reconstruction");
 				r.endPhase(phase, "Asynchronous value pass " + std::to_string(currentRank));
 				++completedPasses;
 				probes += count;

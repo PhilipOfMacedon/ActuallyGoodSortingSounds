@@ -138,7 +138,7 @@ namespace SoundEngine
 	Parameters::Parameters()
 		: masterLevel(0.5f), bedLevel(0.15f), bedHarmonicExponent(1.5f),
 		  includeSub300HzBed(false), bedComb(),
-		  comparisonBoostDb(6.0f), heldKeyBoostDb(6.0f),
+		  comparisonBoostDb(6.0f), heldKeyBoostDb(6.0f), reconstructionBoostDb(0.0f),
 		  tauBelowBins(0.5f), tauAboveBins(0.5f),
 		  chorusMix(0.0f), chorusRateHz(1.0f), chorusDepthMs(2.0f),
 		  chorusWeighting(ChorusWeighting::Uniform), attackMs(8.0f),
@@ -175,7 +175,7 @@ namespace SoundEngine
 			bedComb.wetAtHighFrequency == other.bedComb.wetAtHighFrequency &&
 			bedComb.fadeStartHz == other.bedComb.fadeStartHz && bedComb.fadeEndHz == other.bedComb.fadeEndHz &&
 			bedComb.fadeExponent == other.bedComb.fadeExponent && comparisonBoostDb == other.comparisonBoostDb &&
-			heldKeyBoostDb == other.heldKeyBoostDb && roleBoostDb == other.roleBoostDb &&
+			heldKeyBoostDb == other.heldKeyBoostDb && reconstructionBoostDb == other.reconstructionBoostDb && roleBoostDb == other.roleBoostDb &&
 			tauBelowBins == other.tauBelowBins && tauAboveBins == other.tauAboveBins && chorusMix == other.chorusMix &&
 			chorusRateHz == other.chorusRateHz && chorusDepthMs == other.chorusDepthMs &&
 			chorusWeighting == other.chorusWeighting && attackMs == other.attackMs && releaseMs == other.releaseMs &&
@@ -202,6 +202,7 @@ namespace SoundEngine
 		normalized.bedComb.fadeExponent = sanitizeParameterValue(parameters.bedComb.fadeExponent, 3.0f, 0.25f, 8.0f);
 		normalized.comparisonBoostDb = sanitizeParameterValue(parameters.comparisonBoostDb, 6.0f, -60.0f, 30.0f);
 		normalized.heldKeyBoostDb = sanitizeParameterValue(parameters.heldKeyBoostDb, 6.0f, -60.0f, 30.0f);
+		normalized.reconstructionBoostDb = sanitizeParameterValue(parameters.reconstructionBoostDb, 0.0f, -60.0f, 30.0f);
 		for (std::size_t i = 0; i < RoleCount; ++i)
 			normalized.roleBoostDb[i] = sanitizeParameterValue(parameters.roleBoostDb[i], 0.0f, -60.0f, 12.0f);
 		normalized.tauBelowBins = sanitizeParameterValue(parameters.tauBelowBins, 0.5f, 0.05f, static_cast<float>(BandCount));

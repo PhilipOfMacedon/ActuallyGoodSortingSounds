@@ -38,7 +38,7 @@ AudioTimelineInputEvent::AudioTimelineInputEvent()
 }
 
 AudioTimelineGainSettings::AudioTimelineGainSettings()
-    : comparisonGain(1.0), heldKeyGain(1.0), probeGain(1.0), auxiliaryGain(1.0), roleGain()
+    : comparisonGain(1.0), heldKeyGain(1.0), probeGain(1.0), auxiliaryGain(1.0), reconstructionGain(1.0), roleGain()
 {
     for (std::size_t i = 0; i < AudioTimelineRoleCount; ++i) roleGain[i] = 1.0;
 }
