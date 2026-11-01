@@ -68,6 +68,32 @@ private:
 	float travel() const;
 };
 
+struct UiPressHoldTarget
+{
+	std::string stableId;
+	UiRect bounds;
+	UiPressHoldTarget(const std::string& id = std::string(), const UiRect& rect = UiRect())
+		: stableId(id), bounds(rect) {}
+};
+
+// Selects a target only when a press begins inside it, then keeps that target
+// selected until release/cancel even if the pointer moves elsewhere.
+class UiPressHoldSelection
+{
+public:
+	UiPressHoldSelection();
+	void setTargets(const std::vector<UiPressHoldTarget>& targets);
+	bool begin(float x, float y);
+	void end();
+	void cancel() { end(); }
+	bool active() const { return active_; }
+	const std::string& selectedId() const { return selectedId_; }
+private:
+	std::vector<UiPressHoldTarget> targets_;
+	std::string selectedId_;
+	bool active_;
+};
+
 struct UiLabeledControlBounds
 {
 	UiRect label;

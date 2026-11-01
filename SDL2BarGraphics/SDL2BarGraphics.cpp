@@ -57,7 +57,7 @@ namespace
 		app.dispatch(action);
 	}
 
-	void handleEvents(Window& window, ControlPanel& controls, AppController& app, SdlAudioOutput& audioOutput,
+	void handleEvents(Window& window, ControlPanel& controls, ArrayRenderer& arrayRenderer, AppController& app, SdlAudioOutput& audioOutput,
 		AudioPresentationBridge& audioBridge, LatestAudioStateMailbox& audioMailbox)
 	{
 		SDL_Event event;
@@ -73,6 +73,17 @@ namespace
 				(event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || event.window.event == SDL_WINDOWEVENT_RESIZED ||
 				 event.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED))
 				window.refreshMetrics();
+			if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+			{
+				arrayRenderer.cancelWorkspacePreview();
+				SDL_CaptureMouse(SDL_FALSE);
+			}
+			if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT && arrayRenderer.workspacePreviewActive())
+			{
+				arrayRenderer.endWorkspacePreview();
+				SDL_CaptureMouse(SDL_FALSE);
+				continue;
+			}
 			if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F9 && !event.key.repeat)
 			{
 				audioOutput.armDiagnosticCapture();
@@ -124,6 +135,12 @@ namespace
 				}
 				continue;
 			}
+			if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+				arrayRenderer.beginWorkspacePreview(static_cast<float>(event.button.x), static_cast<float>(event.button.y)))
+			{
+				SDL_CaptureMouse(SDL_TRUE);
+				continue;
+			}
 			if (event.type == SDL_KEYDOWN)
 				handleKeyEvent(event.key, window, app);
 		}
@@ -163,7 +180,7 @@ int main(int argc, char** argv)
 		previousCounter = currentCounter;
 
 		app.update(deltaSeconds, playbackFrameCoordinator.audioClockAvailable());
-		handleEvents(mainWindow, controlPanel, app, audioOutput, audioBridge, audioMailbox);
+		handleEvents(mainWindow, controlPanel, arrayRenderer, app, audioOutput, audioBridge, audioMailbox);
 		audioOutput.serviceDiagnosticCapture();
 
 		const std::string audioStatus = playbackFrameCoordinator.updateAudioPresentation(app);

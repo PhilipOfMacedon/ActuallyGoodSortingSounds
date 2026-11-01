@@ -544,10 +544,19 @@ namespace
 			if (option && option->options().size() == 2 && option->options()[0] == "Visible" && option->options()[1] == "Hidden")
 				visualizationSlot = slot;
 		}
-		check(initialOptionVisible && optionBackdropUsesPanelLayer && optionControlUsesControlsLayer &&
-			optionsHeadingBounds.height > 0.0f && mergeRecipeHeadingBounds.height > 0.0f &&
+		check(initialOptionVisible, "Merge Step view initially exposes at least one registered algorithm option");
+		check(optionBackdropUsesPanelLayer, "the Merge options pane paints its backing surface");
+		check(optionControlUsesControlsLayer, "Merge option controls paint above their pane backdrop");
+		check(optionsHeadingBounds.height > 0.0f && mergeRecipeHeadingBounds.height > 0.0f &&
 			optionsHeadingBounds.y + optionsHeadingBounds.height <= mergeRecipeHeadingBounds.y,
-			"Merge options render above their pane backdrop and do not collide with the persistent input recipe summary");
+			"Merge options do not collide with the persistent input recipe summary");
+		const UiWidget* firstMergeOption = mergeEditor.control("demo_option_slot_0");
+		UiRect firstMergeOptionCaption;
+		for (const UiPaintCommand& command : mergePaint.commands())
+			if (command.elementId == "#demo_option_slot_0_caption") firstMergeOptionCaption = command.bounds;
+		check(firstMergeOption && firstMergeOption->bounds().x > optionsHeadingBounds.x &&
+			firstMergeOptionCaption.height > 0.0f && firstMergeOptionCaption.y + firstMergeOptionCaption.height + 2.0f <= firstMergeOption->bounds().y,
+			"algorithm option labels and controls use padded, non-overlapping row geometry");
 		check(visualizationSlot != static_cast<std::size_t>(-1),
 			"canonical Merge buffer visibility is presented as a scrollable algorithm setting alongside its catalog options");
 		if (visualizationSlot != static_cast<std::size_t>(-1))
@@ -566,6 +575,13 @@ namespace
 				mergeEditor.layoutComboPopups([](const std::string& text) { return static_cast<float>(text.size() * 8); });
 				mergeEditor.handleInput(UiInputEvent(UiInputType::PointerDown, control.x + control.width * 0.5f,
 					control.y + control.height * 0.5f), ignored);
+				check(mergeEditor.control(visualization->id())->expanded(),
+					"a visible registered algorithm option opens its foreground popup");
+				mergeEditor.synchronize(store, mergeDraft, mergeDraft.id, 3, runner, true, 1000, 640);
+				mergeEditor.layoutComboPopups([](const std::string& text) { return static_cast<float>(text.size() * 8); });
+				visualization = mergeEditor.control("demo_option_slot_" + std::to_string(visualizationSlot));
+				check(visualization && visualization->expanded(),
+					"per-frame demo synchronization preserves an open algorithm option popup");
 				const UiRect hidden = visualization->optionBounds(1);
 				AppAction toggleVisualization;
 				mergeEditor.handleInput(UiInputEvent(UiInputType::PointerDown, hidden.x + hidden.width * 0.5f,
@@ -1603,6 +1619,20 @@ namespace
 			scrollbar.pointerMove(190.0f, 203.0f) && scroll.offset() < pageOffset &&
 			scrollbar.pointerUp(190.0f, 203.0f) && !scrollbar.captured(),
 			"shared scrollbar captures, drags, and releases the viewport thumb");
+		UiPressHoldSelection heldLane;
+		heldLane.setTargets(std::vector<UiPressHoldTarget>{
+			UiPressHoldTarget("auxiliary", UiRect(10.0f, 20.0f, 100.0f, 30.0f)) });
+		check(!heldLane.begin(5.0f, 25.0f) && heldLane.begin(25.0f, 30.0f) && heldLane.active() &&
+			heldLane.selectedId() == "auxiliary" && heldLane.begin(500.0f, 500.0f) &&
+			heldLane.selectedId() == "auxiliary",
+			"workspace preview activates only when the press starts inside a lane and follows the held pointer capture");
+		heldLane.end();
+		check(!heldLane.active() && heldLane.selectedId().empty() && !heldLane.begin(500.0f, 500.0f),
+			"releasing a workspace preview restores the main array and an outside press remains inert");
+		heldLane.begin(25.0f, 30.0f);
+		heldLane.setTargets(std::vector<UiPressHoldTarget>());
+		check(!heldLane.active() && heldLane.selectedId().empty(),
+			"a held workspace preview is cleared when its lane disappears from the published snapshot");
 
 		UIRoot orderedRoot;
 		orderedRoot.addButton("first", "First");
@@ -1657,6 +1687,24 @@ namespace
 			widePopupRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 180.0f, wideOption.y + 4.0f), action) &&
 			action.appAction.kind == AppActionKind::Run && action.event.selection == 1,
 			"dropdown paints and hit-tests the same popup bounds even beyond its invoking menu width");
+		UIRoot overlapRoot;
+		overlapRoot.addComboBox("foreground", std::vector<std::string>{ "Menu", "Choose this" }, 0,
+			AppAction(AppActionKind::SelectAlgorithm));
+		overlapRoot.find("foreground")->setBounds(UiRect(10.0f, 10.0f, 120.0f, 24.0f));
+		overlapRoot.find("foreground")->setPopupBounds(UiRect(10.0f, 34.0f, 120.0f, 48.0f));
+		UiSelectionList& underlyingQueue = overlapRoot.addSelectionList("underlying_queue", AppAction(AppActionKind::SelectDemoStep));
+		underlyingQueue.setItems(std::vector<std::string>{ "First step", "Second step" });
+		underlyingQueue.setSelectedIndex(0, false);
+		underlyingQueue.setRowHeight(24.0f);
+		underlyingQueue.setBounds(UiRect(10.0f, 34.0f, 120.0f, 48.0f));
+		check(overlapRoot.handleEvent(UiInputEvent(UiInputType::PointerDown, 20.0f, 20.0f), action),
+			"foreground test combo opens over the queue area");
+		const UiRect overlappingOption = overlapRoot.find("foreground")->optionBounds(1);
+		check(overlapRoot.handleEvent(UiInputEvent(UiInputType::PointerDown,
+			overlappingOption.x + 8.0f, overlappingOption.y + 8.0f), action) &&
+			action.appAction.kind == AppActionKind::SelectAlgorithm && action.event.selection == 1 &&
+			underlyingQueue.selectedIndex() == 0,
+			"an expanded combo owns an overlapping click before the selection list beneath it");
 		check(root.handleEvent(UiInputEvent(UiInputType::PointerDown, combo.x + 5.0f, combo.y + 5.0f), action),
 			"visible combo can be reopened after selection");
 		root.setWidgetVisible("choice", true);
@@ -4561,6 +4609,24 @@ namespace
 		}
 		check(sharedControl && upperPopup, "demo editor uses the standard widget painter and a separate upper popup pass");
 
+		DemoEditorView actionMenuEditor;
+		actionMenuEditor.setOpen(true);
+		actionMenuEditor.synchronize(store, draft, draft.id, 0, runner, true, 1000, 640);
+		const AppActionKind expectedMenuActions[] = { AppActionKind::NewDemoPreset, AppActionKind::SaveDemoPresetAs,
+			AppActionKind::ImportDemoPresets, AppActionKind::ExportDemoPreset };
+		for (std::size_t i = 0; i < sizeof(expectedMenuActions) / sizeof(expectedMenuActions[0]); ++i)
+		{
+			actionMenuEditor.layoutComboPopups([](const std::string& text) { return static_cast<float>(text.size() * 8); });
+			AppAction menuAction;
+			clickDemoControl(actionMenuEditor, "demo_actions", menuAction);
+			const UiWidget* menu = actionMenuEditor.control("demo_actions");
+			const UiRect option = menu->optionBounds(i + 1);
+			actionMenuEditor.handleInput(UiInputEvent(UiInputType::PointerDown,
+				option.x + option.width * 0.5f, option.y + option.height * 0.5f), menuAction);
+			check(menuAction.kind == expectedMenuActions[i],
+				"the grouped demo actions menu routes each create, save-as, import, and export command");
+		}
+
 		DemoPreset longDraft = draft;
 		while (longDraft.steps.size() < 48) longDraft.steps.push_back(longDraft.steps.front());
 		DemoEditorView scrollingEditor;
@@ -4795,6 +4861,68 @@ namespace
 			const sortinglogic::CommandResult emptySave = emptyApp.dispatch(AppAction(AppActionKind::SaveDemoPreset));
 			check(emptyApp.demoEditorDraft().steps.empty() && !emptySave.accepted && emptyDemos.writes == 0,
 				"an empty demo draft cannot be saved and does not reach persistence");
+		}
+		{
+			MemorySettings newPreferences;
+			MemorySeedBookmarks newSeeds;
+			MemoryDemoPresets newDemos;
+			AppController newApp(newPreferences, &newSeeds, &newDemos);
+			check(newApp.dispatch(AppAction(AppActionKind::NewDemoPreset)).accepted &&
+				newApp.demoEditorDraft().steps.empty() && newApp.selectedDemoPresetId() == "__new_demo__" &&
+				!newApp.dispatch(AppAction(AppActionKind::StartDemo)).accepted &&
+				!newApp.dispatch(AppAction(AppActionKind::SaveDemoPreset)).accepted,
+				"New demo starts an empty draft that cannot be saved or played before an algorithm is added");
+			newApp.dispatch(AppAction(AppActionKind::OpenDemoEditor));
+			DemoActionPayload add;
+			add.familyId = "insertion-methods";
+			add.variantId = "insertion";
+			AppAction addAction(AppActionKind::DemoAddStep);
+			addAction.demo.reset(new DemoActionPayload(add));
+			check(newApp.dispatch(addAction).accepted, "an empty new draft accepts its first registered algorithm");
+			const sortinglogic::CommandResult startDraft = newApp.dispatch(AppAction(AppActionKind::StartDemo));
+			check(startDraft.accepted, "a new draft becomes runnable as soon as its first compatible algorithm is added");
+			if (startDraft.accepted) newApp.dispatch(AppAction(AppActionKind::StopDemo));
+			newApp.dispatch(AppAction(AppActionKind::OpenDemoEditor));
+			const sortinglogic::CommandResult saveAs = newApp.dispatch(AppAction(AppActionKind::SaveDemoPresetAs));
+			const DemoPreset* copy = newApp.demoPresets().findUserPreset(newApp.selectedDemoPresetId());
+			check(saveAs.accepted && copy && copy->name.find("(copy)") != std::string::npos && copy->steps.size() == 1 &&
+				newDemos.writes == 1,
+				"Save as creates a separately named user preset from the draft without requiring a prefab detour");
+			DemoPreset importSource = demoPrefabPresets()[1];
+			importSource.prefab = false;
+			importSource.id = "export.demo";
+			const std::string archive = DemoPresetStore::encode(std::vector<DemoPreset>(1, importSource));
+			AppAction importAction(AppActionKind::ImportDemoPresets);
+			importAction.text = archive;
+			check(newApp.dispatch(importAction).accepted && newApp.demoPresets().userPresets().size() == 2 &&
+				newDemos.writes == 2,
+				"demo preset import decodes an exported archive, assigns a fresh local identity, and persists once");
+		}
+		{
+			MemorySettings preferences;
+			MemorySeedBookmarks seeds;
+			MemoryDemoPresets demos;
+			AppController app(preferences, &seeds, &demos);
+			app.dispatch(AppAction(AppActionKind::OpenDemoEditor));
+			DemoActionPayload add;
+			add.familyId = "insertion-methods";
+			add.variantId = "insertion";
+			AppAction addAction(AppActionKind::DemoAddStep);
+			addAction.demo.reset(new DemoActionPayload(add));
+			app.dispatch(addAction);
+			DemoActionPayload draftName; draftName.presetName = std::string(64, 'x');
+			AppAction rename(AppActionKind::DemoSetDraftName);
+			rename.demo.reset(new DemoActionPayload(draftName));
+			app.dispatch(rename);
+			const sortinglogic::CommandResult firstCopy = app.dispatch(AppAction(AppActionKind::SaveDemoPresetAs));
+			const std::string firstId = app.selectedDemoPresetId();
+			const DemoPreset* firstPreset = app.demoPresets().findUserPreset(firstId);
+			const std::string firstName = firstPreset ? firstPreset->name : std::string();
+			const sortinglogic::CommandResult secondCopy = app.dispatch(AppAction(AppActionKind::SaveDemoPresetAs));
+			const DemoPreset* secondPreset = app.demoPresets().findUserPreset(app.selectedDemoPresetId());
+			check(firstCopy.accepted && secondCopy.accepted && secondPreset && app.selectedDemoPresetId() != firstId &&
+				secondPreset->name != firstName && secondPreset->name.size() <= 64 && demos.writes == 2,
+				"Save as keeps long names within limits while finding a distinct suffix after collisions");
 		}
 		MemorySettings preferences;
 		MemorySeedBookmarks seeds;

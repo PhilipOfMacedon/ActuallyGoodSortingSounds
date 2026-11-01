@@ -40,7 +40,8 @@ namespace
 
 ArrayRenderer::ArrayRenderer(Window& window, Renderer2D& renderer)
 	: window_(window), renderer_(renderer), materialBuckets_(), gapMarkers_(), mainRoleLookup_(),
-	  workspaceRoleLookup_(), laneLabels_(), laneLabelPositions_(), reconstructionLabel_()
+	  workspaceRoleLookup_(), laneLabels_(), laneLabelPositions_(), laneLabelWidths_(), workspaceTargets_(),
+	  workspacePreview_(), reconstructionLabel_()
 {
 }
 
@@ -69,7 +70,11 @@ void ArrayRenderer::render(
 	if (right <= left || bottom <= top) return;
 	const ClipBounds chartClip(left, top, right - left, bottom - top);
 	const float areaHeight = std::max(0.0f, bottom - top);
-	std::size_t laneCount = snapshot.state.integerWorkspaces.size() + (snapshot.state.discardedItems.empty() ? 0 : 1);
+	std::size_t laneCount = 0;
+	for (std::map<std::string, std::vector<int> >::const_iterator lane = snapshot.state.integerWorkspaces.begin();
+		lane != snapshot.state.integerWorkspaces.end(); ++lane)
+		if (!hiddenWorkspace(snapshot, lane->first)) ++laneCount;
+	if (!snapshot.state.discardedItems.empty() && !hiddenWorkspace(snapshot, "discard")) ++laneCount;
 	for (std::map<std::string, std::vector<sortinglogic::SortSlot> >::const_iterator lane = snapshot.state.auxiliaryItems.begin();
 		lane != snapshot.state.auxiliaryItems.end(); ++lane)
 		if (!hiddenWorkspace(snapshot, lane->first)) ++laneCount;
@@ -87,7 +92,12 @@ void ArrayRenderer::render(
 		materialBuckets_[i].clear();
 	gapMarkers_.clear();
 	laneLabelPositions_.clear();
+	laneLabelWidths_.clear();
+	workspaceTargets_.clear();
 
+	const std::string previewLane = workspacePreview_.selectedId();
+	const bool previewActive = !previewLane.empty() && !hiddenWorkspace(snapshot, previewLane);
+	if (!previewActive)
 	for (std::size_t index = 0; index < snapshot.state.slots.size(); ++index)
 	{
 		const float x = left + static_cast<float>(index) * columnWidth + spacing.sidePadding;
@@ -120,6 +130,7 @@ void ArrayRenderer::render(
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
 			laneGeometry[lane->first] = std::make_pair(lane->second.size(), laneNumber);
+			workspaceTargets_.push_back(UiPressHoldTarget(lane->first, UiRect(left, laneTop, right - left, laneHeight)));
 			submitLaneLabel(lane->first, workspaceCaption(snapshot, lane->first), right - 112.0f, laneTop + 1.0f, palette.text);
 			const float cellWidth = lane->second.empty() ? 0.0f : (right - left) / static_cast<float>(lane->second.size());
 			const BarSlotMetrics laneSpacing = calculateBarSlotMetrics(cellWidth, spacingMode);
@@ -135,11 +146,13 @@ void ArrayRenderer::render(
 			}
 			++laneNumber;
 		}
-		for (std::map<std::string, std::vector<int> >::const_iterator lane = snapshot.state.integerWorkspaces.begin(); lane != snapshot.state.integerWorkspaces.end(); ++lane, ++laneNumber)
+		for (std::map<std::string, std::vector<int> >::const_iterator lane = snapshot.state.integerWorkspaces.begin(); lane != snapshot.state.integerWorkspaces.end(); ++lane)
 		{
+			if (hiddenWorkspace(snapshot, lane->first)) continue;
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
 			laneGeometry[lane->first] = std::make_pair(lane->second.size(), laneNumber);
+			workspaceTargets_.push_back(UiPressHoldTarget(lane->first, UiRect(left, laneTop, right - left, laneHeight)));
 			submitLaneLabel(lane->first, workspaceCaption(snapshot, lane->first), right - 112.0f, laneTop + 1.0f, palette.text);
 			int maximum = 1;
 			for (std::size_t i = 0; i < lane->second.size(); ++i) maximum = std::max(maximum, lane->second[i]);
@@ -153,12 +166,14 @@ void ArrayRenderer::render(
 					glm::vec2(std::max(1.0f, cellWidth - 2.0f), barHeight),
 					RenderDescriptor(palette.bar, 0, MaterialId::Bar), RenderLayer::ChartBars, chartClip));
 			}
+			++laneNumber;
 		}
-		if (!snapshot.state.discardedItems.empty())
+		if (!snapshot.state.discardedItems.empty() && !hiddenWorkspace(snapshot, "discard"))
 		{
 			const float laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + laneGap);
 			const float laneBottom = laneTop + laneHeight;
 			laneGeometry["discard"] = std::make_pair(snapshot.state.discardedItems.size(), laneNumber);
+			workspaceTargets_.push_back(UiPressHoldTarget("discard", UiRect(left, laneTop, right - left, laneHeight)));
 			submitLaneLabel("discard", workspaceCaption(snapshot, "discard"), right - 112.0f, laneTop + 1.0f, palette.text);
 			const float cellWidth = (right - left) / static_cast<float>(snapshot.state.discardedItems.size());
 			const BarSlotMetrics laneSpacing = calculateBarSlotMetrics(cellWidth, spacingMode);
@@ -174,6 +189,69 @@ void ArrayRenderer::render(
 		}
 	}
 
+	if (previewActive)
+	{
+		const std::map<std::string, std::vector<sortinglogic::SortSlot> >::const_iterator itemLane =
+			snapshot.state.auxiliaryItems.find(previewLane);
+		const std::map<std::string, std::vector<int> >::const_iterator integerLane =
+			snapshot.state.integerWorkspaces.find(previewLane);
+		const float captionWidth = std::min(420.0f, right - left - 16.0f);
+		submitLaneLabel("__preview", "Expanded workspace: " + workspaceCaption(snapshot, previewLane),
+			left + 8.0f, top + 11.0f, palette.text, captionWidth);
+		if (itemLane != snapshot.state.auxiliaryItems.end())
+		{
+			const float cellWidth = itemLane->second.empty() ? 0.0f : (right - left) / static_cast<float>(itemLane->second.size());
+			const BarSlotMetrics previewSpacing = calculateBarSlotMetrics(cellWidth, spacingMode);
+			for (std::size_t i = 0; i < itemLane->second.size(); ++i)
+			{
+				const float x = left + static_cast<float>(i) * cellWidth + previewSpacing.sidePadding;
+				if (!itemLane->second[i].occupied)
+				{
+					gapMarkers_.push_back(QuadInstance(glm::vec2(x, mainBottom - 4.0f),
+						glm::vec2(previewSpacing.barWidth, 4.0f), RenderDescriptor(palette.gap, 0, MaterialId::GapMarker),
+						RenderLayer::ChartGaps, chartClip));
+					continue;
+				}
+				const sortinglogic::SortItem& item = itemLane->second[i].item;
+				const float barHeight = std::max(1.0f, item.value * mainHeight);
+				const RenderDescriptor descriptor = descriptorForItem(item.stableId, workspaceRoleLookup_, palette, previewLane);
+				materialBuckets_[materialBucket(descriptor.materialId)].push_back(QuadInstance(
+					glm::vec2(x, mainBottom - barHeight), glm::vec2(previewSpacing.barWidth, barHeight),
+					descriptor, RenderLayer::ChartBars, chartClip));
+			}
+		}
+		else if (integerLane != snapshot.state.integerWorkspaces.end())
+		{
+			int maximum = 1;
+			for (std::size_t i = 0; i < integerLane->second.size(); ++i) maximum = std::max(maximum, integerLane->second[i]);
+			const float cellWidth = integerLane->second.empty() ? 0.0f : (right - left) / static_cast<float>(integerLane->second.size());
+			for (std::size_t i = 0; i < integerLane->second.size(); ++i)
+			{
+				const float normalized = static_cast<float>(integerLane->second[i]) / static_cast<float>(maximum);
+				const float barHeight = std::max(1.0f, normalized * mainHeight);
+				materialBuckets_[materialBucket(MaterialId::Bar)].push_back(QuadInstance(
+					glm::vec2(left + static_cast<float>(i) * cellWidth + 1.0f, mainBottom - barHeight),
+					glm::vec2(std::max(1.0f, cellWidth - 2.0f), barHeight),
+					RenderDescriptor(palette.bar, 0, MaterialId::Bar), RenderLayer::ChartBars, chartClip));
+			}
+		}
+		else if (previewLane == "discard")
+		{
+			const float cellWidth = snapshot.state.discardedItems.empty() ? 0.0f :
+				(right - left) / static_cast<float>(snapshot.state.discardedItems.size());
+			const BarSlotMetrics previewSpacing = calculateBarSlotMetrics(cellWidth, spacingMode);
+			for (std::size_t i = 0; i < snapshot.state.discardedItems.size(); ++i)
+			{
+				const sortinglogic::SortItem& item = snapshot.state.discardedItems[i];
+				const float barHeight = std::max(1.0f, item.value * mainHeight);
+				const RenderDescriptor descriptor = descriptorForItem(item.stableId, workspaceRoleLookup_, palette, "discard");
+				materialBuckets_[materialBucket(descriptor.materialId)].push_back(QuadInstance(
+					glm::vec2(left + static_cast<float>(i) * cellWidth + previewSpacing.sidePadding, mainBottom - barHeight),
+					glm::vec2(previewSpacing.barWidth, barHeight), descriptor, RenderLayer::ChartBars, chartClip));
+			}
+		}
+	}
+
 	// Bars do not overlap each other. Grouping this non-overlapping chart geometry by material
 	// keeps the per-frame GL work bounded by semantic styles rather than item count.
 	for (std::size_t group = 0; group < materialBuckets_.size(); ++group)
@@ -183,14 +261,16 @@ void ArrayRenderer::render(
 	{
 		if (!label->second || !label->second->getTextureId() || label->second->getTextureDimensions().y <= 0.0f) continue;
 		const float labelHeight = 13.0f;
-		const float labelWidth = std::min(112.0f, labelHeight * label->second->getTextureDimensions().x / label->second->getTextureDimensions().y);
+		const std::map<std::string, float>::const_iterator requestedWidth = laneLabelWidths_.find(label->first);
+		const float maximumWidth = requestedWidth == laneLabelWidths_.end() ? 112.0f : requestedWidth->second;
+		const float labelWidth = std::min(maximumWidth, labelHeight * label->second->getTextureDimensions().x / label->second->getTextureDimensions().y);
 		const std::map<std::string, glm::vec2>::const_iterator position = laneLabelPositions_.find(label->first);
 		if (position == laneLabelPositions_.end()) continue;
-		renderer_.submit(QuadInstance(glm::vec2(position->second.x + 110.0f - labelWidth, position->second.y), glm::vec2(labelWidth, labelHeight),
+		renderer_.submit(QuadInstance(glm::vec2(position->second.x + maximumWidth - labelWidth, position->second.y), glm::vec2(labelWidth, labelHeight),
 			RenderDescriptor(palette.text, label->second->getTextureId(), MaterialId::Text), RenderLayer::ChartLabels, chartClip));
 	}
 
-	if (snapshot.state.hasHeldItem && snapshot.state.gapIndex < snapshot.state.slots.size())
+	if (!previewActive && snapshot.state.hasHeldItem && snapshot.state.gapIndex < snapshot.state.slots.size())
 	{
 		const float x = left + static_cast<float>(snapshot.state.gapIndex) * columnWidth + spacing.sidePadding;
 		const float barHeight = std::max(1.0f, snapshot.state.heldItem.value * mainHeight);
@@ -203,6 +283,7 @@ void ArrayRenderer::render(
 	for (std::size_t regionIndex = 0; regionIndex < snapshot.activeRegions.size(); ++regionIndex)
 	{
 		const sortinglogic::RegionAnnotation& region = snapshot.activeRegions[regionIndex];
+		if (previewActive && region.lane == "main") continue;
 		std::size_t laneSize = snapshot.state.slots.size();
 		float laneTop = top;
 		float laneBottom = mainBottom;
@@ -211,10 +292,18 @@ void ArrayRenderer::render(
 			std::map<std::string, std::pair<std::size_t, std::size_t> >::const_iterator geometry = laneGeometry.find(region.lane);
 			if (geometry == laneGeometry.end()) continue;
 			laneSize = geometry->second.first;
-			const std::size_t laneNumber = geometry->second.second;
-			const float laneHeight = std::max(8.0f, (auxiliaryHeight - 4.0f * static_cast<float>(laneCount - 1)) / static_cast<float>(laneCount));
-			laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + 4.0f);
-			laneBottom = laneTop + laneHeight;
+			if (previewActive && region.lane == previewLane)
+			{
+				laneTop = top;
+				laneBottom = mainBottom;
+			}
+			else
+			{
+				const std::size_t laneNumber = geometry->second.second;
+				const float laneHeight = std::max(8.0f, (auxiliaryHeight - 4.0f * static_cast<float>(laneCount - 1)) / static_cast<float>(laneCount));
+				laneTop = mainBottom + 6.0f + static_cast<float>(laneNumber) * (laneHeight + 4.0f);
+				laneBottom = laneTop + laneHeight;
+			}
 		}
 		if (laneSize == 0) continue;
 		const float column = (right - left) / static_cast<float>(laneSize);
@@ -266,9 +355,11 @@ void ArrayRenderer::render(
 	}
 	mainRoleLookup_.release();
 	workspaceRoleLookup_.release();
+	workspacePreview_.setTargets(workspaceTargets_);
 }
 
-void ArrayRenderer::submitLaneLabel(const std::string& lane, const std::string& caption, float x, float y, const glm::vec4& color)
+void ArrayRenderer::submitLaneLabel(const std::string& lane, const std::string& caption, float x, float y,
+	const glm::vec4& color, float width)
 {
 	SDL_Color text = {
 		static_cast<Uint8>(std::max(0.0f, std::min(255.0f, color.r * 255.0f))),
@@ -280,6 +371,7 @@ void ArrayRenderer::submitLaneLabel(const std::string& lane, const std::string& 
 		found = laneLabels_.insert(std::make_pair(lane, std::unique_ptr<TextLabel>(new TextLabel(caption, "Courier New Bold", 11, text)))).first;
 	else found->second->setContent(caption);
 	laneLabelPositions_[lane] = glm::vec2(x, y);
+	laneLabelWidths_[lane] = std::max(0.0f, width);
 }
 
 RenderDescriptor ArrayRenderer::descriptorForRole(

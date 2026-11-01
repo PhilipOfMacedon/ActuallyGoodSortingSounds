@@ -175,6 +175,36 @@ bool UiScrollbar::step(int direction)
 	return true;
 }
 
+UiPressHoldSelection::UiPressHoldSelection() : targets_(), selectedId_(), active_(false) {}
+
+void UiPressHoldSelection::setTargets(const std::vector<UiPressHoldTarget>& targets)
+{
+	targets_ = targets;
+	if (!active_) return;
+	for (std::size_t i = 0; i < targets_.size(); ++i)
+		if (targets_[i].stableId == selectedId_) return;
+	end();
+}
+
+bool UiPressHoldSelection::begin(float x, float y)
+{
+	if (active_) return true;
+	for (std::vector<UiPressHoldTarget>::const_reverse_iterator target = targets_.rbegin(); target != targets_.rend(); ++target)
+		if (target->bounds.contains(x, y))
+		{
+			selectedId_ = target->stableId;
+			active_ = true;
+			return true;
+		}
+	return false;
+}
+
+void UiPressHoldSelection::end()
+{
+	active_ = false;
+	selectedId_.clear();
+}
+
 UiFormLayout::UiFormLayout(const UiRect& bounds, float padding, float rowGap, float labelFontSize, float lineHeight)
 	: bounds_(bounds), padding_(std::max(0.0f, padding)), rowGap_(std::max(0.0f, rowGap)),
 	labelFontSize_(std::max(1.0f, labelFontSize)), lineHeight_(std::max(1.0f, lineHeight)),
@@ -920,6 +950,42 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 			action = UiAction(AppAction(), dismissCommand_);
 			return true;
 		}
+		// An expanded combo is a foreground surface. Resolve its popup before
+		// lists, fields, or tabs underneath it so overlapping content cannot
+		// steal the click (or change the queue behind the menu).
+		if (openCombo_)
+		{
+			const bool inPopup = openCombo_->optionViewport_.viewport().contains(event.x, event.y) ||
+				openCombo_->optionScrollbar_.bounds().contains(event.x, event.y);
+			if (inPopup)
+			{
+				if (openCombo_->optionScrollbar_.pointerDown(event.x, event.y)) return true;
+				for (std::size_t option = 0; option < openCombo_->options_.size(); ++option)
+				{
+					if (openCombo_->optionBounds(option).contains(event.x, event.y))
+					{
+						if (openCombo_->optionEnabled(option))
+						{
+							const bool changed = openCombo_->selectedIndex_ != static_cast<int>(option);
+							openCombo_->setSelectedIndex(static_cast<int>(option));
+							UiWidget* combo = openCombo_;
+							closeCombo();
+							if (changed) emit(combo, action, true, &event);
+							return true;
+						}
+						return true;
+					}
+				}
+				// Blank space and disabled rows still belong to the popup surface.
+				return true;
+			}
+			if (openCombo_->bounds_.contains(event.x, event.y))
+			{
+				closeCombo();
+				return true;
+			}
+			closeCombo();
+		}
 		UiTabStrip* tab = hitTabStrip(event.x, event.y);
 		UiSelectionList* list = hitSelectionList(event.x, event.y);
 		UiEditableField* field = hitEditableField(event.x, event.y);
@@ -975,25 +1041,6 @@ bool UIRoot::handleEvent(const UiInputEvent& event, UiAction& action)
 		}
 		if (!commitFocusedField(action)) return true;
 		if (action.event.kind != UiEventKind::None) return true;
-		if (openCombo_)
-		{
-			if (openCombo_->optionScrollbar_.pointerDown(event.x, event.y)) return true;
-			for (std::size_t option = 0; option < openCombo_->options_.size(); ++option)
-			{
-				if (openCombo_->optionViewport_.viewport().contains(event.x, event.y) &&
-					openCombo_->optionEnabled(option) && openCombo_->optionBounds(option).contains(event.x, event.y))
-				{
-					const bool changed = openCombo_->selectedIndex_ != static_cast<int>(option);
-					openCombo_->setSelectedIndex(static_cast<int>(option));
-					UiWidget* combo = openCombo_;
-					closeCombo();
-					if (changed) emit(combo, action, true, &event);
-					return true;
-				}
-			}
-			if (!openCombo_->bounds_.contains(event.x, event.y))
-				closeCombo();
-		}
 		UiWidget* widget = hitWidget(event.x, event.y);
 		if (!widget)
 			return inputCaptured_;

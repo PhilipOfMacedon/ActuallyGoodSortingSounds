@@ -193,6 +193,8 @@ void DemoEditorView::createControls()
 	controls_.addComboBox("demo_preset", std::vector<std::string>(1, "Select preset"), 0,
 		AppAction(AppActionKind::SelectDemoPreset));
 	controls_.addButton("demo_save", "Save a copy", AppAction(AppActionKind::SaveDemoPreset));
+	controls_.addComboBox("demo_actions", std::vector<std::string>{ "Actions…", "New demo", "Save as…", "Import…", "Export current…" }, 0);
+	controls_.find("demo_actions")->setOptionEnabled(0, false);
 	controls_.addButton("demo_delete", "Delete", AppAction(AppActionKind::DeleteDemoPreset));
 	controls_.addButton("demo_close", "Close", AppAction(AppActionKind::CloseDemoEditor));
 	controls_.addButton("demo_start", "Start Demo", AppAction(AppActionKind::StartDemo));
@@ -253,7 +255,7 @@ void DemoEditorView::createControls()
 	std::vector<std::string> focusOrder{ "demo_preset", "demo_queue", "demo_up", "demo_down", "demo_remove", "demo_add", "demo_tabs",
 		"demo_replace", "demo_direction", "demo_timing", "demo_duration_value", "demo_completion_scan", "demo_option_group",
 		"demo_option", "demo_override", "demo_class", "demo_domain", "demo_pattern", "demo_count_value", "demo_seed_value",
-		"demo_preset_name", "demo_intermission_value", "demo_loop", "demo_save", "demo_delete", "demo_start", "demo_mode",
+		"demo_preset_name", "demo_intermission_value", "demo_loop", "demo_save", "demo_actions", "demo_delete", "demo_start", "demo_mode",
 		"demo_previous", "demo_next", "demo_stop", "demo_close" };
 	focusOrder.insert(focusOrder.end(), optionSlotWidgetIds_.begin(), optionSlotWidgetIds_.end());
 	focusOrder.insert(focusOrder.end(), optionSlotFieldIds_.begin(), optionSlotFieldIds_.end());
@@ -270,6 +272,11 @@ void DemoEditorView::synchronizeCatalogs(const DemoPresetStore& presets)
 	{
 		presetIds_.push_back(presets.userPresets()[i].id);
 		names.push_back(presets.userPresets()[i].name);
+	}
+	if (selectedPresetId_ == "__new_demo__")
+	{
+		presetIds_.push_back("__new_demo__");
+		names.push_back("New demo (unsaved)");
 	}
 	UiWidget* preset = controls_.find("demo_preset");
 	if (preset)
@@ -417,7 +424,6 @@ void DemoEditorView::synchronizeOptions()
 				field->setNumericBounds(schema->minimumNumericValue, schema->maximumNumericValue);
 				field->setValue(selectedStableId);
 			}
-			controls_.setWidgetVisible(optionSlotWidgetIds_[groupIndex], false);
 			option->setOptions(std::vector<std::string>(1, "Numeric value"));
 			option->setSelectedIndex(0);
 		}
@@ -431,9 +437,7 @@ void DemoEditorView::synchronizeOptions()
 			for (std::size_t i = 0; i < optionIdsByGroup_[groupIndex].size(); ++i)
 				if (optionIdsByGroup_[groupIndex][i] == selectedStableId) selected = static_cast<int>(i);
 			option->setSelectedIndex(selected);
-			controls_.setWidgetVisible(optionSlotWidgetIds_[groupIndex], false);
 		}
-		if (field) controls_.setWidgetVisible(optionSlotFieldIds_[groupIndex], false);
 	}
 	if (previousGroupIds != optionGroupIds_ || previousNumericGroups != optionGroupIsNumeric_) laidOutWidth_ = -1;
 }
@@ -620,6 +624,10 @@ void DemoEditorView::synchronize(const DemoPresetStore& presets, const DemoPrese
 	controls_.setWidgetEnabled("demo_pattern", editable);
 	controls_.setWidgetEnabled("demo_loop", editable);
 	controls_.setWidgetEnabled("demo_save", editable && !draft_.steps.empty() && !draft_.name.empty());
+	controls_.setWidgetEnabled("demo_actions", editable);
+	controls_.find("demo_actions")->setOptionEnabled(2, !draft_.steps.empty() && !draft_.name.empty());
+	controls_.find("demo_actions")->setOptionEnabled(3, editable);
+	controls_.find("demo_actions")->setOptionEnabled(4, !draft_.steps.empty() && !draft_.name.empty());
 	controls_.setWidgetEnabled("demo_start", demoActive_ || !draft_.steps.empty());
 	controls_.find("demo_start")->setLabel(demoActive_ ? (runnerState_ == DemoRunnerState::Playing ? "Pause" : "Resume") : "Start Demo");
 	controls_.find("demo_start")->setAction(AppAction(demoActive_ ? AppActionKind::ToggleDemoPlayback : AppActionKind::StartDemo));
@@ -666,10 +674,19 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 	const float presetLabelY = panelBounds_.y + 66.0f;
 	const float presetY = panelBounds_.y + 86.0f;
 	const float controlH = 34.0f;
-	place(controls_, "demo_preset", left, presetY, innerW * 0.59f, controlH);
-	place(controls_, "demo_save", left + innerW * 0.60f, presetY, innerW * 0.16f, controlH);
-	place(controls_, "demo_delete", left + innerW * 0.77f, presetY, innerW * 0.10f, controlH);
-	place(controls_, "demo_close", left + innerW * 0.88f, presetY, innerW * 0.12f, controlH);
+	const float headerGap = 8.0f;
+	const float headerUsable = std::max(0.0f, innerW - headerGap * 4.0f);
+	const float presetWidth = headerUsable * 0.52f;
+	const float saveWidth = headerUsable * 0.14f;
+	const float actionsWidth = headerUsable * 0.13f;
+	const float deleteWidth = headerUsable * 0.10f;
+	const float closeWidth = headerUsable * 0.11f;
+	float headerX = left;
+	place(controls_, "demo_preset", headerX, presetY, presetWidth, controlH); headerX += presetWidth + headerGap;
+	place(controls_, "demo_save", headerX, presetY, saveWidth, controlH); headerX += saveWidth + headerGap;
+	place(controls_, "demo_actions", headerX, presetY, actionsWidth, controlH); headerX += actionsWidth + headerGap;
+	place(controls_, "demo_delete", headerX, presetY, deleteWidth, controlH); headerX += deleteWidth + headerGap;
+	place(controls_, "demo_close", headerX, presetY, closeWidth, controlH);
 	const float bodyTop = presetY + controlH + 16.0f;
 	const float footerH = 86.0f;
 	const float transportH = 48.0f;
@@ -736,10 +753,10 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 		place(controls_, "demo_replace", ix + iw * 0.60f, iy + 48.0f, iw * 0.40f, rowH);
 		const float halfGap = 12.0f;
 		const float halfWidth = std::max(0.0f, (iw - halfGap) * 0.5f);
-		const float compactRowHeight = 30.0f;
-		UiFormLayout leftForm(UiRect(ix, iy + 74.0f, halfWidth, std::max(0.0f, inspectorBounds_.height - 74.0f)), 0.0f, 4.0f);
+		const float compactRowHeight = 26.0f;
+		UiFormLayout leftForm(UiRect(ix, iy + 74.0f, halfWidth, std::max(0.0f, inspectorBounds_.height - 74.0f)), 0.0f, 2.0f);
 		UiFormLayout rightForm(UiRect(ix + halfWidth + halfGap, iy + 74.0f, halfWidth,
-			std::max(0.0f, inspectorBounds_.height - 74.0f)), 0.0f, 4.0f);
+			std::max(0.0f, inspectorBounds_.height - 74.0f)), 0.0f, 2.0f);
 		UiLabeledControlBounds field = leftForm.addLabeledControl("Direction", compactRowHeight, 12.0f, 2.0f);
 		labelBounds_["demo_direction"] = field.label; controls_.find("demo_direction")->setBounds(field.control);
 		field = rightForm.addLabeledControl("Sound timing", compactRowHeight, 12.0f, 2.0f);
@@ -755,7 +772,7 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 		const float optionsBottom = inspectorBounds_.y + inspectorBounds_.height - 104.0f;
 		optionPaneBounds_ = UiRect(ix, optionsTop, std::max(0.0f, iw - 18.0f),
 			optionGroupIds_.empty() ? 0.0f : std::max(0.0f, optionsBottom - optionsTop));
-		const float optionRowHeight = 42.0f;
+		const float optionRowHeight = 50.0f;
 		optionViewport_.configure(optionPaneBounds_, optionRowHeight * static_cast<float>(optionGroupIds_.size()), optionRowHeight, optionViewport_.offset());
 		optionScrollbar_.bind(&optionViewport_);
 		optionScrollbar_.setBounds(UiRect(ix + iw - 14.0f, optionPaneBounds_.y, 14.0f, optionPaneBounds_.height));
@@ -782,10 +799,11 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 			if (active)
 			{
 				const std::string& controlId = numeric ? optionSlotFieldIds_[i] : optionSlotWidgetIds_[i];
-				labelBounds_[controlId] = UiRect(row.x, row.y, row.width, 14.0f);
+				labelBounds_[controlId] = UiRect(row.x + 8.0f, row.y + 3.0f,
+					std::max(0.0f, row.width - 16.0f), 14.0f);
 				if (numeric && numericField)
-					numericField->setBounds(UiRect(row.x, row.y + 16.0f, row.width, 26.0f));
-				else option->setBounds(UiRect(row.x, row.y + 16.0f, row.width, 26.0f));
+					numericField->setBounds(UiRect(row.x + 8.0f, row.y + 21.0f, std::max(0.0f, row.width - 16.0f), 26.0f));
+				else option->setBounds(UiRect(row.x + 8.0f, row.y + 21.0f, std::max(0.0f, row.width - 16.0f), 26.0f));
 			}
 		}
 		// The option viewport is measured after common controls and ends before
@@ -870,7 +888,7 @@ void DemoEditorView::layout(int logicalWidth, int logicalHeight, UiPresetId appe
 	{
 		UiWidget* widget = controls_.widgets()[i].get();
 		const std::string& id = widget->id();
-		const bool contentControl = id != "demo_preset" && id != "demo_save" && id != "demo_delete" && id != "demo_close" &&
+		const bool contentControl = id != "demo_preset" && id != "demo_save" && id != "demo_actions" && id != "demo_delete" && id != "demo_close" &&
 			id != "demo_start" && id != "demo_mode" && id != "demo_previous" && id != "demo_next" && id != "demo_stop" &&
 			id.find("demo_switch_") != 0;
 		if (contentControl && widget->visible())
@@ -1063,8 +1081,23 @@ AppAction DemoEditorView::mapUiAction(const UiAction& emitted)
 	const int selection = emitted.event.selection;
 	if (id == "demo_preset" && selection >= 0 && static_cast<std::size_t>(selection) < presetIds_.size())
 	{
+		if (presetIds_[static_cast<std::size_t>(selection)] == "__new_demo__")
+			return AppAction(AppActionKind::NewDemoPreset);
 		DemoActionPayload payload; payload.presetId = presetIds_[static_cast<std::size_t>(selection)];
 		return demoAction(AppActionKind::SelectDemoPreset, payload);
+	}
+	if (id == "demo_actions")
+	{
+		UiWidget* menu = controls_.find("demo_actions");
+		if (menu) menu->setSelectedIndex(0);
+		switch (selection)
+		{
+		case 1: return AppAction(AppActionKind::NewDemoPreset);
+		case 2: return AppAction(AppActionKind::SaveDemoPresetAs);
+		case 3: return AppAction(AppActionKind::ImportDemoPresets);
+		case 4: return AppAction(AppActionKind::ExportDemoPreset);
+		default: return AppAction();
+		}
 	}
 	if (id == "demo_switch_save" || id == "demo_switch_discard" || id == "demo_switch_cancel")
 	{
@@ -1494,7 +1527,7 @@ void DemoEditorView::composeWidgetControls(const DemoEditorPalette&, UiPaintCont
 		const bool classInputWidget = activeTab_ == DemoEditorTab::ClassInputs &&
 			(widget.id() == "demo_class" || widget.id() == "demo_domain" || widget.id() == "demo_pattern");
 		const UiRect clip = dialog ? panelBounds_ : optionWidget ? optionPaneBounds_ : classInputWidget ? classInputViewportBounds_ :
-			(widget.id() == "demo_preset" || widget.id() == "demo_save" || widget.id() == "demo_delete" || widget.id() == "demo_close" ? panelBounds_ : bodyBounds_);
+			(widget.id() == "demo_preset" || widget.id() == "demo_save" || widget.id() == "demo_actions" || widget.id() == "demo_delete" || widget.id() == "demo_close" ? panelBounds_ : bodyBounds_);
 		context.submit(UiPaintCommand(UiPaintPrimitive::Control, widget.bounds(), UiColor(), std::string(), widget.id(),
 			widget.kind() == UiWidgetKind::ComboBox ? UiPaintMaterial::Popup : UiPaintMaterial::Button,
 			layer, clip,

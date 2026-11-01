@@ -13,6 +13,7 @@
 #include "TextLabel.h"
 #include "VisualSettingsTypes.h"
 #include "Geometry2D.h"
+#include "UiLayer.h"
 #include "Window.h"
 #include "../SortingLogic/SortingLogic.h"
 
@@ -26,6 +27,10 @@ public:
 		BarSpacingMode spacing,
 		const Rect2D& chartViewport,
 		const ThemePalette& palette);
+	bool beginWorkspacePreview(float x, float y) { return workspacePreview_.begin(x, y); }
+	void endWorkspacePreview() { workspacePreview_.end(); }
+	void cancelWorkspacePreview() { workspacePreview_.cancel(); }
+	bool workspacePreviewActive() const { return workspacePreview_.active(); }
 
 private:
 	Window& window_;
@@ -36,6 +41,9 @@ private:
 	ActiveRoleLookup workspaceRoleLookup_;
 	std::map<std::string, std::unique_ptr<TextLabel> > laneLabels_;
 	std::map<std::string, glm::vec2> laneLabelPositions_;
+	std::map<std::string, float> laneLabelWidths_;
+	std::vector<UiPressHoldTarget> workspaceTargets_;
+	UiPressHoldSelection workspacePreview_;
 	std::unique_ptr<TextLabel> reconstructionLabel_;
 	RenderDescriptor descriptorForRole(sortinglogic::SemanticRole role, const ThemePalette& palette) const;
 	RenderDescriptor descriptorForItem(
@@ -43,5 +51,6 @@ private:
 		const ActiveRoleLookup& roles,
 		const ThemePalette& palette,
 		const std::string& lane = "main") const;
-	void submitLaneLabel(const std::string& lane, const std::string& caption, float x, float y, const glm::vec4& color);
+	void submitLaneLabel(const std::string& lane, const std::string& caption, float x, float y,
+		const glm::vec4& color, float width = 112.0f);
 };

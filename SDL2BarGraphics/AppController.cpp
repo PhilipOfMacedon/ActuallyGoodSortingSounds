@@ -17,6 +17,8 @@
 
 namespace
 {
+	const char* const NewDemoPresetSentinel = "__new_demo__";
+
 	class LocalSeedBookmarkPersistence : public ISeedBookmarkPersistence
 	{
 	public:
@@ -172,6 +174,10 @@ namespace
 		case AppActionKind::DemoSetDraftName:
 		case AppActionKind::ResolveDemoPresetSwitch:
 		case AppActionKind::SaveDemoPreset:
+		case AppActionKind::SaveDemoPresetAs:
+		case AppActionKind::NewDemoPreset:
+		case AppActionKind::ImportDemoPresets:
+		case AppActionKind::ExportDemoPreset:
 		case AppActionKind::RenameDemoPreset:
 		case AppActionKind::DeleteDemoPreset:
 			return false;
@@ -924,6 +930,10 @@ sortinglogic::CommandResult AppController::dispatch(const AppAction& action)
 	case AppActionKind::DemoSetDraftName:
 	case AppActionKind::ResolveDemoPresetSwitch:
 	case AppActionKind::SaveDemoPreset:
+	case AppActionKind::SaveDemoPresetAs:
+	case AppActionKind::NewDemoPreset:
+	case AppActionKind::ImportDemoPresets:
+	case AppActionKind::ExportDemoPreset:
 	case AppActionKind::RenameDemoPreset:
 	case AppActionKind::DeleteDemoPreset:
 		return dispatchDemoAction(action);
@@ -987,6 +997,17 @@ void AppController::adoptDemoDraftBaseline()
 	demoEditorDraftInitialized_ = true;
 	demoEditorBaseline_ = demoEditorDraft_;
 	demoEditorDraftDirty_ = false;
+}
+
+void AppController::initializeNewDemoDraft()
+{
+	selectedDemoPresetId_ = NewDemoPresetSentinel;
+	demoEditorDraft_ = DemoPreset();
+	demoEditorDraft_.name = "New demo";
+	demoEditorSelectedStep_ = 0;
+	editorPrefabSourceId_.clear();
+	pendingDemoPresetSwitchId_.clear();
+	adoptDemoDraftBaseline();
 }
 
 bool AppController::persistDemoPresets(std::string* error)
@@ -1231,8 +1252,30 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		demoEditorOpen_ = false;
 		return sortinglogic::CommandResult(true, "Demo editor closed.");
 	}
+	if (action.kind == AppActionKind::NewDemoPreset)
+	{
+		if (demoEditorDraftDirty_)
+		{
+			pendingDemoPresetSwitchId_ = NewDemoPresetSentinel;
+			return sortinglogic::CommandResult(false, "This draft has unsaved changes. Save, discard, or cancel before starting a new demo.");
+		}
+		initializeNewDemoDraft();
+		return sortinglogic::CommandResult(true, "New empty demo draft created.");
+	}
 	if (action.kind == AppActionKind::SelectDemoPreset)
 	{
+		if (presetId == NewDemoPresetSentinel)
+		{
+			if (selectedDemoPresetId_ == NewDemoPresetSentinel)
+				return sortinglogic::CommandResult(true, "The new demo draft is already open.");
+			if (demoEditorDraftDirty_)
+			{
+				pendingDemoPresetSwitchId_ = NewDemoPresetSentinel;
+				return sortinglogic::CommandResult(false, "This draft has unsaved changes. Save, discard, or cancel before starting a new demo.");
+			}
+			initializeNewDemoDraft();
+			return sortinglogic::CommandResult(true, "New empty demo draft created.");
+		}
 		const DemoPreset* preset = findDemoPreset(presetId);
 		if (!preset) return sortinglogic::CommandResult(false, "The selected demo preset is unavailable.");
 		if (preset->id == selectedDemoPresetId_)
@@ -1268,6 +1311,11 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		}
 		else if (choice != 1)
 			return sortinglogic::CommandResult(false, "The preset switch choice is invalid.");
+		if (destinationId == NewDemoPresetSentinel)
+		{
+			initializeNewDemoDraft();
+			return sortinglogic::CommandResult(true, "Started a new empty demo draft.");
+		}
 		const DemoPreset* destination = findDemoPreset(destinationId);
 		if (!destination) return sortinglogic::CommandResult(false, "The requested preset is no longer available; the draft was kept.");
 		selectedDemoPresetId_ = destination->id;
@@ -1574,6 +1622,88 @@ sortinglogic::CommandResult AppController::dispatchDemoAction(const AppAction& a
 		editorPrefabSourceId_.clear();
 		adoptDemoDraftBaseline();
 		return sortinglogic::CommandResult(true, "Saved demo preset " + candidate.name + ".");
+	}
+	if (action.kind == AppActionKind::SaveDemoPresetAs)
+	{
+		DemoPreset candidate = demoEditorDraft_;
+		if (candidate.steps.empty())
+			return sortinglogic::CommandResult(false, "Add at least one algorithm before saving a demo preset.");
+		if (candidate.name.empty())
+			return sortinglogic::CommandResult(false, "Enter a preset name before saving.");
+		std::string baseName = candidate.name;
+		bool foundUnusedName = false;
+		const std::size_t maximumNameCandidates = demoPresetStore_.userPresets().size() + 1;
+		for (std::size_t serial = 1; serial <= maximumNameCandidates; ++serial)
+		{
+			const std::string suffix = serial == 1 ? " (copy)" : " (copy " + std::to_string(serial) + ")";
+			if (suffix.size() > 64) break;
+			std::string uniqueBase = baseName;
+			if (uniqueBase.size() + suffix.size() > 64) uniqueBase.resize(64 - suffix.size());
+			candidate.name = uniqueBase + suffix;
+			bool collision = false;
+			for (std::size_t i = 0; i < demoPresetStore_.userPresets().size(); ++i)
+				collision = collision || demoPresetStore_.userPresets()[i].name == candidate.name;
+			if (!collision)
+			{
+				foundUnusedName = true;
+				break;
+			}
+		}
+		if (!foundUnusedName)
+			return sortinglogic::CommandResult(false, "Could not create a unique name for the demo preset copy.");
+		std::size_t serial = demoPresetStore_.userPresets().size() + 1;
+		candidate.id = "user.demo." + std::to_string(serial);
+		while (findDemoPreset(candidate.id)) candidate.id = "user.demo." + std::to_string(++serial);
+		candidate.prefab = false;
+		const DemoPresetStore previous = demoPresetStore_;
+		std::string error;
+		if (!demoPresetStore_.saveUserPreset(candidate, &error)) return sortinglogic::CommandResult(false, error);
+		if (!persistDemoPresets(&error))
+		{
+			demoPresetStore_ = previous;
+			return sortinglogic::CommandResult(false, error.empty() ? "Could not save demo preset copy." : error);
+		}
+		demoEditorDraft_ = candidate;
+		selectedDemoPresetId_ = candidate.id;
+		editorPrefabSourceId_.clear();
+		adoptDemoDraftBaseline();
+		return sortinglogic::CommandResult(true, "Saved a separate demo preset copy: " + candidate.name + ".");
+	}
+	if (action.kind == AppActionKind::ImportDemoPresets)
+	{
+		if (demoRunner_.active())
+			return sortinglogic::CommandResult(false, "Demo presets cannot be imported while a demo is active.");
+		std::vector<DemoPreset> imported;
+		std::vector<std::string> issues;
+		std::string error;
+		if (!DemoPresetStore::decode(action.text, imported, &issues, &error))
+			return sortinglogic::CommandResult(false, error.empty() ? "The demo preset file could not be read." : error);
+		const DemoPresetStore previous = demoPresetStore_;
+		std::size_t added = 0;
+		std::size_t serial = demoPresetStore_.userPresets().size() + 1;
+		for (std::size_t i = 0; i < imported.size(); ++i)
+		{
+			DemoPreset candidate = imported[i];
+			candidate.prefab = false;
+			candidate.id = "user.demo." + std::to_string(serial);
+			while (findDemoPreset(candidate.id)) candidate.id = "user.demo." + std::to_string(++serial);
+			++serial;
+			if (demoPresetStore_.saveUserPreset(candidate, &error)) ++added;
+			else issues.push_back("Skipped '" + candidate.name + "': " + error);
+		}
+		if (added == 0)
+		{
+			demoPresetStore_ = previous;
+			return sortinglogic::CommandResult(false, issues.empty() ? "The file contained no importable demo presets." : issues.front());
+		}
+		if (!persistDemoPresets(&error))
+		{
+			demoPresetStore_ = previous;
+			return sortinglogic::CommandResult(false, error.empty() ? "Could not save imported demo presets." : error);
+		}
+		std::string message = "Imported " + std::to_string(added) + " demo preset" + (added == 1 ? "." : "s.");
+		if (!issues.empty()) message += " Some malformed or invalid entries were skipped.";
+		return sortinglogic::CommandResult(true, message);
 	}
 	if (action.kind == AppActionKind::RenameDemoPreset)
 	{

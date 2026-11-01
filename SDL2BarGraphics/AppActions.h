@@ -86,6 +86,10 @@ enum class AppActionKind
 	DemoSetDraftName,
 	ResolveDemoPresetSwitch,
 	SaveDemoPreset,
+	SaveDemoPresetAs,
+	NewDemoPreset,
+	ImportDemoPresets,
+	ExportDemoPreset,
 	RenameDemoPreset,
 	DeleteDemoPreset,
 	SetReconstructedAudioParameter,
@@ -124,6 +128,10 @@ inline bool isDemoActionKind(AppActionKind kind)
 	case AppActionKind::DemoSetDraftName:
 	case AppActionKind::ResolveDemoPresetSwitch:
 	case AppActionKind::SaveDemoPreset:
+	case AppActionKind::SaveDemoPresetAs:
+	case AppActionKind::NewDemoPreset:
+	case AppActionKind::ImportDemoPresets:
+	case AppActionKind::ExportDemoPreset:
 	case AppActionKind::RenameDemoPreset:
 	case AppActionKind::DeleteDemoPreset:
 		return true;
@@ -153,6 +161,8 @@ inline bool isDemoDraftMutationAction(AppActionKind kind)
 	case AppActionKind::DemoClearStepOverride:
 	case AppActionKind::DemoSetDraftName:
 	case AppActionKind::SaveDemoPreset:
+	case AppActionKind::SaveDemoPresetAs:
+	case AppActionKind::NewDemoPreset:
 	case AppActionKind::RenameDemoPreset:
 	case AppActionKind::DeleteDemoPreset:
 		return true;

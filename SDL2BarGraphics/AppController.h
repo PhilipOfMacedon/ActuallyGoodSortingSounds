@@ -138,4 +138,5 @@ private:
 	void synchronizeReferenceTransport(bool wasPlaying);
 	void refreshDemoDraftDirty();
 	void adoptDemoDraftBaseline();
+	void initializeNewDemoDraft();
 };

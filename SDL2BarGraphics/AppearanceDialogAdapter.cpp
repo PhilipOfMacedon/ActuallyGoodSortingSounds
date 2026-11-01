@@ -8,6 +8,7 @@
 #include <commdlg.h>
 
 #include "Window.h"
+#include "DemoModels.h"
 
 namespace
 {
@@ -113,6 +114,47 @@ AppearanceDialogResult AppearanceDialogAdapter::exportProfile(Window& window, Ui
 	AppearanceDialogResult result(AppearanceDialogStatus::Failed);
 	const std::string contents = serializeUiAppearanceProfile(preset, theme);
 	if (!writeUtf8File(path, contents, &result.error)) return result;
+	result.status = AppearanceDialogStatus::Completed;
+	return result;
+}
+
+DemoPresetDialogResult AppearanceDialogAdapter::importDemoPresets(Window& window)
+{
+	wchar_t path[MAX_PATH] = {};
+	OPENFILENAMEW dialog = {};
+	dialog.lStructSize = sizeof(dialog);
+	dialog.hwndOwner = dialogOwner(window);
+	dialog.lpstrFilter = L"AGSS demo presets (*.agss-demo.ini)\0*.agss-demo.ini\0INI files (*.ini)\0*.ini\0All files (*.*)\0*.*\0\0";
+	dialog.lpstrFile = path;
+	dialog.nMaxFile = MAX_PATH;
+	dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+	if (!GetOpenFileNameW(&dialog)) return DemoPresetDialogResult(AppearanceDialogStatus::Cancelled);
+
+	DemoPresetDialogResult result(AppearanceDialogStatus::Failed);
+	if (!readUtf8File(path, result.content, &result.error)) return result;
+	result.status = AppearanceDialogStatus::Completed;
+	return result;
+}
+
+DemoPresetDialogResult AppearanceDialogAdapter::exportDemoPreset(Window& window, const DemoPreset& preset)
+{
+	wchar_t path[MAX_PATH] = L"demo.agss-demo.ini";
+	OPENFILENAMEW dialog = {};
+	dialog.lStructSize = sizeof(dialog);
+	dialog.hwndOwner = dialogOwner(window);
+	dialog.lpstrFilter = L"AGSS demo presets (*.agss-demo.ini)\0*.agss-demo.ini\0\0";
+	dialog.lpstrFile = path;
+	dialog.nMaxFile = MAX_PATH;
+	dialog.lpstrDefExt = L"agss-demo.ini";
+	dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+	if (!GetSaveFileNameW(&dialog)) return DemoPresetDialogResult(AppearanceDialogStatus::Cancelled);
+
+	DemoPreset exportPreset = preset;
+	exportPreset.prefab = false;
+	if (exportPreset.id.empty() || demoPrefabPreset(exportPreset.id)) exportPreset.id = "export.demo";
+	if (exportPreset.name.empty()) exportPreset.name = "Demo export";
+	DemoPresetDialogResult result(AppearanceDialogStatus::Failed);
+	if (!writeUtf8File(path, DemoPresetStore::encode(std::vector<DemoPreset>(1, exportPreset)), &result.error)) return result;
 	result.status = AppearanceDialogStatus::Completed;
 	return result;
 }

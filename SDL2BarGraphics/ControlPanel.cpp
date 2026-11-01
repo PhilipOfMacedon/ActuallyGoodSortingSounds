@@ -1370,8 +1370,11 @@ void ControlPanel::drawWidget(const UiWidget& widget, const ThemePalette& palett
 	{
 		static const char* playIcon[] = { "..#....", "..##...", "..###..", "..##...", "..#...." };
 		static const char* pauseIcon[] = { ".##.##.", ".##.##.", ".##.##.", ".##.##.", ".##.##." };
-		static const char* previousIcon[] = { "#...#..", "#..##..", "#.###..", "#..##..", "#...#.." };
-		static const char* nextIcon[] = { "..#...#", "..##..#", ".###.#.", "..##..#", "..#...#" };
+		// The vertical stroke is the separator; the triangle points toward the
+		// direction of travel. Keeping the arrowhead on the center row avoids
+		// the old asymmetric, nearly-symbol-shaped glyphs in the Win95 preset.
+		static const char* previousIcon[] = { "...#..#", "..##..#", ".######", "..##..#", "...#..#" };
+		static const char* nextIcon[] = { "#..#...", "#..##..", "######.", "#..##..", "#..#..." };
 		static const char* resetIcon[] = { ".#####.", "##...#.", "#..##..", "#..##..", ".#...##", ".#####." };
 		const char* const* icon = widget.id() == "reset" ? resetIcon :
 			widget.id() == "previous" ? previousIcon : widget.id() == "next" ? nextIcon :
@@ -2017,6 +2020,29 @@ bool ControlPanel::handleDemoEditorEvent(const SDL_Event& event, AppAction& acti
 	UiInputEvent input(UiInputType::FocusLost);
 	if (!translateSdlUiEvent(event, input, SdlUiKeyProfile::Controls, sdlUiEventContext(event))) return true;
 	const bool consumed = demoEditorView_.handleInput(input, action);
+	if (action.kind == AppActionKind::ImportDemoPresets)
+	{
+		const DemoPresetDialogResult result = AppearanceDialogAdapter::importDemoPresets(window_);
+		if (result.status == AppearanceDialogStatus::Cancelled) action = AppAction();
+		else if (result.status == AppearanceDialogStatus::Failed)
+		{
+			demoEditorView_.setFeedback(result.error.empty() ? "Could not import demo presets." : result.error);
+			action = AppAction();
+		}
+		else action.text = result.content;
+	}
+	else if (action.kind == AppActionKind::ExportDemoPreset)
+	{
+		if (demoDraft_)
+		{
+			const DemoPresetDialogResult result = AppearanceDialogAdapter::exportDemoPreset(window_, *demoDraft_);
+			if (result.status == AppearanceDialogStatus::Failed)
+				demoEditorView_.setFeedback(result.error.empty() ? "Could not export the demo preset." : result.error);
+			else if (result.status == AppearanceDialogStatus::Completed)
+				demoEditorView_.setFeedback("Demo preset exported.");
+		}
+		action = AppAction();
+	}
 	const bool nowEditing = demoEditorView_.editingName() || demoEditorView_.editingNumeric();
 	if (!wasEditing && nowEditing) SDL_StartTextInput();
 	if (wasEditing && !nowEditing) SDL_StopTextInput();
